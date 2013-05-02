@@ -43,7 +43,6 @@ import GafferImageUI
 import GafferImage
 
 # ImageNode
-
 def __noduleCreator( plug ) :
 
 	if isinstance( plug, GafferImage.ImagePlug ) :
@@ -59,7 +58,6 @@ GafferUI.PlugValueWidget.registerCreator( GafferImage.ImageNode.staticTypeId(), 
 GafferUI.PlugValueWidget.registerCreator( GafferImage.ImageNode.staticTypeId(), "channels", GafferImageUI.ChannelMaskPlugValueWidget, inputImagePlug = "in" )
 
 # ImageReader
-
 GafferUI.PlugValueWidget.registerCreator(
 	GafferImage.ImageReader.staticTypeId(),
 	"fileName",
@@ -68,8 +66,30 @@ GafferUI.PlugValueWidget.registerCreator(
 	)
 )
 
-# Constant
+# ImageWriter
 
+GafferUI.PlugValueWidget.registerCreator(
+	GafferImage.ImageWriter.staticTypeId(),
+	"fileName",
+	lambda plug : GafferUI.PathPlugValueWidget( plug,
+		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter() )
+	)
+)
+GafferUI.PlugValueWidget.registerCreator( GafferImage.ImageWriter.staticTypeId(), "channels", GafferImageUI.ChannelMaskPlugValueWidget, inputImagePlug = "in" )
+GafferUI.Nodule.registerNodule( GafferImage.ImageWriter.staticTypeId(), "fileName", lambda plug : None )
+GafferUI.Nodule.registerNodule( GafferImage.ImageWriter.staticTypeId(), "channels", lambda plug : None )
+GafferUI.Nodule.registerNodule( GafferImage.ImageWriter.staticTypeId(), "writeMode", lambda plug : None )
+
+writeModeLabelsAndValues = [ ( "Scanline", 0), ( "Tile", 1 ) ]
+
+GafferUI.PlugValueWidget.registerCreator(
+	GafferImage.ImageWriter.staticTypeId(),
+	"writeMode",
+	GafferUI.EnumPlugValueWidget,
+	labelsAndValues = writeModeLabelsAndValues
+)
+
+# Constant
 GafferUI.PlugValueWidget.registerCreator(
 	GafferImage.Constant.staticTypeId(),
 	"format",
@@ -77,7 +97,6 @@ GafferUI.PlugValueWidget.registerCreator(
 )
 
 # OpenColorIO
-
 ocioColorSpaceLabelsAndValues = [ ( "None", "" ) ]
 import PyOpenColorIO as OCIO
 config = OCIO.GetCurrentConfig()

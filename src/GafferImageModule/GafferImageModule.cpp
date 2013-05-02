@@ -40,6 +40,7 @@
 #include "IECorePython/ScopedGILRelease.h"
 
 #include "GafferBindings/DependencyNodeBinding.h"
+#include "GafferBindings/ExecutableBinding.h"
 
 #include "GafferImage/ImageNode.h"
 #include "GafferImage/ImageReader.h"
@@ -51,10 +52,14 @@
 #include "GafferImage/ObjectToImage.h"
 #include "GafferImageBindings/FormatBinding.h"
 #include "GafferImageBindings/FormatPlugBinding.h"
+#include "GafferImageBindings/SamplerBinding.h"
 #include "GafferImage/Merge.h"
 #include "GafferImage/Grade.h"
 #include "GafferImage/Constant.h"
 #include "GafferImage/Select.h"
+#include "GafferImage/Reformat.h"
+#include "GafferImageBindings/FilterPlugBindings.h"
+#include "GafferImage/ImageWriter.h"
 #include "GafferImageBindings/ChannelMaskPlugBindings.h"
 
 using namespace boost::python;
@@ -110,8 +115,13 @@ BOOST_PYTHON_MODULE( _GafferImage )
 	GafferBindings::DependencyNodeClass<Grade>();
 	GafferBindings::DependencyNodeClass<Constant>();
 	GafferBindings::DependencyNodeClass<Select>();
+	GafferBindings::DependencyNodeClass<Reformat>();
 	GafferImageBindings::bindFormat();
 	GafferImageBindings::bindFormatPlug();
 	GafferImageBindings::bindChannelMaskPlug();
+	GafferImageBindings::bindFilterPlug();
+	GafferImageBindings::bindSampler();
+	GafferBindings::NodeClass<ImageWriter> imageWriter;
+	GafferBindings::ExecutableBinding< GafferBindings::NodeClass<ImageWriter>, ImageWriter>::bind( imageWriter );
 }
 

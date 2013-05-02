@@ -61,6 +61,9 @@ enum TypeId
 	ConstantTypeId = 110765,
 	SelectTypeId = 110766,
 	ChannelMaskPlugTypeId = 110767,
+	ReformatTypeId = 110768,
+	FilterPlugTypeId = 110769,
+	ImageWriterTypeId = 110770,
 	
 	LastTypeId = 110849
 };

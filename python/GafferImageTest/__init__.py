@@ -45,7 +45,10 @@ from MergeTest import MergeTest
 from GradeTest import GradeTest
 from ConstantTest import ConstantTest
 from SelectTest import SelectTest
+from ImageWriterTest import ImageWriterTest
 from ChannelMaskPlugTest import ChannelMaskPlugTest
+from SamplerTest import SamplerTest
+from ReformatTest import ReformatTest
 
 if __name__ == "__main__":
 	import unittest
