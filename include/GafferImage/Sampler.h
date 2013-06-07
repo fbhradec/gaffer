@@ -38,45 +38,73 @@
 #define GAFFERIMAGE_SAMPLER_H
 
 #include <vector>
+
+#include "IECore/FastFloat.h"
+#include "IECore/BoxAlgo.h"
+#include "IECore/BoxOps.h"
+
 #include "GafferImage/ImagePlug.h"
+#include "GafferImage/Filter.h"
+#include "GafferImage/TypeIds.h"
 
 namespace GafferImage
 {
 
-///\todo: 
-/// Add a hash() method to the sampler that accumulates the hashes of all tiles within m_sampleWindow.
-/// Currently anything that uses the sampler to gather data from across an area could potentially
-/// have an incorrect hash if one of the tiles that it is sampling which isn't the one being output
-/// changes. For example, if our sampler is accessing 4 tiles to produce an output for one tile and a node
-/// upstream changes just one of them and passes the hashes of the other through, the output hash  will
-/// be wrong and not update. This has not been an issue yet as we don't have any nodes that do that!
-	
+IE_CORE_FORWARDDECLARE( Filter );
+
 /// A utility class for pixel access of an image plug.
 class Sampler
 {
 
 public : 
 	
+	enum BoundingMode
+	{
+		Black = 0,
+		Clamp = 1
+	};
+		
 	/// Sampler Constructor
 	/// @param plug The image plug to sample from.
 	/// @param channelName The channel to sample.
-	/// @param The bounds which we wish to sample from. The actual sample area includes all valid tiles that sampleWindow contains or intersects.
-	Sampler( const GafferImage::ImagePlug *plug, const std::string &channelName, const Imath::Box2i &sampleWindow );
+	/// @param filter The bounds which we wish to sample from. The actual sample area includes all valid tiles that sampleWindow contains or intersects.
+	/// @param boundingMode The method of handling samples that fall out of the sample window.
+	Sampler( const GafferImage::ImagePlug *plug, const std::string &channelName, const Imath::Box2i &sampleWindow, GafferImage::ConstFilterPtr filter, BoundingMode boundingMode = Black );
 
-	/// Samples a colour value from the channel at x, y. The result is clamped the the sampleWindow.	
-	float sample( int x, int y );
+	/// Samples a colour value from the channel at x, y.
+	inline float sample( int x, int y );
+
+	/// Sub-samples the image using a filter.
+	inline float sample( float x, float y );
+
+	/// Accumulates the hashes of the tiles that it accesses.
+	void hash( IECore::MurmurHash &h ) const;
 
 private:
 
+	/// Cached data access
+	/// @param p Any point within the cache that we wish to retrieve the data for.
+	/// @param tileData Is set to the tile's channel data.
+	/// @param tileOrigin The coordinate of the tile's  minimum corner.
+	/// @param tileIndex XY indices that can be used to access the colour value of point 'p' from tileData.
+	inline void cachedData( Imath::V2i p, const float *& tileData, Imath::V2i &tileOrigin, Imath::V2i &tileIndex );
+
 	const ImagePlug *m_plug;
-	const std::string &m_channelName;
+	const std::string m_channelName;
 	Imath::Box2i m_sampleWindow;
-	std::vector< IECore::ConstFloatVectorDataPtr > m_dataCache;
-	bool m_valid;
+
+	std::vector< IECore::ConstFloatVectorDataPtr > m_dataCache;	
+	Imath::Box2i m_cacheWindow;
+	int m_cacheWidth;
+
+	BoundingMode m_boundingMode;
+	ConstFilterPtr m_filter;
 
 };
 
 }; // namespace GafferImage
+
+#include "GafferImage/Sampler.inl"
 
 #endif
 

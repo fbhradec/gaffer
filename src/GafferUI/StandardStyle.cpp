@@ -60,10 +60,10 @@ IE_CORE_DEFINERUNTIMETYPED( StandardStyle );
 
 StandardStyle::StandardStyle()
 {
-	setFont( LabelText, FontLoader::defaultFontLoader()->load( "Vera.ttf" ) );
+	setFont( LabelText, FontLoader::defaultFontLoader()->load( "VeraBd.ttf" ) );
 	setColor( BackgroundColor, Color3f( 0.1 ) );
 	setColor( SunkenColor, Color3f( 0.1 ) );
-	setColor( RaisedColor, Color3f( 0.5 ) );
+	setColor( RaisedColor, Color3f( 0.4 ) );
 	setColor( ForegroundColor, Color3f( 0.9 ) );
 	setColor( HighlightColor, Color3f( 0.466, 0.612, 0.741 ) );
 	setColor( ConnectionColor, Color3f( 0.1, 0.1, 0.1 ) );
@@ -199,6 +199,40 @@ void StandardStyle::renderConnection( const Imath::V3f &srcPosition, const Imath
 	glCallList( connectionDisplayList() );
 }
 
+void StandardStyle::renderSolidRectangle( const Imath::Box2f &box ) const
+{
+	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_borderParameter, 0 );
+	glUniform1i( g_edgeAntiAliasingParameter, 0 );
+	glUniform1i( g_textureTypeParameter, 0 );
+	
+	glBegin( GL_QUADS );
+		
+		glVertex2f( box.min.x, box.min.y );
+		glVertex2f( box.min.x, box.max.y );
+		glVertex2f( box.max.x, box.max.y );
+		glVertex2f( box.max.x, box.min.y );
+
+	glEnd();
+}
+
+void StandardStyle::renderRectangle( const Imath::Box2f &box ) const
+{
+	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_borderParameter, 0 );
+	glUniform1i( g_edgeAntiAliasingParameter, 0 );
+	glUniform1i( g_textureTypeParameter, 0 );
+	
+	glBegin( GL_LINE_LOOP );
+		
+		glVertex2f( box.min.x, box.min.y );
+		glVertex2f( box.min.x, box.max.y );
+		glVertex2f( box.max.x, box.max.y );
+		glVertex2f( box.max.x, box.min.y );
+
+	glEnd();
+}
+
 void StandardStyle::renderSelectionBox( const Imath::Box2f &box ) const
 {
 	V2f boxSize = box.size();
@@ -236,13 +270,15 @@ void StandardStyle::renderSelectionBox( const Imath::Box2f &box ) const
 
 void StandardStyle::renderImage( const Imath::Box2f &box, const IECoreGL::Texture *texture ) const
 {
+	glPushAttrib( GL_COLOR_BUFFER_BIT );
+	
+	// As the image is already pre-multiplied we need to change our blend mode.
+	glEnable( GL_BLEND );
+	glBlendFunc( GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
+
 	glEnable( GL_TEXTURE_2D );
 	glActiveTexture( GL_TEXTURE0 );
 	texture->bind();
-	/// \todo IECoreGL::ColorTexture doesn't make mipmaps, so we can't do mipmapped filtering here.
-	/// Perhaps it should and then perhaps we could.
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
-	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	
 	glUniform1i( g_bezierParameter, 0 );
 	glUniform1i( g_borderParameter, 0 );
@@ -264,6 +300,8 @@ void StandardStyle::renderImage( const Imath::Box2f &box, const IECoreGL::Textur
 		glVertex2f( box.min.x, box.min.y );
 		
 	glEnd();
+		
+	glPopAttrib();
 }
 
 void StandardStyle::renderLine( const IECore::LineSegment3f &line ) const
@@ -450,7 +488,7 @@ static const char *g_fragmentSource =
 	"	}"
 	"	else if( textureType==2 )"
 	"	{"
-	"		outColor = texture2D( texture, gl_TexCoord[0].xy );"
+	"		outColor = vec4( outColor.rgb, texture2D( texture, gl_TexCoord[0].xy ).a );"
 	"	}"
 
 	"	ieCoreGLNameOut = ieCoreGLNameIn;"

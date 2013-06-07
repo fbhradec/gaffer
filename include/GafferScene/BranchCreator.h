@@ -48,10 +48,10 @@ class BranchCreator : public SceneProcessor
 
 	public :
 
-		BranchCreator( const std::string &name=staticTypeName() );
+		BranchCreator( const std::string &name=defaultName<BranchCreator>() );
 		virtual ~BranchCreator();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( BranchCreator, BranchCreatorTypeId, SceneProcessor );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::BranchCreator, BranchCreatorTypeId, SceneProcessor );
 
 		/// \todo Allow multiple parents to be specified.
 		Gaffer::StringPlug *parentPlug();
@@ -60,7 +60,7 @@ class BranchCreator : public SceneProcessor
 		Gaffer::StringPlug *namePlug();
 		const Gaffer::StringPlug *namePlug() const;
 				
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 
 	protected :
 		

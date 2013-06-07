@@ -53,15 +53,15 @@ class ImageReader : public ImageNode
 
 	public :
 
-		ImageReader( const std::string &name=staticTypeName() );
+		ImageReader( const std::string &name=defaultName<ImageReader>() );
 		virtual ~ImageReader();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( ImageReader, ImageReaderTypeId, ImageNode );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageReader, ImageReaderTypeId, ImageNode );
 		
 		Gaffer::StringPlug *fileNamePlug();
 		const Gaffer::StringPlug *fileNamePlug() const;
 
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 		virtual bool enabled() const;
 				
 	protected :

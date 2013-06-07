@@ -51,10 +51,10 @@ class Reformat : public ImageProcessor
 
 	public :
 
-		Reformat( const std::string &name=staticTypeName() );
+		Reformat( const std::string &name=defaultName<Reformat>() );
 		virtual ~Reformat();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Reformat, ReformatTypeId, ImageProcessor );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Reformat, ReformatTypeId, ImageProcessor );
 	
 		/// Plug accessors.	
 		GafferImage::FormatPlug *formatPlug();
@@ -62,7 +62,7 @@ class Reformat : public ImageProcessor
 		GafferImage::FilterPlug *filterPlug();
 		const GafferImage::FilterPlug *filterPlug() const;
 
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 		virtual bool enabled() const;
 				
 	protected :
@@ -84,7 +84,7 @@ class Reformat : public ImageProcessor
 		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
 		
 		// Computes the output scale factor from the input and output formats.
-		Imath::V2d scale() const;
+		Imath::V2f scale() const;
 
 	private :
 

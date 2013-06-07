@@ -42,6 +42,7 @@
 
 #include "IECore/RunTimeTyped.h"
 #include "IECore/LineSegment.h"
+#include "IECoreGL/GL.h"
 
 #include "GafferUI/TypeIds.h"
 
@@ -65,7 +66,7 @@ class Style : public IECore::RunTimeTyped
 		Style();
 		virtual ~Style();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Style, StyleTypeId, IECore::RunTimeTyped );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::Style, StyleTypeId, IECore::RunTimeTyped );
 		
 		enum State
 		{
@@ -96,6 +97,8 @@ class Style : public IECore::RunTimeTyped
 		virtual void renderSelectionBox( const Imath::Box2f &box ) const = 0;
 		virtual void renderImage( const Imath::Box2f &box, const IECoreGL::Texture *texture ) const = 0;
 		virtual void renderLine( const IECore::LineSegment3f &line ) const = 0;
+		virtual void renderSolidRectangle( const Imath::Box2f &box ) const = 0;
+		virtual void renderRectangle( const Imath::Box2f &box ) const = 0;
 				
 		//! @name Default style
 		/// There always exists a default style which is

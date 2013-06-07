@@ -57,10 +57,10 @@ class Box : public Node
 
 	public :
 
-		Box( const std::string &name=staticTypeName() );
+		Box( const std::string &name=defaultName<Box>() );
 		virtual ~Box();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Box, BoxTypeId, Node );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Box, BoxTypeId, Node );
 		
 		/// Returns true if promotePlug() can be used with the
 		/// specified descendant.
@@ -73,6 +73,10 @@ class Box : public Node
 		Plug *promotePlug( Plug *descendantPlug );
 		/// Returns true if the descendantPlug has been promoted.
 		bool plugIsPromoted( const Plug *descendantPlug ) const;
+
+		/// Exports the contents of the Box so that it can be referenced
+		/// by a Reference node.
+		void exportForReference( const std::string &fileName ) const;
 
 		/// Creates a Box by containing a set of child nodes which
 		/// were previously held by a different parent.

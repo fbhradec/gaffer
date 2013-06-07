@@ -36,55 +36,44 @@
 
 #include "Gaffer/Context.h"
 #include "GafferImage/Sampler.h"
-#include "GafferImage/Filter.h"
-#include "IECore/BoxAlgo.h"
-#include "IECore/BoxOps.h"
 
 using namespace Gaffer;
 using namespace IECore;
 using namespace GafferImage;
 
-Sampler::Sampler( const GafferImage::ImagePlug *plug, const std::string &channelName, const Imath::Box2i &sampleWindow )
+Sampler::Sampler( const GafferImage::ImagePlug *plug, const std::string &channelName, const Imath::Box2i &userSampleWindow, ConstFilterPtr filter, BoundingMode boundingMode )
 	: m_plug( plug ),
-	m_channelName( channelName )
+	m_channelName( channelName ),
+	m_boundingMode( boundingMode ),
+	m_filter( filter )
 {
-	// Get the new sample bounds that includes all intersecting tiles.	
-	m_sampleWindow = Imath::Box2i( 
-		Imath::V2i( ( sampleWindow.min / Imath::V2i( ImagePlug::tileSize() ) ) * Imath::V2i( ImagePlug::tileSize() ) ),
-		Imath::V2i( ( sampleWindow.max / Imath::V2i( ImagePlug::tileSize() ) ) * Imath::V2i( ImagePlug::tileSize() ) + Imath::V2i( ImagePlug::tileSize() ) - Imath::V2i(1) )
+	// The area that we actually need to sample the area requested.
+	const int filterRadius = int( ceil( m_filter->width() / 2. ) );
+	m_sampleWindow = Imath::Box2i(
+		Imath::V2i( userSampleWindow.min.x - filterRadius, userSampleWindow.min.y - filterRadius ),
+		Imath::V2i( userSampleWindow.max.x + filterRadius, userSampleWindow.max.y + filterRadius )
+	);	
+	m_sampleWindow = boxIntersection( m_sampleWindow, plug->dataWindowPlug()->getValue() );
+
+	// The area that we actually have in the cache.	
+	m_cacheWindow = Imath::Box2i(
+		Imath::V2i( ImagePlug::tileOrigin( m_sampleWindow.min ) ),
+		Imath::V2i( ImagePlug::tileOrigin( m_sampleWindow.max ) )
 	);
 	
-	// Intersect the data window and the sample window.
-	m_sampleWindow = boxIntersection( m_sampleWindow, plug->formatPlug()->getValue().getDisplayWindow() );
-
-	m_valid = m_sampleWindow.hasVolume();
-	
-	if ( m_valid )
-	{
-		m_dataCache.resize( ( ( m_sampleWindow.max.x - m_sampleWindow.min.x ) / ImagePlug::tileSize() + 1 ) * ( ( m_sampleWindow.max.y - m_sampleWindow.min.y ) / ImagePlug::tileSize() + 1 ), NULL );
-	}
+	m_cacheWidth = ( m_cacheWindow.max.x - m_cacheWindow.min.x ) / ImagePlug::tileSize() + 1;
+	int cacheHeight = ( m_cacheWindow.max.y - m_cacheWindow.min.y ) / ImagePlug::tileSize() + 1;
+	m_dataCache.resize( m_cacheWidth * cacheHeight, NULL );
 }
 
-float Sampler::sample( int x, int y )
+void Sampler::hash( IECore::MurmurHash &h ) const
 {
-	if ( !m_valid ) return 0.;
-
-	// Clamp the sample to the sample window.
-	x = std::max( m_sampleWindow.min.x, std::min( m_sampleWindow.max.x, x ) );
-	y = std::max( m_sampleWindow.min.y, std::min( m_sampleWindow.max.y, y ) );
-
-	// Get the smart pointer to the tile we want.
-	int cacheIndexX = ( x - m_sampleWindow.min.x ) / ImagePlug::tileSize();
-	int cacheIndexY = ( y - m_sampleWindow.min.y ) / ImagePlug::tileSize();
-	ConstFloatVectorDataPtr &cacheTilePtr = m_dataCache[ cacheIndexX + cacheIndexY * ( ( m_sampleWindow.max.x - m_sampleWindow.min.x ) / ImagePlug::tileSize() + 1 ) ];
-	
-	// Get the origin of the tile we want.
-	Imath::V2i tileOrigin( ( x / ImagePlug::tileSize() ) * ImagePlug::tileSize(), ( y / ImagePlug::tileSize() ) * ImagePlug::tileSize() );
-	if ( cacheTilePtr == NULL ) cacheTilePtr = m_plug->channelData( m_channelName, tileOrigin );
-
-	x -= tileOrigin.x;
-	y -= tileOrigin.y;
-
-	return *((&cacheTilePtr->readable()[0]) + y * ImagePlug::tileSize() + x);
-}	
+	for ( int x = m_cacheWindow.min.x; x <= m_cacheWindow.max.x; x += GafferImage::ImagePlug::tileSize() )
+	{
+		for ( int y = m_cacheWindow.min.y; y <= m_cacheWindow.max.y; y += GafferImage::ImagePlug::tileSize() )
+		{
+			h.append( m_plug->channelDataHash( m_channelName, Imath::V2i( x, y ) ) );
+		}
+	}
+}
 

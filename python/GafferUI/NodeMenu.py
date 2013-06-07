@@ -37,6 +37,8 @@
 
 from __future__ import with_statement
 
+import re
+import fnmatch
 import inspect
 
 import IECore
@@ -55,9 +57,10 @@ __definition = IECore.MenuDefinition()
 
 ## Utility function to append a menu item to definition.
 # nodeCreator must be a callable that returns a Gaffer.Node.	
-def append( path, nodeCreator ) :
+def append( path, nodeCreator, **kw ) :
 
-	definition().append( path, { "command" : nodeCreatorWrapper( nodeCreator=nodeCreator ) } )
+	item = IECore.MenuItemDefinition( command = nodeCreatorWrapper( nodeCreator=nodeCreator ), **kw )
+	definition().append( path, item )
 
 ## Utility function which takes a callable that creates a node, and returns a new
 # callable which will add the node to the graph.
@@ -88,20 +91,20 @@ def nodeCreatorWrapper( nodeCreator ) :
 			
 			graphGadget.getLayout().connectNode( graphGadget, node, script.selection() )
 
-		automaticPositioningSuccessful = graphGadget.getLayout().positionNode( graphGadget, node )		
-		if not automaticPositioningSuccessful :
-			# if no connections were made, we can't expect the graph layout to
-			# know where to put the node, so we'll try to position it based on
-			# the click location that opened the menu.
-			## \todo This positioning doesn't work very well when the menu min
-			# is not where the mouse was clicked to open the window (when the menu
-			# has been moved to keep it on screen).
-			menuPosition = menu.bound( relativeTo=gadgetWidget ).min
-			nodePosition = gadgetWidget.getViewportGadget().rasterToGadgetSpace(
-				IECore.V2f( menuPosition.x, menuPosition.y ),
-				gadget = graphGadget
-			).p0
-			graphGadget.setNodePosition( node, IECore.V2f( nodePosition.x, nodePosition.y ) )
+		# if no connections were made, we can't expect the graph layout to
+		# know where to put the node, so we'll try to position it based on
+		# the click location that opened the menu.
+		## \todo This positioning doesn't work very well when the menu min
+		# is not where the mouse was clicked to open the window (when the menu
+		# has been moved to keep it on screen).
+		menuPosition = menu.bound( relativeTo=gadgetWidget ).min
+		fallbackPosition = gadgetWidget.getViewportGadget().rasterToGadgetSpace(
+			IECore.V2f( menuPosition.x, menuPosition.y ),
+			gadget = graphGadget
+		).p0
+		fallbackPosition = IECore.V2f( fallbackPosition.x, fallbackPosition.y )
+
+		graphGadget.getLayout().positionNode( graphGadget, node, fallbackPosition )
 			
 		script.selection().clear()
 		script.selection().add( node )
@@ -110,9 +113,12 @@ def nodeCreatorWrapper( nodeCreator ) :
 				
 ## Utility function to append menu items to definition. One item will
 # be created for each class found on the specified search path.
-def appendParameterisedHolders( path, parameterisedHolderType, searchPathEnvVar ) :
-
-	definition().append( path, { "subMenu" : IECore.curry( __parameterisedHolderMenu, parameterisedHolderType, searchPathEnvVar ) } )
+def appendParameterisedHolders( path, parameterisedHolderType, searchPathEnvVar, matchExpression = re.compile( ".*" ) ) :
+	
+	if isinstance( matchExpression, str ) :
+		matchExpression = re.compile( fnmatch.translate( matchExpression ) )
+	
+	definition().append( path, { "subMenu" : IECore.curry( __parameterisedHolderMenu, parameterisedHolderType, searchPathEnvVar, matchExpression ) } )
 
 def __parameterisedHolderCreator( parameterisedHolderType, className, classVersion, searchPathEnvVar ) :
 
@@ -122,13 +128,14 @@ def __parameterisedHolderCreator( parameterisedHolderType, className, classVersi
 
 	return node
 
-def __parameterisedHolderMenu( parameterisedHolderType, searchPathEnvVar ) :
+def __parameterisedHolderMenu( parameterisedHolderType, searchPathEnvVar, matchExpression ) :
 
 	c = IECore.ClassLoader.defaultLoader( searchPathEnvVar )
 	d = IECore.MenuDefinition()
 	for n in c.classNames() :
-		nc = "/".join( [ IECore.CamelCase.toSpaced( x ) for x in n.split( "/" ) ] )
-		v = c.getDefaultVersion( n )
-		d.append( "/" + nc, { "command" : nodeCreatorWrapper( IECore.curry( __parameterisedHolderCreator, parameterisedHolderType, n, v, searchPathEnvVar ) ) } )
+		if matchExpression.match( n ) :
+			nc = "/".join( [ IECore.CamelCase.toSpaced( x ) for x in n.split( "/" ) ] )
+			v = c.getDefaultVersion( n )
+			d.append( "/" + nc, { "command" : nodeCreatorWrapper( IECore.curry( __parameterisedHolderCreator, parameterisedHolderType, n, v, searchPathEnvVar ) ) } )
 
 	return d

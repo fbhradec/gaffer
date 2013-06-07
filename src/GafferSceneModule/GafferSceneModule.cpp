@@ -1,6 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //  
 //  Copyright (c) 2012-2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2013, John Haddon. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -36,7 +37,7 @@
 
 #include "boost/python.hpp"
 
-#include "GafferBindings/DependencyNodeBinding.h"
+#include "GafferBindings/ComputeNodeBinding.h"
 
 #include "GafferScene/SceneNode.h"
 #include "GafferScene/FileSource.h"
@@ -57,7 +58,7 @@
 #include "GafferScene/GlobalsProcessor.h"
 #include "GafferScene/Options.h"
 #include "GafferScene/Shader.h"
-#include "GafferScene/Assignment.h"
+#include "GafferScene/ShaderAssignment.h"
 #include "GafferScene/Filter.h"
 #include "GafferScene/PathFilter.h"
 #include "GafferScene/Attributes.h"
@@ -74,6 +75,9 @@
 #include "GafferScene/Transform.h"
 #include "GafferScene/AimConstraint.h"
 #include "GafferScene/Prune.h"
+#include "GafferScene/Cube.h"
+#include "GafferScene/Sphere.h"
+#include "GafferScene/Text.h"
 
 #include "GafferSceneBindings/ScenePlugBinding.h"
 #include "GafferSceneBindings/DisplaysBinding.h"
@@ -107,6 +111,7 @@ BOOST_PYTHON_MODULE( _GafferScene )
 	GafferBindings::DependencyNodeClass<SceneContextProcessor>();
 	GafferBindings::DependencyNodeClass<SceneTimeWarp>();
 	GafferBindings::DependencyNodeClass<ObjectSource>();
+	GafferBindings::DependencyNodeClass<Cube>();
 	GafferBindings::DependencyNodeClass<Plane>();
 	GafferBindings::DependencyNodeClass<BranchCreator>();
 	GafferBindings::DependencyNodeClass<Seeds>();
@@ -133,7 +138,7 @@ BOOST_PYTHON_MODULE( _GafferScene )
 		.def( "state", &Shader::state )
 	;
 	
-	GafferBindings::DependencyNodeClass<Assignment>();
+	GafferBindings::DependencyNodeClass<ShaderAssignment>();
 	
 	{
 		scope s = GafferBindings::DependencyNodeClass<Filter>();
@@ -156,6 +161,7 @@ BOOST_PYTHON_MODULE( _GafferScene )
 	GafferBindings::DependencyNodeClass<StandardAttributes>();
 	GafferBindings::DependencyNodeClass<Transform>();
 	GafferBindings::DependencyNodeClass<Prune>();
+	GafferBindings::DependencyNodeClass<Text>();
 	
 	{
 		scope s =  GafferBindings::DependencyNodeClass<Constraint>();
@@ -173,6 +179,15 @@ BOOST_PYTHON_MODULE( _GafferScene )
 	GafferBindings::NodeClass<OpenGLShader>()
 		.def( "loadShader", &OpenGLShader::loadShader )
 	;
+	
+	{
+		scope s = GafferBindings::DependencyNodeClass<Sphere>();
+		
+		enum_<Sphere::Type>( "Type" )
+			.value( "Primitive", Sphere::Primitive )
+			.value( "Mesh", Sphere::Mesh )
+		;
+	}
 	
 	bindRender();
 	

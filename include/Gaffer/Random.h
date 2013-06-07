@@ -37,7 +37,7 @@
 #ifndef GAFFER_RANDOM_H
 #define GAFFER_RANDOM_H
 
-#include "Gaffer/DependencyNode.h"
+#include "Gaffer/ComputeNode.h"
 #include "Gaffer/TypedPlug.h"
 #include "Gaffer/NumericPlug.h"
 #include "Gaffer/CompoundNumericPlug.h"
@@ -46,15 +46,15 @@ namespace Gaffer
 {
 
 /// Base class for nodes which generate random values based on Context values.
-class Random : public DependencyNode
+class Random : public ComputeNode
 {
 
 	public :
 
-		Random( const std::string &name=staticTypeName() );
+		Random( const std::string &name=defaultName<Random>() );
 		virtual ~Random();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Random, RandomTypeId, DependencyNode );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Random, RandomTypeId, ComputeNode );
 		
 		IntPlug *seedPlug();
 		const IntPlug *seedPlug() const;
@@ -77,7 +77,7 @@ class Random : public DependencyNode
 		Color3fPlug *outColorPlug();
 		const Color3fPlug *outColorPlug() const;
 		
-		virtual void affects( const ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Plug *input, AffectedPlugsContainer &outputs ) const;
 		
 		Imath::Color3f randomColor( unsigned long int seed ) const;
 		

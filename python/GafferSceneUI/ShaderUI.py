@@ -48,7 +48,7 @@ GafferUI.Metadata.registerNodeDescription(
 
 GafferScene.Shader,
 
-"""The base type for all nodes which create shaders. Use the Assignment node to assign them to objects in the scene.""",
+"""The base type for all nodes which create shaders. Use the ShaderAssignment node to assign them to objects in the scene.""",
 
 "name",
 {
@@ -109,6 +109,7 @@ GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader.staticTypeId(), "na
 
 GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader.staticTypeId(), "parameters", GafferUI.CompoundPlugValueWidget, collapsed=None )
 GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader.staticTypeId(), "out", None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader.staticTypeId(), "type", None )
 
 ##########################################################################
 # NodeGadgets and Nodules
@@ -122,10 +123,11 @@ GafferUI.NodeGadget.registerNodeGadget( GafferScene.Shader.staticTypeId(), __nod
 
 def __parametersNoduleCreator( plug ) :
 
-	return GafferUI.CompoundNodule( plug, GafferUI.LinearContainer.Orientation.Y )
+	return GafferUI.CompoundNodule( plug, GafferUI.LinearContainer.Orientation.Y, spacing = 0.2 )
 
 GafferUI.Nodule.registerNodule( GafferScene.Shader.staticTypeId(), "parameters", __parametersNoduleCreator )
 GafferUI.Nodule.registerNodule( GafferScene.Shader.staticTypeId(), "name", lambda plug : None )
+GafferUI.Nodule.registerNodule( GafferScene.Shader.staticTypeId(), "type", lambda plug : None )
 
 # we leave it to the derived class uis to register creators for the parameters.* plugs, because only the derived classes know whether
 # or not networkability makes sense in each case.

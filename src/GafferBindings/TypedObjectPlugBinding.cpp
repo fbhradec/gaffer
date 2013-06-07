@@ -130,7 +130,7 @@ static void bind()
 	scope s = IECorePython::RunTimeTypedClass<T>()
 		.def( "__init__", make_constructor( construct<T>, default_call_policies(), 
 				(
-					boost::python::arg_( "name" )=T::staticTypeName(),
+					boost::python::arg_( "name" )=GraphComponent::defaultName<T>(),
 					boost::python::arg_( "direction" )=Plug::In,
 					boost::python::arg_( "defaultValue" ),
 					boost::python::arg_( "flags" )=Plug::Default
@@ -160,6 +160,7 @@ void GafferBindings::bindTypedObjectPlug()
 	bind<StringVectorDataPlug>();
 	bind<InternedStringVectorDataPlug>();
 	bind<V3fVectorDataPlug>();
+	bind<Color3fVectorDataPlug>();
 	bind<ObjectVectorPlug>();
 	bind<CompoundObjectPlug>();
 }

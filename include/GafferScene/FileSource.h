@@ -50,10 +50,10 @@ class FileSource : public Source
 
 	public :
 
-		FileSource( const std::string &name=staticTypeName() );
+		FileSource( const std::string &name=defaultName<FileSource>() );
 		virtual ~FileSource();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( FileSource, FileSourceTypeId, Source )
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::FileSource, FileSourceTypeId, Source )
 		
 		/// Holds the name of the file to be loaded.
 		Gaffer::StringPlug *fileNamePlug();
@@ -64,7 +64,7 @@ class FileSource : public Source
 		const Gaffer::IntPlug *refreshCountPlug() const;
 
 		/// Implemented to specify that fileNamePlug() affects all the scene output.
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 	
 	protected :
 	

@@ -38,12 +38,46 @@ import unittest
 
 import IECore
 import Gaffer
+import GafferTest
 import GafferImage
 import os
 
 class ReformatTest( unittest.TestCase ) :
 
 	path = os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/" )
+
+	# Check that the hash changes when a new format is supplied.
+	def testFormatHash( self ) :
+		
+		read = GafferImage.ImageReader()
+		read["fileName"].setValue( os.path.join( self.path, "blueWithDataWindow.100x100.exr" ) )
+
+		reformat = GafferImage.Reformat()
+		reformat["in"].setInput( read["out"] )
+
+		h1 = reformat["out"]["format"].hash();	
+		reformat["format"].setValue( GafferImage.Format( 150, 125, 1. ) )
+		h2 = reformat["out"]["format"].hash();	
+		self.assertNotEqual( h1, h2 )	
+	
+	# Test that the output is dirtied when the format changes.
+	def testDirtyPropagation( self ) :
+	
+		read = GafferImage.ImageReader()
+		read["fileName"].setValue( os.path.join( self.path, "blueWithDataWindow.100x100.exr" ) )
+
+		reformat = GafferImage.Reformat()
+		reformat["in"].setInput( read["out"] )
+		
+		cs = GafferTest.CapturingSlot( reformat.plugDirtiedSignal() )
+		reformat["format"].setValue( GafferImage.Format( 150, 125, 1. ) )
+		
+		dirtiedPlugs = set( [ x[0].relativeName( x[0].node() ) for x in cs ] )
+		self.assertEqual( len( dirtiedPlugs ), 4 )
+		self.assertTrue( "out" in dirtiedPlugs )
+		self.assertTrue( "out.dataWindow" in dirtiedPlugs )
+		self.assertTrue( "out.channelData" in dirtiedPlugs )
+		self.assertTrue( "out.format" in dirtiedPlugs )
 
 	# Test a reformat on an image with a data window that is different to the display window.
 	def testDataWindow( self ) :
@@ -57,7 +91,7 @@ class ReformatTest( unittest.TestCase ) :
 		reformat["format"].setValue( GafferImage.Format( 150, 125, 1. ) )
 		reformat["in"].setInput( read["out"] )
 		reformatWindow = reformat["out"]["dataWindow"].getValue()
-		self.assertEqual( reformatWindow, IECore.Box2i( IECore.V2i( 45, 25 ), IECore.V2i( 119, 99 )  ) )
+		self.assertEqual( reformatWindow, IECore.Box2i( IECore.V2i( 45, 25 ), IECore.V2i( 119, 87 )  ) )
 		
 	# Test that when the input and output format are the same that the hash is passed through.
 	def testHashPassThrough( self ) :
@@ -97,10 +131,10 @@ class ReformatTest( unittest.TestCase ) :
 		# Test all of the registered filters.	
 		filters = GafferImage.FilterPlug.filters()	
 		for filter in filters:
-			file = "checker" + filter + ".200x100.exr"
+			file = "checker" + filter + ".200x150.exr"
 			expectedOutput["fileName"].setValue( os.path.join( self.path, file ) )
 			reformat["filter"].setValue( filter )
-
+			
 			op = IECore.ImageDiffOp()
 			res = op(
 				imageA = expectedOutput["out"].image(),

@@ -53,15 +53,15 @@ class Display : public ImagePrimitiveNode
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Display, DisplayTypeId, ImagePrimitiveNode );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Display, DisplayTypeId, ImagePrimitiveNode );
 
-		Display( const std::string &name = staticTypeName() );
+		Display( const std::string &name = defaultName<Display>() );
 		virtual ~Display();
 		
 		Gaffer::IntPlug *portPlug();
 		const Gaffer::IntPlug *portPlug() const;
 				
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 		
 		/// Emitted when a new bucket is received.
 		static UnaryPlugSignal &dataReceivedSignal();

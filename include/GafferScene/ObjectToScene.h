@@ -47,15 +47,15 @@ class ObjectToScene : public ObjectSource
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( ObjectToScene, ObjectToSceneTypeId, ObjectSource );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ObjectToScene, ObjectToSceneTypeId, ObjectSource );
 
-		ObjectToScene( const std::string &name=staticTypeName() );
+		ObjectToScene( const std::string &name=defaultName<ObjectToScene>() );
 		virtual ~ObjectToScene();
 		
 		Gaffer::ObjectPlug *objectPlug();
 		const Gaffer::ObjectPlug *objectPlug() const;
 				
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 		
 	protected :
 

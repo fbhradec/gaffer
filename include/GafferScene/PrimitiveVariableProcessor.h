@@ -50,10 +50,10 @@ class PrimitiveVariableProcessor : public SceneElementProcessor
 
 	public :
 
-		PrimitiveVariableProcessor( const std::string &name=staticTypeName() );
+		PrimitiveVariableProcessor( const std::string &name=defaultName<PrimitiveVariableProcessor>() );
 		virtual ~PrimitiveVariableProcessor();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( PrimitiveVariableProcessor, PrimitiveVariableProcessorTypeId, SceneElementProcessor );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::PrimitiveVariableProcessor, PrimitiveVariableProcessorTypeId, SceneElementProcessor );
 		
 		Gaffer::StringPlug *namesPlug();
 		const Gaffer::StringPlug *namesPlug() const;
@@ -62,7 +62,7 @@ class PrimitiveVariableProcessor : public SceneElementProcessor
 		const Gaffer::BoolPlug *invertNamesPlug() const;
 
 		/// Implemented so that namesPlug() affects outPlug()->objectPlug().
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 				
 	protected :
 		

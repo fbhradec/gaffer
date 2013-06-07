@@ -1,6 +1,6 @@
 ##########################################################################
 #  
-#  Copyright (c) 2012, John Haddon. All rights reserved.
+#  Copyright (c) 2012-2013, John Haddon. All rights reserved.
 #  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
@@ -45,7 +45,9 @@ from AttributeCacheTest import AttributeCacheTest
 from GroupTest import GroupTest
 from SceneTimeWarpTest import SceneTimeWarpTest
 from SceneProceduralTest import SceneProceduralTest
+from CubeTest import CubeTest
 from PlaneTest import PlaneTest
+from SphereTest import SphereTest
 from InstancerTest import InstancerTest
 from ObjectToSceneTest import ObjectToSceneTest
 from CameraTest import CameraTest
@@ -54,7 +56,7 @@ from OptionsTest import OptionsTest
 from SceneNodeTest import SceneNodeTest
 from PathMatcherTest import PathMatcherTest
 from PathFilterTest import PathFilterTest
-from AssignmentTest import AssignmentTest
+from ShaderAssignmentTest import ShaderAssignmentTest
 from AttributesTest import AttributesTest
 from AlembicSourceTest import AlembicSourceTest
 from DeletePrimitiveVariablesTest import DeletePrimitiveVariablesTest
@@ -75,6 +77,8 @@ from OpenGLRenderTest import OpenGLRenderTest
 from TransformTest import TransformTest
 from AimConstraintTest import AimConstraintTest
 from PruneTest import PruneTest
+from ShaderTest import ShaderTest
+from TextTest import TextTest
 
 if __name__ == "__main__":
 	import unittest

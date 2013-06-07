@@ -49,7 +49,7 @@ namespace Detail
 template<typename T, typename Ptr>
 void defNodeConstructor( NodeClass<T, Ptr> &cls, typename boost::enable_if<boost::mpl::not_< boost::is_abstract<typename Ptr::element_type> > >::type *enabler = 0 )
 {
-	cls.def( boost::python::init< const std::string & >( boost::python::arg( "name" ) = T::staticTypeName() ) );
+	cls.def( boost::python::init< const std::string & >( boost::python::arg( "name" ) = Gaffer::GraphComponent::defaultName<T>() ) );
 }
 	
 template<typename T, typename Ptr>
@@ -60,24 +60,10 @@ void defNodeConstructor( NodeClass<T, Ptr> &cls, typename boost::enable_if<boost
 
 // bindings for node wrapper functions
 
-template<typename T>
-static Gaffer::BoolPlugPtr enabledPlug( T &n )
-{
-	return n.T::enabledPlug();
-}
-
-template<typename T>
-static Gaffer::PlugPtr correspondingInput( T &n, const Gaffer::Plug *output )
-{
-	return n.T::correspondingInput( output );
-}
-
 template<typename T, typename Ptr>
 void defNodeWrapperFunctions( NodeClass<T, Ptr> &cls )
 {
 	cls.GAFFERBINDINGS_DEFGRAPHCOMPONENTWRAPPERFNS( T );
-	cls.def( "enabledPlug", &enabledPlug<T> );
-	cls.def( "correspondingInput", &correspondingInput<T> );
 }
 
 } // namespace Detail

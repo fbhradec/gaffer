@@ -51,7 +51,7 @@ using namespace GafferImageBindings;
 
 static std::string repr( const Plug *plug )
 {
-	std::string result = Serialisation::modulePath( plug ) + "." + plug->typeName() + "( \"" + plug->getName().string() + "\", ";
+	std::string result = Serialisation::classPath( plug ) + "( \"" + plug->getName().string() + "\", ";
 	
 	if( plug->direction()!=Plug::In )
 	{
@@ -162,7 +162,7 @@ void GafferImageBindings::bindFormatPlug()
 	IECorePython::RunTimeTypedClass<FormatPlug>()
 		.def( init<const std::string &, Plug::Direction, const Format &, unsigned>(
 				(
-					boost::python::arg_( "name" )=FormatPlug::staticTypeName(),
+					boost::python::arg_( "name" )=GraphComponent::defaultName<FormatPlug>(),
 					boost::python::arg_( "direction" )=Plug::In,
 					boost::python::arg_( "defaultValue" )=Format(),
 					boost::python::arg_( "flags" )=Plug::Default

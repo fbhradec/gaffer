@@ -64,6 +64,20 @@ enum TypeId
 	ReformatTypeId = 110768,
 	FilterPlugTypeId = 110769,
 	ImageWriterTypeId = 110770,
+	ImageTransformTypeId = 110771,
+	FilterTypeId = 110772,
+	BoxFilterTypeId = 110773,
+	BilinearFilterTypeId = 110774,
+	SplineFilterTypeId = 110775,
+	BSplineFilterTypeId = 110776,
+	HermiteFilterTypeId = 110777,
+	CubicFilterTypeId = 110778,
+	MitchellFilterTypeId = 110779,
+	CatmullRomFilterTypeId = 110780,
+	SincFilterTypeId = 110781,
+	LanczosFilterTypeId = 110782,
+	ImageStatsTypeId = 110783,
+	ImageTransformImplementationTypeId = 110784,
 	
 	LastTypeId = 110849
 };

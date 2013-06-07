@@ -1,6 +1,5 @@
 //////////////////////////////////////////////////////////////////////////
 //  
-//  Copyright (c) 2012, John Haddon. All rights reserved.
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
@@ -35,41 +34,41 @@
 //  
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_ASSIGNMENT_H
-#define GAFFERSCENE_ASSIGNMENT_H
+#include "boost/python.hpp"
 
-#include "GafferScene/SceneElementProcessor.h"
+#include "GafferBindings/NodeBinding.h"
 
-namespace GafferScene
+#include "GafferImageUI/ImageView.h"
+#include "GafferImageUIBindings/ImageViewBinding.h"
+
+using namespace boost::python;
+using namespace Gaffer;
+using namespace GafferBindings;
+using namespace GafferImageUI;
+
+class ImageViewWrapper : public NodeWrapper<ImageView>
 {
-
-class Assignment : public SceneElementProcessor
-{
-
+	
 	public :
+	
+		ImageViewWrapper( PyObject *self, const std::string &name, Gaffer::PlugPtr input = 0 )
+			:	NodeWrapper<ImageView>( self, name )
+		{
+			if( input )
+			{
+				setChild( "in", input );
+			}
+		}
 
-		Assignment( const std::string &name=staticTypeName() );
-		virtual ~Assignment();
-
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Assignment, AssignmentTypeId, SceneElementProcessor );
-		
-		Gaffer::Plug *shaderPlug();
-		const Gaffer::Plug *shaderPlug() const;
-				
-	protected :
-		
-		virtual bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const;
-		
-		virtual bool processesAttributes() const;
-		virtual void hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundObjectPtr computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputAttributes ) const;
-	
-	private :
-	
-		static size_t g_firstPlugIndex;
-	
 };
 
-} // namespace GafferScene
+IE_CORE_DECLAREPTR( ImageViewWrapper );
 
-#endif // GAFFERSCENE_ASSIGNMENT_H
+void GafferImageUIBindings::bindImageView()
+{
+
+	GafferBindings::NodeClass<ImageView, ImageViewWrapperPtr>()
+		.def( init<const std::string &, Gaffer::PlugPtr>() )
+	;
+	
+}

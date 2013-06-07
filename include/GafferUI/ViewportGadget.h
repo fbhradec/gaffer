@@ -58,7 +58,7 @@ class ViewportGadget : public IndividualContainer
 		ViewportGadget( GadgetPtr child=0 );
 		virtual ~ViewportGadget();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( ViewportGadget, ViewportGadgetTypeId, IndividualContainer );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::ViewportGadget, ViewportGadgetTypeId, IndividualContainer );
 
 		/// Accepts no parents - the ViewportGadget must always be the topmost Gadget.
 		virtual bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const;
@@ -166,6 +166,8 @@ class ViewportGadget : public IndividualContainer
 		void eventToGadgetSpace( Event &event, Gadget *gadget );
 		void eventToGadgetSpace( ButtonEvent &event, Gadget *gadget );
 		
+		void emitEnterLeaveEvents( GadgetPtr newGadgetUnderMouse, GadgetPtr oldGadgetUnderMouse, const ButtonEvent &event );
+
 		GadgetPtr updatedDragDestination( std::vector<GadgetPtr> &gadgets, const DragDropEvent &event );
 
 		template<typename Event, typename Signal>

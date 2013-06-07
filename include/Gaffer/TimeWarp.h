@@ -52,7 +52,7 @@ class TimeWarp : public ContextProcessor<BaseType>
 		IECORE_RUNTIMETYPED_DECLARETEMPLATE( TimeWarp<BaseType>, ContextProcessor<BaseType> );
 		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( TimeWarp<BaseType> );
 
-		TimeWarp( const std::string &name=staticTypeName() );
+		TimeWarp( const std::string &name=GraphComponent::defaultName<TimeWarp>() );
 		virtual ~TimeWarp();
 		
 		FloatPlug *speedPlug();
@@ -61,7 +61,7 @@ class TimeWarp : public ContextProcessor<BaseType>
 		FloatPlug *offsetPlug();
 		const FloatPlug *offsetPlug() const;
 
-		void affects( const ValuePlug *input, DependencyNode::AffectedPlugsContainer &outputs ) const;
+		void affects( const Plug *input, DependencyNode::AffectedPlugsContainer &outputs ) const;
 		
 	protected :
 
@@ -69,8 +69,8 @@ class TimeWarp : public ContextProcessor<BaseType>
 		
 };
 
-typedef TimeWarp<DependencyNode> TimeWarpDependencyNode;
-IE_CORE_DECLAREPTR( TimeWarpDependencyNode );
+typedef TimeWarp<ComputeNode> TimeWarpComputeNode;
+IE_CORE_DECLAREPTR( TimeWarpComputeNode );
 
 } // namespace Gaffer
 

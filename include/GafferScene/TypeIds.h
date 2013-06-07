@@ -67,7 +67,7 @@ enum TypeId
 	DisplaysTypeId = 110522,
 	OptionsTypeId = 110523,
 	ShaderTypeId = 110524,
-	AssignmentTypeId = 110525,
+	ShaderAssignmentTypeId = 110525,
 	FilterTypeId = 110526,
 	PathFilterTypeId = 110527,
 	AttributesTypeId = 110528,
@@ -93,6 +93,9 @@ enum TypeId
 	ExecutableRenderTypeId = 110548,
 	OpenGLRenderTypeId = 110549,
 	InteractiveRenderTypeId = 110550,
+	CubeTypeId = 110551,
+	SphereTypeId = 110552,
+	TextTypeId = 110553,
 	
 	LastTypeId = 110650
 };

@@ -51,10 +51,11 @@ IE_CORE_DEFINERUNTIMETYPED( Shader );
 size_t Shader::g_firstPlugIndex = 0;
 
 Shader::Shader( const std::string &name )
-	:	Node( name )
+	:	DependencyNode( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "name" ) );
+	addChild( new StringPlug( "type" ) );
 	addChild( new CompoundPlug( "parameters" ) );
 }
 
@@ -71,15 +72,37 @@ const Gaffer::StringPlug *Shader::namePlug() const
 {
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
-		
+
+Gaffer::StringPlug *Shader::typePlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::StringPlug *Shader::typePlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 1 );
+}
+
 Gaffer::CompoundPlug *Shader::parametersPlug()
 {
-	return getChild<CompoundPlug>( g_firstPlugIndex + 1 );
+	return getChild<CompoundPlug>( g_firstPlugIndex + 2 );
 }
 
 const Gaffer::CompoundPlug *Shader::parametersPlug() const
 {
-	return getChild<CompoundPlug>( g_firstPlugIndex + 1 );
+	return getChild<CompoundPlug>( g_firstPlugIndex + 2 );
+}
+
+Gaffer::Plug *Shader::outPlug()
+{
+	// not getting by index, because it is created by the
+	// derived classes in loadShader().
+	return getChild<Plug>( "out" );
+}
+
+const Gaffer::Plug *Shader::outPlug() const
+{
+	return getChild<Plug>( "out" );
 }
 		
 IECore::MurmurHash Shader::stateHash() const
@@ -119,6 +142,33 @@ void Shader::shaderHash( IECore::MurmurHash &h ) const
 			// fall through to hash plug value
 		}
 		(*it)->hash( h );
+	}
+}
+
+void Shader::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+{
+	DependencyNode::affects( input, outputs );
+		
+	if( parametersPlug()->isAncestorOf( input ) )
+	{
+		const Plug *out = outPlug();
+		if( out )
+		{
+			if( out->isInstanceOf( CompoundPlug::staticTypeId() ) )
+			{
+				for( RecursiveValuePlugIterator it( out ); it != it.end(); it++ )
+				{
+					if( !(*it)->isInstanceOf( CompoundPlug::staticTypeId() ) )
+					{
+						outputs.push_back( it->get() );
+					}
+				}
+			}
+			else
+			{
+				outputs.push_back( out );
+			}
+		}
 	}
 }
 

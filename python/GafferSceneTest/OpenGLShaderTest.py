@@ -40,6 +40,7 @@ import IECore
 import IECoreGL
 
 import Gaffer
+import GafferTest
 import GafferImage
 import GafferScene
 import GafferSceneTest
@@ -67,12 +68,28 @@ class OpenGLShaderTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( len( ss ), 1 )
 		self.failUnless( isinstance( ss[0], IECore.Shader ) )
 		
+		self.assertEqual( ss[0].name, "texture" )
+		self.assertEqual( ss[0].type, "gl:surface" )
 		self.assertEqual( ss[0].parameters["mult"], IECore.FloatData( 0.5 ) )
 		self.assertEqual( ss[0].parameters["tint"].value, IECore.Color4f( 1, 0.5, 0.25, 1 ) )
 		self.assertTrue( isinstance( ss[0].parameters["texture"], IECore.CompoundData ) )
 		self.failUnless( "displayWindow" in ss[0].parameters["texture"] )
 		self.failUnless( "dataWindow" in ss[0].parameters["texture"] )
 		self.failUnless( "channels" in ss[0].parameters["texture"] )
+	
+	def testDirtyPropagation( self ) :
+	
+		s = GafferScene.OpenGLShader()
+		s.loadShader( "texture" )
+		
+		i = GafferImage.Constant()
+		s["parameters"]["texture"].setInput( i["out"] )
+		
+		cs = GafferTest.CapturingSlot( s.plugDirtiedSignal() )
+		
+		i["color"]["r"].setValue( 0.1 )
+		
+		self.assertTrue( "OpenGLShader.out" in [ x[0].fullName() for x in cs ] )
 		
 if __name__ == "__main__":
 	unittest.main()

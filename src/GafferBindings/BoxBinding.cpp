@@ -50,7 +50,16 @@ namespace GafferBindings
 
 class BoxSerialiser : public NodeSerialiser
 {
-
+	
+	virtual bool childNeedsSerialisation( const Gaffer::GraphComponent *child ) const
+	{
+		if( child->isInstanceOf( Node::staticTypeId() ) )
+		{
+			return true;
+		}
+		return NodeSerialiser::childNeedsSerialisation( child );
+	}
+	
 	virtual bool childNeedsConstruction( const Gaffer::GraphComponent *child ) const
 	{
 		if( child->isInstanceOf( Node::staticTypeId() ) )
@@ -73,6 +82,7 @@ void bindBox()
 		.def( "canPromotePlug", &Box::canPromotePlug )
 		.def( "promotePlug", &promotePlug )
 		.def( "plugIsPromoted", &Box::plugIsPromoted )
+		.def( "exportForReference", &Box::exportForReference )
 		.def( "create", &Box::create )
 		.staticmethod( "create" )
 	;

@@ -1,6 +1,5 @@
 ##########################################################################
 #  
-#  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 #  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
@@ -35,50 +34,53 @@
 #  
 ##########################################################################
 
-import IECore
-
 import Gaffer
+import GafferScene
+import GafferUI
 
-class SphereNode( Gaffer.DependencyNode ) :
+##########################################################################
+# Metadata
+##########################################################################
 
-	def __init__( self, name="Sphere" ) :
-	
-		Gaffer.DependencyNode.__init__( self, name )
-		
-		radiusPlug = Gaffer.FloatPlug( name="radius", defaultValue=1, minValue=0 )
-		self.addChild( radiusPlug )
-		
-		zMinPlug = Gaffer.FloatPlug( name="zMin", defaultValue=-1, minValue=-1, maxValue=1 )
-		self.addChild( zMinPlug )
-		
-		zMaxPlug = Gaffer.FloatPlug( name="zMax", defaultValue=1, minValue=-1, maxValue=1 )
-		self.addChild( zMaxPlug )
-		
-		thetaPlug = Gaffer.FloatPlug( name="theta", defaultValue=360, minValue=0, maxValue=360 )
-		self.addChild( thetaPlug )
-		
-		resultPlug = Gaffer.ObjectPlug( "out", Gaffer.Plug.Direction.Out, IECore.NullObject.defaultNullObject() )
-		self.addChild( resultPlug )
-		
-	def affects( self, input ) :
+GafferUI.Metadata.registerNodeDescription(
 
-		outputs = []
-		if input.getName() in ( "radius", "zMin", "zMax", "theta" ) :
-			outputs.append( self["out"] )
-			
-		return outputs
+GafferScene.Sphere,
 
-	def hash( self, output, context, h ) :
-	
-		if output.isSame( self["out"] ) :
-			for n in ( "radius", "zMin", "zMax", "theta" ) :
-				self[n].hash( h )
-			
-	def compute( self, plug, context ) :
-	
-		assert( plug.isSame( self["out"] ) )
-		
-		result = IECore.SpherePrimitive( self["radius"].getValue(), self["zMin"].getValue(), self["zMax"].getValue(), self["theta"].getValue() )
-		plug.setValue( result )
+"""A node which produces scenes containing a sphere.""",
 
-IECore.registerRunTimeTyped( SphereNode )
+"type",
+"The type of object to produce. May be a SpherePrimitive or a Mesh.",
+
+"radius",
+"Radius of the sphere.",
+
+"zMin",
+"Limits the extent of the sphere along the lower pole. Valid values are in the range [-1,1] and should always be less than zMax.",
+
+"zMax",
+"Limits the extent of the sphere along the upper pole. Valid values are in the range [-1,1] and should always be greater than zMin.",
+
+"thetaMax",
+"Limits the extent of the sphere around the pole axis. Valid values are in the range [0,360].",
+
+"divisions",
+"Controls tesselation of the sphere when type is Mesh.",
+
+)
+
+##########################################################################
+# Widgets and nodules
+##########################################################################
+
+GafferUI.PlugValueWidget.registerCreator(
+	GafferScene.Sphere.staticTypeId(),
+	"type",
+	GafferUI.EnumPlugValueWidget,
+	labelsAndValues = (
+		( "Primitive", GafferScene.Sphere.Type.Primitive ),
+		( "Mesh", GafferScene.Sphere.Type.Mesh ),
+	),
+)
+
+## \todo: Disable divisions when type is Primitive. There is a similar mechanism in RenderManShaderUI, which
+## could be generalized on StandardNodeUI and used here.

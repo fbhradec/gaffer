@@ -78,7 +78,7 @@ class GafferDisplayDriver : public IECore::ImageDisplayDriver
 
 	public :
 	
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferDisplayDriver, GafferDisplayDriverTypeId, ImageDisplayDriver );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::GafferDisplayDriver, GafferDisplayDriverTypeId, ImageDisplayDriver );
 
 		GafferDisplayDriver( const Imath::Box2i &displayWindow, const Imath::Box2i &dataWindow,
 			const vector<string> &channelNames, ConstCompoundDataPtr parameters )
@@ -218,7 +218,7 @@ const Gaffer::IntPlug *Display::updateCountPlug() const
 	return getChild<IntPlug>( g_firstPlugIndex + 1 );
 }
 				
-void Display::affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const
+void Display::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	ImagePrimitiveNode::affects( input, outputs );
 	

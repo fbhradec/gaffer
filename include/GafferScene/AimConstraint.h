@@ -47,10 +47,10 @@ class AimConstraint : public Constraint
 
 	public :
 
-		AimConstraint( const std::string &name=staticTypeName() );
+		AimConstraint( const std::string &name=defaultName<AimConstraint>() );
 		virtual ~AimConstraint();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( AimConstraint, AimConstraintTypeId, Constraint );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::AimConstraint, AimConstraintTypeId, Constraint );
 		
 		Gaffer::V3fPlug *aimPlug();
 		const Gaffer::V3fPlug *aimPlug() const;
@@ -60,7 +60,7 @@ class AimConstraint : public Constraint
 				
 	protected :
 		
-		virtual bool affectsConstraint( const Gaffer::ValuePlug *input ) const;
+		virtual bool affectsConstraint( const Gaffer::Plug *input ) const;
 		virtual void hashConstraint( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual Imath::M44f computeConstraint( const Imath::M44f &fullTargetTransform, const Imath::M44f &fullInputTransform ) const;
 

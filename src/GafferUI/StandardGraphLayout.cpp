@@ -1,6 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //  
 //  Copyright (c) 2012, John Haddon. All rights reserved.
+//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -38,7 +39,7 @@
 
 #include "Gaffer/Plug.h"
 #include "Gaffer/PlugIterator.h"
-#include "Gaffer/Node.h"
+#include "Gaffer/DependencyNode.h"
 
 #include "GafferUI/StandardGraphLayout.h"
 #include "GafferUI/GraphGadget.h"
@@ -63,34 +64,185 @@ StandardGraphLayout::StandardGraphLayout()
 
 bool StandardGraphLayout::connectNode( GraphGadget *graph, Node *node, Gaffer::Set *potentialInputs ) const
 {
-	// we only want to connect plugs which are visible in the ui - otherwise
-	// things will get very confusing for the user.
+	return connectNodeInternal( graph, node, potentialInputs, true /* insert if possible */ );
+}
+
+bool StandardGraphLayout::connectNodes( GraphGadget *graph, Gaffer::Set *nodes, Gaffer::Set *potentialInputs ) const
+{
+	// find the nodes without existing inputs, and when one of them
+	// accepts connections from potentialInputs call it good.
 	
-	// get all visible output plugs we could potentially connect in to our node
-	vector<Plug *> outputPlugs;
-	for( size_t i = 0; i < potentialInputs->size(); i++ )
+	for( size_t i = 0, s = nodes->size(); i < s; ++i )
 	{
-		const Node *node = IECore::runTimeCast<Node>( potentialInputs->member( i ) );
-		if( node )
+		Node *node = IECore::runTimeCast<Node>( nodes->member( i ) );
+		if( !node )
 		{
-			NodeGadget *nodeGadget = graph->nodeGadget( node );
-			if( nodeGadget )
+			continue;
+		}
+		NodeGadget *nodeGadget = graph->nodeGadget( node );
+		if( !nodeGadget )
+		{
+			continue;
+		}
+		
+		bool hasInputs = false;
+		for( RecursiveInputPlugIterator it( node ); it != it.end(); ++it )
+		{
+			if( (*it)->getInput<Plug>() && nodeGadget->nodule( it->get() ) )
 			{
-				for( OutputPlugIterator it( node ); it != it.end(); it++ )
-				{
-					if( nodeGadget->nodule( *it ) )
-					{
-						outputPlugs.push_back( it->get() );
-					}
-				}
+				hasInputs = true;
+				break;
 			}
 		}
+		if( hasInputs )
+		{
+			continue;
+		}
+		
+		if( connectNodeInternal( graph, node, potentialInputs, nodes->size() == 1 /* only insert if there's only one node */ ) )
+		{
+			return true;
+		}
+	}
+	
+	return false;
+}
+
+void StandardGraphLayout::positionNode( GraphGadget *graph, Gaffer::Node *node, const Imath::V2f &fallbackPosition ) const
+{
+	Box2f hardConstraint;
+	V2f softConstraint, position;
+	if( nodeConstraints( graph, node, 0, hardConstraint, softConstraint ) )
+	{
+		if( hardConstraint.min.x < hardConstraint.max.x ) // hard constraint is achievable
+		{
+			position.x = clamp( softConstraint.x, hardConstraint.min.x, hardConstraint.max.x );
+		}
+		else
+		{
+			position.x = hardConstraint.center().x;
+		}
+		
+		if( hardConstraint.min.y < hardConstraint.max.y ) // hard constraint is achievable
+		{
+			position.y = clamp( softConstraint.y, hardConstraint.min.y, hardConstraint.max.y );
+		}
+		else
+		{
+			position.y = hardConstraint.center().y;
+		}
+	}
+	else
+	{
+		position = fallbackPosition;
+	}
+	
+	graph->setNodePosition( node, position );
+}
+
+void StandardGraphLayout::positionNodes( GraphGadget *graph, Gaffer::Set *nodes, const Imath::V2f &fallbackPosition ) const
+{
+	// get the centre of the bunch of nodes we're positioning
+	
+	V2f centroid( 0 );
+	size_t numNodes = 0;
+	for( size_t i=0, s=nodes->size(); i<s; ++i )
+	{
+		Node *node = IECore::runTimeCast<Node>( nodes->member( i ) );
+		if( !node )
+		{
+			continue;
+		}
+		centroid += graph->getNodePosition( node );
+		numNodes++;
+	}
+	
+	centroid /= numNodes;
+	
+	// figure out the hard and soft constraints per node, combining them
+	// to produce constraints for the centroid.
+	
+	size_t numConstraints = 0;
+	V2f softConstraint( 0 );
+	Box2f hardConstraint = Box2f( V2f( V2f::baseTypeMin() ), V2f( V2f::baseTypeMax() ) );
+
+	for( size_t i=0, s=nodes->size(); i<s; ++i )
+	{
+		Node *node = IECore::runTimeCast<Node>( nodes->member( i ) );
+		if( !node )
+		{
+			continue;
+		}
+	
+		V2f nodeSoftConstraint;
+		Box2f nodeHardConstraint;
+		if( nodeConstraints( graph, node, nodes, nodeHardConstraint, nodeSoftConstraint ) )
+		{
+			const V2f nodeOffset = graph->getNodePosition( node ) - centroid;
+			
+			nodeHardConstraint.min -= nodeOffset;
+			nodeHardConstraint.max -= nodeOffset;
+						
+			hardConstraint.min.x = std::max( hardConstraint.min.x, nodeHardConstraint.min.x );
+			hardConstraint.min.y = std::max( hardConstraint.min.y, nodeHardConstraint.min.y );
+			hardConstraint.max.x = std::min( hardConstraint.max.x, nodeHardConstraint.max.x );
+			hardConstraint.max.y = std::min( hardConstraint.max.y, nodeHardConstraint.max.y );
+		
+			softConstraint += nodeSoftConstraint - nodeOffset;
+		
+			numConstraints += 1;
+		}
+	
 	}
 		
-	if( !outputPlugs.size() )
+	V2f newCentroid;
+	if( numConstraints )
 	{
-		return false;
+		softConstraint /= numConstraints;
+		
+		if( hardConstraint.min.x < hardConstraint.max.x ) // hard constraint is achievable
+		{
+			newCentroid.x = clamp( softConstraint.x, hardConstraint.min.x, hardConstraint.max.x );
+		}
+		else
+		{
+			newCentroid.x = hardConstraint.center().x;
+		}
+		
+		if( hardConstraint.min.y < hardConstraint.max.y ) // hard constraint is achievable
+		{
+			newCentroid.y = clamp( softConstraint.y, hardConstraint.min.y, hardConstraint.max.y );
+		}
+		else
+		{
+			newCentroid.y = hardConstraint.center().y;
+		}
 	}
+	else
+	{
+		newCentroid = fallbackPosition;
+	}
+	
+	// apply the offset between the old and new centroid to the nodes
+	
+	for( size_t i=0, s=nodes->size(); i<s; ++i )
+	{
+		Node *node = IECore::runTimeCast<Node>( nodes->member( i ) );
+		if( !node )
+		{
+			continue;
+		}
+	
+		const V2f nodeOffset = graph->getNodePosition( node ) - centroid;
+		graph->setNodePosition( node, newCentroid + nodeOffset );
+	}
+	
+}
+
+bool StandardGraphLayout::connectNodeInternal( GraphGadget *graph, Gaffer::Node *node, Gaffer::Set *potentialInputs, bool insertIfPossible ) const
+{
+	// we only want to connect plugs which are visible in the ui - otherwise
+	// things will get very confusing for the user.
 	
 	// get the gadget for the target node
 	NodeGadget *nodeGadget = graph->nodeGadget( node );
@@ -98,10 +250,18 @@ bool StandardGraphLayout::connectNode( GraphGadget *graph, Node *node, Gaffer::S
 	{
 		return false;
 	}
-
+	
+	// get all visible output plugs we could potentially connect in to our node
+	vector<Plug *> outputPlugs;
+	if( !this->outputPlugs( graph, potentialInputs, outputPlugs ) )
+	{
+		return false;
+	}
+	
 	// iterate over the output plugs, connecting them in to the node if we can
 	
-	bool result = false;
+	size_t numConnectionsMade = 0;
+	Plug *firstConnectionSrc = 0, *firstConnectionDst = 0;
 	vector<Plug *> inputPlugs;
 	unconnectedInputPlugs( nodeGadget, inputPlugs );
 	for( vector<Plug *>::const_iterator oIt = outputPlugs.begin(), oEIt = outputPlugs.end(); oIt != oEIt; oIt++ )
@@ -111,7 +271,12 @@ bool StandardGraphLayout::connectNode( GraphGadget *graph, Node *node, Gaffer::S
 			if( (*iIt)->acceptsInput( *oIt ) )
 			{
 				(*iIt)->setInput( *oIt );
-				result = true;
+				if( numConnectionsMade == 0 )
+				{
+					firstConnectionSrc = *oIt;
+					firstConnectionDst = *iIt;
+				}
+				numConnectionsMade += 1;
 				// some nodes dynamically add new inputs when we connect
 				// existing inputs, so we recalculate the input plugs
 				// to take account
@@ -120,78 +285,167 @@ bool StandardGraphLayout::connectNode( GraphGadget *graph, Node *node, Gaffer::S
 			}
 		}
 	}
-	
-	return result;
 
-}
-
-bool StandardGraphLayout::positionNode( GraphGadget *graph, Gaffer::Node *node ) const
-{
-	NodeGadget *nodeGadget = graph->nodeGadget( node );
-	if( !nodeGadget )
-	{
-		return false;
-	}
-	
-	// try to figure out the node position based on its input connections
-	std::vector<const ConnectionGadget *> connections;
-	for( InputPlugIterator it( node ); it != it.end(); it++ )
-	{
-		const ConnectionGadget *connection = graph->connectionGadget( *it );
-		if( connection )
-		{
-			connections.push_back( connection );
-		}
-	}
-	
-	if( !connections.size() )
-	{
-		return false;
-	}
-	
-	V3f	srcNoduleCentroid( 0 );
-	V2f floorPos( V2f::baseTypeMin(), V2f::baseTypeMax() );
-		
-	for( std::vector<const ConnectionGadget *>::const_iterator it = connections.begin(), eIt = connections.end(); it != eIt; it++ )
-	{
-		const Nodule *srcNodule = (*it)->srcNodule();
-		V3f	srcNodulePos = srcNodule->transformedBound( 0 ).center();
-		srcNoduleCentroid += srcNodulePos;
-		
-		const NodeGadget *srcNodeGadget = srcNodule->ancestor<NodeGadget>();
-		V3f srcTangent = srcNodeGadget->noduleTangent( srcNodule );
-		
-		if( srcTangent.dot( V3f( 0, -1, 0 ) ) > 0.5f )
-		{
-			floorPos.y = std::min( floorPos.y, srcNodulePos.y - 10.0f );
-		}
-		if( srcTangent.dot( V3f( 1, 0, 0 ) ) > 0.5f )
-		{
-			floorPos.x = std::max( floorPos.x, srcNodulePos.x + 10.0f );
-		}
-	}
-
-	srcNoduleCentroid /= connections.size();
-	V2f nodePosition(
-		std::max( srcNoduleCentroid.x, floorPos.x ),
-		std::min( srcNoduleCentroid.y, floorPos.y )
-	);
+	// if only one connection was made, then try to insert the node into
+	// the existing connections from the source.
 			
-	// apply the position
-	
-	graph->setNodePosition( node, V2f( nodePosition.x, nodePosition.y ) );
-	
-	return true;
+	if( numConnectionsMade == 1 && insertIfPossible )
+	{
+		Plug *correspondingOutput = this->correspondingOutput( firstConnectionDst );
+		if( correspondingOutput )
+		{
+			bool allCompatible = true;
+			const Plug::OutputContainer &outputs = firstConnectionSrc->outputs();
+			for( Plug::OutputContainer::const_iterator it = outputs.begin(); it != outputs.end(); ++it )
+			{
+				if( !(*it)->acceptsInput( correspondingOutput ) )
+				{
+					allCompatible = false;
+					break;
+				}
+			}
+			
+			if( allCompatible )
+			{
+				for( Plug::OutputContainer::const_iterator it = outputs.begin(); it != outputs.end(); )
+				{
+					Plug *p = *it;
+					++it; // increment now because it gets invalidated by the setInput().
+					if( p != firstConnectionDst )
+					{
+						p->setInput( correspondingOutput );
+					}
+				}
+			}
+		}
+	}
+
+	return numConnectionsMade;
 }
 
-void StandardGraphLayout::unconnectedInputPlugs( NodeGadget *nodeGadget, std::vector<Plug *> &plugs ) const
+size_t StandardGraphLayout::outputPlugs( NodeGadget *nodeGadget, std::vector<Gaffer::Plug *> &plugs ) const
+{
+	for( RecursiveOutputPlugIterator it( nodeGadget->node() ); it != it.end(); it++ )
+	{
+		if( nodeGadget->nodule( *it ) )
+		{
+			plugs.push_back( it->get() );
+		}
+	}
+	
+	return plugs.size();
+}
+
+size_t StandardGraphLayout::outputPlugs( GraphGadget *graph, Gaffer::Set *nodes, std::vector<Gaffer::Plug *> &plugs ) const
+{
+	for( size_t i = 0; i < nodes->size(); i++ )
+	{
+		const Node *node = IECore::runTimeCast<Node>( nodes->member( i ) );
+		if( node )
+		{
+			NodeGadget *nodeGadget = graph->nodeGadget( node );
+			if( nodeGadget )
+			{
+				outputPlugs( nodeGadget, plugs );
+			}
+		}
+	}
+	return plugs.size();
+}
+
+size_t StandardGraphLayout::unconnectedInputPlugs( NodeGadget *nodeGadget, std::vector<Plug *> &plugs ) const
 {
 	plugs.clear();
-	for( InputPlugIterator it( nodeGadget->node() ); it != it.end(); it++ )
+	for( RecursiveInputPlugIterator it( nodeGadget->node() ); it != it.end(); it++ )
 	{
 		if( (*it)->getInput<Plug>() == 0 and nodeGadget->nodule( *it ) )
 		{
 			plugs.push_back( it->get() );
 		}
 	}
+	return plugs.size();
+}
+
+Gaffer::Plug *StandardGraphLayout::correspondingOutput( const Gaffer::Plug *input ) const
+{
+	/// \todo Consider adding this to DependencyNode as a correspondingOutput() method. If we do,
+	/// then the method should be virtual and we should reimplement it more efficiently in derived
+	/// classes wherever possible.
+	const DependencyNode *dependencyNode = IECore::runTimeCast<const DependencyNode>( input->node() );
+	if( !dependencyNode )
+	{
+		return 0;
+	}
+		
+	for( RecursiveOutputPlugIterator it( dependencyNode ); it != it.end(); ++it )
+	{
+		if( dependencyNode->correspondingInput( *it ) == input )
+		{
+			return it->get();
+		}
+	}
+	
+	return 0;
+}
+
+bool StandardGraphLayout::nodeConstraints( GraphGadget *graph, Gaffer::Node *node, Gaffer::Set *excludedNodes, Imath::Box2f &hardConstraint, Imath::V2f &softConstraint ) const
+{
+	// find all the connections which aren't excluded
+	
+	std::vector<ConnectionGadget *> connections;
+	if( !graph->connectionGadgets( node, connections, excludedNodes ) )
+	{
+		// there's nothing to go on - give up
+		return false;
+	}
+	
+	// figure out a position based on those connections
+	
+	softConstraint = V2f( 0 );
+	hardConstraint = Box2f( V2f( V2f::baseTypeMin() ), V2f( V2f::baseTypeMax() ) );
+	
+	for( std::vector<ConnectionGadget *>::const_iterator it = connections.begin(), eIt = connections.end(); it != eIt; it++ )
+	{
+		// find the nodule at the other end of the connection
+		const ConnectionGadget *connection = *it;
+		const Nodule *nodule = 0;
+		if( connection->srcNodule()->plug()->node() == node )
+		{
+			nodule = connection->dstNodule();
+		}
+		else
+		{
+			nodule = connection->srcNodule();
+		}
+	
+		// use it to update the constraints
+		
+		V3f	nodulePos = nodule->transformedBound( 0 ).center();		
+		softConstraint += V2f( nodulePos.x, nodulePos.y );
+		
+		const NodeGadget *nodeGadget = nodule->ancestor<NodeGadget>();
+		V3f tangent = nodeGadget->noduleTangent( nodule );
+		
+		if( tangent.dot( V3f( 0, -1, 0 ) ) > 0.5f ) // down
+		{
+			hardConstraint.max.y = std::min( hardConstraint.max.y, nodulePos.y - 10.0f );
+		}
+		else if( tangent.dot( V3f( 0, 1, 0 ) ) > 0.5f ) // up
+		{
+			hardConstraint.min.y = std::max( hardConstraint.min.y, nodulePos.y + 10.0f );
+		}
+		
+		if( tangent.dot( V3f( 1, 0, 0 ) ) > 0.5f ) // right
+		{
+			hardConstraint.min.x = std::max( hardConstraint.min.x, nodulePos.x + 10.0f );
+		}
+		else if( tangent.dot( V3f( -1, 0, 0 ) ) > 0.5f ) // left
+		{
+			hardConstraint.max.x = std::min( hardConstraint.max.x, nodulePos.x - 10.0f );
+		}
+	}
+
+	softConstraint /= connections.size();
+	
+	return true;
 }

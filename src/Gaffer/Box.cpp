@@ -36,12 +36,14 @@
 
 #include "boost/format.hpp"
 #include "boost/algorithm/string/replace.hpp"
+#include "boost/regex.hpp"
 
 #include "Gaffer/Box.h"
 #include "Gaffer/StandardSet.h"
 #include "Gaffer/PlugIterator.h"
 #include "Gaffer/NumericPlug.h"
 #include "Gaffer/CompoundPlug.h"
+#include "Gaffer/ScriptNode.h"
 
 using namespace Gaffer;
 
@@ -70,6 +72,19 @@ Plug *Box::promotePlug( Plug *descendantPlug )
 
 	PlugPtr externalPlug = descendantPlug->createCounterpart( externalPlugName, Plug::In );
 	externalPlug->setFlags( Plug::Dynamic, true );
+	// flags are not automatically propagated to the children of compound plugs,
+	// so we need to do that ourselves.
+	if( externalPlug->typeId() == Gaffer::CompoundPlug::staticTypeId() )
+	{
+		for( RecursivePlugIterator it( externalPlug ); it != it.end(); ++it )
+		{
+			(*it)->setFlags( Plug::Dynamic, true );
+			if( (*it)->typeId() != Gaffer::CompoundPlug::staticTypeId() )
+			{
+				it.prune();
+			}
+		}
+	}
 
 	ValuePlug *externalValuePlug = IECore::runTimeCast<ValuePlug>( externalPlug );
 	if( externalValuePlug )
@@ -107,6 +122,22 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool throwException
 		}
 	}
 
+	if( !descendantPlug->getFlags( Plug::Serialisable ) )
+	{
+		if( !throwExceptions )
+		{
+			return false;
+		}
+		else
+		{
+			throw IECore::Exception(
+				boost::str(
+					boost::format( "Cannot promote plug \"%s\" as it is not serialisable." ) % descendantPlug->fullName()
+				)
+			);
+		}
+	}
+	
 	if( !descendantPlug->getFlags( Plug::AcceptsInputs ) )
 	{
 		if( !throwExceptions )
@@ -157,6 +188,38 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool throwException
 	}
 
 	return true;
+}
+
+void Box::exportForReference( const std::string &fileName ) const
+{
+	const ScriptNode *script = scriptNode();
+	if( !script )
+	{
+		throw IECore::Exception( "Box::exportForReference called without ScriptNode" );
+	}
+	
+	// we only want to save out our child nodes, user plugs and in*/out* plugs so we build a filter.
+	// to specify just the things to export.
+	
+	boost::regex inOrOut( "^in|out[0-9]*$" );
+	StandardSetPtr toExport = new StandardSet;
+	for( ChildIterator it = children().begin(), eIt = children().end(); it != eIt; ++it )
+	{
+		if( (*it)->isInstanceOf( Node::staticTypeId() ) )
+		{
+			toExport->add( *it );
+		}
+		else if( const Plug *plug = IECore::runTimeCast<Plug>( it->get() ) )
+		{
+			if( plug == userPlug() || boost::regex_match( plug->getName().c_str(), inOrOut ) )
+			{
+				toExport->add( *it );	
+			}
+		}
+	}
+	
+	script->serialiseToFile( fileName, this, toExport.get() );
+
 }
 
 BoxPtr Box::create( Node *parent, const Set *childNodes )
@@ -238,7 +301,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 		}
 		// reparent the child under the Box. it's important that we do this after adding the intermediate
 		// input plugs, so that when they are serialised and reloaded, the inputs to the box are set before
-		// the inputs to the nodes inside the box - see GafferSceneTest.AssignmentTest.testAssignShaderFromOutsideBox
+		// the inputs to the nodes inside the box - see GafferSceneTest.ShaderAssignmentTest.testAssignShaderFromOutsideBox
 		// for a test case highlighting this necessity.
 		result->addChild( childNode );
 	}

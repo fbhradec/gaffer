@@ -49,16 +49,16 @@ class AttributeCache : public SceneElementProcessor
 
 	public :
 
-		AttributeCache( const std::string &name=staticTypeName() );
+		AttributeCache( const std::string &name=defaultName<AttributeCache>() );
 		virtual ~AttributeCache();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( AttributeCache, AttributeCacheTypeId, SceneElementProcessor );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::AttributeCache, AttributeCacheTypeId, SceneElementProcessor );
 		
 		/// Holds the name of the attribute cache file or sequence to be loaded.
 		Gaffer::StringPlug *fileNamePlug();
 		const Gaffer::StringPlug *fileNamePlug() const;
 
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 				
 	protected :
 		

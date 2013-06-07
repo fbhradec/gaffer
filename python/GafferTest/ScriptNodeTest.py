@@ -60,7 +60,7 @@ class ScriptNodeTest( unittest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		self.assertEqual( s.getName(), "ScriptNode" )
 		
-		self.assertEqual( s["fileName"].typeName(), "StringPlug" )
+		self.assertEqual( s["fileName"].typeName(), "Gaffer::StringPlug" )
 		
 	def testExecution( self ) :
 	
@@ -96,7 +96,7 @@ class ScriptNodeTest( unittest.TestCase ) :
 		self.assertEqual( ScriptNodeTest.lastResult, 100 )
 				
 		p = s.evaluate( "Gaffer.IntPlug()" )
-		self.assertEqual( p.typeName(), "IntPlug" )
+		self.assertEqual( p.typeName(), "Gaffer::IntPlug" )
 		self.assertEqual( ScriptNodeTest.lastNode, s )
 		self.assertEqual( ScriptNodeTest.lastScript, "Gaffer.IntPlug()" )
 		self.assert_( p.isSame( ScriptNodeTest.lastResult ) )
@@ -262,7 +262,7 @@ class ScriptNodeTest( unittest.TestCase ) :
 		s2 = Gaffer.ScriptNode()
 		s2.execute( se )
 		
-		self.assertEqual( s2["in"].typeName(), "Node" )
+		self.assertEqual( s2["in"].typeName(), "Gaffer::Node" )
 	
 	# Executing the result of serialise() shouldn't leave behind any residue.
 	def testSerialisationPollution( self ) :
@@ -860,7 +860,52 @@ a = A()"""
 		
 		s.load()
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
+	
+	def testSerialiseToFile( self ) :
+	
+		s = Gaffer.ScriptNode()
 		
+		s["n1"] = GafferTest.AddNode()
+		s["n2"] = GafferTest.AddNode()
+		s["n2"]["op1"].setInput( s["n1"]["sum"] )
+		
+		s.serialiseToFile( "/tmp/test.gfr" )
+		
+		s2 = Gaffer.ScriptNode()
+		s2["fileName"].setValue( "/tmp/test.gfr" )
+		s2.load()
+		
+		self.assertTrue( "n1" in s2 )
+		self.assertTrue( "n2" in s2 )
+		self.assertTrue( s2["n2"]["op1"].getInput().isSame( s2["n1"]["sum"] ) )
+		
+		s.serialiseToFile( "/tmp/test.gfr", filter = Gaffer.StandardSet( [ s["n2"] ] ) )
+		
+		s3 = Gaffer.ScriptNode()
+		s3["fileName"].setValue( "/tmp/test.gfr" )
+		s3.load()
+		
+		self.assertTrue( "n1" not in s3 )
+		self.assertTrue( "n2" in s3 )
+	
+	def testExecuteFile( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["n1"] = GafferTest.AddNode()
+		s["n2"] = GafferTest.AddNode()
+		s["n2"]["op1"].setInput( s["n1"]["sum"] )
+		
+		s.serialiseToFile( "/tmp/test.gfr" )
+		
+		s2 = Gaffer.ScriptNode()
+		
+		self.assertRaises( RuntimeError, s2.executeFile, "thisFileDoesntExist.gfr" )
+		
+		s2.executeFile( "/tmp/test.gfr" )
+		
+		self.assertTrue( s2["n2"]["op1"].getInput().isSame( s2["n1"]["sum"] ) )
+				
 	def tearDown( self ) :
 	
 		for f in (

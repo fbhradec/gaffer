@@ -53,15 +53,15 @@ class PathFilter : public Filter
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( PathFilter, PathFilterTypeId, Filter );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::PathFilter, PathFilterTypeId, Filter );
 
-		PathFilter( const std::string &name=staticTypeName() );
+		PathFilter( const std::string &name=defaultName<PathFilter>() );
 		virtual ~PathFilter();
 		
 		Gaffer::StringVectorDataPlug *pathsPlug();
 		const Gaffer::StringVectorDataPlug *pathsPlug() const;
 				
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 
 	protected :
 

@@ -69,7 +69,7 @@ ImagePrimitiveSource<BaseType>::~ImagePrimitiveSource()
 }
 
 template<typename BaseType>
-void ImagePrimitiveSource<BaseType>::affects( const Gaffer::ValuePlug *input, Gaffer::DependencyNode::AffectedPlugsContainer &outputs ) const
+void ImagePrimitiveSource<BaseType>::affects( const Gaffer::Plug *input, Gaffer::DependencyNode::AffectedPlugsContainer &outputs ) const
 {
 	BaseType::affects( input, outputs );
 	
@@ -163,8 +163,9 @@ GafferImage::Format ImagePrimitiveSource<BaseType>::computeFormat( const Gaffer:
 	if( image )
 	{
 		result = image->getDisplayWindow();
+		return GafferImage::Format( result.size().x+1, result.size().y+1 );
 	}
-	return GafferImage::Format( result.max[0]-result.min[0]+1, result.max[1]-result.min[1]+1 );
+	return GafferImage::Format();
 }
 
 template<typename BaseType>

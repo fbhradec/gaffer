@@ -95,10 +95,10 @@ class Plug : public GraphComponent
 			All = Dynamic | Serialisable | AcceptsInputs | PerformsSubstitutions | Cacheable | ReadOnly
 		};
 	
-		Plug( const std::string &name=staticTypeName(), Direction direction=In, unsigned flags=Default );
+		Plug( const std::string &name=defaultName<Plug>(), Direction direction=In, unsigned flags=Default );
 		virtual ~Plug();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Plug, PlugTypeId, GraphComponent );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Plug, PlugTypeId, GraphComponent );
 
 		/// @name Parent-child relationships
 		//////////////////////////////////////////////////////////////////////
@@ -176,8 +176,15 @@ class Plug : public GraphComponent
 	
 	protected :
 	
+		/// Emits the dirty signal for this plug, and all ancestor plugs up
+		/// to node(). The result of node() can be passed to avoid repeatedly
+		/// finding the node in the case of making repeated calls.
+		void emitDirtiness( Node *n = 0 );
+		/// Calls emitDirtiness() on affected plugs and output connections.
+		void propagateDirtiness();
+		
 		virtual void parentChanging( Gaffer::GraphComponent *newParent );
-					
+		
 	private :
 
 		void setInputInternal( PlugPtr input, bool emit );

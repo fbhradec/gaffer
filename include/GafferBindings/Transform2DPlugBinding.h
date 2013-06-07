@@ -1,6 +1,5 @@
 //////////////////////////////////////////////////////////////////////////
 //  
-//  Copyright (c) 2012, John Haddon. All rights reserved.
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
@@ -16,7 +15,7 @@
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
 //  
-//      * Neither the name of John Haddon nor the names of
+//      * Neither the name of Image Engine Design nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
@@ -35,76 +34,14 @@
 //  
 //////////////////////////////////////////////////////////////////////////
 
-#include "GafferScene/Assignment.h"
-#include "GafferScene/Shader.h"
+#ifndef GAFFERBINDINGS_TRANSFORM2DPLUGBINDING_H
+#define GAFFERBINDINGS_TRANSFORM2DPLUGBINDING_H
 
-using namespace IECore;
-using namespace Gaffer;
-using namespace GafferScene;
-
-IE_CORE_DEFINERUNTIMETYPED( Assignment );
-
-size_t Assignment::g_firstPlugIndex = 0;
-
-Assignment::Assignment( const std::string &name )
-	:	SceneElementProcessor( name )
+namespace GafferBindings
 {
-	storeIndexOfNextChild( g_firstPlugIndex );
-	addChild( new Plug( "shader" ) );
-}
 
-Assignment::~Assignment()
-{
-}
+void bindTransform2DPlug();
 
-Gaffer::Plug *Assignment::shaderPlug()
-{
-	return getChild<Plug>( g_firstPlugIndex );
-}
+} // namespace GafferBindings
 
-const Gaffer::Plug *Assignment::shaderPlug() const
-{
-	return getChild<Plug>( g_firstPlugIndex );
-}
-
-bool Assignment::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const
-{
-	if( !SceneElementProcessor::acceptsInput( plug, inputPlug ) )
-	{
-		return false;
-	}
-	
-	if( plug == shaderPlug() )
-	{
-		return inputPlug->source<Plug>()->ancestor<Shader>();
-	}
-	return true;
-}
-
-bool Assignment::processesAttributes() const
-{
-	return true;
-}
-
-void Assignment::hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	const Shader *shader = shaderPlug()->source<Plug>()->ancestor<Shader>();
-	if( shader )
-	{
-		shader->stateHash( h );
-	}
-}
-		
-IECore::ConstCompoundObjectPtr Assignment::computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputAttributes ) const
-{
-	CompoundObjectPtr result = inputAttributes->copy();
-	
-	const Shader *shader = shaderPlug()->source<Plug>()->ancestor<Shader>();
-	if( shader )
-	{
-		IECore::ObjectVectorPtr state = shader->state();
-		result->members()["shader"] = state;
-	}
-	
-	return result;
-}
+#endif // GAFFERBINDINGS_TRANSFORM2DPLUGBINDING_H

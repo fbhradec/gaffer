@@ -1,6 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //  
 //  Copyright (c) 2012, John Haddon. All rights reserved.
+//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -49,15 +50,18 @@ class Plane : public ObjectSource
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Plane, PlaneTypeId, ObjectSource );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Plane, PlaneTypeId, ObjectSource );
 
-		Plane( const std::string &name=staticTypeName() );
+		Plane( const std::string &name=defaultName<Plane>() );
 		virtual ~Plane();
 		
 		Gaffer::V2fPlug *dimensionsPlug();
 		const Gaffer::V2fPlug *dimensionsPlug() const;
 		
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::V2iPlug *divisionsPlug();
+		const Gaffer::V2iPlug *divisionsPlug() const;
+		
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 		
 	protected :
 

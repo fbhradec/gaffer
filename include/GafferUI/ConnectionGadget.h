@@ -58,7 +58,7 @@ class ConnectionGadget : public Gadget
 		ConnectionGadget( GafferUI::NodulePtr srcNodule, GafferUI::NodulePtr dstNodule );
 		virtual ~ConnectionGadget();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( ConnectionGadget, ConnectionGadgetTypeId, Gadget );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::ConnectionGadget, ConnectionGadgetTypeId, Gadget );
 		
 		/// Accepts only GraphGadgets as parent.
 		virtual bool acceptsParent( const Gaffer::GraphComponent *potentialParent ) const;		
@@ -74,6 +74,11 @@ class ConnectionGadget : public Gadget
 		const Nodule *dstNodule() const;
 		/// May be called to change the connection represented by this gadget.
 		void setNodules( GafferUI::NodulePtr srcNodule, GafferUI::NodulePtr dstNodule );
+
+		/// May be called by the recipient of a drag to set a more appropriate position
+		/// and tangent for the connection as the drag progresses within the destination.
+		/// Throws if this connection is not currently the source of a connection.
+		void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent );
 
 		virtual std::string getToolTip( const IECore::LineSegment3f &line ) const;
 		

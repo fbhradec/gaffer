@@ -66,14 +66,17 @@
 #include "GafferBindings/BoxPlugBinding.h"
 #include "GafferBindings/ExpressionBinding.h"
 #include "GafferBindings/TransformPlugBinding.h"
+#include "GafferBindings/Transform2DPlugBinding.h"
 #include "GafferBindings/CompoundDataPlugBinding.h"
 #include "GafferBindings/RandomBinding.h"
 #include "GafferBindings/DependencyNodeBinding.h"
+#include "GafferBindings/ComputeNodeBinding.h"
 #include "GafferBindings/BoxBinding.h"
 #include "GafferBindings/ActionBinding.h"
 #include "GafferBindings/ExecutableOpHolderBinding.h"
 #include "GafferBindings/ExecutableNodeBinding.h"
 #include "GafferBindings/DespatcherBinding.h"
+#include "GafferBindings/ReferenceBinding.h"
 
 using namespace Gaffer;
 using namespace GafferBindings;
@@ -86,6 +89,7 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindGraphComponent();
 	bindNode();
 	bindDependencyNode();
+	bindComputeNode();
 	bindPlug();
 	bindValuePlug();
 	bindNumericPlug();
@@ -110,6 +114,7 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindBoxPlug();
 	bindExpression();
 	bindTransformPlug();
+	bindTransform2DPlug();
 	bindCompoundDataPlug();
 	bindRandom();
 	bindBox();
@@ -117,9 +122,10 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindExecutableNode();
 	bindDespatcher();
 	bindExecutableOpHolder();
+	bindReference();
 			
-	DependencyNodeClass<ContextProcessorDependencyNode>();
-	DependencyNodeClass<TimeWarpDependencyNode>();
-	DependencyNodeClass<ContextVariablesDependencyNode>();
+	DependencyNodeClass<ContextProcessorComputeNode>();
+	DependencyNodeClass<TimeWarpComputeNode>();
+	DependencyNodeClass<ContextVariablesComputeNode>();
 
 }

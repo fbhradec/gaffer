@@ -333,6 +333,50 @@ class BoxTest( unittest.TestCase ) :
 		self.assertTrue( b["n"]["c"]["b"].getInput().isSame( p["b"] ) )
 		self.assertEqual( p.getValue(), IECore.Color3f( 1, 0, 1 ) )
 
+	def testPromoteCompoundPlugAndSerialise( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["n"] = GafferTest.CompoundPlugNode()
+		s["n"]["p"]["s"].setValue( "hello" )
+		
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
+		b.promotePlug( b["n"]["p"] )
+		
+		ss = s.serialise()
+		
+		s = Gaffer.ScriptNode()
+		s.execute( ss )
+
+		self.assertEqual( s["Box"]["n"]["p"]["s"].getValue(), "hello" )
+
+	def testPromoteDynamicColorPlugAndSerialise( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["c"] = Gaffer.Color3fPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
+		b.promotePlug( b["n"]["c"] )
+		
+		ss = s.serialise()
+				
+		s = Gaffer.ScriptNode()
+		s.execute( ss )
+		
+		self.assertTrue( isinstance( s["Box"]["user"]["n_c"], Gaffer.Color3fPlug ) )
+		self.assertTrue( s["Box"]["n"]["c"].getInput().isSame( s["Box"]["user"]["n_c"] ) )
+	
+	def testCantPromoteNonSerialisablePlugs( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["p"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default & ~Gaffer.Plug.Flags.Serialisable )
+		
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
+		self.assertEqual( b.canPromotePlug( b["n"]["p"] ), False )
+		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["p"] )
+		
 if __name__ == "__main__":
 	unittest.main()
 	

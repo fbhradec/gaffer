@@ -52,13 +52,13 @@ class ContextVariables : public ContextProcessor<BaseType>
 		IECORE_RUNTIMETYPED_DECLARETEMPLATE( ContextVariables<BaseType>, ContextProcessor<BaseType> );
 		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( ContextVariables<BaseType> );
 
-		ContextVariables( const std::string &name=staticTypeName() );
+		ContextVariables( const std::string &name=GraphComponent::defaultName<ContextVariables>() );
 		virtual ~ContextVariables();
 		
 		CompoundDataPlug *variablesPlug();
 		const CompoundDataPlug *variablesPlug() const;
 
-		void affects( const ValuePlug *input, DependencyNode::AffectedPlugsContainer &outputs ) const;
+		void affects( const Plug *input, DependencyNode::AffectedPlugsContainer &outputs ) const;
 		
 	protected :
 
@@ -70,8 +70,8 @@ class ContextVariables : public ContextProcessor<BaseType>
 		
 };
 
-typedef ContextVariables<DependencyNode> ContextVariablesDependencyNode;
-IE_CORE_DECLAREPTR( ContextVariablesDependencyNode );
+typedef ContextVariables<ComputeNode> ContextVariablesComputeNode;
+IE_CORE_DECLAREPTR( ContextVariablesComputeNode );
 
 } // namespace Gaffer
 

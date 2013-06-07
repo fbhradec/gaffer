@@ -363,7 +363,12 @@ class Widget( object ) :
 	## This signal is emitted if a previous buttonPressSignal() returned true, and the
 	# user has subsequently moved the mouse with the button down. To initiate a drag
 	# a Widget must return an IECore::RunTimeTyped object representing the data being
-	# dragged. When a drag is in motion, dragEnterSignals are emitted as the cursor
+	# dragged - note that this return type differs from many signals where either True
+	# or False is returned, and that a False return value will actually initiate a 
+	# drag with IECore.BoolData( False ) which is almost certainly not what is intended.
+	# Return None to signify that no drag should be initiated.
+	#
+	# When a drag is in motion, dragEnterSignals are emitted as the cursor
 	# enters Widgets, and if True is returned, that Widget becomes the current target for the
 	# drag. The target widget receives dragMoveSignals and a dropSignal when
 	# the drag ends. Finally, the originating Widget receives a dragEndSignal
@@ -465,6 +470,19 @@ class Widget( object ) :
 		assert( isinstance( toolTip, basestring ) )
 		
 		self._qtWidget().setToolTip( toolTip )
+
+	## Returns the current position of the mouse. If relativeTo
+	# is not specified, then the position will be in screen coordinates,
+	# otherwise it will be in the local coordinate system of the 
+	# specified widget.
+	@staticmethod
+	def mousePosition( relativeTo=None ) :
+	
+		p = QtGui.QCursor.pos()
+		if relativeTo is not None :
+			p = relativeTo._qtWidget().mapFromGlobal( p )
+			
+		return IECore.V2i( p.x(), p.y() )
 		
 	## Returns the top level QWidget instance used to implement
 	# the GafferUI.Widget functionality.
@@ -771,7 +789,18 @@ class Widget( object ) :
 			color: $foregroundFaded;
 		
 		}
-
+		
+		QLineEdit#search{
+			background-image: url($GAFFER_ROOT/graphics/search.png);
+			background-repeat:no-repeat;
+			background-position: left center;
+			padding-left: 20px;
+			height:20px;
+			border-radius:5px;
+			margin-left: 4px;
+			margin-right: 4px;
+		}
+		
 		QDateTimeEdit {
 
 			background-color: $backgroundLighter;
@@ -848,6 +877,13 @@ class Widget( object ) :
 
 			color: $foregroundFaded;
 
+		}
+		
+		QPushButton::menu-indicator {
+			image: url($GAFFER_ROOT/graphics/arrowDown10.png);
+			subcontrol-position: right center;
+			subcontrol-origin: padding;
+			left: -4px;
 		}
 		
 		QComboBox {

@@ -54,6 +54,7 @@ except AttributeError :
 
 from TestCase import TestCase
 from AddNode import AddNode
+from SphereNode import SphereNode
 from SignalsTest import SignalsTest
 from GraphComponentTest import GraphComponentTest
 from FrameNode import FrameNode
@@ -98,8 +99,9 @@ from IndexedIOPathTest import IndexedIOPathTest
 from ClassLoaderPathTest import ClassLoaderPathTest
 from ExpressionTest import ExpressionTest
 from BlockedConnectionTest import BlockedConnectionTest
-from TimeWarpDependencyNodeTest import TimeWarpDependencyNodeTest
+from TimeWarpComputeNodeTest import TimeWarpComputeNodeTest
 from TransformPlugTest import TransformPlugTest
+from Transform2DPlugTest import Transform2DPlugTest
 from SequencePathTest import SequencePathTest
 from OpMatcherTest import OpMatcherTest
 from WeakMethodTest import WeakMethodTest
@@ -111,6 +113,7 @@ from RandomTest import RandomTest
 from ParameterPathTest import ParameterPathTest
 from CompoundDataPlugTest import CompoundDataPlugTest
 from DependencyNodeTest import DependencyNodeTest
+from ComputeNodeTest import ComputeNodeTest
 from BoxPlugTest import BoxPlugTest
 from BoxTest import BoxTest
 from OutputRedirectionTest import OutputRedirectionTest
@@ -119,6 +122,7 @@ from ExecutableOpHolderTest import ExecutableOpHolderTest
 from DespatcherTest import DespatcherTest
 from RecursiveChildIteratorTest import RecursiveChildIteratorTest
 from FilteredRecursiveChildIteratorTest import FilteredRecursiveChildIteratorTest
+from ReferenceTest import ReferenceTest
 
 if __name__ == "__main__":
 	import unittest

@@ -57,10 +57,10 @@ class ImagePlug : public Gaffer::CompoundPlug
 
 	public :
 			
-		ImagePlug( const std::string &name=staticTypeName(), Direction direction=In, unsigned flags=Default );
+		ImagePlug( const std::string &name=defaultName<ImagePlug>(), Direction direction=In, unsigned flags=Default );
 		virtual ~ImagePlug();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( ImagePlug, ImagePlugTypeId, CompoundPlug );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImagePlug, ImagePlugTypeId, CompoundPlug );
 
 		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
 		virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
@@ -108,7 +108,19 @@ class ImagePlug : public Gaffer::CompoundPlug
 		static Imath::Box2i tileBound( const Imath::V2i &tileOrigin ) { return Imath::Box2i( tileOrigin * tileSize(), ( tileOrigin + Imath::V2i( 1 ) ) * tileSize() - Imath::V2i( 1 ) ); }
 		static const IECore::FloatVectorData *blackTile();
 		static const IECore::FloatVectorData *whiteTile();
+		
+		/// Returns the origin of the tile that contains the point.
+		inline static Imath::V2i tileOrigin( const Imath::V2i &point )
+		{
+			Imath::V2i tileOrigin;
+			tileOrigin.x = point.x < 0 && point.x % tileSize() != 0 ? ( point.x / tileSize() - 1 ) * tileSize() : ( point.x / tileSize() ) * tileSize();
+			tileOrigin.y = point.y < 0 && point.y % tileSize() != 0 ? ( point.y / tileSize() - 1 ) * tileSize() : ( point.y / tileSize() ) * tileSize();
+			return tileOrigin;
+		}
 	
+	private :
+		
+		static size_t g_firstPlugIndex;
 };
 
 IE_CORE_DECLAREPTR( ImagePlug );

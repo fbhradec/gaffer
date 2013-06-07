@@ -48,6 +48,7 @@
 #include "Gaffer/Context.h"
 #include "Gaffer/CompoundPlug.h"
 #include "Gaffer/StandardSet.h"
+#include "Gaffer/DependencyNode.h"
 
 using namespace Gaffer;
 
@@ -214,7 +215,11 @@ void ScriptNode::paste( Node *parent )
 		selection()->clear();
 		for( size_t i = 0, e = newNodes->size(); i < e; i++ )
 		{
-			selection()->add( newNodes->member( i ) );
+			StandardSet::Member *member = newNodes->member( i );
+			if( member->isInstanceOf( Node::staticTypeId() ) )
+			{
+				selection()->add( member );
+			}
 		}
 	}
 }
@@ -232,11 +237,12 @@ void ScriptNode::deleteNodes( Node *parent, const Set *filter, bool reconnect )
 		if( node && ( !filter || filter->contains( node ) ) )
 		{
 			// reconnect the inputs and outputs as though the node was disabled
-			if ( reconnect && node->enabledPlug() )
+			DependencyNode *dependencyNode = IECore::runTimeCast<DependencyNode>( node );
+			if( reconnect && dependencyNode && dependencyNode->enabledPlug() )
 			{
 				for ( OutputPlugIterator it( node ); it != it.end(); ++it )
 				{
-					Plug *inPlug = node->correspondingInput( *it );
+					Plug *inPlug = dependencyNode->correspondingInput( *it );
 					if ( !inPlug )
 					{
 						continue;
@@ -296,6 +302,11 @@ void ScriptNode::execute( const std::string &pythonScript, Node *parent )
 	throw IECore::Exception( "Cannot execute scripts on a ScriptNode not created in Python." );
 }
 
+void ScriptNode::executeFile( const std::string &pythonFile, Node *parent )
+{
+	throw IECore::Exception( "Cannot execute files on a ScriptNode not created in Python." );
+}
+
 ScriptNode::ScriptExecutedSignal &ScriptNode::scriptExecutedSignal()
 {
 	return m_scriptExecutedSignal;
@@ -314,6 +325,11 @@ ScriptNode::ScriptEvaluatedSignal &ScriptNode::scriptEvaluatedSignal()
 std::string ScriptNode::serialise( const Node *parent, const Set *filter ) const
 {
 	throw IECore::Exception( "Cannot serialise scripts on a ScriptNode not created in Python." );
+}
+
+void ScriptNode::serialiseToFile( const std::string &fileName, const Node *parent, const Set *filter ) const
+{
+	throw IECore::Exception( "Cannot serialise scripts on a ScriptNode not created in Python." );	
 }
 
 void ScriptNode::load()

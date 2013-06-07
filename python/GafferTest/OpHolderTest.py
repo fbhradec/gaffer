@@ -47,8 +47,9 @@ class OpHolderTest( unittest.TestCase ) :
 	def testType( self ) :
 	
 		n = Gaffer.OpHolder()
-		self.assertEqual( n.typeName(), "OpHolder" )
-		self.failUnless( n.isInstanceOf( Gaffer.ParameterisedHolderDependencyNode.staticTypeId() ) )
+		self.assertEqual( n.typeName(), "Gaffer::OpHolder" )
+		self.failUnless( n.isInstanceOf( Gaffer.ParameterisedHolderComputeNode.staticTypeId() ) )
+		self.failUnless( n.isInstanceOf( Gaffer.ComputeNode.staticTypeId() ) )
 		self.failUnless( n.isInstanceOf( Gaffer.DependencyNode.staticTypeId() ) )
 		
 	def testCompute( self ) :
@@ -128,9 +129,9 @@ class OpHolderTest( unittest.TestCase ) :
 	
 		n = Gaffer.OpHolder()
 		
-		self.assertEqual( n.typeName(), "OpHolder" )
-		self.assertEqual( IECore.RunTimeTyped.typeNameFromTypeId( n.typeId() ), "OpHolder" )
-		self.assertEqual( IECore.RunTimeTyped.baseTypeId( n.typeId() ), Gaffer.ParameterisedHolderDependencyNode.staticTypeId() )
+		self.assertEqual( n.typeName(), "Gaffer::OpHolder" )
+		self.assertEqual( IECore.RunTimeTyped.typeNameFromTypeId( n.typeId() ), "Gaffer::OpHolder" )
+		self.assertEqual( IECore.RunTimeTyped.baseTypeId( n.typeId() ), Gaffer.ParameterisedHolderComputeNode.staticTypeId() )
 								
 if __name__ == "__main__":
 	unittest.main()

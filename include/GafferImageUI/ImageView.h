@@ -1,6 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //  
 //  Copyright (c) 2012, John Haddon. All rights reserved.
+//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -50,14 +51,18 @@ class ImageView : public GafferUI::View
 
 	public :
 
-		typedef GafferImage::ImagePlug InPlugType;
-
-		ImageView( GafferImage::ImagePlugPtr inputPlug );
+		ImageView( const std::string &name = defaultName<ImageView>() );
 		virtual ~ImageView();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( ImageView, ImageViewTypeId, GafferUI::View );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImageUI::ImageView, ImageViewTypeId, GafferUI::View );
 	
 	protected :
+
+		/// This constructor is for classes which derive from ImageView, but
+		/// don't necessarily accept an ImagePlug. Instead they should create
+		/// a preprocessor node that accepts the input plug and outputs an
+		/// image plug, and enable it using setPreprocessor().
+		ImageView( const std::string &name, Gaffer::PlugPtr input );
 
 		virtual void update();
 	

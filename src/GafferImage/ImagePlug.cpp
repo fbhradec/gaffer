@@ -81,9 +81,9 @@ class CopyTiles
 		void operator()( const blocked_range2d<size_t>& r ) const
 		{
 			ContextPtr context = new Context( *m_parentContext );
-			const Box2i operationWindow( V2i( r.rows().begin(), r.cols().begin() ), V2i( r.rows().end()-1, r.cols().end()-1 ) );
-			V2i minTileOrigin = ( operationWindow.min / m_tileSize ) * m_tileSize;
-			V2i maxTileOrigin = ( operationWindow.max / m_tileSize ) * m_tileSize;
+			const Box2i operationWindow( V2i( r.rows().begin()+m_dataWindow.min.x, r.cols().begin()+m_dataWindow.min.y ), V2i( r.rows().end()+m_dataWindow.min.x-1, r.cols().end()+m_dataWindow.min.y-1 ) );
+			V2i minTileOrigin = ImagePlug::tileOrigin( operationWindow.min );
+			V2i maxTileOrigin = ImagePlug::tileOrigin( operationWindow.max );
 			size_t imageStride = m_dataWindow.size().x + 1;
 			
 			for( int tileOriginY = minTileOrigin.y; tileOriginY <= maxTileOrigin.y; tileOriginY += m_tileSize )
@@ -133,9 +133,12 @@ class CopyTiles
 const IECore::InternedString ImagePlug::channelNameContextName = "image:channelName";
 const IECore::InternedString ImagePlug::tileOriginContextName = "image:tileOrigin";
 
+size_t ImagePlug::g_firstPlugIndex = 0;
+
 ImagePlug::ImagePlug( const std::string &name, Direction direction, unsigned flags )
 	:	CompoundPlug( name, direction, flags )
 {
+	storeIndexOfNextChild( g_firstPlugIndex );
 	
 	// we don't want the children to be serialised in any way - we always create
 	// them ourselves in this constructor so they aren't Dynamic, and we don't ever
@@ -228,42 +231,42 @@ Gaffer::PlugPtr ImagePlug::createCounterpart( const std::string &name, Direction
 
 GafferImage::FormatPlug *ImagePlug::formatPlug()
 {
-	return getChild<FormatPlug>( "format" );
+	return getChild<FormatPlug>( g_firstPlugIndex );
 }
 
 const GafferImage::FormatPlug *ImagePlug::formatPlug() const
 {
-	return getChild<FormatPlug>( "format" );
+	return getChild<FormatPlug>( g_firstPlugIndex );
 }
 
 Gaffer::AtomicBox2iPlug *ImagePlug::dataWindowPlug()
 {
-	return getChild<AtomicBox2iPlug>( "dataWindow" );
+	return getChild<AtomicBox2iPlug>( g_firstPlugIndex+1 );
 }
 
 const Gaffer::AtomicBox2iPlug *ImagePlug::dataWindowPlug() const
 {
-	return getChild<AtomicBox2iPlug>( "dataWindow" );
+	return getChild<AtomicBox2iPlug>( g_firstPlugIndex+1 );
 }
 
 Gaffer::StringVectorDataPlug *ImagePlug::channelNamesPlug()
 {
-	return getChild<StringVectorDataPlug>( "channelNames" );
+	return getChild<StringVectorDataPlug>( g_firstPlugIndex+2 );
 }
 
 const Gaffer::StringVectorDataPlug *ImagePlug::channelNamesPlug() const
 {
-	return getChild<StringVectorDataPlug>( "channelNames" );
+	return getChild<StringVectorDataPlug>( g_firstPlugIndex+2 );
 }
 
 Gaffer::FloatVectorDataPlug *ImagePlug::channelDataPlug()
 {
-	return getChild<FloatVectorDataPlug>( "channelData" );
+	return getChild<FloatVectorDataPlug>( g_firstPlugIndex+3 );
 }
 
 const Gaffer::FloatVectorDataPlug *ImagePlug::channelDataPlug() const
 {
-	return getChild<FloatVectorDataPlug>( "channelData" );
+	return getChild<FloatVectorDataPlug>( g_firstPlugIndex+3 );
 }
 
 IECore::ConstFloatVectorDataPtr ImagePlug::channelData( const std::string &channelName, const Imath::V2i &tile ) const
@@ -283,10 +286,6 @@ IECore::ConstFloatVectorDataPtr ImagePlug::channelData( const std::string &chann
 
 IECore::MurmurHash ImagePlug::channelDataHash( const std::string &channelName, const Imath::V2i &tile ) const
 {
-	if( direction()==In && !getInput<Plug>() )
-	{
-		throw IECore::Exception( "ImagePlug::channelData called on unconnected input plug" );
-	}
 	ContextPtr tmpContext = new Context( *Context::current() );
 	tmpContext->set( ImagePlug::channelNameContextName, channelName );
 	tmpContext->set( ImagePlug::tileOriginContextName, tile );
@@ -319,7 +318,7 @@ IECore::ImagePrimitivePtr ImagePlug::image() const
 		imageChannelData.push_back( &(c[0]) );
 	}
 	
-	parallel_for( blocked_range2d<size_t>(dataWindow.min.x, dataWindow.max.x+1, tileSize(), dataWindow.min.y, dataWindow.max.y+1, tileSize() ),
+	parallel_for( blocked_range2d<size_t>( 0, dataWindow.size().x+1, tileSize(), 0, dataWindow.size().y+1, tileSize() ),
 		      GafferImage::Detail::CopyTiles( imageChannelData, channelNames, channelDataPlug(), dataWindow, Context::current(), tileSize()) );
 	
 	return result;
@@ -335,8 +334,8 @@ IECore::MurmurHash ImagePlug::imageHash() const
 	result.append( dataWindowPlug()->hash() );
 	result.append( channelNamesPlug()->hash() );
 
-	V2i minTileOrigin = ( dataWindow.min / tileSize() ) * tileSize();
-	V2i maxTileOrigin = ( dataWindow.max / tileSize() ) * tileSize();
+	V2i minTileOrigin = tileOrigin( dataWindow.min );
+	V2i maxTileOrigin = tileOrigin( dataWindow.max );
 
 	ContextPtr context = new Context( *Context::current() );
 	for( vector<string>::const_iterator it = channelNames.begin(), eIt = channelNames.end(); it!=eIt; it++ )

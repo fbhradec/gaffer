@@ -63,7 +63,7 @@ class StandardStyle : public Style
 		StandardStyle();
 		virtual ~StandardStyle();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( StandardStyle, StandardStyleTypeId, Style );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::StandardStyle, StandardStyleTypeId, Style );
 
 		virtual void bind( const Style *currentStyle=0 ) const;
 
@@ -76,6 +76,8 @@ class StandardStyle : public Style
 		virtual void renderSelectionBox( const Imath::Box2f &box ) const;
 		virtual void renderImage( const Imath::Box2f &box, const IECoreGL::Texture *texture ) const;
 		virtual void renderLine( const IECore::LineSegment3f &line ) const;
+		virtual void renderSolidRectangle( const Imath::Box2f &box ) const;
+		virtual void renderRectangle( const Imath::Box2f &box ) const;
 		
 		enum Color
 		{

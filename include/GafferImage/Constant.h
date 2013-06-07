@@ -48,17 +48,17 @@ class Constant : public ImageNode
 
 	public :
 
-		Constant( const std::string &name=staticTypeName() );
+		Constant( const std::string &name=defaultName<Constant>() );
 		virtual ~Constant();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Constant, ConstantTypeId, ImageNode );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Constant, ConstantTypeId, ImageNode );
 		
 		GafferImage::FormatPlug *formatPlug();
 		const GafferImage::FormatPlug *formatPlug() const;
 		Gaffer::Color4fPlug *colorPlug();
 		const Gaffer::Color4fPlug *colorPlug() const;
 		
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 		
 	protected :
 		

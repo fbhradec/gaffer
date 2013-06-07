@@ -48,9 +48,9 @@ class Camera : public ObjectSource
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Camera, CameraTypeId, ObjectSource );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Camera, CameraTypeId, ObjectSource );
 
-		Camera( const std::string &name=staticTypeName() );
+		Camera( const std::string &name=defaultName<Camera>() );
 		virtual ~Camera();
 		
 		Gaffer::StringPlug *projectionPlug();
@@ -62,7 +62,7 @@ class Camera : public ObjectSource
 		Gaffer::V2fPlug *clippingPlanesPlug();
 		const Gaffer::V2fPlug *clippingPlanesPlug() const;
 				
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 		
 	protected :
 

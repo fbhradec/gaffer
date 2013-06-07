@@ -48,10 +48,10 @@ class Seeds : public BranchCreator
 
 	public :
 
-		Seeds( const std::string &name=staticTypeName() );
+		Seeds( const std::string &name=defaultName<Seeds>() );
 		virtual ~Seeds();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Seeds, SeedsTypeId, BranchCreator );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Seeds, SeedsTypeId, BranchCreator );
 		
 		Gaffer::FloatPlug *densityPlug();
 		const Gaffer::FloatPlug *densityPlug() const;
@@ -59,7 +59,7 @@ class Seeds : public BranchCreator
 		Gaffer::StringPlug *pointTypePlug();
 		const Gaffer::StringPlug *pointTypePlug() const;
 
-		virtual void affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const;
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 
 	protected :
 	

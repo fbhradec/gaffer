@@ -479,7 +479,7 @@ env = Environment(
 	options = options,
 
 	GAFFER_MAJOR_VERSION = "0",
-	GAFFER_MINOR_VERSION = "60",
+	GAFFER_MINOR_VERSION = "65",
 	GAFFER_PATCH_VERSION = "0",
 
 )
@@ -674,7 +674,7 @@ baseLibEnv.Append(
 	] + env["LOCATE_DEPENDENCY_CPPPATH"],
 	
 	CPPFLAGS = [
-		"-DBOOST_FILESYSTEM_VERSION=2",
+		"-DBOOST_FILESYSTEM_VERSION=3",
 	],
 	
 	LIBPATH = [

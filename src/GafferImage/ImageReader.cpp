@@ -113,7 +113,7 @@ bool ImageReader::enabled() const
 	return (spec != 0) ? ImageNode::enabled() : false;
 }
 
-void ImageReader::affects( const Gaffer::ValuePlug *input, AffectedPlugsContainer &outputs ) const
+void ImageReader::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	ImageNode::affects( input, outputs );
 
@@ -167,7 +167,7 @@ Imath::Box2i ImageReader::computeDataWindow( const Gaffer::Context *context, con
 	
 	return Box2i(
 		V2i( spec->x, spec->y ),
-		V2i( spec->x + spec->width - 1, spec->x + spec->height - 1 )
+		V2i( spec->x + spec->width - 1, spec->y + spec->height - 1 )
 	);
 }
 

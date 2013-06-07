@@ -59,7 +59,10 @@
 #include "GafferImage/Select.h"
 #include "GafferImage/Reformat.h"
 #include "GafferImageBindings/FilterPlugBindings.h"
+#include "GafferImageBindings/FilterBinding.h"
 #include "GafferImage/ImageWriter.h"
+#include "GafferImage/ImageTransform.h"
+#include "GafferImage/ImageStats.h"
 #include "GafferImageBindings/ChannelMaskPlugBindings.h"
 
 using namespace boost::python;
@@ -85,7 +88,7 @@ BOOST_PYTHON_MODULE( _GafferImage )
 			init< const std::string &, Gaffer::Plug::Direction, unsigned >
 			(
 				(
-					arg( "name" ) = ImagePlug::staticTypeName(),
+					arg( "name" ) = Gaffer::GraphComponent::defaultName<ImagePlug>(),
 					arg( "direction" ) = Gaffer::Plug::In,
 					arg( "flags" ) = Gaffer::Plug::Default
 				)
@@ -97,6 +100,7 @@ BOOST_PYTHON_MODULE( _GafferImage )
 		.def( "imageHash", &ImagePlug::imageHash )
 		.def( "tileSize", &ImagePlug::tileSize ).staticmethod( "tileSize" )
 		.def( "tileBound", &ImagePlug::tileBound ).staticmethod( "tileBound" )
+		.def( "tileOrigin", &ImagePlug::tileOrigin ).staticmethod( "tileOrigin" )
 	;
 
 	GafferBindings::DependencyNodeClass<ImageNode>();
@@ -116,11 +120,14 @@ BOOST_PYTHON_MODULE( _GafferImage )
 	GafferBindings::DependencyNodeClass<Constant>();
 	GafferBindings::DependencyNodeClass<Select>();
 	GafferBindings::DependencyNodeClass<Reformat>();
+	GafferBindings::DependencyNodeClass<ImageTransform>();
+	GafferBindings::DependencyNodeClass<ImageStats>();
 	GafferImageBindings::bindFormat();
 	GafferImageBindings::bindFormatPlug();
 	GafferImageBindings::bindChannelMaskPlug();
 	GafferImageBindings::bindFilterPlug();
 	GafferImageBindings::bindSampler();
+	GafferImageBindings::bindFilters();
 	GafferBindings::NodeClass<ImageWriter> imageWriter;
 	GafferBindings::ExecutableBinding< GafferBindings::NodeClass<ImageWriter>, ImageWriter>::bind( imageWriter );
 }
