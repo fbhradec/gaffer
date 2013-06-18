@@ -61,7 +61,6 @@ class CompoundEditor( GafferUI.EditorWidget ) :
 		self.__splitContainer.append( GafferUI.TabbedContainer() )
 		self.__addCornerWidget( self.__splitContainer )
 		
-		self.__buttonPressConnection = self.__splitContainer.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
 		self.__keyPressConnection = self.__splitContainer.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
 
 		if children :		
@@ -128,24 +127,13 @@ class CompoundEditor( GafferUI.EditorWidget ) :
 				return repr( tabDict )
 		
 		return "GafferUI.CompoundEditor( scriptNode, children = %s )" % __serialise( self.__splitContainer )
-
-	def __buttonPress( self, splitContainer, event ) :
-		
-		if event.buttons != event.Buttons.Right :
-			return False
-
-		if len( splitContainer ) != 1 :
-			# Can only do things at the leaf level
-			return False
-
-		self.__popupLayoutMenu( splitContainer )
-		return True
 		
 	def __popupLayoutMenu( self, splitContainer ) :
 	
 		m = IECore.MenuDefinition()
 
-		for c in GafferUI.EditorWidget.types() :
+		layouts = GafferUI.Layouts.acquire( self.scriptNode().applicationRoot() )
+		for c in layouts.registeredEditors() :
 			m.append( "/" + IECore.CamelCase.toSpaced( c ), { "command" : IECore.curry( self.__addChild, splitContainer, c ) } )
 
 		m.append( "/divider", { "divider" : True } )
@@ -285,13 +273,11 @@ class CompoundEditor( GafferUI.EditorWidget ) :
 		
 		sc1 = GafferUI.SplitContainer()
 		sc1.append( splitContainer[0] )
-		sc1.__buttonPressConnection = sc1.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )					
 
 		assert( len( splitContainer ) == 0 )
 		
 		sc2 = GafferUI.SplitContainer()
 		sc2.append( GafferUI.TabbedContainer() )
-		sc2.__buttonPressConnection = sc2.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )					
 		self.__addCornerWidget( sc2 )
 		
 		if subPanelIndex==1 :

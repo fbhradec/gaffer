@@ -46,6 +46,12 @@ import GafferUI
 
 import GafferRenderMan
 
+## Appends menu items for the creation of all renderman shaders founds on the searchpath, optionally
+# filtered by filename based on matchExpression.
+def appendShaders( menuDefinition, prefix="/RenderMan/Shader", matchExpression = re.compile( ".*" ) ) :
+
+	menuDefinition.append( prefix, { "subMenu" : IECore.curry( __shaderSubMenu, matchExpression ) } )
+
 def __shaderCreator( shaderName ) :
 
 	nodeName = os.path.split( shaderName )[-1]
@@ -61,20 +67,34 @@ def __shaderCreator( shaderName ) :
 	
 	return node
 
-def _shaderSubMenu( matchExpression = re.compile( ".*" ) ) :
+def __shaderSubMenu( matchExpression = re.compile( ".*" ) ) :
 	
 	if isinstance( matchExpression, str ) :
 		matchExpression = re.compile( fnmatch.translate( matchExpression ) )
 	
 	shaders = set()
+	pathsVisited = set()
 	for path in GafferRenderMan.RenderManShader.shaderLoader().searchPath.paths :
-
+		
+		if path in pathsVisited :
+			# the 3delight installer adds duplicate paths for some reason, and
+			# since traversing them can be slow, we skip duplicates.
+			continue
+		
+		if path == "." :
+			# the 3delight installer adds "." to the shader path, but we skip it
+			# since it can lead to us traversing into arbitrarily deep hierarchies
+			# rooted in the current directory.
+			continue
+							
 		for root, dirs, files in os.walk( path ) :
 			for file in files :
 				if os.path.splitext( file )[1] == ".sdl" :
 					shaderPath = os.path.join( root, file ).partition( path )[-1].lstrip( "/" )
 					if shaderPath not in shaders and matchExpression.match( shaderPath ) :
 						shaders.add( os.path.splitext( shaderPath )[0] )
+	
+		pathsVisited.add( path )
 	
 	shaders = sorted( list( shaders ) )
 	categorisedShaders = [ x for x in shaders if "/" in x ]
@@ -101,9 +121,3 @@ def _shaderSubMenu( matchExpression = re.compile( ".*" ) ) :
 		
 	return result
 
-GafferUI.NodeMenu.definition().append( "/RenderMan/Shader", { "subMenu" : _shaderSubMenu } )
-
-GafferUI.NodeMenu.append( "/RenderMan/Attributes", GafferRenderMan.RenderManAttributes, searchText = "RenderManAttributes" )
-GafferUI.NodeMenu.append( "/RenderMan/Options", GafferRenderMan.RenderManOptions, searchText = "RenderManOptions" )
-GafferUI.NodeMenu.append( "/RenderMan/Render", GafferRenderMan.RenderManRender, searchText = "RenderManRender" )
-GafferUI.NodeMenu.append( "/RenderMan/InteractiveRender", GafferRenderMan.InteractiveRenderManRender, searchText = "InteractiveRender" )

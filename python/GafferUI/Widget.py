@@ -684,6 +684,12 @@ class Widget( object ) :
 			
 		}
 
+		QLabel[gafferHighlighted=\"true\"] {
+		
+			color: $brightColor;
+		
+		}
+
 		QMenuBar {
 		
 			background-color: $backgroundDarkest;
@@ -708,6 +714,33 @@ class Widget( object ) :
 
 		}
 
+		QMenu[gafferHasTitle=\"true\"] {
+		
+			/* make sure the title widget sits at the very top.
+			   infuriatingly, qt uses padding-top for the bottom
+			   as well, and is ignoring padding-bottom. that makes
+			   menus with title just a little bit poorly padded
+			   at the bottom. we hack around that by adding a little
+			   spacing widget in GafferUI.Menu. */
+			padding-top: 0px;
+			
+		}
+		
+		QLabel#gafferMenuTitle {
+		
+			background-color: $backgroundDarkest;
+			font-weight: bold;
+			padding: 5px 25px 5px 20px;
+			margin-bottom: 6px;
+			
+		}
+		
+		QLabel#gafferMenuTitle:disabled {
+		
+			color: $foreground;
+			
+		}
+		
 		QMenu::item {
 
 			background-color: transparent;
@@ -777,7 +810,7 @@ class Widget( object ) :
 
 		}
 
-		QLineEdit:focus, QPlainTextEdit[readOnly="false"]:focus {
+		QLineEdit:focus, QPlainTextEdit[readOnly="false"]:focus, QLineEdit[gafferHighlighted=\"true\"] {
 
 			border: 2px solid $brightColor;
 			padding: 0px;
@@ -1253,10 +1286,14 @@ class Widget( object ) :
 			image: url($GAFFER_ROOT/graphics/checkBoxUnchecked.png);
 		}
 		
-		QCheckBox::indicator:unchecked:hover, QCheckBox::indicator:unchecked:focus {
+		QCheckBox::indicator:unchecked:hover,
+		QCheckBox::indicator:unchecked:focus,
+		QCheckBox[gafferHighlighted=\"true\"]::indicator:unchecked {
 			image: url($GAFFER_ROOT/graphics/checkBoxUncheckedHover.png);
 		}
-		QCheckBox::indicator:checked:hover, QCheckBox::indicator:checked:focus {
+		QCheckBox::indicator:checked:hover,
+		QCheckBox::indicator:checked:focus,
+		QCheckBox[gafferHighlighted=\"true\"]::indicator:checked {
 			image: url($GAFFER_ROOT/graphics/checkBoxCheckedHover.png);
 		}
 		

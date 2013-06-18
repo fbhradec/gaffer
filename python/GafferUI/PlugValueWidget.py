@@ -65,6 +65,10 @@ class PlugValueWidget( GafferUI.Widget ) :
 		self.__popupMenuConnections = []
 		self.__readOnly = False
 		
+		self.__dragEnterConnection = self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
+		self.__dragLeaveConnection = self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ) )
+		self.__dropConnection = self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ) )
+		
 	def setPlug( self, plug ) :
 	
 		self.__setPlugInternal( plug, callUpdateFromPlug=True )
@@ -114,6 +118,27 @@ class PlugValueWidget( GafferUI.Widget ) :
 	def hasLabel( self ) :
 	
 		return False
+	
+	## Implemented to return a tooltip containing the plug name and description.
+	def getToolTip( self ) :
+	
+		result = GafferUI.Widget.getToolTip( self )
+		if result :
+			return result
+	
+		plug = self.getPlug()
+		input = plug.getInput()
+		
+		inputText = ""
+		if input is not None :
+			inputText = " &lt;- " + input.relativeName( input.commonAncestor( plug, Gaffer.GraphComponent.staticTypeId() ) )
+		
+		result = "<h3>" + plug.relativeName( plug.node() ) + inputText + "</h3>"
+		description = GafferUI.Metadata.plugDescription( plug )
+		if description :
+			result += "\n\n" + description
+			
+		return result
 			
 	## Must be implemented by subclasses so that the widget reflects the current
 	# status of the plug. To temporarily suspend calls to this function, use
@@ -178,14 +203,14 @@ class PlugValueWidget( GafferUI.Widget ) :
 			menuDefinition.append( "/Edit input...", { "command" : Gaffer.WeakMethod( self.__editInput ) } )
 			menuDefinition.append( "/EditInputDivider", { "divider" : True } )
 			menuDefinition.append( "/Remove input", { "command" : Gaffer.WeakMethod( self.__removeInput ) } )
-		if hasattr( self.getPlug(), "defaultValue" ) :
+		if hasattr( self.getPlug(), "defaultValue" ) and self.getPlug().direction() == Gaffer.Plug.Direction.In :
 			menuDefinition.append(
 				"/Default", {
 					"command" : IECore.curry( Gaffer.WeakMethod( self.__setValue ), self.getPlug().defaultValue() ),
 					"active" : self._editable()
 				}
 			)
-			
+					
 		self.popupMenuSignal()( menuDefinition, self )
 		
 		return menuDefinition
@@ -356,8 +381,11 @@ class PlugValueWidget( GafferUI.Widget ) :
 		menuDefinition = self._popupMenuDefinition()
 		if not len( menuDefinition.items() ) :
 			return False
-		
-		self.__popupMenu = GafferUI.Menu( menuDefinition )
+
+		title = self.getPlug().relativeName( self.getPlug().node() )
+		title = ".".join( [ IECore.CamelCase.join( IECore.CamelCase.split( x ) ) for x in title.split( "." ) ] )
+
+		self.__popupMenu = GafferUI.Menu( menuDefinition, title = title )
 		self.__popupMenu.popup()
 		
 		return True
@@ -375,4 +403,55 @@ class PlugValueWidget( GafferUI.Widget ) :
 	
 		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
 			self.getPlug().setInput( None )
+	
+	# drag and drop stuff
+	
+	def __dragEnter( self, widget, event ) :
+
+		if isinstance( event.data, Gaffer.Plug ) :
+			if self.getPlug().acceptsInput( event.data ) :
+				self.setHighlighted( True )
+				return True
+		elif hasattr( self.getPlug(), "setValue" ) and self._dropValue( event ) is not None :
+			if self.getPlug().settable() :
+				self.setHighlighted( True )
+				return True		
 			
+		return False
+
+	def __dragLeave( self, widget, event ) :
+
+		self.setHighlighted( False )
+
+	def __drop( self, widget, event ) :
+
+		self.setHighlighted( False )
+
+		with Gaffer.UndoContext( self.getPlug().node().scriptNode() ) :
+			if isinstance( event.data, Gaffer.Plug ) :
+				self.getPlug().setInput( event.data )
+			else :
+				self.getPlug().setValue( self._dropValue( event ) )
+			
+		return True
+			
+	## Called from a dragEnter slot to see if the drag data can
+	# be converted to a value suitable for a plug.setValue() call.
+	# If this returns a non-None value then the drag will be accepted
+	# and plug.setValue() will be called in the drop event. May be
+	# reimplemented by derived classes to provide conversions of the
+	# drag data to the type needed for setValue().
+	def _dropValue( self, dragDropEvent ) :
+	
+		if hasattr( self.getPlug(), "defaultValue" ) :
+			plugValueType = type( self.getPlug().defaultValue() )
+			if isinstance( dragDropEvent.data, plugValueType ) :
+				return dragDropEvent.data
+			elif isinstance( dragDropEvent.data, IECore.Data ) and hasattr( dragDropEvent.data, "value" ) :
+				if isinstance( dragDropEvent.data.value, plugValueType ) :
+					return dragDropEvent.data.value
+				else :
+					with IECore.IgnoredExceptions( Exception ) :
+						return plugValueType( dragDropEvent.data.value )
+		
+		return None

@@ -1,7 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //  
-//  Copyright (c) 2011-2013, John Haddon. All rights reserved.
-//  Copyright (c) 2012, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2013, John Haddon. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -35,48 +34,48 @@
 //  
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERBINDINGS_CONNECTIONBINDING_H
-#define GAFFERBINDINGS_CONNECTIONBINDING_H
+#ifndef GAFFERSCENE_MAPPROJECTION_H
+#define GAFFERSCENE_MAPPROJECTION_H
 
-#include "boost/python.hpp"
-#include "boost/signals.hpp"
+#include "GafferScene/SceneElementProcessor.h"
 
-namespace GafferBindings
+namespace GafferScene
 {
 
-void bindConnection();
-
-class Connection : public boost::noncopyable
+/// Applies texture coordinates via a camera projection.
+class MapProjection : public SceneElementProcessor
 {
+
 	public :
+
+		MapProjection( const std::string &name=defaultName<MapProjection>() );
+		virtual ~MapProjection();
+
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::MapProjection, MapProjectionTypeId, SceneElementProcessor );
 		
-		~Connection();
+		Gaffer::StringPlug *cameraPlug();
+		const Gaffer::StringPlug *cameraPlug() const;
+
+		Gaffer::StringPlug *sNamePlug();
+		const Gaffer::StringPlug *sNamePlug() const;
 		
-		/// These are bound as the connect() method of signals.
-		template<typename Signal, typename SlotCaller>
-		static Connection *create( Signal &s, boost::python::object &slot );
-		template<typename Signal, typename SlotCaller>
-		static Connection *createInGroup( Signal &s, int group, boost::python::object &slot );
+		Gaffer::StringPlug *tNamePlug();
+		const Gaffer::StringPlug *tNamePlug() const;
+
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+				
+	protected :
 		
-		void disconnect() const;
-		bool connected() const;
-		void block();
-		void unblock();
-		bool blocked() const;
-		
-		boost::python::object slot();
+		virtual bool processesObject() const;
+		virtual void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		virtual IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const;
 		
 	private :
-		
-		Connection();
 	
-		boost::python::object m_slot;
-		boost::signals::connection m_connection;
-
+		static size_t g_firstPlugIndex;
+	
 };
 
-} // namespace GafferBindings
+} // namespace GafferScene
 
-#include "GafferBindings/ConnectionBinding.inl"
-
-#endif // GAFFERBINDINGS_CONNECTIONBINDING_H
+#endif // GAFFERSCENE_MAPPROJECTION_H

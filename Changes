@@ -1,3 +1,45 @@
+0.68.0
+======
+* Improved speed of renderman shader menu.
+* Image stats node in ImageView now uses the preprocessed input plug if the raw input is not an ImagePlug
+* Removed right-click layout context menu.
+* Added "Unpromote from Box" item to plug popup menu.
+* Fixed menu title so it doesn't interfere with menu keyboard navigation.
+
+0.67.0
+======
+
+* Fixed potential lockup with NumericPlugs.
+* Fixed RenderMan ShaderMenu match expressions (broken in 0.66.0)
+* Reintroduced the node name into the NodeEditor header.
+* Exposed LayoutMenu submenu callable publicly.
+* Implemented in-place renaming for user plugs (#213).
+* Added support for RSL "parameterName.label" annotation (#372).
+* Added a MapProjection node.
+* Added sample window to the ImageViewer.
+* Fixed UI test cases broken by the per-application menu commits.
+* Can once again build for OS X.
+* Added support for packaging as .dmg on OS X.
+
+0.66.0
+======
+
+* Fixed interactive display.
+* Fixed APIs to make UI resources per-application. When applications are updated to use these new APIS, they will no longer pollute each other's interfaces (#351, #225).
+* Refactored GafferImage::Filter to have a better interface whilst removing the need for the construct() method.
+* Added python bindings and enhancements for the GafferImage::Filter class.
+* Fixed hash() bug in RenderMan coshader, which in turn fixes an interactive rerendering bug.
+* Reduced occurences of accidental connection snatching (#313, #325).
+* Fixed escape-to-close menu bug.
+* Added an ImageStats node.
+* Fixed deadlock when writing image files to disk.
+* Op. Procedural and RenderMan shader menus may now be filtered to show fewer options.
+* Added "cmd" parameter to screen grab app.
+* Fixed GafferImage::FormatPlug::hash()
+* Fixed duplicate typename errors (#330).
+* Prevented promotion of non-serialisable plugs to Box level (#347).
+* Fixed a bug in ImageProcessor that was causing a segfault when the node has an output that is not an ImagePlug.
+
 0.65.0
 ======
 
