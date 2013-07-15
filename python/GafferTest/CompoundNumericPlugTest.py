@@ -325,6 +325,35 @@ class CompoundNumericPlugTest( unittest.TestCase ) :
 		
 		self.assertTrue( n["p1"].settable() )
 		self.assertFalse( n["p2"].settable() )
+	
+	def testGanging( self ) :
+	
+		p = Gaffer.Color4fPlug()
+		
+		self.assertFalse( p.isGanged() )
+		self.assertTrue( p.canGang() )
+		p.gang()
+		self.assertTrue( p.isGanged() )
+		self.assertTrue( p[0].getInput() is None )
+		self.assertTrue( p[1].getInput().isSame( p[0] ) )
+		self.assertTrue( p[2].getInput().isSame( p[0] ) )
+		self.assertTrue( p[3].getInput() is None )
+		
+		p.ungang()
+		for c in p.children() :
+			self.assertTrue( c.getInput() is None )
+		self.assertFalse( p.isGanged() )
+		self.assertTrue( p.canGang() )
+
+	def testNoRedundantSetValueCalls( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["p"] = Gaffer.V3fPlug()
+		s["n"]["p"].setValue( IECore.V3f( 1, 2, 3 ) )
+		
+		ss = s.serialise( filter = Gaffer.StandardSet( [ s["n"] ] ) )
+		self.assertEqual( ss.count( "setValue" ), 3 )
 		
 if __name__ == "__main__":
 	unittest.main()

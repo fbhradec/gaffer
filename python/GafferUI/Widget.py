@@ -834,6 +834,17 @@ class Widget( object ) :
 			margin-right: 4px;
 		}
 		
+		QWidget#gafferSplineWidget
+		{
+			border: 1px solid $backgroundDark;			
+		}
+		
+		QWidget#gafferSplineWidget[gafferHighlighted=\"true\"] {
+
+			border: 1px solid $brightColor;
+		
+		}
+		 
 		QDateTimeEdit {
 
 			background-color: $backgroundLighter;
@@ -891,7 +902,7 @@ class Widget( object ) :
 
 		}
 
-		QPushButton#gafferWithFrame:hover, QComboBox:hover {
+		QPushButton#gafferWithFrame:hover, QPushButton#gafferWithFrame:focus, QComboBox:hover {
 
 			border: 2px solid $brightColor;
 			margin: 0px;
@@ -1321,6 +1332,10 @@ class Widget( object ) :
 			padding: 2px;
 		}
 		
+		.QFrame#gafferDivider {
+			color: $backgroundDark;
+		}
+		
 		QToolTip {
 			background-clip: border;
 			color: $backgroundDarkest;
@@ -1432,7 +1447,7 @@ class Widget( object ) :
 			background-color: $brightColor;
 		
 		}
-		
+
 		"""
 		
 	).substitute( {
@@ -1688,7 +1703,7 @@ class _EventFilter( QtCore.QObject ) :
 	def __leave( self, qObject, qEvent ) :
 	
 		widget = Widget._owner( qObject )
-		if widget._leaveSignal is not None :
+		if widget is not None and widget._leaveSignal is not None :
 			return widget._leaveSignal( widget )
 
 		return False
@@ -1756,7 +1771,17 @@ class _EventFilter( QtCore.QObject ) :
 	
 		if self.__lastButtonPressWidget is None :
 			return False
-				
+		
+		if qEvent.buttons() == QtCore.Qt.NoButton :
+			# sometimes Qt can fail to give us a mouse button release event
+			# for the widget that received the mouse button press - in particular
+			# this appears to happen when a context menu is raised in the press
+			# event. this can mean we end up here, with a __lastButtonPressWidget
+			# we don't want, attempting to start a drag when no buttons are down.
+			# so we fix that.
+			self.__lastButtonPressWidget = None
+			return False
+			
 		sourceWidget = self.__lastButtonPressWidget()
 		if sourceWidget is None :
 			# the widget died
