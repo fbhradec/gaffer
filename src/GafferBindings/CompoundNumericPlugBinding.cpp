@@ -39,18 +39,19 @@
 
 #include "IECorePython/IECoreBinding.h"
 #include "IECorePython/RunTimeTypedBinding.h"
+#include "IECorePython/ScopedGILRelease.h"
 
 #include "Gaffer/CompoundNumericPlug.h"
 
 #include "GafferBindings/CompoundNumericPlugBinding.h"
-#include "GafferBindings/PlugBinding.h"
+#include "GafferBindings/CompoundPlugBinding.h"
 
 using namespace boost::python;
 using namespace GafferBindings;
 using namespace Gaffer;
 
 template<typename T>
-static std::string compoundNumericPlugRepr( const T *plug )
+static std::string maskedCompoundNumericPlugRepr( const T *plug, unsigned flagsMask  )
 {
 	std::string result = Serialisation::classPath( plug ) + "( \"" + plug->getName().string() + "\", ";
 	
@@ -78,15 +79,45 @@ static std::string compoundNumericPlugRepr( const T *plug )
 		result += "maxValue = " + IECorePython::repr( v ) + ", ";
 	}
 	
-	if( plug->getFlags() != Plug::Default )
+	const unsigned flags = plug->getFlags() & flagsMask;
+	if( flags != Plug::Default )
 	{
-		result += "flags = " + PlugSerialiser::flagsRepr( plug->getFlags() ) + ", ";
+		result += "flags = " + PlugSerialiser::flagsRepr( flags ) + ", ";
 	}
 	
 	result += ")";
 
 	return result;
 }
+
+template<typename T>
+static std::string compoundNumericPlugRepr( const T *plug )
+{
+	return maskedCompoundNumericPlugRepr( plug, Plug::All );
+}
+
+template<typename T>
+class CompoundNumericPlugSerialiser : public CompoundPlugSerialiser
+{
+
+	public :
+	
+		virtual std::string constructor( const Gaffer::GraphComponent *graphComponent ) const
+		{
+			return maskedCompoundNumericPlugRepr( static_cast<const T *>( graphComponent ), Plug::All & ~Plug::ReadOnly );
+		}
+
+};
+
+template<typename T>
+static void setValue( T *plug, const typename T::ValueType value )
+{
+	// we use a GIL release here to prevent a lock in the case where this triggers a graph
+	// evaluation which decides to go back into python on another thread:
+	IECorePython::ScopedGILRelease r;
+	plug->setValue( value );
+}
+
 
 template<typename T>
 static void bind()
@@ -111,7 +142,7 @@ static void bind()
 		.def( "hasMaxValue", &T::hasMaxValue )
 		.def( "minValue", &T::minValue )
 		.def( "maxValue", &T::maxValue )
-		.def( "setValue", &T::setValue )
+		.def( "setValue", &setValue<T> )
 		.def( "getValue", &T::getValue )
 		.def( "__repr__", &compoundNumericPlugRepr<T> )
 		.def( "canGang", &T::canGang )
@@ -119,6 +150,8 @@ static void bind()
 		.def( "isGanged", &T::isGanged )
 		.def( "ungang", &T::ungang )
 	;
+
+	Serialisation::registerSerialiser( T::staticTypeId(), new CompoundNumericPlugSerialiser<T>() );	
 
 }
 

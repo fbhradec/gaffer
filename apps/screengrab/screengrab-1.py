@@ -73,15 +73,21 @@ class screengrab( Gaffer.Application ) :
 					description = "Command(s) to execute after session is launched. 'script' node is available to interact with script contents",
 					defaultValue = "",
 				),
+				
+				IECore.StringParameter(
+					name = "cmdfile",
+					description = "File containing sequence of commands to execute after session is launched.",
+					defaultValue = "",
+				),
 			]
 			
 		)
-		
-		#dirty hack - pretend we are the gui app so that we can load all of its startup files.
-		self.root().setName("gui") ## these startup files are required to initialise layouts, menus etc 
-
-	
+			
 	def _run( self, args ) :
+		
+		# run the gui startup files so the images we grab are representative
+		# of the layouts and configuration of the gui app.
+		self._executeStartupFiles( "gui" )
 		
 		GafferUI.ScriptWindow.connect( self.root() )
 		
@@ -103,8 +109,18 @@ class screengrab( Gaffer.Application ) :
 			IECore.msg( IECore.Msg.Level.Info, "screengrab", "Creating target directory [ %s ]" % (targetdir) )
 			os.makedirs(targetdir)
 		
-		#execute any commands passed as arguments prior to doing the screengrab
-		exec(str(args["cmd"]))
+		#expose some variables when running the cmd(s)
+		d = {
+				"application" 	: self,
+				"script"		: script,
+			}
+		
+		if str(args["cmd"]) != "": 
+			#execute any commands passed as arguments prior to doing the screengrab
+			exec(str(args["cmd"]), d, d)
+		if str(args["cmdfile"]) != "":
+			#execute any commands passed as arguments prior to doing the screengrab
+			execfile(str(args["cmdfile"]), d, d)
 		
 		#register the function to run when the app is idle.
 		self.__idleCount = 0

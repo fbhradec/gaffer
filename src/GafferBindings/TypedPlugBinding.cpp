@@ -39,6 +39,7 @@
 
 #include "IECorePython/RunTimeTypedBinding.h"
 #include "IECorePython/IECoreBinding.h"
+#include "IECorePython/ScopedGILRelease.h"
 
 #include "Gaffer/TypedPlug.h"
 #include "Gaffer/Node.h"
@@ -50,31 +51,17 @@ using namespace boost::python;
 using namespace GafferBindings;
 using namespace Gaffer;
 
-template<typename T>
-static std::string typedPlugRepr( const T *plug )
-{
-	std::string result = Serialisation::classPath( plug ) + "( \"" + plug->getName().string() + "\", ";
-	
-	if( plug->direction()!=Plug::In )
-	{
-		result += "direction = " + PlugSerialiser::directionRepr( plug->direction() ) + ", ";
-	}
-	
-	typename T::ValueType defaultValue = plug->defaultValue();
-	if( defaultValue!=typename T::ValueType() )
-	{
-		result += "defaultValue = " + IECorePython::repr( defaultValue ) + ", ";
-	}
-	
-	if( plug->getFlags() != Plug::Default )
-	{
-		result += "flags = " + PlugSerialiser::flagsRepr( plug->getFlags() ) + ", ";
-	}
-	
-	result += ")";
 
-	return result;
+
+template<typename T>
+static void setValue( T *plug, const typename T::ValueType value )
+{
+	// we use a GIL release here to prevent a lock in the case where this triggers a graph
+	// evaluation which decides to go back into python on another thread:
+	IECorePython::ScopedGILRelease r;
+	plug->setValue( value );
 }
+
 
 template<typename T>
 static void bind()
@@ -93,9 +80,8 @@ static void bind()
 		)
 		.GAFFERBINDINGS_DEFPLUGWRAPPERFNS( T )
 		.def( "defaultValue", &T::defaultValue, return_value_policy<copy_const_reference>() )
-		.def( "setValue", &T::setValue )
+		.def( "setValue", &setValue<T> )
 		.def( "getValue", &T::getValue )
-		.def( "repr", &typedPlugRepr<T> )
 	;
 	
 }

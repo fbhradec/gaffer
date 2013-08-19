@@ -82,11 +82,11 @@ from ParameterisedHolderTest import ParameterisedHolderTest
 from ParameterHandlerTest import ParameterHandlerTest
 from ChildSetTest import ChildSetTest
 from PythonApplicationTest import PythonApplicationTest
-from ReadNodeTest import ReadNodeTest
+from ObjectReaderTest import ObjectReaderTest
 from OpHolderTest import OpHolderTest
 from ProceduralHolderTest import ProceduralHolderTest
 from ApplicationRootTest import ApplicationRootTest
-from WriteNodeTest import WriteNodeTest
+from ObjectWriterTest import ObjectWriterTest
 from ExecuteApplicationTest import ExecuteApplicationTest
 from ContextTest import ContextTest
 from CompoundPathFilterTest import CompoundPathFilterTest
@@ -123,6 +123,12 @@ from DespatcherTest import DespatcherTest
 from RecursiveChildIteratorTest import RecursiveChildIteratorTest
 from FilteredRecursiveChildIteratorTest import FilteredRecursiveChildIteratorTest
 from ReferenceTest import ReferenceTest
+from OrphanRemoverTest import OrphanRemoverTest
+from GraphComponentPathTest import GraphComponentPathTest
+from InputGeneratorNode import InputGeneratorNode
+from InputGeneratorTest import InputGeneratorTest
+from ArrayPlugNode import ArrayPlugNode
+from ArrayPlugTest import ArrayPlugTest
 
 if __name__ == "__main__":
 	import unittest

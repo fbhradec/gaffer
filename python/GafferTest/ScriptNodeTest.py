@@ -392,7 +392,6 @@ a = A()"""
 		self.assertEqual( s["frameRange"]["start"].getValue(), 100 )
 		self.assertEqual( s["frameRange"]["end"].getValue(), 100 )
 	
-	@GafferTest.expectedFailure
 	def testFrameRangeLoadAndSave( self ) :
 	
 		s = Gaffer.ScriptNode()
@@ -572,6 +571,34 @@ a = A()"""
 		self.assertEqual( n3["op1"].getInput(), None )
 		self.assertEqual( n3["op2"].getInput(), None )
 	
+	def testReconnectionToFloatingNodes( self ) :
+		
+		s = Gaffer.ScriptNode()
+		n1 = GafferTest.AddNode()
+		n2 = GafferTest.AddNode()
+		n3 = GafferTest.AddNode()
+		
+		s.addChild( n1 )
+		s.addChild( n2 )
+		
+		n2["op1"].setInput( n1["sum"] )
+		n2["op2"].setInput( n1["sum"] )
+		
+		n3["op1"].setInput( n2["sum"] )
+		n3["op2"].setInput( n2["sum"] )
+		
+		self.assert_( n2["op1"].getInput().isSame( n1["sum"] ) )
+		self.assert_( n2["op2"].getInput().isSame( n1["sum"] ) )
+		
+		self.assert_( n3["op1"].getInput().isSame( n2["sum"] ) )
+		self.assert_( n3["op2"].getInput().isSame( n2["sum"] ) )
+		
+		s.deleteNodes( filter = Gaffer.StandardSet( [ n2 ] ) )
+		
+		# the inputs to n3 shouldn't have been reconnected, as it's not a descendant of the script:
+		self.assertEqual( n3["op1"].getInput(), None )
+		self.assertEqual( n3["op2"].getInput(), None )
+		
 	def testScriptAccessor( self ) :
 	
 		s = Gaffer.ScriptNode()
@@ -814,14 +841,22 @@ a = A()"""
 		
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 		
-		s["node"] = GafferTest.AddNode()
-		self.assertEqual( s["unsavedChanges"].getValue(), True )
+		# the unsaved changes flag only reacts to undoable changes
+		# so this shouldn't set the flag
+		s["nonUndoableNode"] = GafferTest.AddNode()
+		self.assertEqual( s["unsavedChanges"].getValue(), False )
 		
+		# but this should.
+		with Gaffer.UndoContext( s ) :
+			s["node"] = GafferTest.AddNode()
+		self.assertEqual( s["unsavedChanges"].getValue(), True )
+					
 		s["fileName"].setValue( "/tmp/test.gfr" )
 		s.save()
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 		
-		s["node"]["op1"].setValue( 10 )
+		with Gaffer.UndoContext( s ) :
+			s["node"]["op1"].setValue( 10 )
 		self.assertEqual( s["unsavedChanges"].getValue(), True )
 		
 		s.save()
@@ -846,13 +881,15 @@ a = A()"""
 		s.save()
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 		
-		s["node2"] = GafferTest.AddNode()
+		with Gaffer.UndoContext( s ) :
+			s["node2"] = GafferTest.AddNode()
 		self.assertEqual( s["unsavedChanges"].getValue(), True )
 		
 		s.save()
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 		
-		s["node2"]["op1"].setInput( s["node"]["sum"] )
+		with Gaffer.UndoContext( s ) :
+			s["node2"]["op1"].setInput( s["node"]["sum"] )
 		self.assertEqual( s["unsavedChanges"].getValue(), True )
 		
 		s.save()
@@ -905,7 +942,148 @@ a = A()"""
 		s2.executeFile( "/tmp/test.gfr" )
 		
 		self.assertTrue( s2["n2"]["op1"].getInput().isSame( s2["n1"]["sum"] ) )
-				
+	
+	def testUndoAndRedoOrder( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["p"] = Gaffer.IntPlug()
+		
+		values = []
+		def f( plug ) :
+			values.append( plug.getValue() )
+			
+		c = s["n"].plugSetSignal().connect( f )
+		
+		with Gaffer.UndoContext( s ) :
+			s["n"]["p"].setValue( 10 )
+			s["n"]["p"].setValue( 20 )
+			
+		self.assertEqual( values, [ 10, 20 ] )
+		
+		s.undo()
+		self.assertEqual( values, [ 10, 20, 10, 0 ] )
+
+		s.redo()
+		self.assertEqual( values, [ 10, 20, 10, 0, 10, 20 ] )
+	
+	def testUndoAddedSignal( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		cs = GafferTest.CapturingSlot( s.undoAddedSignal() )
+		
+		s["n"] = Gaffer.Node()	
+		self.assertEqual( cs, [] )
+		
+		with Gaffer.UndoContext( s ) :
+			s["n"]["p"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+			s["n"]["p"].setValue( 100 )
+			
+		self.assertEqual( len( cs ), 1 )
+		self.assertTrue( cs[0][0].isSame( s ) )
+		
+		with Gaffer.UndoContext( s, mergeGroup = "test" ) :
+			s["n"]["p"].setValue( 200 )
+		
+		self.assertEqual( len( cs ), 2 )
+		self.assertTrue( cs[1][0].isSame( s ) )
+		
+		with Gaffer.UndoContext( s, mergeGroup = "test" ) :
+			s["n"]["p"].setValue( 300 )
+		
+		# undo was merged, so a new one wasn't added
+		self.assertEqual( len( cs ), 2 )
+		self.assertTrue( cs[1][0].isSame( s ) )
+
+	def testCustomVariables( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		p = s["variables"].addMember( "test", IECore.IntData( 10 ) )
+		self.assertEqual( s.context().get( "test" ), 10 )
+		p["value"].setValue( 20 )
+		self.assertEqual( s.context().get( "test" ), 20 )
+	
+		s["fileName"].setValue( "/tmp/test.gfr" )
+		s.save()
+		
+		s2 = Gaffer.ScriptNode()
+		s2["fileName"].setValue( "/tmp/test.gfr" )
+		s2.load()
+		
+		self.assertEqual( s2["variables"][p.getName()]["value"].getValue(), 20 )
+		self.assertEqual( s2.context().get( "test" ), 20 )
+	
+	def testFileNameVariables( self ) :
+	
+		s = Gaffer.ScriptNode()
+		self.assertEqual( s.context().get( "script:name" ), "" )
+		
+		s["fileName"].setValue( "/tmp/test.gfr" )
+		self.assertEqual( s.context().get( "script:name" ), "test" )
+	
+	def testReloadWithCustomVariables( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["variables"].addMember( "test", IECore.IntData( 10 ) )
+		
+		s["fileName"].setValue( "/tmp/test.gfr" )
+		s.save()
+		
+		s["variables"][0]["value"].setValue( 100 )
+		s.load()
+		
+		self.assertEqual( len( s["variables"] ), 1 )
+		self.assertEqual( s["variables"][0]["value"].getValue(), 10 )
+	
+	def testCurrentActionStage( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferTest.AddNode()
+		
+		actionStages = []
+		def f( plug ) :
+		
+			actionStages.append( s.currentActionStage() )
+			
+			if s.currentActionStage() != Gaffer.Action.Stage.Invalid :
+				self.assertFalse( s.undoAvailable() )
+				self.assertFalse( s.redoAvailable() )
+			
+		c = s["n"].plugSetSignal().connect( f )
+		
+		self.assertEqual( s.currentActionStage(), Gaffer.Action.Stage.Invalid )
+		self.assertEqual( len( actionStages ), 0 )
+		
+		s["n"]["op1"].setValue( 10 )
+		
+		self.assertEqual( len( actionStages ), 1 )
+		self.assertEqual( actionStages[-1], Gaffer.Action.Stage.Invalid )
+		
+		with Gaffer.UndoContext( s ) :
+			s["n"]["op1"].setValue( 11 )
+			
+		self.assertEqual( len( actionStages ), 2 )
+		self.assertEqual( actionStages[-1], Gaffer.Action.Stage.Do )
+		
+		s.undo()
+		
+		self.assertEqual( len( actionStages ), 3 )
+		self.assertEqual( actionStages[-1], Gaffer.Action.Stage.Undo )
+		
+		s.redo()
+		
+		self.assertEqual( len( actionStages ), 4 )
+		self.assertEqual( actionStages[-1], Gaffer.Action.Stage.Redo )
+		
+		s.undo()
+		
+		self.assertEqual( len( actionStages ), 5 )
+		self.assertEqual( actionStages[-1], Gaffer.Action.Stage.Undo )
+		
+		self.assertEqual( s.currentActionStage(), Gaffer.Action.Stage.Invalid )
+		
 	def tearDown( self ) :
 	
 		for f in (

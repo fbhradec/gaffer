@@ -1,3 +1,111 @@
+0.75.0
+======
+
+- Added a channel mask feature to GafferImageUI::ImageView. Use the r,g,b and a keys to isolate individual channels (#403).
+- Updated for compatibility with Cortex 8.0.0a14.
+- Updated screengrab app to allow the execution of a commands file.
+- Added a node find dialogue, accessible via the Edit/Find.. menu item (#454).
+- Added NodeGraph.frame( nodes ) method. This can be used to frame specific nodes within the viewport of the NodeGraph.
+- Addressed thread related hangs when using an InteractiveRenderManRender and deleting or connecting nodes.
+
+0.74.0
+======
+
+- Added a multitude of miscellaneous documentation improvements.
+- Implemented parameterName.type RenderManShader annotation (#456).
+- Implemented parameterName.coshaderType RenderManShader annotation (#460).
+- Fixed disabled Shader pass-through bugs.
+- Added variable length coshader array support to RenderManShader (#462).
+
+0.73.0
+======
+
+- Implemented connection hiding for the NodeGraph. This is accessed by right clicking on a node in the Node Graph and using the new "Show Input Connections" and "Show Output Connections" menu items (#429).
+- Fixed const correctness of GraphGadget::getNodePosition().
+- Fixed connection drag bug. Dragging the endpoint of a connection around and then placing it back where it started was breaking the connection, whereas it should have been having no effect.
+- Replaced Enabled/Disable node menu item with Enabled checkbox.
+- Added titles to the node graph context menus.
+
+0.72.2
+======
+
+- Fixed Box creation with nested connected plugs. This allows the creation of Boxes with shader nodes with input connections.
+- Fixed removal of nodules from nodes in the graph ui when Plugs are removed.
+- Fixed InputGenerator bugs and added python bindings and tests.
+- Fixed Group bugs involving dynamically generated inputs and undo (#179, #210, #302).
+- Tidied up node menu labels.
+- Renamed WriteNode to ObjectWriter and ReadNode to ObjectReader (#17).
+- Fixed minimum height of ramp editor (#445).
+- Fixed empty messages from ErrorDialogue.ExceptionHandler.
+- Added popup error dialogues for file save failures (#449).
+- Fixed context used by interactive render nodes.
+
+0.72.1
+======
+
+- Updated PySide build.
+- Fixed bug expanding objects in viewer when a custom variable was needed by the computation (#438).
+- Fixed boxing of RenderMan coshaders (#440).
+- Fixed Qt 4.6 compatibility.
+
+0.72.0
+======
+
+- Added workaround for weird focus-stealing behaviour in Maya.
+- Added application variable to the scope available to the screen grab command.
+- Added support for empty and relative paths in Gaffer.Path. ( #432, #324 )
+    
+    - Added root parameter to all path constructors. This is used to define the root when the path parameter is passed a list of items. Because python doesn't allow overloaded functions this is slightly awkward - see documentation of Path.__init__ for discussion of how this would break down into overloaded constructors when we move the implementation to C++.
+    - Added Path.root() and Path.isEmpty() methods.
+    - Added Path.setFromPath() method, which copies the elements and the root from another path. This should be used in place of code which formerly did path[:] = otherPath[:].
+    
+    Note that the new root parameter changes the parameter order for all Path (and derived class) constructors - if you were formerly passing a filter as a non-keyword argument you should now pass it as a keyword argument to avoid problems. Additionally, if you implemented a custom Path subclass, you need to add the root parameter to your constructor and update your copy() and children() implementations. The DictPath changes provide a minimal example of what needs changing.
+    
+0.71.0
+======
+
+- Variable substitution improvements
+	- Added standard ${script:name} variable (#407)
+	- Added custom script-wide variables accessible via the File->Settings menu (#407)
+	- Added support for variable references within variables (recursive substitution)
+	- Added environment variable and ~ substitution
+	- Added standard ${project:name} and ${project:rootDirectory} variables.
+- Fixed save and load of ReadOnly plugs.
+- Removed Escape hotkey for leaving full screen mode. The same function is served by the ` hotkey.
+- Defined default locations for ribs, ass files and rendered images.
+- Added automatic directory creation for display, rib and ass locations (#59)
+- Added GraphComponent::clearChildren() method
+- Greyed out File->RevertToSaved menu item when it doesn't make sense
+- Improved CompoundDataPlug data representation
+- CompoundPlugValueWidget using PlugValueWidget.hasLabel() to avoid unecessary labelling
+- Fixed UI for promoted plugs (#264)
+- Fixed bug where deleted children of Boxes weren't removed from the selection (#430)
+- Fixed bug where pinned nodes were still visible in the UI after being deleted (#308)
+- Fixed hangs caused by adjusting colours while rerendering
+- Tidied up some test cases
+
+0.70.0
+======
+
+* Added Ganging for CompoundNumericPlugs (#402)
+* Added menu item for loading renderman shaders from file (#125)
+* Added color ramp editing support (#286)
+* Added spline parameter support to RenderManShader::loadShader()
+* Added shader annotations for passing default values to RenderManShader splines
+* Added dividers in the NodeEditor, available to RenderMan shaders via the annotation "parameterName.divider" (#288)
+* Added API for undo merging. 
+* Added ScriptNode::undoAddedSignal() (#103)
+* Fixed hiding of Menu when using the search box
+* Fixed tab focus ordering in NodeEditor (#107)
+* Improved GadgetWidget focus behaviour (#119)
+* Fixed redundant CompoundNumericPlug serialisation (#2)
+* Fixed scrubbing of values for IntPlugs
+* Fixed size issues caused by TabbedContainer size policy (Settings and About window)
+* Fixed bug in Random::affects()
+* Fixed multiple undo entries in virtual sliders, cursor up/down nudging, color choser, and ramps (#400)
+* Fixed Ctrl+C copy shortcut in non-editable MultiLineTextWidgets
+* Hid Shader enabled plug in the UI (#398)
+
 0.69.1
 ======
 

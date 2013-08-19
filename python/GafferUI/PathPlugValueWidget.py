@@ -54,7 +54,8 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 			
 		GafferUI.PlugValueWidget.__init__( self, self.__row, plug, **kw )
 
-		self.__path = path if path is not None else Gaffer.FileSystemPath( "/" )
+		self.__path = path if path is not None else Gaffer.FileSystemPath()
+				
 		self.__pathChooserDialogueKeywords = pathChooserDialogueKeywords
 
 		pathWidget = GafferUI.PathWidget( self.__path )
@@ -101,22 +102,27 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 								
 		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
 			self.getPlug().setValue( str( self.__path ) )
+		
+		# now we've transferred the text changes to the global undo queue, we remove them
+		# from the widget's private text editing undo queue. it will then ignore undo shortcuts,
+		# allowing them to fall through to the global undo shortcut.
+		self.pathWidget().clearUndo()
 
 	def __buttonClicked( self, widget ) :
 	
 		# make a copy so we're not updating the main path as users browse
 		pathCopy = self.__path.copy()
-		## \todo Currently we can't distinguish between "/" and an empty path. There are a lot
-		# more occurrences of empty paths (parameter default values) than there are "/" root paths,
-		# so start browsing from the current directory rather than the root if the path is "/".
-		# We should update the path class to have the concept of empty paths and relative paths
-		# and remove this code.
-		if isinstance( pathCopy, ( Gaffer.SequencePath, Gaffer.FileSystemPath ) ) and len( pathCopy ) == 0 :
-			pathCopy.setFromString( os.getcwd() )
+		
+		if pathCopy.isEmpty() :
+			# choose a sensible starting location if the path is empty.
+			if isinstance( pathCopy, ( Gaffer.SequencePath, Gaffer.FileSystemPath ) ) :
+				pathCopy.setFromString( os.getcwd() )
+			else :
+				pathCopy.setFromString( "/" )
 		
 		dialogue = GafferUI.PathChooserDialogue( pathCopy, **self.__pathChooserDialogueKeywords )
 		chosenPath = dialogue.waitForPath( parentWindow = self.ancestor( GafferUI.Window ) )
 		
 		if chosenPath is not None :
-			self.__path[:] = chosenPath[:]
+			self.__path.setFromString( str( chosenPath ) )
 			self.__setPlugValue()

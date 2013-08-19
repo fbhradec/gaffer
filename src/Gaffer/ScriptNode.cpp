@@ -37,9 +37,12 @@
 
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
+#include "boost/filesystem/path.hpp"
+#include "boost/filesystem/convenience.hpp"
 
 #include "IECore/Exception.h"
 #include "IECore/SimpleTypedData.h"
+#include "IECore/MessageHandler.h"
 
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/TypedPlug.h"
@@ -49,8 +52,13 @@
 #include "Gaffer/CompoundPlug.h"
 #include "Gaffer/StandardSet.h"
 #include "Gaffer/DependencyNode.h"
+#include "Gaffer/CompoundDataPlug.h"
 
 using namespace Gaffer;
+
+//////////////////////////////////////////////////////////////////////////
+// ScriptContainer implementation
+//////////////////////////////////////////////////////////////////////////
 
 namespace Gaffer
 {
@@ -59,12 +67,138 @@ GAFFER_DECLARECONTAINERSPECIALISATIONS( ScriptContainer, ScriptContainerTypeId )
 
 }
 
+//////////////////////////////////////////////////////////////////////////
+// CompoundAction implementation. We use this to group up all the actions
+// that will become a single undo/redo event.
+//////////////////////////////////////////////////////////////////////////
+
+class ScriptNode::CompoundAction : public Gaffer::Action
+{
+
+	public :
+	
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::ScriptNode::CompoundAction, CompoundActionTypeId, Gaffer::Action );
+
+		CompoundAction( ScriptNode *subject, const std::string &mergeGroup )
+			:	m_subject( subject ), m_mergeGroup( mergeGroup )
+		{
+		}
+		
+		void addAction( ActionPtr action )
+		{
+			m_actions.push_back( action );
+		}
+		
+		size_t numActions() const
+		{
+			return m_actions.size();
+		}
+		
+	protected :
+
+		friend class ScriptNode;
+
+		virtual GraphComponent *subject() const
+		{
+			return m_subject;
+		}
+		
+		virtual void doAction()
+		{
+			for( std::vector<ActionPtr>::const_iterator it = m_actions.begin(), eIt = m_actions.end(); it != eIt; ++it )
+			{
+				(*it)->doAction();
+				// we know we're only ever being redone, because the ScriptNode::addAction()
+				// performs the original Do.
+				m_subject->actionSignal()( m_subject, it->get(), Action::Redo );
+			}
+		}
+		
+		virtual void undoAction()
+		{
+			for( std::vector<ActionPtr>::const_reverse_iterator it = m_actions.rbegin(), eIt = m_actions.rend(); it != eIt; ++it )
+			{
+				(*it)->undoAction();
+				m_subject->actionSignal()( m_subject, it->get(), Action::Undo );
+			}
+		}
+		
+		virtual bool canMerge( const Action *other ) const
+		{
+			if( !Action::canMerge( other ) )
+			{
+				return false;
+			}
+			
+			if( !m_mergeGroup.size() )
+			{
+				return false;
+			}
+			
+			const CompoundAction *compoundAction = IECore::runTimeCast<const CompoundAction>( other );
+			if( !compoundAction )
+			{
+				return false;
+			}
+			
+			if( m_mergeGroup != compoundAction->m_mergeGroup )
+			{
+				return false;
+			}
+			
+			if( m_actions.size() != compoundAction->m_actions.size() )
+			{
+				return false;
+			}
+			
+			for( size_t i = 0, e = m_actions.size(); i < e; ++i )
+			{
+				if( !m_actions[i]->canMerge( compoundAction->m_actions[i] ) )
+				{
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		
+		virtual void merge( const Action *other )
+		{
+			const CompoundAction *compoundAction = static_cast<const CompoundAction *>( other );
+			for( size_t i = 0, e = m_actions.size(); i < e; ++i )
+			{
+				m_actions[i]->merge( compoundAction->m_actions[i] );
+			}
+		}
+
+	private :
+
+		// this can't be a smart pointer because then we'd get
+		// a reference cycle between us and the script.
+		ScriptNode *m_subject;
+		std::string m_mergeGroup;
+		std::vector<ActionPtr> m_actions;
+		
+};
+
+IE_CORE_DEFINERUNTIMETYPED( ScriptNode::CompoundAction );
+
+//////////////////////////////////////////////////////////////////////////
+// ScriptNode implementation
+//////////////////////////////////////////////////////////////////////////
+
 IE_CORE_DEFINERUNTIMETYPED( ScriptNode );
 
 size_t ScriptNode::g_firstPlugIndex = 0;
 
 ScriptNode::ScriptNode( const std::string &name )
-	:	Node( name ), m_selection( new StandardSet ), m_undoIterator( m_undoList.end() ), m_context( new Context )
+	:
+	Node( name ),
+	m_selection( new StandardSet ),
+	m_selectionOrphanRemover( m_selection ),
+	m_undoIterator( m_undoList.end() ),
+	m_currentActionStage( Action::Invalid ),
+	m_context( new Context )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -78,9 +212,12 @@ ScriptNode::ScriptNode( const std::string &name )
 	frameRangePlug->addChild( frameEndPlug );
 	addChild( frameRangePlug );
 	
+	addChild( new CompoundDataPlug( "variables" ) );
+	
+	m_context->set( "script:name", std::string( "" ) );
+	
 	m_selection->memberAcceptanceSignal().connect( boost::bind( &ScriptNode::selectionSetAcceptor, this, ::_1, ::_2 ) );
 
-	childRemovedSignal().connect( boost::bind( &ScriptNode::childRemoved, this, ::_1, ::_2 ) );
 	plugSetSignal().connect( boost::bind( &ScriptNode::plugSet, this, ::_1 ) );
 }
 
@@ -123,55 +260,149 @@ const StandardSet *ScriptNode::selection() const
 	return m_selection;
 }
 
+void ScriptNode::pushUndoState( UndoContext::State state, const std::string &mergeGroup )
+{
+	if( m_undoStateStack.size() == 0 )
+	{
+		assert( m_actionAccumulator==0 );
+		m_actionAccumulator = new CompoundAction( this, mergeGroup );
+		m_currentActionStage = Action::Do;
+	}
+	m_undoStateStack.push( state );
+}
+
+void ScriptNode::addAction( ActionPtr action )
+{
+	action->doAction();
+	if( m_actionAccumulator && m_undoStateStack.top() == UndoContext::Enabled )
+	{
+		m_actionAccumulator->addAction( action );
+		actionSignal()( this, action.get(), Action::Do );
+	}
+}
+
+void ScriptNode::popUndoState()
+{
+	if( !m_undoStateStack.size() )
+	{
+		IECore::msg( IECore::Msg::Warning, "ScriptNode::popUndoState", "Bad undo stack nesting detected" );
+		return;
+	}
+	
+	m_undoStateStack.pop();
+	
+	if( m_undoStateStack.size()==0 )
+	{
+		if( m_actionAccumulator->numActions() )
+		{
+			m_undoList.erase( m_undoIterator, m_undoList.end() );
+			
+			bool merged = false;
+			if( !m_undoList.empty() )
+			{
+				CompoundAction *lastAction = m_undoList.rbegin()->get();
+				if( lastAction->canMerge( m_actionAccumulator ) )
+				{
+					lastAction->merge( m_actionAccumulator );
+					merged = true;
+				}
+			}
+			
+			if( !merged )
+			{
+				m_undoList.insert( m_undoList.end(), m_actionAccumulator );		
+			}
+			
+			m_undoIterator = m_undoList.end();
+			
+			if( !merged )
+			{
+				undoAddedSignal()( this );
+			}
+			
+			UndoContext undoDisabled( this, UndoContext::Disabled );
+			unsavedChangesPlug()->setValue( true );
+		}
+		m_actionAccumulator = 0;
+		m_currentActionStage = Action::Invalid;
+	}
+	
+}	
+
 bool ScriptNode::undoAvailable() const
 {
-	return m_undoIterator != m_undoList.begin();
+	return m_currentActionStage == Action::Invalid && m_undoIterator != m_undoList.begin();
 }
 
 void ScriptNode::undo()
 {
 	if( !undoAvailable() )
 	{
-		throw IECore::Exception( "Nothing to undo" );
+		throw IECore::Exception( "Undo not available" );
 	}
-	m_undoIterator--;
-	for( ActionVector::reverse_iterator it=(*m_undoIterator)->rbegin(); it!=(*m_undoIterator)->rend(); it++ )
-	{
-		(*it)->undoAction();
-		{
-			UndoContext undoDisabled( this, UndoContext::Disabled );
-			unsavedChangesPlug()->setValue( true );
-		}
-		actionSignal()( this, it->get(), Action::Undo );
-	}
+	
+	m_currentActionStage = Action::Undo;
+	
+		m_undoIterator--;
+		(*m_undoIterator)->undoAction();
+
+	/// \todo It's conceivable that an exception from somewhere in
+	/// Action::undoAction() could prevent this cleanup code from running,
+	/// leaving us in a bad state. This could perhaps be addressed
+	/// by using BOOST_SCOPE_EXIT. The most likely cause of such an
+	/// exception would be in an errant slot connected to a signal
+	/// triggered by the action performed. However, currently most
+	/// python slot callers suppress python exceptions (printing
+	/// them to the shell), so it's not even straightforward to
+	/// write a test case for this potential problem. It could be
+	/// argued that we shouldn't be suppressing exceptions in slots,
+	/// but if we don't then well-behaved (and perhaps crucial) slots
+	/// might not get called when badly behaved slots mess up. It seems
+	/// best to simply report errors as we do, and allow the well behaved
+	/// slots to have their turn - we might even want to extend this
+	/// behaviour to the c++ slots.
+	m_currentActionStage = Action::Invalid;
+	
+	UndoContext undoDisabled( this, UndoContext::Disabled );
+	unsavedChangesPlug()->setValue( true );
 }
 
 bool ScriptNode::redoAvailable() const
 {
-	return m_undoIterator != m_undoList.end();
+	return m_currentActionStage == Action::Invalid && m_undoIterator != m_undoList.end();
 }
 
 void ScriptNode::redo()
 {
 	if( !redoAvailable() )
 	{
-		throw IECore::Exception( "Nothing to redo" );
+		throw IECore::Exception( "Redo not available" );
 	}
-	for( ActionVector::iterator it=(*m_undoIterator)->begin(); it!=(*m_undoIterator)->end(); it++ )
-	{
-		(*it)->doAction();
-		{
-			UndoContext undoDisabled( this, UndoContext::Disabled );
-			unsavedChangesPlug()->setValue( true );
-		}
-		actionSignal()( this, it->get(), Action::Redo );
-	}
-	m_undoIterator++;
+	
+	m_currentActionStage = Action::Redo;
+
+		(*m_undoIterator)->doAction();
+		m_undoIterator++;
+
+	m_currentActionStage = Action::Invalid;
+	
+	UndoContext undoDisabled( this, UndoContext::Disabled );
+	unsavedChangesPlug()->setValue( true );
+}
+
+Action::Stage ScriptNode::currentActionStage() const
+{
+	return m_currentActionStage;
 }
 
 ScriptNode::ActionSignal &ScriptNode::actionSignal()
 {
 	return m_actionSignal;
+}
+
+ScriptNode::UndoAddedSignal &ScriptNode::undoAddedSignal()
+{
+	return m_undoAddedSignal;
 }
 
 void ScriptNode::copy( const Node *parent, const Set *filter )
@@ -260,7 +491,7 @@ void ScriptNode::deleteNodes( Node *parent, const Set *filter, bool reconnect )
 					for ( Plug::OutputContainer::const_iterator oIt = outputs.begin(); oIt != outputs.end(); )
 					{
 						Plug *dstPlug = *oIt;
-						if ( dstPlug && dstPlug->acceptsInput( srcPlug ) )
+						if ( dstPlug && dstPlug->acceptsInput( srcPlug ) && this->isAncestorOf( dstPlug ) )
 						{
 							oIt++;
 							dstPlug->setInput( srcPlug );
@@ -354,6 +585,16 @@ const Context *ScriptNode::context() const
 	return m_context.get();
 }
 
+CompoundDataPlug *ScriptNode::variablesPlug()
+{
+	return getChild<CompoundDataPlug>( g_firstPlugIndex + 3 );
+}
+
+const CompoundDataPlug *ScriptNode::variablesPlug() const
+{
+	return getChild<CompoundDataPlug>( g_firstPlugIndex + 3 );
+}
+
 IntPlug *ScriptNode::frameStartPlug()
 {
 	return getChild<CompoundPlug>( g_firstPlugIndex + 2 )->getChild<IntPlug>( 0 );
@@ -374,15 +615,9 @@ const IntPlug *ScriptNode::frameEndPlug() const
 	return getChild<CompoundPlug>( g_firstPlugIndex + 2 )->getChild<IntPlug>( 1 );
 }
 
-void ScriptNode::childRemoved( GraphComponent *parent, GraphComponent *child )
-{
-	m_selection->remove( child );
-}
-
 void ScriptNode::plugSet( Plug *plug )
 {
-	/// \todo Should we introduce some plug constraints classes to assist in managing these
-	/// kinds of relationships?
+	/// \todo Implement this min/max behaviour enforcement as a Behaviour subclass.
 	if( plug == frameStartPlug() )
 	{
 		frameEndPlug()->setValue( std::max( frameEndPlug()->getValue(), frameStartPlug()->getValue() ) );
@@ -390,5 +625,19 @@ void ScriptNode::plugSet( Plug *plug )
 	else if( plug == frameEndPlug() )
 	{
 		frameStartPlug()->setValue( std::min( frameStartPlug()->getValue(), frameEndPlug()->getValue() ) );	
+	}
+	else if( plug == variablesPlug() )
+	{
+		IECore::CompoundDataMap values;
+		variablesPlug()->fillCompoundData( values );
+		for( IECore::CompoundDataMap::const_iterator it = values.begin(), eIt = values.end(); it != eIt; ++it )
+		{
+			context()->set( it->first, it->second.get() );
+		}
+	}
+	else if( plug == fileNamePlug() )
+	{
+		boost::filesystem::path fileName( fileNamePlug()->getValue() );
+		context()->set( "script:name", boost::filesystem::basename( fileName ) );
 	}
 }

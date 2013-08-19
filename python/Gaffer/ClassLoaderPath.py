@@ -1,6 +1,6 @@
 ##########################################################################
 #  
-#  Copyright (c) 2012, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2012-2013, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -38,9 +38,9 @@ import Gaffer
 
 class ClassLoaderPath( Gaffer.Path ) :
 
-	def __init__( self, classLoader, path, filter=None ) :
+	def __init__( self, classLoader, path, root="/", filter=None ) :
 		
-		Gaffer.Path.__init__( self, path, filter )
+		Gaffer.Path.__init__( self, path, root, filter )
 	
 		self.__classLoader = classLoader
 	
@@ -76,7 +76,7 @@ class ClassLoaderPath( Gaffer.Path ) :
 		
 	def copy( self ) :
 	
-		return ClassLoaderPath( self.__classLoader, self[:], self.getFilter() )
+		return ClassLoaderPath( self.__classLoader, self[:], self.root(), self.getFilter() )
 	
 	def classLoader( self ) :
 	
@@ -90,9 +90,9 @@ class ClassLoaderPath( Gaffer.Path ) :
 	
 		result = []
 		added = set()
-		matcher = str( self )[1:] + "/*" if len( self ) else "*"
+		matcher = "/".join( self[:] ) + "/*" if len( self ) else "*"
 		for n in self.__classLoader.classNames( matcher) :
-			child = ClassLoaderPath( self.__classLoader, "/" + n, self.getFilter() )
+			child = ClassLoaderPath( self.__classLoader, self.root() + n, filter=self.getFilter() )
 			while len( child ) > len( self ) + 1 :
 				del child[-1]
 			if str( child ) not in added :

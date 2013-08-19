@@ -324,13 +324,20 @@ bool StandardNodule::drop( GadgetPtr gadget, const DragDropEvent &event )
 	{	
 		Gaffer::UndoContext undoEnabler( input->ancestor<Gaffer::ScriptNode>() );
 
+			input->setInput( output );
+			
 			ConnectionGadgetPtr connection = IECore::runTimeCast<ConnectionGadget>( event.sourceGadget );
 			if( connection && plug()->direction()==Gaffer::Plug::In )
 			{
-				connection->dstNodule()->plug()->setInput( 0 );
+				// it's important that we remove the old connection /after/ making the
+				// new connection above, as removing a connection can trigger an InputGenerator
+				// to remove plugs, possibly including the input plug we're want to connect to.
+				// see issue #302.
+				if( connection->dstNodule()->plug() != input )
+				{
+					connection->dstNodule()->plug()->setInput( 0 );
+				}
 			}
-
-			input->setInput( output );
 			
 		return true;
 	}

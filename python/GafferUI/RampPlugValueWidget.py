@@ -52,6 +52,7 @@ class RampPlugValueWidget( GafferUI.PlugValueWidget ) :
 			
 			self.__splineWidget = GafferUI.SplineWidget()
 			self.__splineWidget.setDrawMode( self.__splineWidget.DrawMode.Ramp )
+			self.__splineWidget._qtWidget().setMinimumHeight( 50 )
 			
 			self.__slider = GafferUI.Slider()
 			self.__slider.setSizeEditable( True )
@@ -59,7 +60,10 @@ class RampPlugValueWidget( GafferUI.PlugValueWidget ) :
 			self.__positionsChangedConnection = self.__slider.positionChangedSignal().connect( Gaffer.WeakMethod( self.__positionsChanged ) )
 			self.__indexRemovedConnection = self.__slider.indexRemovedSignal().connect( Gaffer.WeakMethod( self.__indexRemoved ) )
 			self.__selectedIndexChangedConnection = self.__slider.selectedIndexChangedSignal().connect( Gaffer.WeakMethod( self.__selectedIndexChanged ) )
-		
+
+			self.__lastPositionChangedReason = None
+			self.__positionsMergeGroupId = 0
+
 			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 ) :
 			
 				self.__positionLabel = GafferUI.LabelPlugValueWidget( plug.pointXPlug( 0 ) )
@@ -104,10 +108,18 @@ class RampPlugValueWidget( GafferUI.PlugValueWidget ) :
 			with Gaffer.BlockedConnection( self.__positionsChangedConnection ) :
 				self.__slider.setPositions( positions )
 	
-	def __positionsChanged( self, slider ) :
+	def __positionsChanged( self, slider, reason ) :
+		
+		if not slider.changesShouldBeMerged( self.__lastPositionChangedReason, reason ) :
+			self.__positionsMergeGroupId += 1
+		self.__lastPositionChangedReason = reason
 		
 		plug = self.getPlug()
-		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
+		with Gaffer.UndoContext(
+			plug.ancestor( Gaffer.ScriptNode.staticTypeId() ),
+			mergeGroup = "RampPlugValudWidget%d%d" % ( id( self, ), self.__positionsMergeGroupId )
+		) :
+		
 			if len( slider.getPositions() ) == plug.numPoints() :
 				# the user has moved an existing point on the slider
 				for index, position in enumerate( slider.getPositions() ) :

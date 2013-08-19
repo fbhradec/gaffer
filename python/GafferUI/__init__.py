@@ -203,6 +203,7 @@ from UserPlugValueWidget import UserPlugValueWidget
 import PreferencesUI
 from SplinePlugValueWidget import SplinePlugValueWidget
 from RampPlugValueWidget import RampPlugValueWidget
+from NodeFinderDialogue import NodeFinderDialogue
 
 # then stuff specific to parameterised objects
 
@@ -226,8 +227,8 @@ import ParameterPresets
 
 # and specific node uis
 
-import ReadNodeUI
-import WriteNodeUI
+import ObjectReaderUI
+import ObjectWriterUI
 import RandomUI
 import ExpressionUI
 import BoxUI

@@ -77,7 +77,10 @@
 #include "GafferBindings/ExecutableNodeBinding.h"
 #include "GafferBindings/DespatcherBinding.h"
 #include "GafferBindings/ReferenceBinding.h"
+#include "GafferBindings/BehaviourBinding.h"
+#include "GafferBindings/ArrayPlugBinding.h"
 
+using namespace boost::python;
 using namespace Gaffer;
 using namespace GafferBindings;
 
@@ -123,9 +126,17 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindDespatcher();
 	bindExecutableOpHolder();
 	bindReference();
+	bindArrayPlug();
 			
 	DependencyNodeClass<ContextProcessorComputeNode>();
 	DependencyNodeClass<TimeWarpComputeNode>();
 	DependencyNodeClass<ContextVariablesComputeNode>();
+
+	object behavioursModule( borrowed( PyImport_AddModule( "Gaffer.Behaviours" ) ) );
+	scope().attr( "Behaviours" ) = behavioursModule;	
+
+	scope behavioursScope( behavioursModule );
+	
+	bindBehaviours();
 
 }

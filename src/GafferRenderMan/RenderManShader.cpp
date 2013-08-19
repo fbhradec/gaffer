@@ -49,6 +49,7 @@
 #include "Gaffer/CompoundNumericPlug.h"
 #include "Gaffer/TypedObjectPlug.h"
 #include "Gaffer/SplinePlug.h"
+#include "Gaffer/ArrayPlug.h"
 
 #include "GafferRenderMan/RenderManShader.h"
 
@@ -89,30 +90,13 @@ const Gaffer::Plug *RenderManShader::correspondingInput( const Gaffer::Plug *out
 		return Shader::correspondingInput( output );
 	}
 
-	std::string shaderName = namePlug()->getValue();
-	if( !shaderName.size() )
+	ConstCompoundDataPtr ann = annotations();
+	if( !ann )
 	{
 		return 0;
 	}
 	
-	IECore::ConstShaderPtr shader = 0;
-	try
-	{
-		shader = runTimeCast<const IECore::Shader>( shaderLoader()->read( shaderName + ".sdl" ) );
-	}
-	catch( const std::exception &e )
-	{
-		IECore::msg( IECore::Msg::Error, "RenderManShader::correspondingInput", e.what() );
-		return 0;
-	}
-	
-	const CompoundData *annotations = shader->blindData()->member<CompoundData>( "ri:annotations" );
-	if( !annotations )
-	{
-		return 0;
-	}
-	
-	const StringData *primaryInput = annotations->member<StringData>( "primaryInput" );
+	const StringData *primaryInput = ann->member<StringData>( "primaryInput" );
 	if( !primaryInput )
 	{
 		return 0;
@@ -151,19 +135,52 @@ bool RenderManShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) co
 	
 	if( parametersPlug()->isAncestorOf( plug ) )
 	{
+		const Plug *sourcePlug = inputPlug->source<Plug>();
 		if( plug->typeId() == Plug::staticTypeId() )
 		{
 			// coshader parameter - input must be another
 			// renderman shader hosting a coshader.
-			const RenderManShader *inputShader = inputPlug->parent<RenderManShader>();
-			return inputShader && inputPlug->getName() == "out" && inputShader->typePlug()->getValue() == "ri:shader";
+			const RenderManShader *inputShader = sourcePlug->parent<RenderManShader>();
+			if(
+				!inputShader ||
+				sourcePlug != inputShader->outPlug() ||
+				inputShader->typePlug()->getValue() != "ri:shader"
+			)
+			{
+				return false;
+			}
+			// so far all is good, but we also need to check that
+			// the coshaderType annotations match if present.
+			ConstCompoundDataPtr dstAnnotations = annotations();
+			if( !dstAnnotations )
+			{
+				return true;
+			}
+			InternedString parameterName = plug->getName();
+			if( plug->parent<GraphComponent>() != parametersPlug() )
+			{
+				// array parameter
+				parameterName = plug->parent<GraphComponent>()->getName();
+			}
+			const StringData *dstType = dstAnnotations->member<StringData>( parameterName.string() + ".coshaderType" );
+			if( !dstType )
+			{
+				return true;
+			}
+			ConstCompoundDataPtr srcAnnotations = inputShader->annotations();
+			if( !srcAnnotations )
+			{
+				return false;
+			}
+			const StringData *srcType = srcAnnotations->member<StringData>( "coshaderType" );
+			return srcType && srcType->readable() == dstType->readable();
 		}
 		else
 		{
 			// standard parameter - input must not be the
 			// output of another shader.
-			const Shader *inputShader = inputPlug->ancestor<Shader>();
-			return !inputShader || inputPlug != inputShader->outPlug();
+			const Shader *inputShader = sourcePlug->ancestor<Shader>();
+			return !inputShader || sourcePlug != inputShader->outPlug();
 		}
 	}
 	
@@ -172,7 +189,7 @@ bool RenderManShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) co
 
 void RenderManShader::parameterHash( const Gaffer::Plug *parameterPlug, NetworkBuilder &network, IECore::MurmurHash &h ) const
 {
-	if( parameterPlug->typeId() == CompoundPlug::staticTypeId() )
+	if( parameterPlug->isInstanceOf( ArrayPlug::staticTypeId() ) )
 	{
 		// coshader array parameter
 		for( InputPlugIterator cIt( parameterPlug ); cIt != cIt.end(); ++cIt )
@@ -205,7 +222,7 @@ IECore::DataPtr RenderManShader::parameterValue( const Gaffer::Plug *parameterPl
 			}
 		}
 	}
-	else if( parameterPlug->typeId() == CompoundPlug::staticTypeId() )
+	else if( parameterPlug->isInstanceOf( ArrayPlug::staticTypeId() ) )
 	{
 		// coshader array parameter
 		StringVectorDataPtr value = new StringVectorData();
@@ -228,6 +245,32 @@ IECore::DataPtr RenderManShader::parameterValue( const Gaffer::Plug *parameterPl
 	return Shader::parameterValue( parameterPlug, network );
 }
 
+const IECore::ConstCompoundDataPtr RenderManShader::annotations() const
+{
+	std::string shaderName = namePlug()->getValue();
+	if( !shaderName.size() )
+	{
+		return NULL;
+	}
+	
+	IECore::ConstShaderPtr shader = NULL;
+	try
+	{
+		shader = runTimeCast<const IECore::Shader>( shaderLoader()->read( shaderName + ".sdl" ) );
+	}
+	catch( const std::exception &e )
+	{
+		IECore::msg( IECore::Msg::Error, "RenderManShader::annotations", e.what() );
+		return NULL;
+	}
+	
+	return shader->blindData()->member<CompoundData>( "ri:annotations" );
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Loading code
+//////////////////////////////////////////////////////////////////////////
+
 IECore::CachedReader *RenderManShader::shaderLoader()
 {
 	static CachedReaderPtr g_loader;
@@ -235,23 +278,21 @@ IECore::CachedReader *RenderManShader::shaderLoader()
 	{
 		const char *sp = getenv( "DL_SHADERS_PATH" );
 		sp = sp ? sp : "";
-		g_loader = new CachedReader( SearchPath( sp, ":" ), 10 * 1024 * 1024 );
+		g_loader = new CachedReader( SearchPath( sp, ":" ) );
 	}
 	return g_loader.get();
 }
 
 template <typename PlugType>
-static void loadParameter( Gaffer::CompoundPlug *parametersPlug, const std::string &name, const Data *defaultValue )
+static void loadParameter( Gaffer::CompoundPlug *parametersPlug, const std::string &name, const typename PlugType::ValueType &defaultValue )
 {
-	const TypedData<typename PlugType::ValueType> *typedDefaultValue = static_cast<const TypedData<typename PlugType::ValueType> *>( defaultValue );
-
 	PlugType *existingPlug = parametersPlug->getChild<PlugType>( name );
-	if( existingPlug && existingPlug->defaultValue() == typedDefaultValue->readable() )
+	if( existingPlug && existingPlug->defaultValue() == defaultValue )
 	{
 		return;
 	}
 	
-	typename PlugType::Ptr plug = new PlugType( name, Plug::In, typedDefaultValue->readable(), Plug::Default | Plug::Dynamic );
+	typename PlugType::Ptr plug = new PlugType( name, Plug::In, defaultValue, Plug::Default | Plug::Dynamic );
 	if( existingPlug )
 	{
 		if( existingPlug->template getInput<PlugType>() )
@@ -284,27 +325,120 @@ static void loadCoshaderParameter( Gaffer::CompoundPlug *parametersPlug, const s
 	parametersPlug->setChild( name, plug );
 }
 
-static void loadCoshaderArrayParameter( Gaffer::CompoundPlug *parametersPlug, const std::string &name, const Data *defaultValue )
+static void loadCoshaderArrayParameter( Gaffer::CompoundPlug *parametersPlug, const std::string &name, const StringVectorData *defaultValue )
 {
-	CompoundPlugPtr plug = parametersPlug->getChild<CompoundPlug>( name );
-	if( !plug )
+	const size_t minSize = std::max( defaultValue->readable().size(), (size_t)1 );
+	const size_t maxSize = defaultValue->readable().size() ? defaultValue->readable().size() : Imath::limits<size_t>::max();
+	
+	PlugPtr existingPlug = parametersPlug->getChild<Plug>( name );
+	ArrayPlug *existingArrayPlug = runTimeCast<ArrayPlug>( existingPlug );
+	if( existingArrayPlug && existingArrayPlug->minSize() == minSize && existingArrayPlug->maxSize() == maxSize )
 	{
-		plug = new CompoundPlug( name, Plug::In, Plug::Default | Plug::Dynamic );
-		parametersPlug->setChild( name, plug );
+		return;
 	}
-		
-	const std::vector<std::string> &typedDefaultValue = static_cast<const StringVectorData *>( defaultValue )->readable();
-	while( plug->children().size() != typedDefaultValue.size() )
+
+	std::string elementName = name;
+	if( isdigit( *elementName.rbegin() ) )
 	{
-		plug->addChild( new Plug( "in1" , Plug::In, Plug::Default | Plug::Dynamic ) );
+		elementName += "_0";
+	}
+	else
+	{
+		elementName += "0";		
+	}
+	
+	ArrayPlugPtr plug = new ArrayPlug( name, Plug::In, new Plug( elementName ), minSize, maxSize, Plug::Default | Plug::Dynamic );
+	parametersPlug->setChild( name, plug );
+	
+	if( existingPlug )
+	{
+		for( size_t i = 0; i < plug->children().size(); ++i )
+		{
+			if( i < existingPlug->children().size() )
+			{
+				plug->getChild<Plug>( i )->setInput( existingPlug->getChild<Plug>( i )->getInput<Plug>() );
+			}
+		}
 	}
 }
 
 template <typename PlugType>
-static void loadNumericParameter( Gaffer::CompoundPlug *parametersPlug, const std::string &name, const Data *defaultValue, const CompoundData *annotations )
-{
-	const TypedData<typename PlugType::ValueType> *typedDefaultValue = static_cast<const TypedData<typename PlugType::ValueType> *>( defaultValue );
+static void loadNumericParameter( Gaffer::CompoundPlug *parametersPlug, const std::string &name, typename PlugType::ValueType defaultValue, const CompoundData *annotations )
+{	
+	typename PlugType::ValueType minValue( Imath::limits<typename PlugType::ValueType>::min() );
+	typename PlugType::ValueType maxValue( Imath::limits<typename PlugType::ValueType>::max() );
 	
+	const StringData *minValueData = annotations->member<StringData>( name + ".min" );
+	if( minValueData )
+	{
+		minValue = typename PlugType::ValueType( boost::lexical_cast<typename PlugType::ValueType>( minValueData->readable() ) );
+	}
+	
+	const StringData *maxValueData = annotations->member<StringData>( name + ".max" );
+	if( maxValueData )
+	{
+		maxValue = typename PlugType::ValueType( boost::lexical_cast<typename PlugType::ValueType>( maxValueData->readable() ) );
+	}
+	
+	PlugType *existingPlug = parametersPlug->getChild<PlugType>( name );
+	if(	
+		existingPlug &&
+		existingPlug->defaultValue() == defaultValue &&
+		existingPlug->minValue() == minValue &&
+		existingPlug->maxValue() == maxValue 
+	)
+	{
+		return;
+	}
+	
+	typename PlugType::Ptr plug = new PlugType( name, Plug::In, defaultValue, minValue, maxValue, Plug::Default | Plug::Dynamic );
+		
+	if( existingPlug )
+	{
+		if( existingPlug->template getInput<Plug>() )
+		{
+			plug->setInput( existingPlug->template getInput<Plug>() );
+		}
+		else
+		{
+			plug->setValue( existingPlug->getValue() );
+		}
+	}
+	
+	parametersPlug->setChild( name, plug );
+}
+
+static void loadNumericParameter( Gaffer::CompoundPlug *parametersPlug, const std::string &name, float defaultValue, const CompoundData *annotations )
+{
+	const StringData *typeData = annotations->member<StringData>( name + ".type" );
+	if( typeData && typeData->readable() == "float" )
+	{
+		loadNumericParameter<FloatPlug>( parametersPlug, name, defaultValue, annotations );
+	}
+	else if( typeData && typeData->readable() == "int" )
+	{
+		loadNumericParameter<IntPlug>( parametersPlug, name, static_cast<int>( defaultValue ), annotations );
+	}
+	else if( typeData && typeData->readable() == "bool" )
+	{
+		loadParameter<BoolPlug>( parametersPlug, name, static_cast<bool>( defaultValue ) );
+	}
+	else
+	{
+		if( typeData )
+		{
+			msg(
+				Msg::Warning, "RenderManShader::loadShaderParameters",
+				boost::format( "Type annotation for parameter \"%s\" specifies unsupported type \"%s\"" ) % name % typeData->readable()
+			);
+		}
+		loadNumericParameter<FloatPlug>( parametersPlug, name, defaultValue, annotations );
+	}
+}
+
+template <typename PlugType>
+static void loadCompoundNumericParameter( Gaffer::CompoundPlug *parametersPlug, const std::string &name, const typename PlugType::ValueType &defaultValue, const CompoundData *annotations )
+{	
 	typename PlugType::ValueType minValue( Imath::limits<float>::min() );
 	typename PlugType::ValueType maxValue( Imath::limits<float>::max() );
 	
@@ -321,8 +455,9 @@ static void loadNumericParameter( Gaffer::CompoundPlug *parametersPlug, const st
 	}
 	
 	PlugType *existingPlug = parametersPlug->getChild<PlugType>( name );
-	if(	existingPlug &&
-	    existingPlug->defaultValue() == typedDefaultValue->readable() &&
+	if(
+		existingPlug &&
+		existingPlug->defaultValue() == defaultValue &&
 		existingPlug->minValue() == minValue &&
 		existingPlug->maxValue() == maxValue 
 	)
@@ -330,35 +465,20 @@ static void loadNumericParameter( Gaffer::CompoundPlug *parametersPlug, const st
 		return;
 	}
 	
-	typename PlugType::Ptr plug = new PlugType( name, Plug::In, typedDefaultValue->readable(), minValue, maxValue, Plug::Default | Plug::Dynamic );
+	typename PlugType::Ptr plug = new PlugType( name, Plug::In, defaultValue, minValue, maxValue, Plug::Default | Plug::Dynamic );
 		
 	if( existingPlug )
 	{
-		if( existingPlug->children().size() )
+		for( size_t i = 0, e = existingPlug->children().size(); i < e; i++ )
 		{
-			// CompoundNumericPlug
-			for( size_t i = 0, e = existingPlug->children().size(); i < e; i++ )
+			FloatPlug *existingComponentPlug = existingPlug->template GraphComponent::getChild<FloatPlug>( i );
+			if( existingComponentPlug->getInput<Plug>() )
 			{
-				FloatPlug *existingComponentPlug = existingPlug->template GraphComponent::getChild<FloatPlug>( i );
-				if( existingComponentPlug->getInput<Plug>() )
-				{
-					plug->template GraphComponent::getChild<FloatPlug>( i )->setInput( existingComponentPlug->getInput<Plug>() );
-				}
-				else
-				{
-					plug->template GraphComponent::getChild<FloatPlug>( i )->setValue( existingComponentPlug->getValue() );
-				}
-			}
-		}
-		else
-		{
-			if( existingPlug->template getInput<Plug>() )
-			{
-				plug->setInput( existingPlug->template getInput<Plug>() );
+				plug->template GraphComponent::getChild<FloatPlug>( i )->setInput( existingComponentPlug->getInput<Plug>() );
 			}
 			else
 			{
-				plug->setValue( existingPlug->getValue() );
+				plug->template GraphComponent::getChild<FloatPlug>( i )->setValue( existingComponentPlug->getValue() );
 			}
 		}
 	}
@@ -667,22 +787,22 @@ void RenderManShader::loadShaderParameters( const IECore::Shader *shader, Gaffer
 				}
 				else
 				{
-					loadParameter<StringPlug>( parametersPlug, *it, defaultValue );
+					loadParameter<StringPlug>( parametersPlug, *it, static_cast<const StringData *>( defaultValue )->readable() );
 				}
 				break;
 			case FloatDataTypeId :
-				loadNumericParameter<FloatPlug>( parametersPlug, *it, defaultValue, annotations );
+				loadNumericParameter( parametersPlug, *it, static_cast<const FloatData *>( defaultValue )->readable(), annotations );
 				break;
 			case Color3fDataTypeId :
-				loadNumericParameter<Color3fPlug>( parametersPlug, *it, defaultValue, annotations );
+				loadCompoundNumericParameter<Color3fPlug>( parametersPlug, *it, static_cast<const Color3fData *>( defaultValue )->readable(), annotations );
 				break;
 			case V3fDataTypeId :
-				loadNumericParameter<V3fPlug>( parametersPlug, *it, defaultValue, annotations );
+				loadCompoundNumericParameter<V3fPlug>( parametersPlug, *it, static_cast<const V3fData *>( defaultValue )->readable(), annotations );
 				break;
 			case StringVectorDataTypeId :
 				if( typeHint && typeHint->readable() == "shader" )
 				{
-					loadCoshaderArrayParameter( parametersPlug, *it, defaultValue );
+					loadCoshaderArrayParameter( parametersPlug, *it, static_cast<const StringVectorData *>( defaultValue ) );
 				}
 				else
 				{

@@ -325,13 +325,35 @@ void GraphComponent::removeChild( GraphComponentPtr child )
 	}
 }
 
+void GraphComponent::clearChildren()
+{
+	// because our storage is a vector, it's a good bit quicker to remove
+	// from the back to the front.
+	for( int i = (int)(m_children.size()) - 1; i >= 0; --i )
+	{
+		removeChild( m_children[i] );
+	}
+}
+
 void GraphComponent::removeChildInternal( GraphComponentPtr child, bool emitParentChanged )
 {
 	if( emitParentChanged )
 	{
 		child->parentChanging( 0 );
 	}
-	m_children.erase( std::find( m_children.begin(), m_children.end(), child ) );
+	ChildContainer::iterator it = std::find( m_children.begin(), m_children.end(), child );
+	if( it == m_children.end() || child->m_parent != this )
+	{
+		// the public removeChild() method protects against this case, but it's still possible to 
+		// arrive here if an Action (which has a direct binding to removeChildInternal) is being replayed
+		// from the undo queue, and just prior to that something called the public removeChild() method.
+		// this can occur if a slot calls removeChild() from a signal triggered during the replay of the
+		// undo queue. the onus is on such slots to not reperform their work when ScriptNode::currentActionStage()
+		// is Action::Redo - instead they should rely on the fact that their actions will have been
+		// recorded and replayed automatically.
+		throw Exception( boost::str( boost::format( "GraphComponent::removeChildInternal : \"%s\" is not a child of \"%s\"." ) % child->fullName() % fullName() ) );
+	}
+	m_children.erase( it );
 	child->m_parent = 0;
 	childRemovedSignal()( this, child.get() );
 	if( emitParentChanged )

@@ -1,7 +1,7 @@
 ##########################################################################
 #  
 #  Copyright (c) 2011-2012, John Haddon. All rights reserved.
-#  Copyright (c) 2012, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2012-2013, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -93,7 +93,11 @@ class Application( IECore.Parameterised ) :
 	
 		raise NotImplementedError
 
-	def __executeStartupFiles( self ) :
+	## Executes the startup files for the specified application. This
+	# is called automatically for this application before _run is called,
+	# but applications may call it in order to "borrow" the startup files
+	# for other applications. See the screengrab app for a good use case.
+	def _executeStartupFiles( self, applicationName ) :
 	
 		sp = os.environ.get( "GAFFER_STARTUP_PATHS", "" )
 		if not sp :
@@ -101,7 +105,7 @@ class Application( IECore.Parameterised ) :
 			return
 	
 		sp = IECore.SearchPath( sp, ":" )
-		paths = [ os.path.join( p, self.root().getName() ) for p in sp.paths ]
+		paths = [ os.path.join( p, applicationName ) for p in sp.paths ]
 		sp = IECore.SearchPath( ":".join( paths ), ":" )
 		
 		contextDict = {	"application" : self }	
@@ -109,7 +113,7 @@ class Application( IECore.Parameterised ) :
 		
 	def __run( self, args ) :
 	
-		self.__executeStartupFiles()
+		self._executeStartupFiles( self.root().getName() )
 		return self._run( args )
 
-IECore.registerRunTimeTyped( Application )		
+IECore.registerRunTimeTyped( Application, typeName = "Gaffer::Application" )		

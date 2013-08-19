@@ -43,6 +43,8 @@
 #include "GafferBindings/GraphComponentBinding.h"
 #include "GafferBindings/Serialisation.h"
 
+#include "IECorePython/ScopedGILRelease.h"
+
 namespace GafferBindings
 {
 
@@ -118,6 +120,7 @@ static bool acceptsInput( const T &p, Gaffer::ConstPlugPtr input )
 template<typename T>
 static void setInput( T &p, Gaffer::PlugPtr input )
 {
+	IECorePython::ScopedGILRelease r;
 	p.T::setInput( input );
 }
 
@@ -134,6 +137,7 @@ class PlugSerialiser : public Serialisation::Serialiser
 
 	public :
 	
+		virtual std::string constructor( const Gaffer::GraphComponent *graphComponent ) const;
 		virtual std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const;
 		
 		static std::string directionRepr( Gaffer::Plug::Direction direction );
