@@ -63,6 +63,8 @@ class CompoundEditor( GafferUI.EditorWidget ) :
 		
 		self.__keyPressConnection = self.__splitContainer.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
 
+		self.__editorAddedSignal = Gaffer.Signal2()
+
 		if children :		
 			self.__addChildren( self.__splitContainer, children )
 							
@@ -106,6 +108,12 @@ class CompoundEditor( GafferUI.EditorWidget ) :
 		container = ideal if ideal is not None else backup
 		
 		self.__addChild( container, editor )
+	
+	## A signal emitted whenever an editor is added - 
+	# the signature is ( compoundEditor, childEditor ).
+	def editorAddedSignal( self ) :
+	
+		return self.__editorAddedSignal
 		
 	def __repr__( self ) :
 	
@@ -119,12 +127,20 @@ class CompoundEditor( GafferUI.EditorWidget ) :
 				splitPosition = ( float( sizes[0] ) / sum( sizes ) ) if sum( sizes ) else 0
 				return "( GafferUI.SplitContainer.Orientation.%s, %f, ( %s, %s ) )" % ( str( w.getOrientation() ), splitPosition, __serialise( w[0] ), __serialise( w[1] ) )		
 			else :
-				# not split
+				# not split - a tabbed container full of editors
 				tabbedContainer = w[0]
 				tabDict = { "tabs" : tuple( tabbedContainer[:] ) }
 				if tabbedContainer.getCurrent() is not None :
 					tabDict["currentTab"] = tabbedContainer.index( tabbedContainer.getCurrent() )
 				tabDict["tabsVisible"] = tabbedContainer.getTabsVisible()
+				
+				tabDict["pinned"] = []
+				for editor in tabbedContainer :
+					if isinstance( editor, GafferUI.NodeSetEditor ) :
+						tabDict["pinned"].append( not editor.getNodeSet().isSame( self.scriptNode().selection() ) )
+					else :
+						tabDict["pinned"].append( None )
+				
 				return repr( tabDict )
 		
 		return "GafferUI.CompoundEditor( scriptNode, children = %s )" % __serialise( self.__splitContainer )
@@ -258,11 +274,21 @@ class CompoundEditor( GafferUI.EditorWidget ) :
 					self.__addChild( splitContainer, c )		
 			else :
 				# new format - various fields provided by a dictionary
-				for c in children["tabs"] :
-					self.__addChild( splitContainer, c )
+				for i, c in enumerate( children["tabs"] ) :
+					editor = self.__addChild( splitContainer, c )
+					if "pinned" in children and isinstance( editor, GafferUI.NodeSetEditor ) and children["pinned"][i] :
+						editor.setNodeSet( Gaffer.StandardSet() )
 				splitContainer[0].setCurrent( splitContainer[0][children["currentTab"]] )
 				splitContainer[0].setTabsVisible( children.get( "tabsVisible", True ) )
-			
+				
+				# this is a shame-faced hack to make sure the timeline in the default layout can't be compressed
+				# or stretched vertically. fixing this properly is quite involved, because we'd need to find a sensible
+				# generic way for TabbedContainer to set a min/max height based on it's children, and then a sensible
+				# generic rule for what SplitContainer should do in its __applySizePolicy() method.
+				if len( splitContainer[0] ) == 1 and isinstance( splitContainer[0][0], GafferUI.Timeline ) :
+					splitContainer[0]._qtWidget().setFixedHeight( splitContainer[0][0]._qtWidget().sizeHint().height() )
+					splitContainer._qtWidget().setSizePolicy( QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Fixed )
+				
 	def __addChild( self, splitContainer, nameOrEditor ) :
 	
 		assert( len( splitContainer ) == 1 )
@@ -279,6 +305,10 @@ class CompoundEditor( GafferUI.EditorWidget ) :
 		tabbedContainer.setLabel( editor, editor.getTitle() )
 		editor.__titleChangedConnection = editor.titleChangedSignal().connect( Gaffer.WeakMethod( self.__titleChanged ) )
 		tabbedContainer.setCurrent( editor )
+		
+		self.__editorAddedSignal( self, editor )
+		
+		return editor
 		
 	def __split( self, splitContainer, orientation, subPanelIndex ) :
 	

@@ -75,8 +75,12 @@ class ImageView : public GafferUI::View
 
 	private:
 
-		int m_colorMask;
+		int m_channelToView;
 		Imath::V2f m_mousePos;
+		Imath::Color4f m_sampleColor;
+		Imath::Color4f m_minColor;
+		Imath::Color4f m_maxColor;
+		Imath::Color4f m_averageColor;
 };
 
 IE_CORE_DECLAREPTR( ImageView );

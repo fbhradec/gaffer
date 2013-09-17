@@ -50,6 +50,7 @@
 #include "Gaffer/TypedObjectPlug.h"
 #include "Gaffer/SplinePlug.h"
 #include "Gaffer/ArrayPlug.h"
+#include "Gaffer/Box.h"
 
 #include "GafferRenderMan/RenderManShader.h"
 
@@ -136,8 +137,21 @@ bool RenderManShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) co
 	if( parametersPlug()->isAncestorOf( plug ) )
 	{
 		const Plug *sourcePlug = inputPlug->source<Plug>();
+		
 		if( plug->typeId() == Plug::staticTypeId() )
 		{
+		
+			const Node* sourceNode = inputPlug->node();
+			if( runTimeCast<const Box>( sourceNode ) )
+			{
+				// looks like we're exposing this input via a box, or
+				// connecting it to an unconnected output on a box. At
+				// the moment, we're just accepting this and trusting
+				// the user not to connect something nonsensical to inputPlug.
+				// \todo: make it so we can't make illegal connections to inputPlug
+				return true;
+			}
+			
 			// coshader parameter - input must be another
 			// renderman shader hosting a coshader.
 			const RenderManShader *inputShader = sourcePlug->parent<RenderManShader>();
@@ -352,11 +366,15 @@ static void loadCoshaderArrayParameter( Gaffer::CompoundPlug *parametersPlug, co
 	
 	if( existingPlug )
 	{
-		for( size_t i = 0; i < plug->children().size(); ++i )
+		for( size_t i = 0, e = std::min( existingPlug->children().size(), maxSize ); i < e; ++i )
 		{
-			if( i < existingPlug->children().size() )
+			if( i < plug->children().size() )
 			{
 				plug->getChild<Plug>( i )->setInput( existingPlug->getChild<Plug>( i )->getInput<Plug>() );
+			}
+			else
+			{
+				plug->addChild( existingPlug->getChild<Plug>( i ) );
 			}
 		}
 	}

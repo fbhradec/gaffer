@@ -35,8 +35,12 @@
 //  
 //////////////////////////////////////////////////////////////////////////
 
+#include <sys/time.h>
+
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
+
+#include "OpenEXR/ImathBoxAlgo.h"
 
 #include "IECore/MatrixTransform.h"
 #include "IECore/NullObject.h"
@@ -59,7 +63,8 @@ IE_CORE_DEFINERUNTIMETYPED( ViewportGadget );
 ViewportGadget::ViewportGadget( GadgetPtr child )
 	: IndividualContainer( child ),
 	  m_cameraController( new IECore::Camera ),
-	  m_cameraInMotion( false )
+	  m_cameraInMotion( false ),
+	  m_dragTracking( false )
 {
 
 	childRemovedSignal().connect( boost::bind( &ViewportGadget::childRemoved, this, ::_1, ::_2 ) );
@@ -148,6 +153,16 @@ void ViewportGadget::frame( const Imath::Box3f &box, const Imath::V3f &viewDirec
 {
  	m_cameraController.frame( box, viewDirection, upVector );
 	renderRequestSignal()( this );
+}
+
+void ViewportGadget::setDragTracking( bool dragTracking )
+{
+	m_dragTracking = dragTracking;
+}
+
+bool ViewportGadget::getDragTracking() const
+{
+	return m_dragTracking;
 }
 
 void ViewportGadget::gadgetsAt( const Imath::V2f &rasterPosition, std::vector<GadgetPtr> &gadgets ) const
@@ -450,6 +465,9 @@ bool ViewportGadget::dragMove( GadgetPtr gadget, const DragDropEvent &event )
 	}
 	else
 	{
+		// perform drag tracking if necessary
+		trackDrag( event );
+	
 		// update the destination gadget. if the drag data is a NullObject then we know
 		// that it isn't intended for use outside of the source gadget, and can skip this
 		// step as an optimisation.
@@ -479,6 +497,79 @@ bool ViewportGadget::dragMove( GadgetPtr gadget, const DragDropEvent &event )
 	}
 	
 	return false;
+}
+
+static double currentTime()
+{
+	timeval t;
+	gettimeofday( &t, NULL ) ;
+	return (double)t.tv_sec + (double)t.tv_usec / 1000000.0;
+}
+
+void ViewportGadget::trackDrag( const DragDropEvent &event )
+{
+	
+	const V2i viewport = getViewport();
+	const float borderWidth = std::min( std::min( viewport.x, viewport.y ) / 8.0f, 60.0f );  
+	
+	const Box3f viewportBox(
+		V3f( borderWidth, borderWidth, -1000.0f ),
+		V3f( viewport.x - borderWidth, viewport.y - borderWidth, 1000.0f )
+	);
+	
+	if( viewportBox.intersects( event.line.p0 ) || !getDragTracking() )
+	{
+		m_dragTrackingIdleConnection.disconnect();
+	}
+	else
+	{
+		m_dragTrackingEvent = event;
+		
+		// we don't actually do the scrolling in this function - instead we
+		// just calculate the appropriate velocity and then ensure that 
+		// trackDragIdle will be called to apply the scrolling on idle events.
+		// this allows the scrolling to happen even when the mouse isn't moving.
+		
+		const V3f direction = closestPointOnBox( event.line.p0, viewportBox ) - event.line.p0;
+		m_dragTrackingVelocity = V2f( direction.x, direction.y );
+		if( m_dragTrackingVelocity.length() > borderWidth )
+		{
+			// we ramp up the speed of the scrolling from 0 to
+			// a maximum at the edge of the viewport, and clamp
+			// it so it doesn't get any faster outside of the viewport.
+			// although getting even faster when the mouse is outside
+			// the viewport might be nice, it results in an inconsistent
+			// experience where a viewport edge is at the edge of the screen
+			// and the mouse can't go any further.
+			m_dragTrackingVelocity = m_dragTrackingVelocity.normalized() * borderWidth;
+		}
+		
+		if( !m_dragTrackingIdleConnection.connected() )
+		{
+			m_dragTrackingTime = currentTime();
+			m_dragTrackingIdleConnection = idleSignal().connect( boost::bind( &ViewportGadget::trackDragIdle, this ) );
+		}
+	}
+	
+	
+}
+
+void ViewportGadget::trackDragIdle()
+{	
+	double now = currentTime();
+	float duration = (float)(now - m_dragTrackingTime);
+
+	m_cameraController.motionStart( CameraController::Track, V2f( 0 ) );
+	m_cameraController.motionEnd( m_dragTrackingVelocity * duration * 20.0f );
+	
+	m_dragTrackingTime = now;
+	
+	// although the mouse hasn't moved, moving the camera will have moved it
+	// relative to our child gadgets, so we fake a move event to update any
+	// visual representation of the drag.
+	dragMove( this, m_dragTrackingEvent );
+	
+	renderRequestSignal()( this );
 }
 
 GadgetPtr ViewportGadget::updatedDragDestination( std::vector<GadgetPtr> &gadgets, const DragDropEvent &event )
@@ -573,6 +664,7 @@ bool ViewportGadget::dragEnd( GadgetPtr gadget, const DragDropEvent &event )
 	}
 	else
 	{
+		m_dragTrackingIdleConnection.disconnect();
 		if( event.sourceGadget )
 		{
 			return dispatchEvent( event.sourceGadget, &Gadget::dragEndSignal, event );

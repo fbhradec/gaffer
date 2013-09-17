@@ -52,12 +52,12 @@ from InstancerTest import InstancerTest
 from ObjectToSceneTest import ObjectToSceneTest
 from CameraTest import CameraTest
 from DisplaysTest import DisplaysTest
-from OptionsTest import OptionsTest
+from CustomOptionsTest import CustomOptionsTest
 from SceneNodeTest import SceneNodeTest
 from PathMatcherTest import PathMatcherTest
 from PathFilterTest import PathFilterTest
 from ShaderAssignmentTest import ShaderAssignmentTest
-from AttributesTest import AttributesTest
+from CustomAttributesTest import CustomAttributesTest
 from AlembicSourceTest import AlembicSourceTest
 from DeletePrimitiveVariablesTest import DeletePrimitiveVariablesTest
 from SeedsTest import SeedsTest
@@ -80,6 +80,7 @@ from ShaderTest import ShaderTest
 from TextTest import TextTest
 from MapProjectionTest import MapProjectionTest
 from PointConstraintTest import PointConstraintTest
+from SceneReaderTest import SceneReaderTest
 
 if __name__ == "__main__":
 	import unittest

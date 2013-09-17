@@ -127,7 +127,7 @@ class PlugWidget( GafferUI.Widget ) :
 	@staticmethod
 	def labelWidth() :
 	
-		return 110
+		return 150
 
 	def __labelDoubleClicked( self, label, event ) :
 	

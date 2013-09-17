@@ -1,3 +1,94 @@
+0.79.0
+======
+
+UI
+--
+
+- Added additional plug types to the CompoundDataPlug new plug menu (#522).
+- Fixed bug in searchable Menus with no entries (#527).
+
+Scene
+-----
+
+- Added CustomAttributes and CustomOptions nodes. These will be used instead of the old Attributes and Options nodes, and exist to better distinguish their use from the Standard, RenderMan and Arnold options and attributes nodes.
+
+RenderMan
+---------
+
+-  Enabled hosting of RenderManShaders inside custom Box classes. Previously it only worked inside Boxes and not classes derived from Box.
+
+API
+---
+
+- Added python subclassing ability to Serialisation::Serialiser (#520).
+
+
+0.78.0
+======
+
+API
+---
+
+- Added python bindings for signal::num_slots and signal::empty().
+- Added Gadget::idleSignal(). This allows Gadgets to do things during the idle times of the host event loop.
+- Added NodeEditor.nodeUI() method.
+- Added CompoundEditor.editorAddedSignal().
+- Enabled subclassing of Box from Python.
+- Made RenderManShaderUI public.
+
+Core
+---
+
+- Fixed serialisation of ExecutableOpHolder.
+- Added dynamic requirement plugs to Executable.
+- 
+
+UI
+--
+
+- Added middle mouse drag for dragging nodules to the script editor without dragging a connection.
+- Further increased width of plug labels in NodeEditor (#98).
+- Fixed read-only RenderManShader UIs.
+- Fixed bug whereby read-only PlugValueWidgets were accepting drags.
+- Added Help menu.
+- Added NodeGraph auto-scrolling.
+- Added support for "presets" parameter type hint.
+
+OS X
+----
+
+- Fixed GafferImageUI linking.
+
+0.77.0
+======
+
+- Added alignment support and addSpacer method to ListContainer.
+- Fixed an update bug in the pixel value inspector (#401).
+- Added the pinned status to saved layouts (#444).
+- Added read-only mode to NodeUIs and NodeEditor (#414). Note that this currently interacts poorly with activators on RenderManShader node, and will be fixed in a future release.
+- Fixed read-only MultiLineTextWidget bugs.
+- Implemented tag reading in SceneReader node. Tags are represented as BoolData attributes called "user:tag:tagName" (#494).
+- Increased width of plug labels in NodeEditor (#98).
+- Improved the default layout to include SceneHierarchy and SceneInspector and Timeline editors.
+- Fixed TabbedContainer sizing when tabs not visible.
+- Fixed crashes when loading old scripts where coshader array parameters were stored as Compound plugs.
+- Fixed propagation of shader hashes through Boxes.
+- Allowed shaders to accept inputs from Boxes, even if the Box doesn't currently output a shader.
+- Changed internal image coordinate system to have 0,0 at bottom left (formerly at top left).
+
+0.76.0
+======
+
+- Added Application._executeStartupFiles() method (#354).
+- Added RemoveChannels image node.
+- Added a PointConstraint node (#482).
+- Fixed framing error when entering a Box.
+- Image viewer now displays channels in grey scale.
+- Added Widget.widgetAt() method.
+- Added ability to hide tabs in layouts.
+- Fixed bug converting coshader array from fixed to variable length.
+- Added Serialiser::postScript() method.
+
 0.75.0
 ======
 

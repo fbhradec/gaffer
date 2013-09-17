@@ -79,7 +79,7 @@ options.Add(
 options.Add(
 	"BUILD_DIR",
 	"The destination directory in which the build will be made.",
-	"./build/gaffer-${GAFFER_MAJOR_VERSION}.${GAFFER_MINOR_VERSION}.${GAFFER_PATCH_VERSION}-${PLATFORM}",
+	"./build/gaffer-${GAFFER_MAJOR_VERSION}.${GAFFER_MINOR_VERSION}.${GAFFER_PATCH_VERSION}-${GAFFER_PLATFORM}",
 )
 
 options.Add(
@@ -93,7 +93,7 @@ options.Add(
 options.Add(
 	"INSTALL_DIR",
 	"The destination directory for the installation.",
-	"./install/gaffer-${GAFFER_MAJOR_VERSION}.${GAFFER_MINOR_VERSION}.${GAFFER_PATCH_VERSION}-${PLATFORM}",
+	"./install/gaffer-${GAFFER_MAJOR_VERSION}.${GAFFER_MINOR_VERSION}.${GAFFER_PATCH_VERSION}-${GAFFER_PLATFORM}",
 )
 
 options.Add(
@@ -466,7 +466,7 @@ env = Environment(
 	options = options,
 
 	GAFFER_MAJOR_VERSION = "0",
-	GAFFER_MINOR_VERSION = "75",
+	GAFFER_MINOR_VERSION = "79",
 	GAFFER_PATCH_VERSION = "0",
 
 )
@@ -476,17 +476,21 @@ for e in env["ENV_VARS_TO_IMPORT"].split() :
 		env["ENV"][e] = os.environ[e]
 
 if env["PLATFORM"] == "darwin" :
+
 	env["ENV"]["MACOSX_DEPLOYMENT_TARGET"] = "10.4"
 	env.Append( CXXFLAGS = [ "-D__USE_ISOC99" ] )
+	env["GAFFER_PLATFORM"] = "osx"
 	
-if env["PLATFORM"] == "posix" :
+elif env["PLATFORM"] == "posix" :
+	
 	## We really want to not have the -Wno-strict-aliasing flag, but it's necessary to stop boost
 	# python warnings that don't seem to be prevented by including boost via -isystem even. Better to
 	# be able to have -Werror but be missing one warning than to have no -Werror.
 	## \todo This is probably only necessary for specific gcc versions where -isystem doesn't
 	# fully work. Reenable when we encounter versions that work correctly.
 	env.Append( CXXFLAGS = [ "-Wno-strict-aliasing" ] )
-
+	env["GAFFER_PLATFORM"] = "linux"
+	
 if env["BUILD_CACHEDIR"] != "" :
 	CacheDir( env["BUILD_CACHEDIR"] )
 			
@@ -556,7 +560,7 @@ pythonVersion = pythonVersion.split()[1].rpartition( "." )[0]
 
 pythonLinkFlags = ""
 try :
-	pythonLinkFlags = subprocess.Popen( [ "python-config", "--ldflags" ], env=depEnv["ENV"], stderr=subprocess.PIPE ).stderr.read().strip()
+	pythonLinkFlags = subprocess.Popen( [ "python-config", "--ldflags" ], env=depEnv["ENV"], stdout=subprocess.PIPE ).stdout.read().strip()
 except OSError :
 	# this should only occur when building gaffer without an integrated python build, and on linux
 	# at least, it's ok to ignore the warning. basically this is just here for ie's funky setup.
@@ -885,7 +889,7 @@ libraries = {
 	
 	"GafferImageUI" : {
 		"envAppends" : {
-			"LIBS" : [ "IECoreGL$CORTEX_LIB_SUFFIX", "Gaffer", "GafferImage", "GafferUI" ],
+			"LIBS" : [ "IECoreGL$CORTEX_LIB_SUFFIX", "Gaffer", "GafferImage", "GafferUI", "GLEW$GLEW_LIB_SUFFIX" ],
 		},
 		"pythonEnvAppends" : {
 			"LIBS" : [ "GafferUI", "GafferImageUI" ],

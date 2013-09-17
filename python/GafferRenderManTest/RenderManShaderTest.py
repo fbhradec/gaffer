@@ -1203,5 +1203,133 @@ class RenderManShaderTest( GafferRenderManTest.RenderManTestCase ) :
 		self.assertEqual( len( s["n"]["parameters"]["fixedShaderArray"] ), 1 )
 		self.assertTrue( s["n"]["parameters"]["fixedShaderArray"][0].getInput() is None )
 		
+	def testConvertFixedCoshaderArrayToDynamicWithFirstPlugUnconnected( self ) :
+	
+		shader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshaderArrayParameters.sl" )
+		shaderV2 = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshaderArrayParametersV2.sl" )
+		coshader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshader.sl" )
+		
+		s = Gaffer.ScriptNode()
+
+		s["n"] = GafferRenderMan.RenderManShader()
+		s["n"].loadShader( shader )
+		
+		s["c"] = GafferRenderMan.RenderManShader()
+		s["c"].loadShader( coshader )
+		
+		s["n"]["parameters"]["fixedShaderArray"][1].setInput( s["c"]["out"] )
+		self.assertTrue( len( s["n"]["parameters"]["fixedShaderArray"] ), 4 )
+		
+		s["n"].loadShader( shaderV2, keepExistingValues = True )
+		
+		self.assertTrue( s["n"]["parameters"]["fixedShaderArray"][1].getInput().isSame( s["c"]["out"] ) )
+		self.assertTrue( s["n"]["parameters"]["fixedShaderArray"][0].getInput() is None )
+		
+		s["n"]["parameters"]["fixedShaderArray"][1].setInput( None )
+
+		self.assertEqual( len( s["n"]["parameters"]["fixedShaderArray"] ), 1 )
+		self.assertTrue( s["n"]["parameters"]["fixedShaderArray"][0].getInput() is None )	
+	
+	def testConvertFixedCoshaderArrayToDynamicDuringLoading( self ) :
+	
+		shader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshaderArrayParameters.sl" )
+		coshader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshader.sl" )
+		
+		s = Gaffer.ScriptNode()
+
+		s["n"] = GafferRenderMan.RenderManShader()
+		s["n"].loadShader( shader )
+		
+		s["c"] = GafferRenderMan.RenderManShader()
+		s["c"].loadShader( coshader )
+		
+		s["n"]["parameters"]["fixedShaderArray"][1].setInput( s["c"]["out"] )
+		self.assertTrue( len( s["n"]["parameters"]["fixedShaderArray"] ), 4 )
+				
+		GafferRenderMan.RenderManShader.shaderLoader().clear()
+		shader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshaderArrayParametersV2.sl", shaderName = "coshaderArrayParameters" )
+				
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		
+		self.assertTrue( s2["n"]["parameters"]["fixedShaderArray"][1].getInput().isSame( s2["c"]["out"] ) )
+		self.assertTrue( s2["n"]["parameters"]["fixedShaderArray"][0].getInput() is None )
+		
+		s2["n"]["parameters"]["fixedShaderArray"][1].setInput( None )
+
+		self.assertEqual( len( s2["n"]["parameters"]["fixedShaderArray"] ), 1 )
+		self.assertTrue( s2["n"]["parameters"]["fixedShaderArray"][0].getInput() is None )
+	
+	def testHashThroughBox( self ):
+		
+		shader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshaderParameter.sl" )
+		shaderNode = GafferRenderMan.RenderManShader()
+		shaderNode.loadShader( shader )
+		
+		# box up an intermediate coshader:
+		b = Gaffer.Box()
+		
+		b.addChild( Gaffer.Plug( "in" ) )
+		b.addChild( Gaffer.Plug( "out", direction = Gaffer.Plug.Direction.Out ) )
+		
+		intermediateCoshader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshaderWithPassThrough.sl" )
+		intermediateCoshaderNode = GafferRenderMan.RenderManShader()
+		intermediateCoshaderNode.loadShader( intermediateCoshader )
+		
+		coshader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshader.sl" )
+		coshaderNode = GafferRenderMan.RenderManShader()
+		coshaderNode.loadShader( coshader )
+		
+		b["in"].setInput( coshaderNode["out"] )
+		intermediateCoshaderNode["parameters"]["aColorIWillTint"].setInput( b["in"] )
+		b["out"].setInput( intermediateCoshaderNode["out"] )
+		shaderNode["parameters"]["coshaderParameter"].setInput( b["out"] )
+		
+		h1 = shaderNode.stateHash()
+		
+		coshaderNode["parameters"]["floatParameter"].setValue( 0.25 )
+		
+		self.assertNotEqual( shaderNode.stateHash(), h1 )
+	
+	def testDanglingBoxConnection( self ):
+		
+		shader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshaderParameter.sl" )
+		shaderNode1 = GafferRenderMan.RenderManShader()
+		shaderNode1.loadShader( shader )
+		
+		shaderNode2 = GafferRenderMan.RenderManShader()
+		shaderNode2.loadShader( shader )
+		
+		b = Gaffer.Box()
+		b.addChild( Gaffer.Plug( "in" ) )
+		b.addChild( Gaffer.Plug( "out", direction = Gaffer.Plug.Direction.Out ) )
+		
+		b["shader1"] = shaderNode1
+		shaderNode1["parameters"]["coshaderParameter"].setInput( b["in"] )
+		
+		shaderNode2["parameters"]["coshaderParameter"].setInput( b["out"] )
+	
+	def testUnconnectedCustomBoxInput( self ) :
+	
+		class CustomBox( Gaffer.Box ) :
+		
+			def __init__( self, name = "CustomBox" ) :
+			
+				Gaffer.Box.__init__( self, name )
+				
+		IECore.registerRunTimeTyped( CustomBox )
+		
+		shader = self.compileShader( os.path.dirname( __file__ ) + "/shaders/coshaderParameter.sl" )
+		
+		b = CustomBox()
+		b["s"] = GafferRenderMan.RenderManShader()
+		b["s"].loadShader( shader )
+		
+		b["in"] = b["s"]["parameters"]["coshaderParameter"].createCounterpart( "in", Gaffer.Plug.Direction.In )
+		
+		b["s"]["parameters"]["coshaderParameter"].setInput( b["in"] )
+		
+		self.assertTrue( b["s"]["parameters"]["coshaderParameter"].getInput().isSame( b["in"] ) )
+		
 if __name__ == "__main__":
 	unittest.main()
