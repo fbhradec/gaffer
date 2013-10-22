@@ -42,6 +42,7 @@
 #include "OpenEXR/ImathPlane.h"
 
 #include "IECore/NullObject.h"
+#include "IECore/BoxOps.h"
 
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/NumericPlug.h"
@@ -61,6 +62,7 @@
 #include "GafferUI/ViewportGadget.h"
 #include "GafferUI/StandardGraphLayout.h"
 #include "GafferUI/Pointer.h"
+#include "GafferUI/BackdropNodeGadget.h"
 
 using namespace GafferUI;
 using namespace Imath;
@@ -264,6 +266,47 @@ size_t GraphGadget::connectionGadgets( const Gaffer::Node *node, std::vector<con
 	return connections.size();
 }
 
+size_t GraphGadget::upstreamNodeGadgets( const Gaffer::Node *node, std::vector<NodeGadget *> &upstreamNodeGadgets )
+{
+	NodeGadget *g = nodeGadget( node );
+	if( !g )
+	{
+		return 0;
+	}
+	
+	std::set<NodeGadget *> n;
+	upstreamNodeGadgetsWalk( g, n );
+	std::copy( n.begin(), n.end(), back_inserter( upstreamNodeGadgets ) );
+	return 0;
+}
+
+size_t GraphGadget::upstreamNodeGadgets( const Gaffer::Node *node, std::vector<const NodeGadget *> &upstreamNodeGadgets ) const
+{
+	// preferring naughty casts over maintaining two identical implementations
+	return const_cast<GraphGadget *>( this )->upstreamNodeGadgets( node, reinterpret_cast<std::vector<NodeGadget *> &>( upstreamNodeGadgets ) );
+}
+
+void GraphGadget::upstreamNodeGadgetsWalk( NodeGadget *gadget, std::set<NodeGadget *> &upstreamNodeGadgets )
+{
+	for( Gaffer::RecursiveInputPlugIterator it( gadget->node() ); it != it.end(); ++it )
+	{
+		if( ConnectionGadget *connection = connectionGadget( it->get() ) )
+		{
+			if( Nodule *nodule = connection->srcNodule() )
+			{
+				if( NodeGadget *inputNodeGadget = nodeGadget( nodule->plug()->node() ) )
+				{
+					if( upstreamNodeGadgets.insert( inputNodeGadget ).second )
+					{
+						// inserted the node for the first time
+						upstreamNodeGadgetsWalk( inputNodeGadget, upstreamNodeGadgets );
+					}
+				}		
+			}
+		}
+	}
+}
+
 void GraphGadget::setNodePosition( Gaffer::Node *node, const Imath::V2f &position )
 {
 	Gaffer::V2fPlug *plug = node->getChild<Gaffer::V2fPlug>( g_positionPlugName );
@@ -431,7 +474,19 @@ void GraphGadget::doRender( const Style *style ) const
 {
 	glDisable( GL_DEPTH_TEST );
 	
-	// render connection first so they go underneath
+	// render backdrops before anything else
+	/// \todo Perhaps we need a more general layering system as part
+	/// of the Gadget system, to allow Gadgets to choose their own layering,
+	/// and perhaps to also allow one gadget to draw into multiple layers.
+	for( ChildContainer::const_iterator it=children().begin(); it!=children().end(); it++ )
+	{
+		if( (*it)->isInstanceOf( (IECore::TypeId)BackdropNodeGadgetTypeId ) )
+		{
+			static_cast<const Gadget *>( it->get() )->render( style );		
+		}
+	}	
+	
+	// then render connections so they go underneath the nodes
 	for( ChildContainer::const_iterator it=children().begin(); it!=children().end(); it++ )
 	{
 		ConnectionGadget *c = IECore::runTimeCast<ConnectionGadget>( it->get() );
@@ -470,7 +525,7 @@ void GraphGadget::doRender( const Style *style ) const
 	// then render the rest on top
 	for( ChildContainer::const_iterator it=children().begin(); it!=children().end(); it++ )
 	{
-		if( !((*it)->isInstanceOf( ConnectionGadget::staticTypeId() )) )
+		if( !((*it)->isInstanceOf( ConnectionGadget::staticTypeId() )) && !((*it)->isInstanceOf( (IECore::TypeId)BackdropNodeGadgetTypeId )) )
 		{
 			static_cast<const Gadget *>( it->get() )->render( style );
 		}
@@ -522,8 +577,11 @@ void GraphGadget::rootChildAdded( Gaffer::GraphComponent *root, Gaffer::GraphCom
 	if( node && ( !m_filter || m_filter->contains( node ) ) )
 	{
 		if( !findNodeGadget( node ) )
-		{	addNodeGadget( node );
-			addConnectionGadgets( node );   
+		{
+			if( addNodeGadget( node ) )
+			{
+				addConnectionGadgets( node );   
+			}
 		}
 	}
 }
@@ -543,8 +601,11 @@ void GraphGadget::filterMemberAdded( Gaffer::Set *set, IECore::RunTimeTyped *mem
 	if( node && node->parent<Gaffer::Node>() == m_root )
 	{
 		if( !findNodeGadget( node ) )
-		{	addNodeGadget( node );
-			addConnectionGadgets( node );   
+		{
+			if( addNodeGadget( node ) )
+			{
+				addConnectionGadgets( node );   
+			}
 		}
 	}
 }
@@ -650,11 +711,29 @@ bool GraphGadget::buttonPress( GadgetPtr gadget, const ButtonEvent &event )
 			bool shiftHeld = event.modifiers && ButtonEvent::Shift;
 			bool nodeSelected = m_scriptNode->selection()->contains( node );
 
+			std::vector<Gaffer::Node *> affectedNodes;
+			if( const BackdropNodeGadget *backdrop = runTimeCast<BackdropNodeGadget>( nodeGadget ) )
+			{
+				backdrop->framed( affectedNodes );
+			}
+			
+			if( event.modifiers & ButtonEvent::Alt )
+			{
+				std::vector<NodeGadget *> upstream;
+				upstreamNodeGadgets( node, upstream );
+				for( std::vector<NodeGadget *>::const_iterator it = upstream.begin(), eIt = upstream.end(); it != eIt; ++it )
+				{
+					affectedNodes.push_back( (*it)->node() );
+				}
+			}
+			
+			affectedNodes.push_back( node );
+
 			if( nodeSelected )
 			{
 				if( shiftHeld )
 				{
-					m_scriptNode->selection()->remove( node );
+					m_scriptNode->selection()->remove( affectedNodes.begin(), affectedNodes.end() );
 				}
 			}
 			else
@@ -663,7 +742,7 @@ bool GraphGadget::buttonPress( GadgetPtr gadget, const ButtonEvent &event )
 				{
 					m_scriptNode->selection()->clear();
 				}
-				m_scriptNode->selection()->add( node );			
+				m_scriptNode->selection()->add( affectedNodes.begin(), affectedNodes.end() );			
 			}
 
 			return true;
@@ -999,7 +1078,7 @@ bool GraphGadget::dragEnd( GadgetPtr gadget, const DragDropEvent &event )
 			{
 				Box3f nodeBound3 = nodeGadget->transformedBound();
 				Box2f nodeBound2( V2f( nodeBound3.min.x, nodeBound3.min.y ), V2f( nodeBound3.max.x, nodeBound3.max.y ) );
-				if( selectionBound.intersects( nodeBound2 ) )
+				if( boxContains( selectionBound, nodeBound2 ) )
 				{
 					m_scriptNode->selection()->add( nodeGadget->node() );
 				}
@@ -1175,9 +1254,14 @@ void GraphGadget::updateGraph()
 
 }
 
-void GraphGadget::addNodeGadget( Gaffer::Node *node )
+NodeGadget *GraphGadget::addNodeGadget( Gaffer::Node *node )
 {	
 	NodeGadgetPtr nodeGadget = NodeGadget::create( node );
+	if( !nodeGadget )
+	{
+		return NULL;
+	}
+	
 	addChild( nodeGadget );
 	
 	NodeGadgetEntry nodeGadgetEntry;
@@ -1194,6 +1278,8 @@ void GraphGadget::addNodeGadget( Gaffer::Node *node )
 	}
 	
 	updateNodeGadgetTransform( nodeGadget.get() );
+	
+	return nodeGadget;
 }
 
 void GraphGadget::removeNodeGadget( const Gaffer::Node *node )
@@ -1243,6 +1329,10 @@ void GraphGadget::addConnectionGadgets( Gaffer::GraphComponent *plugParent )
 	Gaffer::Node *node = plugParent->isInstanceOf( Gaffer::Node::staticTypeId() ) ? static_cast<Gaffer::Node *>( plugParent ) : plugParent->ancestor<Gaffer::Node>();
 	
 	NodeGadget *nodeGadget = findNodeGadget( node );
+	if( !nodeGadget )
+	{
+		return;
+	}
 
 	for( Gaffer::PlugIterator pIt( plugParent->children().begin(), plugParent->children().end() ); pIt!=pIt.end(); pIt++ )
 	{
@@ -1290,7 +1380,13 @@ void GraphGadget::addConnectionGadget( Gaffer::Plug *dstPlug )
 	}
 	
 	Gaffer::Node *dstNode = dstPlug->node();
-	Nodule *dstNodule = findNodeGadget( dstNode )->nodule( dstPlug );
+	NodeGadget *dstNodeGadget = findNodeGadget( dstNode );
+	if( !dstNodeGadget )
+	{
+		return;
+	}
+	
+	Nodule *dstNodule = dstNodeGadget->nodule( dstPlug );
 	if( !dstNodule )
 	{
 		// the destination connection point is not represented in the graph

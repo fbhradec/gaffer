@@ -249,7 +249,7 @@ void ViewportGadget::childRemoved( GraphComponent *parent, GraphComponent *child
 
 bool ViewportGadget::buttonPress( GadgetPtr gadget, const ButtonEvent &event )
 {
-	if( event.modifiers & ModifiableEvent::Alt )
+	if( event.modifiers == ModifiableEvent::Alt )
 	{
 		// accept press so we get a dragBegin opportunity for camera movement
 		return true;
@@ -364,14 +364,12 @@ bool ViewportGadget::mouseMove( GadgetPtr gadget, const ButtonEvent &event )
 	// pass the signal through
 	std::vector<GadgetPtr> gadgetUnderMouse(1, m_gadgetUnderMouse);
 	GadgetPtr handler(0);
-	dispatchEvent( gadgetUnderMouse, &Gadget::mouseMoveSignal, event, handler );
-	
-	return true;
+	return dispatchEvent( gadgetUnderMouse, &Gadget::mouseMoveSignal, event, handler );	
 }
 
 IECore::RunTimeTypedPtr ViewportGadget::dragBegin( GadgetPtr gadget, const DragDropEvent &event )
 {
-	if ( !(event.modifiers & ModifiableEvent::Alt) && m_lastButtonPressGadget )
+	if ( !(event.modifiers == ModifiableEvent::Alt) && m_lastButtonPressGadget )
 	{
 		// see if a child gadget would like to start a drag
 		RunTimeTypedPtr data = dispatchEvent( m_lastButtonPressGadget, &Gadget::dragBeginSignal, event );
@@ -383,7 +381,7 @@ IECore::RunTimeTypedPtr ViewportGadget::dragBegin( GadgetPtr gadget, const DragD
 		}
 	}
 	
-	if ( event.modifiers & ModifiableEvent::Alt || ( event.buttons == ButtonEvent::Middle && event.modifiers == ModifiableEvent::None ) )
+	if ( event.modifiers == ModifiableEvent::Alt || ( event.buttons == ButtonEvent::Middle && event.modifiers == ModifiableEvent::None ) )
 	{
 		// start camera motion
 	

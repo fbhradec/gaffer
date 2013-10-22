@@ -1,6 +1,6 @@
 ##########################################################################
 #  
-#  Copyright (c) 2011-2012, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2013, John Haddon. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -34,59 +34,34 @@
 #  
 ##########################################################################
 
-import unittest
-import weakref
-
+import Gaffer
 import GafferUI
-import GafferUITest
 
-class CheckBoxTest( GafferUITest.TestCase ) :
+import GafferOSL
 
-	def testLifespan( self ) :
-	
-		w = GafferUI.CheckBox()
-		r = weakref.ref( w )
-		
-		self.failUnless( r() is w )
-		
-		del w
-		
-		self.failUnless( r() is None )
-	
-	def testStateChangedSignal( self ) :
-	
-		self.emissions = 0
-		def f( w ) :
-			self.emissions += 1
-			
-		w = GafferUI.CheckBox()
-		c = w.stateChangedSignal().connect( f )
-		
-		w.setState( True )
-		self.assertEqual( w.getState(), True )		
-		
-		self.assertEqual( self.emissions, 1 )
-	
-	def testState( self ) :
-	
-		w = GafferUI.CheckBox()
-		self.assertEqual( w.getState(), False )
-		
-		w.setState( True )		
-		self.assertEqual( w.getState(), True )
-		
-		w.setState( False )		
-		self.assertEqual( w.getState(), False )
-		
-	def testText( self ) :
-		
-		w = GafferUI.CheckBox( "a" )		
-		self.assertEqual( w.getText(), "a" )
-		
-		w.setText( "b" )
-		self.assertEqual( w.getText(), "b" )
+## \todo Extract UI metadata from shader and use it
 
-		self.failUnless( isinstance( w.getText(), basestring ) )
+##########################################################################
+# Nodules
+##########################################################################
+
+def __outPlugNoduleCreator( plug ) :
+
+	if isinstance( plug, Gaffer.CompoundPlug ) :
+		return GafferUI.CompoundNodule( plug, GafferUI.LinearContainer.Orientation.Y, spacing = 0.2 )
+	else :
+		return GafferUI.StandardNodule( plug )
 		
-if __name__ == "__main__":
-	unittest.main()
+GafferUI.Nodule.registerNodule( GafferOSL.OSLShader.staticTypeId(), "out", __outPlugNoduleCreator )
+
+##########################################################################
+# Metadata
+##########################################################################
+
+GafferUI.Metadata.registerNodeDescription(
+
+GafferOSL.OSLShader,
+
+"""Represents OSL shaders.""",
+
+)

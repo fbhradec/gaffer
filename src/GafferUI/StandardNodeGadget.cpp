@@ -118,8 +118,7 @@ StandardNodeGadget::StandardNodeGadget( Gaffer::NodePtr node, LinearContainer::O
 		if( enabledPlug )
 		{
 			m_nodeEnabled = enabledPlug->getValue();
-			node->plugSetSignal().connect( boost::bind( &StandardNodeGadget::plugSet, this, ::_1 ) );
-			node->plugDirtiedSignal().connect( boost::bind( &StandardNodeGadget::plugSet, this, ::_1 ) );
+			node->plugDirtiedSignal().connect( boost::bind( &StandardNodeGadget::plugDirtied, this, ::_1 ) );
 		}
 	}
 	
@@ -247,6 +246,8 @@ void StandardNodeGadget::doRender( const Style *style ) const
 	
 	if( !m_nodeEnabled && !IECoreGL::Selector::currentSelector() )
 	{
+		/// \todo Replace renderLine() with a specific method (renderNodeStrikeThrough?) on the Style class
+		/// so that styles can do customised drawing based on knowledge of what is being drawn.
 		style->renderLine( IECore::LineSegment3f( V3f( b.min.x, b.min.y, 0 ), V3f( b.max.x, b.max.y, 0 ) ) );	
 	}
 }
@@ -403,16 +404,6 @@ void StandardNodeGadget::setLabelsVisibleOnHover( bool labelsVisible )
 bool StandardNodeGadget::getLabelsVisibleOnHover() const
 {
 	return m_labelsVisibleOnHover;
-}
-
-void StandardNodeGadget::plugSet( const Gaffer::Plug *plug )
-{
-	const DependencyNode *dependencyNode = IECore::runTimeCast<const DependencyNode>( plug->node() );
-	if( dependencyNode && plug == dependencyNode->enabledPlug() )
-	{
-		m_nodeEnabled = static_cast<const Gaffer::BoolPlug *>( plug )->getValue();
-		renderRequestSignal()( this );
-	}
 }
 
 void StandardNodeGadget::plugDirtied( const Gaffer::Plug *plug )

@@ -154,7 +154,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 		
 	def _plugConnections( self ) :
 	
-		return [ self.__plugSetConnection,
+		return [ 
 			self.__plugDirtiedConnection,
 			self.__plugInputChangedConnection,
 			self.__plugFlagsChangedConnection
@@ -207,7 +207,12 @@ class PlugValueWidget( GafferUI.Widget ) :
 		if self.getPlug().getInput() is not None :
 			menuDefinition.append( "/Edit input...", { "command" : Gaffer.WeakMethod( self.__editInput ) } )
 			menuDefinition.append( "/EditInputDivider", { "divider" : True } )
-			menuDefinition.append( "/Remove input", { "command" : Gaffer.WeakMethod( self.__removeInput ) } )
+			menuDefinition.append(
+				"/Remove input", {
+					"command" : Gaffer.WeakMethod( self.__removeInput ),
+					"active" : self.getPlug().acceptsInput( None ) and not self.getReadOnly(),
+				}
+			)
 		if hasattr( self.getPlug(), "defaultValue" ) and self.getPlug().direction() == Gaffer.Plug.Direction.In :
 			menuDefinition.append(
 				"/Default", {
@@ -296,13 +301,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 	__plugTypesToCreators = {}
 	__nodeTypesToCreators = {}
-		
-	def __plugSet( self, plug ) :
 	
-		if plug.isSame( self.__plug ) :
-		
-			self._updateFromPlug()	
-
 	def __plugDirtied( self, plug ) :
 	
 		if plug.isSame( self.__plug ) :
@@ -331,19 +330,13 @@ class PlugValueWidget( GafferUI.Widget ) :
 		context = self.__fallbackContext
 		
 		if self.__plug is not None :
-			self.__plugSetConnection = plug.node().plugSetSignal().connect( Gaffer.WeakMethod( self.__plugSet ) )
-			if hasattr( plug.node(), "plugDirtiedSignal" ) :
-				# only DependencyNodes have the plugDirtiedSignal
-				self.__plugDirtiedConnection = plug.node().plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ) )
-			else :
-				self.__plugDirtiedConnection = None
+			self.__plugDirtiedConnection = plug.node().plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ) )
 			self.__plugInputChangedConnection = plug.node().plugInputChangedSignal().connect( Gaffer.WeakMethod( self.__plugInputChanged ) )
 			self.__plugFlagsChangedConnection = plug.node().plugFlagsChangedSignal().connect( Gaffer.WeakMethod( self.__plugFlagsChanged ) )
 			scriptNode = self.__plug.ancestor( Gaffer.ScriptNode.staticTypeId() )
 			if scriptNode is not None :
 				context = scriptNode.context()
 		else :
-			self.__plugSetConnection = None
 			self.__plugDirtiedConnection = None
 			self.__plugInputChangedConnection = None
 			self.__plugFlagsChangedConnection = None
@@ -419,6 +412,14 @@ class PlugValueWidget( GafferUI.Widget ) :
 		if self.getReadOnly() :
 			return False
 
+		if isinstance( event.sourceWidget, GafferUI.PlugValueWidget ) :
+			sourcePlugValueWidget = event.sourceWidget
+		else :
+			sourcePlugValueWidget = event.sourceWidget.ancestor( GafferUI.PlugValueWidget )
+
+		if sourcePlugValueWidget is not None and sourcePlugValueWidget.getPlug().isSame( self.getPlug() ) :
+			return False
+		
 		if isinstance( event.data, Gaffer.Plug ) :
 			if self.getPlug().acceptsInput( event.data ) :
 				self.setHighlighted( True )

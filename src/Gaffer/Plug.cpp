@@ -134,7 +134,7 @@ void Plug::setFlags( unsigned flags, bool enable )
 
 bool Plug::acceptsInput( const Plug *input ) const
 {
-	if( !getFlags( AcceptsInputs ) )
+	if( !getFlags( AcceptsInputs ) || getFlags( ReadOnly ) )
 	{
 		return false;
 	}
@@ -151,7 +151,16 @@ bool Plug::acceptsInput( const Plug *input ) const
 			return false;
 		}
 	}
-	return !getFlags( ReadOnly );
+	
+	for( OutputContainer::const_iterator it=m_outputs.begin(), eIt=m_outputs.end(); it!=eIt; ++it )
+	{
+		if( !(*it)->acceptsInput( input ) )
+		{
+			return false;
+		}
+	}
+	
+	return true;
 }
 
 void Plug::setInput( PlugPtr input )
@@ -206,8 +215,7 @@ void Plug::setInputInternal( PlugPtr input, bool emit )
 		{
 			n->plugInputChangedSignal()( this );
 		}
-		emitDirtiness();
-		propagateDirtiness();
+		DependencyNode::propagateDirtiness( this );
 	}
 }
 
@@ -228,60 +236,6 @@ const Plug::OutputContainer &Plug::outputs() const
 PlugPtr Plug::createCounterpart( const std::string &name, Direction direction ) const
 {
 	return new Plug( name, direction, getFlags() );
-}
-
-void Plug::emitDirtiness( Node *n )
-{
-	n = n ? n : ancestor<Node>();
-	if( !n )
-	{
-		return;
-	}
-	
-	Plug *p = this;
-	while( p )
-	{
-		n->plugDirtiedSignal()( p );
-		p = p->parent<Plug>();
-	}
-}
-
-void Plug::propagateDirtiness()
-{
-	if( children().size() ) /// \todo This would be isInstanceOf( CompoundPlugTypeId ) if it didn't cause crashes somehow
-	{
-		// we only propagate dirtiness along leaf level plugs, because
-		// they are the only plugs which can be the target of the affects(),
-		// and compute() methods.
-		return;
-	}
-
-	DependencyNode *n = ancestor<DependencyNode>();
-	if( n )
-	{
-		if( direction()==In )
-		{
-			DependencyNode::AffectedPlugsContainer affected;
-			n->affects( this, affected );
-			for( DependencyNode::AffectedPlugsContainer::const_iterator it=affected.begin(); it!=affected.end(); it++ )
-			{
-				if( ( *it )->isInstanceOf( (IECore::TypeId)Gaffer::CompoundPlugTypeId ) )
-				{
-					// DependencyNode::affects() implementations are only allowed to place leaf plugs in the outputs,
-					// so we helpfully report any mistakes.
-					throw IECore::Exception( "Non-leaf plug " + (*it)->fullName() + " cannot be returned by affects()" );
-				}
-				const_cast<Plug *>( *it )->emitDirtiness( n );
-				const_cast<Plug *>( *it )->propagateDirtiness();
-			}
-		}
-	}
-	
-	for( OutputContainer::const_iterator it=outputs().begin(); it!=outputs().end(); it++ )
-	{
-		(*it)->emitDirtiness();
-		(*it)->propagateDirtiness();
-	}
 }
 
 void Plug::parentChanging( Gaffer::GraphComponent *newParent )

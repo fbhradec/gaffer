@@ -1,7 +1,7 @@
 ##########################################################################
 #  
 #  Copyright (c) 2011-2012, John Haddon. All rights reserved.
-#  Copyright (c) 2011-2012, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -99,6 +99,31 @@ class WidgetTest( GafferUITest.TestCase ) :
 		self.assert_( p.ancestor( GafferUI.ListContainer ) is l )
 		self.assert_( p.ancestor( GafferUI.Window ) is w )
 		self.assert_( p.ancestor( GafferUI.Menu ) is None )
+	
+	def testIsAncestorOf( self ) :
+	
+		with GafferUI.Window( "test" ) as w :
+			with GafferUI.SplitContainer() as p :
+				with GafferUI.ListContainer() as l1 :
+					b1 = GafferUI.Button()
+				with GafferUI.ListContainer() as l2 :
+					b2 = GafferUI.Button()
+					
+		self.assertTrue( l2.isAncestorOf( b2 ) )
+		self.assertFalse( l1.isAncestorOf( b2 ) )
+		self.assertTrue( p.isAncestorOf( b2 ) )
+		self.assertTrue( w.isAncestorOf( b2 ) )
+		
+		self.assertFalse( b2.isAncestorOf( b1 ) )
+		self.assertFalse( b2.isAncestorOf( l1 ) )
+		self.assertFalse( b2.isAncestorOf( l2 ) )
+		self.assertFalse( b2.isAncestorOf( p ) )
+		self.assertFalse( b2.isAncestorOf( w ) )
+				
+		self.assertTrue( l1.isAncestorOf( b1 ) )
+		self.assertFalse( l2.isAncestorOf( b1 ) )
+		self.assertTrue( p.isAncestorOf( b1 ) )
+		self.assertTrue( w.isAncestorOf( b1 ) )
 	
 	def testGafferWidgetAsTopLevel( self ) :
 	
@@ -320,6 +345,10 @@ class WidgetTest( GafferUITest.TestCase ) :
 		b = GafferUI.Button()
 		w.setChild( b )
 		w.setVisible( True )
+				
+		w.setPosition( IECore.V2i( 100 ) )
+
+		self.waitForIdle( 1000 )
 		
 		wb = w.bound()
 		bb = b.bound()
@@ -359,6 +388,27 @@ class WidgetTest( GafferUITest.TestCase ) :
 
 		w.setHighlighted( False )
 		self.assertEqual( w.getHighlighted(), False )
+	
+	def testWidgetAt( self ) :
+	
+		with GafferUI.Window() as w1 :
+			t1 = GafferUI.TextWidget( "hello" )
+			
+		with GafferUI.Window() as w2 :
+			t2 = GafferUI.TextWidget( "hello" )
+		
+		w1.setVisible( True )
+		w2.setVisible( True )
+			
+		w1.setPosition( IECore.V2i( 100 ) )		
+		w2.setPosition( IECore.V2i( 300 ) )
+	
+		self.waitForIdle( 1000 )
+	
+		self.assertTrue( GafferUI.Widget.widgetAt( w1.bound().center() ) is t1 )
+		self.assertTrue( GafferUI.Widget.widgetAt( w2.bound().center() ) is t2 )
+		self.assertTrue( GafferUI.Widget.widgetAt( w1.bound().center(), widgetType=GafferUI.Window ) is w1 )
+		self.assertTrue( GafferUI.Widget.widgetAt( w2.bound().center(), widgetType=GafferUI.Window ) is w2 )
 		
 if __name__ == "__main__":
 	unittest.main()

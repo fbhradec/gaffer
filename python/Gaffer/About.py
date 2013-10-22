@@ -99,7 +99,7 @@ class About :
 			
 			{
 				"name" : "cortex",
-				"url" : "http://code.google.com/p/cortex-vfx",
+				"url" : "https://github.com/ImageEngine/cortex/",
 				"license" : "$GAFFER_ROOT/doc/licenses/cortex",
 			},
 									
@@ -186,6 +186,12 @@ class About :
 				"name" : "Alembic",
 				"url" : "http://www.alembic.io/",
 				"license" : "$GAFFER_ROOT/doc/licenses/alembic",
+			},
+			
+			{
+				"name" : "OpenShadingLanguage",
+				"url" : "https://github.com/imageworks/OpenShadingLanguage/",
+				"license" : "$GAFFER_ROOT/doc/licenses/osl",
 			},
 			
 			{

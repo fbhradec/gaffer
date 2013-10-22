@@ -152,6 +152,7 @@ class PathListingWidget( GafferUI.Widget ) :
 		self.__borrowedButtonPress = None
 		self.__buttonPressConnection = self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
 		self.__buttonReleaseConnection = self.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ) )
+		self.__mouseMoveConnection = self.mouseMoveSignal().connect( Gaffer.WeakMethod( self.__mouseMove ) )
 		self.__dragBeginConnection = self.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ) )
 		self.__dragEndConnection = self.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ) )
 		self.__dragPointer = "paths.png"
@@ -371,10 +372,11 @@ class PathListingWidget( GafferUI.Widget ) :
 				# it's not valid. if we can make it
 				# valid by trimming the last element
 				# then do that
-				pp = p.copy()
-				del pp[-1]
-				if pp.isValid() :
-					p = pp
+				if len( p ) :
+					pp = p.copy()
+					del pp[-1]
+					if pp.isValid() :
+						p = pp
 			else :
 				# it's valid and not a leaf, and
 				# that's what we want.
@@ -473,6 +475,15 @@ class PathListingWidget( GafferUI.Widget ) :
 			self.__emitButtonPress( self.__borrowedButtonPress )
 			self.__borrowedButtonPress = None
 			
+		return False
+	
+	def __mouseMove( self, widget, event ) :
+	
+		if event.buttons :
+			# take the event so that the underlying QTreeView doesn't
+			# try to do drag-selection, which would ruin our own upcoming drag.
+			return True
+		
 		return False
 		
 	def __dragBegin( self, widget, event ) :

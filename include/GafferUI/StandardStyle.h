@@ -67,13 +67,18 @@ class StandardStyle : public Style
 
 		virtual void bind( const Style *currentStyle=0 ) const;
 
+		virtual Imath::Box3f characterBound( TextType textType ) const;
 		virtual Imath::Box3f textBound( TextType type, const std::string &text ) const;
 		virtual void renderText( TextType type, const std::string &text, State state = NormalState ) const;
+		virtual void renderWrappedText( TextType textType, const std::string &text, const Imath::Box2f &bound, State state = NormalState ) const;
 
 		virtual void renderFrame( const Imath::Box2f &frame, float borderWidth, State state = NormalState ) const;
 		virtual void renderNodule( float radius, State state = NormalState ) const;
 		virtual void renderConnection( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent, State state = NormalState ) const;
+		virtual void renderBackdrop( const Imath::Box2f &box, State state = NormalState ) const;
 		virtual void renderSelectionBox( const Imath::Box2f &box ) const;
+		virtual void renderHorizontalRule( const Imath::V2f &center, float length, State state = NormalState ) const;
+
 		virtual void renderImage( const Imath::Box2f &box, const IECoreGL::Texture *texture ) const;
 		virtual void renderLine( const IECore::LineSegment3f &line ) const;
 		virtual void renderSolidRectangle( const Imath::Box2f &box ) const;
@@ -97,6 +102,11 @@ class StandardStyle : public Style
 		void setFont( TextType textType, IECoreGL::FontPtr font );
 		const IECoreGL::Font *getFont( TextType textType ) const;
 		
+		/// \todo Perhaps this should be something on the IECore or
+		/// IECoreGL Font classes?
+		void setFontScale( TextType textType, float scale );
+		const float getFontScale( TextType textType ) const;
+		
 	private :
 	
 		static unsigned int connectionDisplayList();
@@ -117,6 +127,7 @@ class StandardStyle : public Style
 		boost::array<Imath::Color3f, LastColor> m_colors;
 		
 		boost::array<IECoreGL::FontPtr, LastText> m_fonts;
+		boost::array<float, LastText> m_fontScales;
 
 };
 

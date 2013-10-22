@@ -1,3 +1,136 @@
+# 0.83.0
+
+#### UI
+
+- Added support for framing nodes and plugs dragged to the NodeGraph.
+- Fixed overzealous pinning of nodes dragged to editors. Specifically, a node dragged from within an editor would be accepted as a pinning-drag into that very same editor. Now a drag must originate from outside the editor to be considered for pinning.
+- Stopped GafferUI.Frame from expanding beyond the min/max of its contents. It now behaves like the other containers in this respect. Frames can still expand, but now only when their contents want to. Updated ErrorDialogue for this fix by adding some appropriate Spacers, and updated it to use the newer "with" syntax for building UIs at the same time.
+- Added highlighted rendering for frames.
+- Added ConnectionPlugValueWidget. This is a fallback widget for plugs that otherwise have no value to display. It shows the input connection to the plug, and provides means of navigation to that input (#130).
+- Added post-execution behaviours to OpDialogue. These allow the UI writer, the Op writer or the user to choose whether or not the dialogue should be closed after the Op has executed (#560).
+- Fixed PathListingWidget errors when "/" path is invalid.  Invalid root paths occur quite frequently in the SceneHierarchy editor when an invalid filename has been entered in a SceneReader or AlembicReader. Those nodes will still display an error, but the SceneHierarchy now won't output a confusing stacktrace which distracts people from the root cause (#528).
+- Added Alt click modifier for selecting upstream nodes in GraphGadget. Alt+Shift click adds all upstream nodes to the selection. Alt+Ctrl click removes all upstream nodes from the selection (#437).
+- Fixed launching of external URLs on OS X.
+
+#### Scene
+
+-  Fixed Prune node's forward declarations of lights and cameras. Previously it would not correctly remove the forward declaration for an object whose ancestor had been pruned.
+- Added Isolate node type.  This removes all paths which are not directly above or below the chosen location - particularly useful for singling out certain assets from a large scene (#564).
+- Improved default values for Seeds and Instancer nodes. The new defaults mean there are less steps to perform to get something happening.
+- Stopped annoying startup errors when 3delight or arnold are missing (#486).
+
+#### OSL
+
+- Introduced a new gaffer module which integrates Open Shading Language.
+	- OSLShader node represents OSL shaders and allows them to be connected into shading networks.
+	- OSLImage node executes OSL shaders in the context of an input image to perform arbitrary image processing.
+	- OSLObject node executes OSL shaders in the context of an object's primitive variables to perform geometry deformation.
+	
+#### API
+
+- Added custom formatters and name depth control to NameLabel.
+- Added Widget.isAncestorOf() method.
+- Added ButtonEvent.button field.
+- Improved path matching to provide more complete information.
+- Added GraphGadget::upstreamNodeGadgets() method. 
+
+#### Support apps
+
+- Added ability to specify Widget to be grabbed in the screenGrab app.
+
+####################################################################################################
+
+# 0.82.0
+
+#### Core
+
+- Made Plug::acceptsInput() consider current output connections (#532).
+
+#### UI
+
+- Added even-more-simplified mode to StandardNodeUI (#549).
+- Fixed GraphGadget for NULL return from NodeGadget::create(). This allows NodeGadget::registerNodeGadget() to be used with functions that will return NULL to signify that the node should be hidden.
+
+#### Scene
+
+- Fixed errors reading polygon normals from Alembic files (courtesy of Cortex 8.0.0-a18).
+- Added MapOffset node for offsetting texture coordinates.
+
+#### RenderMan
+
+- Fixed output of multiple displays (courtesy of Cortex 8.0.0-a18) (#357).
+- Added automatic instancing capabilities (courtesy of Cortex 8.0.0-a18).
+
+0.81.0
+======
+
+Core
+----
+
+- Improved dirtiness propagation mechanism to remove duplicate signal emission.
+
+UI
+--
+
+- Backdrop improvements
+	- Backdrop contents can now be scaled, so large backdrops can still have readable text when zoomed out.
+	- Fixed bug which meant that empty backdrops didn't immediately redraw as highlighted when selected.
+	- Improved resizing behaviour.
+	- Fixed cut and paste bug.
+
+Scene
+-----
+
+- Added doublesided attribute to StandardAttributes node (#275).
+
+Arnold
+------
+
+- Fixed packaging of Arnold plugins.
+- Fixed problem where light shaders weren't being created as lights.
+
+RenderMan
+---------
+
+- Fixed public build to work with older 3delight versions where RiProceduralV isn't available.
+- Added support for several new attributes in RenderManAttributes node (#275).
+
+API
+---
+
+- The plugDirtiedSignal() is now emitted when a value has been edited with ValuePlug::setValue() - this means that observers need only ever use plugDirtiedSignal() instead of also having to use plugSetSignal() as well.
+- Added Style::characterBound(). This returns a bounding box guaranteed to cover the largest character in the font. It is useful for correctly positioning the text baseline among other things.
+
+
+0.80.0
+======
+
+UI
+--
+
+- NodeGraph now only drag-selects nodes that are wholly contained in the drag area, not merely intersecting it.
+- Added a Backdrop node (#153). 
+
+RenderMan
+---------
+
+- Added support for "help" shader annotation in RenderManShaderUI (#536). This provides help for the shader as a whole and is mapped into the MetaData as the node description, appearing in the NodeEditor as a tooltip.
+
+API
+---
+
+- Added optional continuous update to string PlugValueWidgets, controlled by the continuousUpdate parameters to the constructor. This transfers the text from the ui to the plug on every keypress.
+
+Core
+----
+
+- Fixed serialisation of dynamic BoxPlugs.
+
+Documentation
+-------------
+
+- Improvements too numerous to mention.
+
 0.79.0
 ======
 

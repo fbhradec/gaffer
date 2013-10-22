@@ -91,56 +91,69 @@ scriptWindowMenu.append( "/Help/Examples",			{ "subMenu" : helpExamples } )
 ## Node creation menu
 ###########################################################################
 
+moduleSearchPath = IECore.SearchPath( os.environ["PYTHONPATH"], ":" )
+
 nodeMenu = GafferUI.NodeMenu.acquire( application )
 
 # Arnold nodes
 
-try :
+if moduleSearchPath.find( "arnold" ) :
 
-	import GafferArnold
-	import GafferArnoldUI
+	try :
+
+		import GafferArnold
+		import GafferArnoldUI
 	
-	GafferArnoldUI.ShaderMenu.appendShaders( nodeMenu.definition() )
+		GafferArnoldUI.ShaderMenu.appendShaders( nodeMenu.definition() )
 	
-	nodeMenu.append( "/Arnold/Options", GafferArnold.ArnoldOptions, searchText = "ArnoldOptions" )
-	nodeMenu.append( "/Arnold/Attributes", GafferArnold.ArnoldAttributes, searchText = "ArnoldAttributes" )
-	nodeMenu.append(
-		"/Arnold/Render", GafferArnold.ArnoldRender,
-		plugValues = {
-			"fileName" : "${project:rootDirectory}/asses/${script:name}/${script:name}.####.ass",
-		},
-		searchText = "ArnoldRender"
-	)
+		nodeMenu.append( "/Arnold/Options", GafferArnold.ArnoldOptions, searchText = "ArnoldOptions" )
+		nodeMenu.append( "/Arnold/Attributes", GafferArnold.ArnoldAttributes, searchText = "ArnoldAttributes" )
+		nodeMenu.append(
+			"/Arnold/Render", GafferArnold.ArnoldRender,
+			plugValues = {
+				"fileName" : "${project:rootDirectory}/asses/${script:name}/${script:name}.####.ass",
+			},
+			searchText = "ArnoldRender"
+		)
 
-except Exception, m :
+	except Exception, m :
 
-	stacktrace = traceback.format_exc()
-	IECore.msg( IECore.Msg.Level.Error, "startup/gui/menus.py", "Error loading Arnold module - \"%s\".\n %s" % ( m, stacktrace ) )
+		stacktrace = traceback.format_exc()
+		IECore.msg( IECore.Msg.Level.Error, "startup/gui/menus.py", "Error loading Arnold module - \"%s\".\n %s" % ( m, stacktrace ) )
 
 # RenderMan nodes
 
-try :
+if "DELIGHT" in os.environ :
 
-	import GafferRenderMan
-	import GafferRenderManUI
+	try :
 
-	GafferRenderManUI.ShaderMenu.appendShaders( nodeMenu.definition() )
+		import GafferRenderMan
+		import GafferRenderManUI
+
+		GafferRenderManUI.ShaderMenu.appendShaders( nodeMenu.definition() )
 	
-	nodeMenu.append( "/RenderMan/Attributes", GafferRenderMan.RenderManAttributes, searchText = "RenderManAttributes" )
-	nodeMenu.append( "/RenderMan/Options", GafferRenderMan.RenderManOptions, searchText = "RenderManOptions" )
-	nodeMenu.append(
-		"/RenderMan/Render", GafferRenderMan.RenderManRender,
-		plugValues = {
-			"ribFileName" : "${project:rootDirectory}/ribs/${script:name}/${script:name}.####.rib",
-		},
-		searchText = "RenderManRender"
-	)
-	nodeMenu.append( "/RenderMan/InteractiveRender", GafferRenderMan.InteractiveRenderManRender, searchText = "InteractiveRender" )
+		nodeMenu.append( "/RenderMan/Attributes", GafferRenderMan.RenderManAttributes, searchText = "RenderManAttributes" )
+		nodeMenu.append( "/RenderMan/Options", GafferRenderMan.RenderManOptions, searchText = "RenderManOptions" )
+		nodeMenu.append(
+			"/RenderMan/Render", GafferRenderMan.RenderManRender,
+			plugValues = {
+				"ribFileName" : "${project:rootDirectory}/ribs/${script:name}/${script:name}.####.rib",
+			},
+			searchText = "RenderManRender"
+		)
+		nodeMenu.append( "/RenderMan/InteractiveRender", GafferRenderMan.InteractiveRenderManRender, searchText = "InteractiveRender" )
+		
+		scriptWindowMenu.append(
+			"/Help/3Delight/User Guide",
+			{
+				"command" : IECore.curry( GafferUI.showURL, os.path.expandvars( "$DELIGHT/doc/3Delight-UserManual.pdf" ) ),
+			}
+		)
 
-except Exception, m :
+	except Exception, m :
 
-	stacktrace = traceback.format_exc()
-	IECore.msg( IECore.Msg.Level.Error, "startup/gui/menus.py", "Error loading RenderMan module - \"%s\".\n %s" % ( m, stacktrace ) )
+		stacktrace = traceback.format_exc()
+		IECore.msg( IECore.Msg.Level.Error, "startup/gui/menus.py", "Error loading RenderMan module - \"%s\".\n %s" % ( m, stacktrace ) )
 
 # Scene nodes
 
@@ -158,13 +171,15 @@ nodeMenu.append( "/Scene/Object/Modifiers/Attribute Cache", GafferScene.Attribut
 nodeMenu.append( "/Scene/Object/Modifiers/Delete Primitive Variables", GafferScene.DeletePrimitiveVariables, searchText = "DeletePrimitiveVariables" )
 nodeMenu.append( "/Scene/Object/Modifiers/Mesh Type", GafferScene.MeshType, searchText = "MeshType"  )
 nodeMenu.append( "/Scene/Object/Modifiers/Map Projection", GafferScene.MapProjection, searchText = "MapProjection"  )
+nodeMenu.append( "/Scene/Object/Modifiers/Map Offset", GafferScene.MapOffset, searchText = "MapOffset"  )
 nodeMenu.append( "/Scene/Attributes/Shader Assignment", GafferScene.ShaderAssignment, searchText = "ShaderAssignment" )
 nodeMenu.append( "/Scene/Attributes/Standard Attributes", GafferScene.StandardAttributes, searchText = "StandardAttributes" )
 nodeMenu.append( "/Scene/Attributes/Custom Attributes", GafferScene.CustomAttributes, searchText = "CustomAttributes" )
 nodeMenu.append( "/Scene/Filters/Path Filter", GafferScene.PathFilter, searchText = "PathFilter" )
-nodeMenu.append( "/Scene/Scene/Group", GafferScene.Group )
-nodeMenu.append( "/Scene/Scene/SubTree", GafferScene.SubTree ) #\todo - rename to 'Subtree' (node needs to change too)
-nodeMenu.append( "/Scene/Scene/Prune", GafferScene.Prune )
+nodeMenu.append( "/Scene/Hierarchy/Group", GafferScene.Group )
+nodeMenu.append( "/Scene/Hierarchy/SubTree", GafferScene.SubTree ) #\todo - rename to 'Subtree' (node needs to change too)
+nodeMenu.append( "/Scene/Hierarchy/Prune", GafferScene.Prune )
+nodeMenu.append( "/Scene/Hierarchy/Isolate", GafferScene.Isolate )
 nodeMenu.append( "/Scene/Transform/Transform", GafferScene.Transform )
 nodeMenu.append( "/Scene/Transform/Point Constraint", GafferScene.PointConstraint, searchText = "PointConstraint" )
 nodeMenu.append( "/Scene/Transform/Aim Constraint", GafferScene.AimConstraint, searchText = "AimConstraint" )
@@ -195,6 +210,37 @@ nodeMenu.append( "/Image/Filter/Transform", GafferImage.ImageTransform, searchTe
 nodeMenu.append( "/Image/Utility/Select", GafferImage.Select )
 nodeMenu.append( "/Image/Utility/Stats", GafferImage.ImageStats, searchText = "ImageStats" )
 
+# OSL nodes
+
+if moduleSearchPath.find( "GafferOSL" ) :
+
+	import GafferOSL
+	import GafferOSLUI
+
+	def __shaderNodeCreator( nodeName, shaderName ) :
+	
+		node = GafferOSL.OSLShader( nodeName )
+		node.loadShader( shaderName )
+		
+		return node
+
+	GafferSceneUI.ShaderUI.appendShaders(
+		nodeMenu.definition(), "/OSL/Shader",
+		os.environ["OSL_SHADER_PATHS"].split( ":" ),
+		[ "oso" ],
+		__shaderNodeCreator
+	)
+
+	nodeMenu.append( "/OSL/Image", GafferOSL.OSLImage, searchText = "OSLImage" )
+	nodeMenu.append( "/OSL/Object", GafferOSL.OSLObject, searchText = "OSLObject" )
+
+	scriptWindowMenu.append(
+		"/Help/Open Shading Language/Language Reference",
+		{
+			"command" : IECore.curry( GafferUI.showURL, os.path.expandvars( "$GAFFER_ROOT/doc/osl/osl-languagespec.pdf" ) ),
+		}
+	)
+
 # Cortex nodes
 	
 nodeMenu.append( "/Cortex/File/Reader", Gaffer.ObjectReader, searchText = "ObjectReader" )
@@ -211,3 +257,4 @@ nodeMenu.append( "/Utility/Node", Gaffer.Node )
 nodeMenu.append( "/Utility/Random", Gaffer.Random )
 nodeMenu.append( "/Utility/Box", GafferUI.BoxUI.nodeMenuCreateCommand )
 nodeMenu.append( "/Utility/Reference", GafferUI.ReferenceUI.nodeMenuCreateCommand )
+nodeMenu.definition().append( "/Utility/Backdrop", { "command" : GafferUI.BackdropUI.nodeMenuCreateCommand } )

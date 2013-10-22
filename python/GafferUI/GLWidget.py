@@ -83,12 +83,26 @@ class GLWidget( GafferUI.Widget ) :
 		
 		if hasattr( format, "setVersion" ) : # setVersion doesn't exist in qt prior to 4.7.		
 			format.setVersion( 2, 1 )
-				
-		GafferUI.Widget.__init__( self, self.__createQGLWidget( format ), **kw )
 		
-		self._qtWidget().resizeGL = Gaffer.WeakMethod( self.__resizeGL )
-		self._qtWidget().paintGL = Gaffer.WeakMethod( self.__paintGL )
-
+		graphicsView = _GLGraphicsView( format )
+		self.__graphicsScene = _GLGraphicsScene( graphicsView, Gaffer.WeakMethod( self._draw ) )
+		graphicsView.setScene( self.__graphicsScene )
+		
+		GafferUI.Widget.__init__( self, graphicsView, **kw )
+	
+	## Adds a Widget as an overlay.
+	## \todo Support more than one overlay, and provide grid-based
+	# placement options. Perhaps GLWidget should also derive from Container
+	# to support auto-parenting and appropriate removeChild() behaviour.
+	def addOverlay( self, overlay ) :
+	
+		assert( overlay.parent() is None )
+		
+		self.__overlay = overlay
+		self.__overlay._setStyleSheet()
+			
+		item = self.__graphicsScene.addWidget( self.__overlay._qtWidget() )
+		
 	## Called whenever the widget is resized. May be reimplemented by derived
 	# classes if necessary.
 	def _resize( self, size ) :
@@ -99,30 +113,58 @@ class GLWidget( GafferUI.Widget ) :
 	# OpenGL calls.
 	def _draw( self ) :
 	
-		raise NotImplementedError
+		pass
 		
 	## Derived classes may call this when they wish to trigger a redraw.
-	def _redraw( self, immediate=False ) :
+	def _redraw( self ) :
 		
-		if immediate :
-			self._qtWidget().updateGL()
-		else :
-			self._qtWidget().update()
+		self._glWidget().update()
 	
-	def __resizeGL( self, width, height ) :
-		
-		self._resize( IECore.V2i( width, height ) )
-
-	def __paintGL( self ) :
+	## May be used by derived classes to get access to the internal
+	# QGLWidget - this can be useful for making the correct context current.		
+	def _glWidget( self ) :
 	
-		# we need to call the init method after a GL context has been
-		# created. ideally we'd call it in a QGLWidget.initializeGL override but
-		# at the time of writing that's not getting called. calling it here does
-		# mean we call init() way more than needed, but it's safe.
-		IECoreGL.init( True )
+		return self._qtWidget().viewport()
 		
-		self._draw()
+class _GLGraphicsView( QtGui.QGraphicsView ) :
 
+	def __init__( self, format ) :
+	
+		QtGui.QGraphicsView.__init__( self )
+		
+		self.setObjectName( "gafferGLWidget" )
+		self.setHorizontalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
+		self.setVerticalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
+		
+		glWidget = self.__createQGLWidget( format )
+				
+		self.setViewport( glWidget )
+		self.setViewportUpdateMode( self.FullViewportUpdate )
+				
+	def resizeEvent( self, event ) :
+	
+		if self.scene() is not None :
+			self.scene().setSceneRect( 0, 0, event.size().width(), event.size().height() )
+			self.viewport().makeCurrent()
+			GafferUI.Widget._owner( self )._resize( IECore.V2i( event.size().width(), event.size().height() ) )
+
+	def keyPressEvent( self, event ) :
+				
+		# We have to reimplement this method to prevent QAbstractScrollArea
+		# from stealing the cursor keypresses, preventing them from
+		# being used by GLWidget subclasses. QAbstractScrollArea uses
+		# those keypresses to move the scrollbars, but we don't want the
+		# scrolling functionality at all. Our implementation of this method
+		# is functionally identical to the QGraphicsView one, except it
+		# passes unused events to QFrame, bypassing QAbstractScrollArea.
+			
+		if self.scene() is not None and self.isInteractive() :
+			QtGui.QApplication.sendEvent( self.scene(), event )
+			if event.isAccepted() :
+				return
+				
+		QtGui.QFrame.keyPressEvent( self, event )
+	
 	# We keep a single hidden widget which owns the texture and display lists
 	# and then share those with all the widgets we really want to make.
 	__shareWidget = None
@@ -216,3 +258,44 @@ class GLWidget( GafferUI.Widget ) :
 		result = QtOpenGL.QGLWidget()
 		result.setContext( MayaGLContext( format, result ) )
 		return result
+		
+class _GLGraphicsScene( QtGui.QGraphicsScene ) :
+
+	def __init__( self, parent, backgroundDrawFunction ) :
+	
+		QtGui.QGraphicsScene.__init__( self, parent )
+		
+		self.__backgroundDrawFunction = backgroundDrawFunction
+		self.sceneRectChanged.connect( self.__sceneRectChanged )
+	
+	def addWidget( self, widget ) :
+	
+		if widget.layout() is not None :
+			# removing the size constraint is necessary to keep the widget the
+			# size we tell it to be in __updateItemGeometry.
+			widget.layout().setSizeConstraint( QtGui.QLayout.SetNoConstraint )
+		
+		item = QtGui.QGraphicsScene.addWidget( self, widget )
+		self.__updateItemGeometry( item, self.sceneRect() )
+		
+		return item
+		
+	def drawBackground( self, painter, rect ) :
+	
+		# we need to call the init method after a GL context has been
+		# created, and this seems like the only place that is guaranteed.
+		# calling it here does mean we call init() way more than needed,
+		# but it's safe.
+		IECoreGL.init( True )
+		
+		self.__backgroundDrawFunction()
+		
+	def __sceneRectChanged( self, sceneRect ) :
+	
+		for item in self.items() :
+			self.__updateItemGeometry( item, sceneRect )
+
+	def __updateItemGeometry( self, item, sceneRect ) :
+	
+		geometry = item.widget().geometry()
+		item.widget().setGeometry( QtCore.QRect( 0, 0, sceneRect.width(), item.widget().sizeHint().height() ) )

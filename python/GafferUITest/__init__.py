@@ -53,7 +53,7 @@ from WidgetSignalTest import WidgetSignalTest
 from EventLoopTest import EventLoopTest
 from SplinePlugGadgetTest import SplinePlugGadgetTest
 from TextWidgetTest import TextWidgetTest
-from CheckBoxTest import CheckBoxTest
+from BoolWidgetTest import BoolWidgetTest
 from ImageTest import ImageTest
 from ButtonTest import ButtonTest
 from CollapsibleTest import CollapsibleTest
@@ -89,6 +89,8 @@ from ViewTest import ViewTest
 from SliderTest import SliderTest
 from NumericPlugValueWidgetTest import NumericPlugValueWidgetTest
 from CompoundNumericPlugValueWidgetTest import CompoundNumericPlugValueWidgetTest
+from NameLabelTest import NameLabelTest
+from GLWidgetTest import GLWidgetTest
 
 if __name__ == "__main__":
 	unittest.main()

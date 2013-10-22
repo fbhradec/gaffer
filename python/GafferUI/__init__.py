@@ -115,7 +115,7 @@ from ColorSwatch import ColorSwatch
 from Slider import Slider
 from ShowURL import showURL
 from Spacer import Spacer
-from CheckBox import CheckBox
+from BoolWidget import BoolWidget, CheckBox
 from Image import Image
 from ErrorDialogue import ErrorDialogue
 from _Variant import _Variant
@@ -204,6 +204,8 @@ import PreferencesUI
 from SplinePlugValueWidget import SplinePlugValueWidget
 from RampPlugValueWidget import RampPlugValueWidget
 from NodeFinderDialogue import NodeFinderDialogue
+from ConnectionPlugValueWidget import ConnectionPlugValueWidget
+import View3DToolbar
 
 # then stuff specific to parameterised objects
 
@@ -233,3 +235,4 @@ import RandomUI
 import ExpressionUI
 import BoxUI
 import ReferenceUI
+import BackdropUI

@@ -266,8 +266,19 @@ class Widget( object ) :
 		q = self._qtWidget()
 				
 		while q is not None :
-					
-			q = q.parentWidget()
+			
+			parentWidget = q.parentWidget()
+			if parentWidget is not None :
+				q = parentWidget
+			else :
+				# we have to account for the strange parenting
+				# relationships that go on inside graphicsviews.
+				graphicsProxyWidget = q.graphicsProxyWidget()
+				if graphicsProxyWidget :
+					q = graphicsProxyWidget.scene().parent()
+				else :
+					q = None
+			
 			if q in Widget.__qtWidgetOwners :
 				return Widget.__qtWidgetOwners[q]()
 				
@@ -285,6 +296,17 @@ class Widget( object ) :
 				
 		return None
 	
+	## Returns true if this Widget is an ancestor (or direct parent) of other.
+	def isAncestorOf( self, other ) :
+	
+		while other :
+			parent = other.parent()
+			if parent is self :
+				return True
+			other = parent
+			
+		return False
+	
 	## \deprecated Use bound().size() instead.	
 	def size( self ) :
 	
@@ -294,12 +316,29 @@ class Widget( object ) :
 	# is None then the bound is provided in screen coordinates, if a
 	# Widget is passed then it is provided relative to that Widget.
 	def bound( self, relativeTo=None ) :
-	
+		
+		# for normal widgets, this will be the position in screen space
 		pos = self.__qtWidget.mapToGlobal( QtCore.QPoint( 0, 0 ) )
-		if relativeTo is not None :
-			pos -= relativeTo._qtWidget().mapToGlobal( QtCore.QPoint( 0, 0 ) )
+		
+		# but for widgets embedded in a graphicsscene it will only
+		# be relative to the scene, so we need to adjust for that.
+		# for now we assume that the scene contains no scaling.
+		q = self.__qtWidget
+		while q is not None :
+			parentWidget = q.parentWidget()
+			if parentWidget is not None :
+				q = parentWidget
+			else :
+				graphicsProxyWidget = q.graphicsProxyWidget()
+				if graphicsProxyWidget :
+					pos = graphicsProxyWidget.mapToScene( pos.x(), pos.y() )
+					pos = graphicsProxyWidget.scene().parent().mapToGlobal( QtCore.QPoint( pos.x(), pos.y() ) )					
+				q = None
 		
 		pos = IECore.V2i( pos.x(), pos.y() )
+		if relativeTo is not None :
+			pos -= relativeTo.bound().min
+		
 		return IECore.Box2i( pos, pos + IECore.V2i( self.__qtWidget.width(), self.__qtWidget.height() ) )
 	
 	def keyPressSignal( self ) :
@@ -493,8 +532,21 @@ class Widget( object ) :
 		if widgetType is None :
 			widgetType = GafferUI.Widget
 	
-		qWidget = QtGui.QApplication.instance().widgetAt( QtGui.QCursor.pos() )
+		qWidget = QtGui.QApplication.instance().widgetAt( position[0], position[1] )
 		widget = GafferUI.Widget._owner( qWidget )
+		
+		if widget is not None and isinstance( widget._qtWidget(), QtGui.QGraphicsView ) :
+			# if the widget is a QGraphicsView, then we have to dive into it ourselves
+			# to find any widgets embedded within it - qt won't do that for us.
+			graphicsView = widget._qtWidget()
+			localPosition = graphicsView.mapFromGlobal( QtCore.QPoint( position[0], position[1] ) )
+			graphicsItem = graphicsView.itemAt( localPosition )
+			if isinstance( graphicsItem, QtGui.QGraphicsProxyWidget ) :
+				localPosition = graphicsView.mapToScene( localPosition )
+				localPosition = graphicsItem.mapFromScene( localPosition )
+				qWidget = graphicsItem.widget().childAt( localPosition.x(), localPosition.y() )
+				widget = GafferUI.Widget._owner( qWidget )
+						
 		if widget is not None and not isinstance( widget, widgetType ) :
 			widget = widget.ancestor( widgetType )
 			
@@ -1303,6 +1355,8 @@ class Widget( object ) :
 			image : url($GAFFER_ROOT/graphics/collapsibleArrowDown.png);
 		}
 		
+		/* checkbox */
+		
 		QCheckBox::indicator {
 			width: 20px;
 			height: 20px;
@@ -1335,6 +1389,37 @@ class Widget( object ) :
 		QCheckBox::indicator:unchecked:disabled {
 			image: url($GAFFER_ROOT/graphics/checkBoxUncheckedDisabled.png);
 		}
+		
+		/* boolwidget drawn as switch */
+		
+		QCheckBox#gafferBoolWidgetSwitch::indicator:unchecked {
+			image: url($GAFFER_ROOT/graphics/toggleOff.png);
+		}
+		
+		QCheckBox#gafferBoolWidgetSwitch::indicator:unchecked:hover,
+		QCheckBox#gafferBoolWidgetSwitch::indicator:unchecked:focus,
+		QCheckBox#gafferBoolWidgetSwitch[gafferHighlighted=\"true\"]::indicator:unchecked {
+			image: url($GAFFER_ROOT/graphics/toggleOffHover.png);
+		}
+		QCheckBox#gafferBoolWidgetSwitch::indicator:checked:hover,
+		QCheckBox#gafferBoolWidgetSwitch::indicator:checked:focus,
+		QCheckBox#gafferBoolWidgetSwitch[gafferHighlighted=\"true\"]::indicator:checked {
+			image: url($GAFFER_ROOT/graphics/toggleOnHover.png);
+		}
+		
+		QCheckBox#gafferBoolWidgetSwitch::indicator:checked {
+			image: url($GAFFER_ROOT/graphics/toggleOn.png);
+		}
+		
+		QCheckBox#gafferBoolWidgetSwitch::indicator:checked:disabled {
+			image: url($GAFFER_ROOT/graphics/toggleOnDisabled.png);
+		}
+		
+		QCheckBox#gafferBoolWidgetSwitch::indicator:unchecked:disabled {
+			image: url($GAFFER_ROOT/graphics/toggleOffDisabled.png);
+		}
+
+		/* frame */
 
 		.QFrame#borderStyleNone {
 			border: 1px solid transparent;
@@ -1346,6 +1431,10 @@ class Widget( object ) :
 			border: 1px solid $backgroundDark;
 			border-radius: 4px;
 			padding: 2px;
+		}
+		
+		.QFrame[gafferHighlighted=\"true\"]#borderStyleFlat {
+			border: 1px solid $brightColor;		
 		}
 		
 		.QFrame#gafferDivider {
@@ -1449,6 +1538,8 @@ class Widget( object ) :
 			
 		}
 		
+		/* progress bars */
+
 		QProgressBar {
 		
 			border: 1px solid $backgroundDark;
@@ -1461,6 +1552,14 @@ class Widget( object ) :
 		QProgressBar::chunk:horizontal {
 		
 			background-color: $brightColor;
+		
+		}
+
+		/* gl widget */
+
+		QGraphicsView#gafferGLWidget {
+		
+			border: 0px;
 		
 		}
 
@@ -1633,6 +1732,7 @@ class _EventFilter( QtCore.QObject ) :
 		widget = Widget._owner( qObject )
 		if widget._buttonPressSignal is not None :
 			event = GafferUI.ButtonEvent(
+				Widget._buttons( qEvent.button() ),
 				Widget._buttons( qEvent.buttons() ),
 				self.__positionToLine( qEvent.pos() ),
 				0.0,
@@ -1661,6 +1761,7 @@ class _EventFilter( QtCore.QObject ) :
 			if widget._buttonReleaseSignal is not None :
 	
 				event = GafferUI.ButtonEvent(
+					Widget._buttons( qEvent.button() ),
 					Widget._buttons( qEvent.buttons() ),
 					self.__positionToLine( qEvent.pos() ),
 					0.0,
@@ -1679,6 +1780,7 @@ class _EventFilter( QtCore.QObject ) :
 		if widget._buttonDoubleClickSignal is not None :
 
 			event = GafferUI.ButtonEvent(
+				Widget._buttons( qEvent.button() ),
 				Widget._buttons( qEvent.buttons() ),
 				self.__positionToLine( qEvent.pos() ),
 				0.0,
@@ -1698,6 +1800,7 @@ class _EventFilter( QtCore.QObject ) :
 		if widget._mouseMoveSignal is not None :
 
 			event = GafferUI.ButtonEvent(
+				Widget._buttons( qEvent.button() ),
 				Widget._buttons( qEvent.buttons() ),
 				self.__positionToLine( qEvent.pos() ),
 				0.0,
@@ -1730,6 +1833,7 @@ class _EventFilter( QtCore.QObject ) :
 		if widget._wheelSignal is not None :
 		
 			event = GafferUI.ButtonEvent(
+				GafferUI.ButtonEvent.Buttons.None,
 				Widget._buttons( qEvent.buttons() ),
 				self.__positionToLine( qEvent.pos() ),
 				qEvent.delta() / 8.0,
@@ -1797,6 +1901,9 @@ class _EventFilter( QtCore.QObject ) :
 			# so we fix that.
 			self.__lastButtonPressWidget = None
 			return False
+	
+		if ( self.__lastButtonPressEvent.line.p0 - self.__positionToLine( qEvent.pos() ).p0 ).length() < 3 :
+			return False
 			
 		sourceWidget = self.__lastButtonPressWidget()
 		if sourceWidget is None :
@@ -1807,6 +1914,7 @@ class _EventFilter( QtCore.QObject ) :
 			return False
 		
 		dragDropEvent = GafferUI.DragDropEvent(
+			Widget._buttons( qEvent.button() ),
 			Widget._buttons( qEvent.buttons() ),
 			self.__lastButtonPressEvent.line,
 			Widget._modifiers( qEvent.modifiers() ),
@@ -1829,8 +1937,8 @@ class _EventFilter( QtCore.QObject ) :
 
 	def __doDragEnterAndLeave( self, qObject, qEvent ) :
 	
-		candidateQWidget = QtGui.QApplication.widgetAt( QtGui.QCursor.pos() )
-		candidateWidget = Widget._owner( candidateQWidget ) if candidateQWidget is not None else None
+		cursorPos = QtGui.QCursor.pos()
+		candidateWidget = Widget.widgetAt( IECore.V2i( cursorPos.x(), cursorPos.y() ) )
 		
 		if candidateWidget is self.__dragDropEvent.destinationWidget :
 			return
@@ -1839,7 +1947,7 @@ class _EventFilter( QtCore.QObject ) :
 		if candidateWidget is not None :
 			while candidateWidget is not None :
 				if candidateWidget._dragEnterSignal is not None :
-					p = candidateWidget._qtWidget().mapFromGlobal( QtGui.QCursor.pos() )
+					p = candidateWidget._qtWidget().mapFromGlobal( cursorPos )
 					self.__dragDropEvent.line = self.__positionToLine( p )
 					if candidateWidget._dragEnterSignal( candidateWidget, self.__dragDropEvent ) :
 						newDestinationWidget = candidateWidget
@@ -1857,7 +1965,7 @@ class _EventFilter( QtCore.QObject ) :
 			previousDestinationWidget = self.__dragDropEvent.destinationWidget
 			self.__dragDropEvent.destinationWidget = newDestinationWidget
 			if previousDestinationWidget is not None and previousDestinationWidget._dragLeaveSignal is not None :
-				p = previousDestinationWidget._qtWidget().mapFromGlobal( QtGui.QCursor.pos() )
+				p = previousDestinationWidget._qtWidget().mapFromGlobal( cursorPos )
 				self.__dragDropEvent.line = self.__positionToLine( p )
 				previousDestinationWidget._dragLeaveSignal( previousDestinationWidget, self.__dragDropEvent )	
 

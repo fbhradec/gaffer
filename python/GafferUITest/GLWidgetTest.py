@@ -1,6 +1,6 @@
 ##########################################################################
 #  
-#  Copyright (c) 2011-2012, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -34,44 +34,72 @@
 #  
 ##########################################################################
 
+import IECore
+
 import Gaffer
 import GafferUI
+import GafferUITest
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+class GLWidgetTest( GafferUITest.TestCase ) :
 
-class CheckBox( GafferUI.Widget ) :
+	def testOverlayParenting( self ) :
+	
+		w = GafferUI.Window()
+		g = GafferUI.GLWidget()
+		f = GafferUI.Frame()
+		b = GafferUI.Button()
+		
+		w.setChild( g )
+		g.addOverlay( f )
+		f.setChild( b )
+		
+		self.assertTrue( b.parent() is f )
+		self.assertTrue( f.parent() is g )
+		self.assertTrue( g.parent() is w )
+		self.assertTrue( b.ancestor( GafferUI.GLWidget ) is g )
+		self.assertTrue( b.ancestor( GafferUI.Frame ) is f )
+		self.assertTrue( b.ancestor( GafferUI.Window ) is w )
+	
+	def testOverlayWidgetAt( self ) :
+	
+		w = GafferUI.Window()
+		g = GafferUI.GLWidget()
+		f = GafferUI.Frame( borderWidth = 0, borderStyle=GafferUI.Frame.BorderStyle.None )
+		b = GafferUI.Button()
+		
+		w.setChild( g )
+		g.addOverlay( f )
+		f.setChild( b )
+		
+		w.setVisible( True )
+		
+		self.waitForIdle( 1000 )
+		
+		self.assertTrue( GafferUI.Widget.widgetAt( w.bound().min + IECore.V2i( 4 ) ) is b )
+	
+	def testOverlayBound( self ) :
+	
+		w = GafferUI.Window()
+		g = GafferUI.GLWidget()
+		f = GafferUI.Frame()
+		b = GafferUI.Button()
+		
+		w.setChild( g )
+		g.addOverlay( f )
+		f.setChild( b )
+		
+		w.setVisible( True )
 
-	def __init__( self, text="", checked=False, **kw ) :
-	
-		GafferUI.Widget.__init__( self, QtGui.QCheckBox( text ), **kw )
+		w.setPosition( IECore.V2i( 100 ) )		
+		self.waitForIdle( 1000 )
+		b1 = b.bound()
 		
-		self.setState( checked )
+		w.setPosition( IECore.V2i( 200 ) )		
+		self.waitForIdle( 1000 )
+		b2 = b.bound()
 		
-		self.__stateChangedSignal = GafferUI.WidgetSignal()
-		
-		self._qtWidget().stateChanged.connect( Gaffer.WeakMethod( self.__stateChanged ) )
+		self.assertEqual( b2.min, b1.min + IECore.V2i( 100 ) )
+		self.assertEqual( b2.max, b1.max + IECore.V2i( 100 ) )
 	
-	def setText( self, text ) :
-	
-		self._qtWidget().setText( text )
-	
-	def getText( self ) :
-	
-		return str( self._qtWidget().text() )
-	
-	def setState( self, checked ) :
-	
-		self._qtWidget().setCheckState( QtCore.Qt.Checked if checked else QtCore.Qt.Unchecked )
-		
-	def getState( self ) :
-	
-		return self._qtWidget().checkState() == QtCore.Qt.Checked
-
-	def stateChangedSignal( self ) :
-	
-		return self.__stateChangedSignal
-	
-	def __stateChanged( self, state ) :
-	
-		self.__stateChangedSignal( self )
+if __name__ == "__main__":
+	unittest.main()
