@@ -38,8 +38,9 @@
 #include "OpenImageIO/imagecache.h"
 OIIO_NAMESPACE_USING
 
-#include "GafferImage/ImageReader.h"
 #include "Gaffer/Context.h"
+
+#include "GafferImage/ImageReader.h"
 
 using namespace std;
 using namespace tbb;
@@ -126,27 +127,29 @@ void ImageReader::affects( const Gaffer::Plug *input, AffectedPlugsContainer &ou
 	}
 }
 
-void ImageReader::hashFormatPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void ImageReader::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	ImageNode::hashFormat( output, context, h );
 	fileNamePlug()->hash( h );
 }
 
-void ImageReader::hashChannelNamesPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void ImageReader::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	ImageNode::hashChannelNames( output, context, h );
 	fileNamePlug()->hash( h );
 }
 
-void ImageReader::hashDataWindowPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void ImageReader::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	ImageNode::hashDataWindow( output, context, h );
 	fileNamePlug()->hash( h );
 }
 
-void ImageReader::hashChannelDataPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void ImageReader::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	// Hash the XY coordinates of the tile that we are drawing...
+	ImageNode::hashChannelData( output, context, h );
 	h.append( context->get<V2i>( ImagePlug::tileOriginContextName ) );
-	
-	// ... along with the file name.
+	h.append( context->get<std::string>( ImagePlug::channelNameContextName ) );
 	fileNamePlug()->hash( h );
 }
 
@@ -162,6 +165,8 @@ GafferImage::Format ImageReader::computeFormat( const Gaffer::Context *context, 
 		),
 		1.
 	);
+	/// \todo This shouldn't really be here. Compute methods shouldn't really have side effects and the
+	/// registerFormat() method is not only slow but it's also not threadsafe.
 	return GafferImage::Format::registerFormat( format );
 }
 

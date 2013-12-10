@@ -35,6 +35,7 @@
 #  
 ##########################################################################
 
+import sys
 import warnings
 
 import IECore
@@ -50,7 +51,7 @@ class Window( GafferUI.ContainerWidget ) :
 	SizeMode = IECore.Enum.create( "Fixed", "Manual", "Automatic" )
 
 	## \todo Remove the deprecated resizable argument
-	def __init__( self, title="GafferUI.Window", borderWidth=0, resizeable=None, child=None, sizeMode=SizeMode.Manual, **kw ) :
+	def __init__( self, title="GafferUI.Window", borderWidth=0, resizeable=None, child=None, sizeMode=SizeMode.Manual, icon="GafferLogoMini.png", **kw ) :
 	
 		GafferUI.ContainerWidget.__init__(
 			self, QtGui.QWidget( None, QtCore.Qt.WindowFlags( QtCore.Qt.Window ), **kw )
@@ -81,6 +82,7 @@ class Window( GafferUI.ContainerWidget ) :
 		self._setStyleSheet()
 		
 		self.setTitle( title )
+		self.setIcon( icon )
 		
 		if resizeable is not None :
 			self.setResizeable( resizeable )
@@ -164,7 +166,28 @@ class Window( GafferUI.ContainerWidget ) :
 			oldParent.removeChild( childWindow ) 
 		
 		self.__childWindows.add( childWindow )
-		childWindow._qtWidget().setParent( self._qtWidget(), childWindow._qtWidget().windowFlags() | QtCore.Qt.Tool )
+		
+		# We have the following criteria for child windows :
+		#
+		#	- they must always stay on top of their parent
+		#		- even when the parent is fullscreen
+		#	- they must open somewhere sensible by default
+		#		- ideally centered on the parent
+		#	- they must take focus nicely when asked (by PathChooserDialogue for instance)
+		#
+		# On OS X, the Tool window type does an excellent job
+		# of all of that, as well as looking pretty. But if we use
+		# the Dialog window type, they disappear behind full screen
+		# windows.
+		#
+		# On Linux, the Tool window type does a poor job, opening
+		# in arbitrary places, and displaying various focus problems.
+		# The Dialog type on the other hand does a much better job. Of
+		# course, this being X11, different window managers will do different
+		# things, but on the whole the Dialog type seems best for X11.
+		childWindowType = QtCore.Qt.Tool if sys.platform == "darwin" else QtCore.Qt.Dialog
+		childWindowFlags = ( childWindow._qtWidget().windowFlags() & ~QtCore.Qt.WindowType_Mask ) | childWindowType		
+		childWindow._qtWidget().setParent( self._qtWidget(), childWindowFlags )
 		childWindow._applyVisibility()
 	
 	## Returns a list of all the windows parented to this one.
@@ -221,7 +244,20 @@ class Window( GafferUI.ContainerWidget ) :
 	def getFullScreen( self ) :
 	
 		return self._qtWidget().isFullScreen()
-
+	
+	def setIcon( self, imageOrImageFileName ) :
+		
+		if isinstance( imageOrImageFileName, basestring ) :
+			self.__image = GafferUI.Image( imageOrImageFileName )
+		else :
+			self.__image = imageOrImageFileName
+		
+		self._qtWidget().setWindowIcon( QtGui.QIcon( self.__image._qtPixmap() ) )
+	
+	def getIcon( self ) :
+		
+		return self.__image
+	
 	## Requests that this window be closed - this function may either be called
 	# directly or in response to the user attempting to close the window.
 	# If successful, setVisible( False ) will be called on the window and True will

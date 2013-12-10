@@ -37,17 +37,15 @@
 #ifndef GAFFERSCENE_IMAGETRANSFORM_H
 #define GAFFERSCENE_IMAGETRANSFORM_H
 
-#include "Gaffer/Node.h"
-#include "Gaffer/Context.h"
-#include "GafferImage/FilterPlug.h"
 #include "Gaffer/Transform2DPlug.h"
+
 #include "GafferImage/ImageProcessor.h"
-#include "Gaffer/DependencyNode.h"
 
 namespace GafferImage
 {
 
 IE_CORE_FORWARDDECLARE( Reformat );
+IE_CORE_FORWARDDECLARE( FilterPlug );
 
 class ImageTransform : public GafferImage::ImageProcessor
 {
@@ -69,10 +67,10 @@ class ImageTransform : public GafferImage::ImageProcessor
 		
 	protected:
 	
-		virtual void hashFormatPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const {};
-		virtual void hashDataWindowPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const {} ;
-		virtual void hashChannelNamesPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const {};
-		virtual void hashChannelDataPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const {};
+		virtual void hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const {};
+		virtual void hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const {} ;
+		virtual void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const {};
+		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const {};
 
 		virtual GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const;
 		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
@@ -86,6 +84,8 @@ class ImageTransform : public GafferImage::ImageProcessor
 
 		static size_t g_firstPlugIndex;
 };
+
+IE_CORE_DECLAREPTR( ImageTransform )
 
 } // namespace GafferImage
 

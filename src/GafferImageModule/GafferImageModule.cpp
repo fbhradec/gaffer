@@ -55,6 +55,7 @@
 #include "GafferImageBindings/SamplerBinding.h"
 #include "GafferImage/Merge.h"
 #include "GafferImage/Grade.h"
+#include "GafferImage/Clamp.h"
 #include "GafferImage/Constant.h"
 #include "GafferImage/Select.h"
 #include "GafferImage/Reformat.h"
@@ -65,6 +66,7 @@
 #include "GafferImage/ImageStats.h"
 #include "GafferImageBindings/RemoveChannelsBinding.h"
 #include "GafferImageBindings/ChannelMaskPlugBindings.h"
+#include "GafferImageBindings/MixinBinding.h"
 
 using namespace boost::python;
 using namespace GafferImage;
@@ -114,10 +116,12 @@ BOOST_PYTHON_MODULE( _GafferImage )
 	GafferBindings::DependencyNodeClass<ImageProcessor>();
 	GafferBindings::DependencyNodeClass<FilterProcessor>();
 	GafferBindings::DependencyNodeClass<ChannelDataProcessor>();
+	GafferBindings::DependencyNodeClass<ColorProcessor>();
 	GafferBindings::DependencyNodeClass<OpenColorIO>();
 	GafferBindings::DependencyNodeClass<ObjectToImage>();
 	GafferBindings::DependencyNodeClass<Merge>();
 	GafferBindings::DependencyNodeClass<Grade>();
+	GafferBindings::DependencyNodeClass<Clamp>();
 	GafferBindings::DependencyNodeClass<Constant>();
 	GafferBindings::DependencyNodeClass<Select>();
 	GafferBindings::DependencyNodeClass<Reformat>();
@@ -130,6 +134,8 @@ BOOST_PYTHON_MODULE( _GafferImage )
 	GafferImageBindings::bindFilterPlug();
 	GafferImageBindings::bindSampler();
 	GafferImageBindings::bindFilters();
+	GafferImageBindings::bindMixin();
+	
 	GafferBindings::NodeClass<ImageWriter> imageWriter;
 	GafferBindings::ExecutableBinding< GafferBindings::NodeClass<ImageWriter>, ImageWriter>::bind( imageWriter );
 }

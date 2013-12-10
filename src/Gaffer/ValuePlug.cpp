@@ -173,6 +173,11 @@ class ValuePlug::Computation
 			return g_valueCache.setMaxCost( bytes );
 		}
 	
+		static size_t cacheMemoryUsage()
+		{
+			return g_valueCache.currentCost();
+		}
+		
 	private :
 	
 		void computeOrSetFromInput()
@@ -471,14 +476,24 @@ bool ValuePlug::inCompute() const
 void ValuePlug::setValueInternal( IECore::ConstObjectPtr value, bool propagateDirtiness )
 {
 	m_staticValue = value;
-	Node *n = node();
-	if( n )
+	
+	// it is important that we emit the plug set signal before
+	// we emit dirty signals. this is because the node may wish to
+	// perform some internal setup when plugs are set, and listeners
+	// on output plugs may pull to get new output values as soon as
+	// the dirty signal is emitted.
+	emitPlugSet();
+
+	if( propagateDirtiness )
 	{
-		// it is important that we emit the plug set signal before
-		// we emit dirty signals. this is because the node may wish to
-		// perform some internal setup when plugs are set, and listeners
-		// on output plugs may pull to get new output values as soon as
-		// the dirty signal is emitted. 
+		DependencyNode::propagateDirtiness( this );
+	}
+}
+
+void ValuePlug::emitPlugSet()
+{
+	if( Node *n = node() )
+	{
 		ValuePlug *p = this;
 		while( p )
 		{
@@ -486,9 +501,16 @@ void ValuePlug::setValueInternal( IECore::ConstObjectPtr value, bool propagateDi
 			p = p->parent<ValuePlug>();
 		}
 	}
-	if( propagateDirtiness )
+	
+	// take a copy of the outputs, owning a reference - because who
+	// knows what will be added and removed by the connected slots.
+	std::vector<PlugPtr> o( outputs().begin(), outputs().end() );
+	for( std::vector<PlugPtr>::const_iterator it=o.begin(), eIt=o.end(); it!=eIt; ++it )
 	{
-		DependencyNode::propagateDirtiness( this );
+		if( ValuePlug *output = IECore::runTimeCast<ValuePlug>( *it ) )
+		{
+			output->emitPlugSet();
+		}
 	}
 }
 
@@ -500,4 +522,9 @@ size_t ValuePlug::getCacheMemoryLimit()
 void ValuePlug::setCacheMemoryLimit( size_t bytes )
 {
 	Computation::setCacheMemoryLimit( bytes );
+}
+
+size_t ValuePlug::cacheMemoryUsage()
+{
+	return Computation::cacheMemoryUsage();
 }

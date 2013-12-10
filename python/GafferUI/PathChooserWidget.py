@@ -1,7 +1,7 @@
 ##########################################################################
 #  
 #  Copyright (c) 2011, John Haddon. All rights reserved.
-#  Copyright (c) 2011-2012, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -42,7 +42,7 @@ import GafferUI
 
 class PathChooserWidget( GafferUI.Widget ) :
 
-	def __init__( self, path, previewTypes=[], allowMultipleSelection=False, **kw ) :
+	def __init__( self, path, previewTypes=[], allowMultipleSelection=False, bookmarks=None, **kw ) :
 	
 		self.__column = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing=8 )
 		
@@ -61,6 +61,13 @@ class PathChooserWidget( GafferUI.Widget ) :
 				self.__displayModeButton.setToolTip( "Toggle between list and tree views" )
 				self.__displayModeButtonClickedConnection = self.__displayModeButton.clickedSignal().connect( Gaffer.WeakMethod( self.__displayModeButtonClicked ) )
 				
+				self.__bookmarksButton = GafferUI.MenuButton(
+					image = "bookmarks.png",
+					hasFrame=False,
+					menu = GafferUI.Menu( Gaffer.WeakMethod( self.__bookmarksMenuDefinition ) ),
+				)
+				self.__bookmarksButton.setToolTip( "Bookmarks" )
+			
 				reloadButton = GafferUI.Button( image = "refresh.png", hasFrame=False )
 				reloadButton.setToolTip( "Refresh view" )
 				self.__reloadButtonClickedConnection = reloadButton.clickedSignal().connect( Gaffer.WeakMethod( self.__reloadButtonClicked ) )
@@ -102,6 +109,7 @@ class PathChooserWidget( GafferUI.Widget ) :
 			
 		self.__path = None
 		self.setPath( path )
+		self.setBookmarks( bookmarks )
 		
 	def getPath( self ) :
 		
@@ -116,10 +124,9 @@ class PathChooserWidget( GafferUI.Widget ) :
 		
 		# the path bar at the top of the window uses a modified path to make sure it can
 		# only display directories and never be used to choose leaf files. we apply the necessary filter
-		# to achieve that in __updateFilter.
+		# to achieve that in __updateFilter. we don't worry about getting the contents of this path correct
+		# immediately - we'll do that in __pathChanged() at the end of this method.
 		self.__dirPath = self.__path.copy()
-		if self.__dirPath.isLeaf() and len( self.__dirPath ) :
-			del self.__dirPath[-1]
 		self.__dirPathWidget.setPath( self.__dirPath )
 		
 		# the listing also uses a modified path of it's own.
@@ -139,7 +146,17 @@ class PathChooserWidget( GafferUI.Widget ) :
 		self.__listingPathChangedConnection = self.__listingPath.pathChangedSignal().connect( Gaffer.WeakMethod( self.__listingPathChanged ) )
 
 		self.__updateFilter()
+		self.__pathChanged( self.__path )
 	
+	def getBookmarks( self ) :
+	
+		return self.__bookmarks
+		
+	def setBookmarks( self, bookmarks ) :
+	
+		self.__bookmarks = bookmarks
+		self.__bookmarksButton.setVisible( self.__bookmarks is not None )
+		
 	## Returns the PathWidget used for text-based path entry. Note that this Widget is hidden when multiple
 	# selection is enabled.
 	def pathWidget( self ) :
@@ -234,8 +251,8 @@ class PathChooserWidget( GafferUI.Widget ) :
 				del pathCopy[-1]
 			pathCopy.truncateUntilValid()
 			with Gaffer.BlockedConnection( ( self.__dirPathChangedConnection, self.__listingPathChangedConnection ) ) :
-				self.__dirPath[:] = pathCopy[:]
-				self.__listingPath[:] = pathCopy[:]
+				self.__dirPath.setFromPath( pathCopy )
+				self.__listingPath.setFromPath( pathCopy )
 		else :
 			# if we're in tree mode then we instead scroll to display the new path
 			self.__directoryListing.scrollToPath( path )
@@ -252,8 +269,8 @@ class PathChooserWidget( GafferUI.Widget ) :
 		dirPathCopy = dirPath.copy()
 		dirPathCopy.truncateUntilValid()
 		with Gaffer.BlockedConnection( ( self.__pathChangedConnection, self.__listingPathChangedConnection ) ) :
-			self.__path[:] = dirPathCopy[:]
-			self.__listingPath[:] = dirPathCopy[:]
+			self.__path.setFromPath( dirPathCopy )
+			self.__listingPath.setFromPath( dirPathCopy )
 		
 	def __listingPathChanged( self, listingPath ) :
 	
@@ -289,3 +306,58 @@ class PathChooserWidget( GafferUI.Widget ) :
 			buttonImage = "pathListingList.png"
 			
 		self.__displayModeButton.setImage( buttonImage )
+
+	def __bookmarksMenuDefinition( self ) :
+	
+		m = IECore.MenuDefinition()
+
+		items = []
+		recentItems = []
+		unbookmarkableLocations = set()
+		testPath = self.__dirPath.copy()
+		for name in self.__bookmarks.names() :
+			bookmark = self.__bookmarks.get( name, forWidget=self )
+			testPath.setFromString( bookmark )
+			item = (
+				"/" + name,
+				{
+					"command" : IECore.curry( self.__dirPath.setFromString, bookmark ),
+					"active" : testPath.isValid(),
+					"description" : bookmark,
+				}
+			)
+			if not name.startswith( "Recent/" ) :
+				items.append( item )
+				unbookmarkableLocations.add( bookmark )
+			else :
+				recentItems.append( item )
+		
+		for item in items :
+			m.append( *item )
+
+		if len( recentItems ) :
+			m.append( "/RecentDivider", { "divider" : True } )
+			for item in recentItems :
+				m.append( *item )
+
+		m.append( "/SaveDeleteDivider", { "divider" : True } )
+		
+		for name in self.__bookmarks.names( persistent=True ) :
+			if not name.startswith( "Recent/" ) :
+				m.append( "/Delete/" + name, { "command" : IECore.curry( self.__bookmarks.remove, name ) } )
+		
+		m.append( "/Add Bookmark...", {
+			"command" : Gaffer.WeakMethod( self.__saveBookmark ),
+			"active" : self.__dirPath.isValid() and str( self.__dirPath ) not in unbookmarkableLocations,
+		} )
+		
+		return m
+		
+	def __saveBookmark( self ) :
+		
+		name = self.__dirPath[-1] if len( self.__dirPath ) else "Root"
+		d = GafferUI.TextInputDialogue( initialText=name, title="Save Bookmark", confirmLabel="Save" )
+		name = d.waitForText( parentWindow = self.ancestor( GafferUI.Window ) )
+		
+		if name is not None :
+			self.__bookmarks.add( name, str( self.__dirPath ), persistent=True )

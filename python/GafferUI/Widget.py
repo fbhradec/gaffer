@@ -141,7 +141,13 @@ class Widget( object ) :
 		# hardcoding stuff here.
 		if len( self.__parentStack ) and not isinstance( self, GafferUI.Menu ) :
 			if self.__initNesting() == self.__parentStack[-1][1] + 1 :
-				self.__parentStack[-1][0].addChild( self, **kw )
+				addChildKW = kw
+				if "parenting" in addChildKW :
+					assert( len( addChildKW ) == 1 )
+					addChildKW = addChildKW.copy()
+					addChildKW.update( addChildKW["parenting"] )
+					del addChildKW["parenting"]
+				self.__parentStack[-1][0].addChild( self, **addChildKW )
 				
 		self.__eventFilterInstalled = False		
 		# if a class has overridden getToolTip, then the tooltips
@@ -317,24 +323,27 @@ class Widget( object ) :
 	# Widget is passed then it is provided relative to that Widget.
 	def bound( self, relativeTo=None ) :
 		
-		# for normal widgets, this will be the position in screen space
-		pos = self.__qtWidget.mapToGlobal( QtCore.QPoint( 0, 0 ) )
-		
-		# but for widgets embedded in a graphicsscene it will only
-		# be relative to the scene, so we need to adjust for that.
-		# for now we assume that the scene contains no scaling.
+		# traverse up the hierarchy, accumulating the transform
+		# till we reach the top. in an ideal world we'd just call
+		# self.__qtWidget.mapToGlobal() but that doesn't take into
+		# account the fact that a widget may be embedded in a QGraphicsScene.
 		q = self.__qtWidget
+		pos = QtCore.QPoint( 0, 0 )
 		while q is not None :
-			parentWidget = q.parentWidget()
-			if parentWidget is not None :
-				q = parentWidget
-			else :
-				graphicsProxyWidget = q.graphicsProxyWidget()
-				if graphicsProxyWidget :
-					pos = graphicsProxyWidget.mapToScene( pos.x(), pos.y() )
-					pos = graphicsProxyWidget.scene().parent().mapToGlobal( QtCore.QPoint( pos.x(), pos.y() ) )					
+			graphicsProxyWidget = q.graphicsProxyWidget()
+			if graphicsProxyWidget is not None :
+				pos = graphicsProxyWidget.mapToScene( pos.x(), pos.y() )
+				pos = QtCore.QPoint( pos.x(), pos.y() )
+				q = graphicsProxyWidget.scene().parent()
+			elif q.isWindow() :
+				pos = q.mapToGlobal( pos )
 				q = None
-		
+			else :
+				parentWidget = q.parentWidget()
+				if parentWidget is not None :
+					pos = q.mapToParent( pos )
+				q = parentWidget
+							
 		pos = IECore.V2i( pos.x(), pos.y() )
 		if relativeTo is not None :
 			pos -= relativeTo.bound().min
@@ -852,7 +861,7 @@ class Widget( object ) :
 			image: url($GAFFER_ROOT/graphics/arrowRight10.png);
 		}
 		
-		QMenu, QTabBar::tab:selected, QPushButton, QHeaderView::section, QComboBox {
+		QMenu, QTabBar::tab:selected, QHeaderView::section {
 
 			background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 $backgroundLight, stop: 1 $backgroundMid);
 
@@ -955,6 +964,8 @@ class Widget( object ) :
 
 		}
 		
+		/* buttons */
+		
 		QPushButton, QComboBox {
 		
 			font-weight: bold;
@@ -967,6 +978,7 @@ class Widget( object ) :
 			border-radius: 3px;
 			padding: 4px;
 			margin: 1px;
+			background-color : qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 $backgroundLight, stop: 0.5 $backgroundLighter);
 
 		}
 
@@ -974,6 +986,13 @@ class Widget( object ) :
 
 			border: 2px solid $brightColor;
 			margin: 0px;
+		}
+		
+		QPushButton#gafferWithFrame:pressed {
+			
+			color: white;
+			background-color:	$brightColor;
+
 		}
 		
 		QPushButton#gafferWithoutFrame {
@@ -989,6 +1008,12 @@ class Widget( object ) :
 
 			color: $foregroundFaded;
 
+		}
+		
+		QPushButton#gafferWithFrame:disabled {
+
+			background-color: $backgroundLighter;
+		
 		}
 		
 		QPushButton::menu-indicator {
@@ -1027,6 +1052,8 @@ class Widget( object ) :
 			font-weight: bold;
 			
 		}
+
+		/* tabs */
 
 		QTabWidget::tab-bar {
 
@@ -1105,7 +1132,7 @@ class Widget( object ) :
 		QSplitterHandle:hover {}
 
 		QTabBar::tab:hover, QMenu::item:selected, QMenuBar::item:selected, QSplitter::handle:hover,
-		QPushButton:pressed, QComboBox QAbstractItemView::item:hover {
+		QComboBox QAbstractItemView::item:hover {
 
 			color: white;
 			background-color:	$brightColor;

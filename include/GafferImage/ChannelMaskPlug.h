@@ -37,8 +37,9 @@
 #ifndef GAFFERIMAGE_CHANNELMASKPLUG_H
 #define GAFFERIMAGE_CHANNELMASKPLUG_H
 
-#include "GafferImage/TypeIds.h"
 #include "Gaffer/TypedObjectPlug.h"
+
+#include "GafferImage/TypeIds.h"
 
 namespace GafferImage
 {
@@ -74,9 +75,9 @@ typedef Gaffer::FilteredChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::Invali
 typedef Gaffer::FilteredChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::In, ChannelMaskPlug> > InputChannelMaskPlugIterator;
 typedef Gaffer::FilteredChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::Out, ChannelMaskPlug> > OutputChannelMaskPlugIterator;
 
-typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::Invalid, ChannelMaskPlug> > RecursiveChannelMaskPlugIterator;
-typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::In, ChannelMaskPlug> > RecursiveInputChannelMaskPlugIterator;
-typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::Out, ChannelMaskPlug> > RecursiveOutputChannelMaskPlugIterator;
+typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::Invalid, ChannelMaskPlug>, Gaffer::PlugPredicate<> > RecursiveChannelMaskPlugIterator;
+typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::In, ChannelMaskPlug>, Gaffer::PlugPredicate<> > RecursiveInputChannelMaskPlugIterator;
+typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plug::Out, ChannelMaskPlug>, Gaffer::PlugPredicate<> > RecursiveOutputChannelMaskPlugIterator;
 
 } // namespace GafferImage
 

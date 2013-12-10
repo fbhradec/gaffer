@@ -34,16 +34,40 @@
 #  
 ##########################################################################
 
+import unittest
+
+import IECore
+
 import Gaffer
+import GafferScene
+import GafferSceneTest
 
-def __scriptAdded( container, script ) :
+class DeleteAttributesTest( GafferSceneTest.SceneTestCase ) :
 
-	variables = script["variables"]
-	if "projectName" not in variables :
-		projectName = variables.addMember( "project:name", IECore.StringData( "default" ), "projectName" )
-		projectName["name"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-	if "projectRootDirectory" not in variables :
-		projectRoot = variables.addMember( "project:rootDirectory", IECore.StringData( "$HOME/gaffer/projects/${project:name}" ), "projectRootDirectory" )
-		projectRoot["name"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
-
-__scriptAddedConnection = application.root()["scripts"].childAddedSignal().connect( __scriptAdded )
+	def test( self ) :
+	
+		p = GafferScene.Plane()
+		
+		a = GafferScene.StandardAttributes()
+		a["attributes"]["doubleSided"]["enabled"].setValue( True )
+		a["attributes"]["visibility"]["enabled"].setValue( True )
+		a["in"].setInput( p["out"] )
+		
+		d = GafferScene.DeleteAttributes()
+		d["in"].setInput( a["out"] )
+		
+		self.assertScenesEqual( a["out"], d["out"] )
+		self.assertSceneHashesEqual( a["out"], d["out"] )
+		self.failUnless( "gaffer:visibility" in d["out"].attributes( "/plane" ) )
+		self.failUnless( "doubleSided" in d["out"].attributes( "/plane" ) )
+	
+		d["names"].setValue( "doubleSided" )
+		
+		self.assertSceneHashesNotEqual( a["out"], d["out"], childPlugNames = ( "attributes", ) )		
+		self.assertSceneHashesEqual( a["out"], d["out"], childPlugNames = ( "object", "bound", "transform", "globals", "childNames" ) )		
+	
+		self.failUnless( "gaffer:visibility" in d["out"].attributes( "/plane" ) )
+		self.failIf( "doubleSided" in d["out"].attributes( "/plane" ) )
+						
+if __name__ == "__main__":
+	unittest.main()

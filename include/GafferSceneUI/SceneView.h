@@ -43,6 +43,7 @@
 
 #include "GafferScene/ScenePlug.h"
 #include "GafferScene/PathMatcherData.h"
+#include "GafferScene/PathFilter.h"
 
 #include "GafferSceneUI/TypeIds.h"
 
@@ -59,6 +60,21 @@ class SceneView : public GafferUI::View3D
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneUI::SceneView, SceneViewTypeId, GafferUI::View3D );
 		
+		Gaffer::IntPlug *minimumExpansionDepthPlug();
+		const Gaffer::IntPlug *minimumExpansionDepthPlug() const;
+
+		Gaffer::CompoundPlug *lookThroughPlug();
+		const Gaffer::CompoundPlug *lookThroughPlug() const;
+		
+		Gaffer::BoolPlug *lookThroughEnabledPlug();
+		const Gaffer::BoolPlug *lookThroughEnabledPlug() const;
+		
+		Gaffer::StringPlug *lookThroughCameraPlug();
+		const Gaffer::StringPlug *lookThroughCameraPlug() const;
+		
+		void expandSelection( size_t depth = 1 );
+		void collapseSelection();
+		
 	protected :
 
 		virtual void contextChanged( const IECore::InternedString &name );
@@ -67,12 +83,20 @@ class SceneView : public GafferUI::View3D
 
 	private :
 	
+		// The filter for a preprocessing node used to hide things.
+		GafferScene::PathFilter *hideFilter();
+		const GafferScene::PathFilter *hideFilter() const;
+	
 		void selectionChanged( GafferUI::RenderableGadgetPtr renderableGadget );
 		bool keyPress( GafferUI::GadgetPtr gadget, const GafferUI::KeyEvent &event );
-		void expandSelection();
-		void collapseSelection();
 		void transferSelectionToContext();
+		void plugSet( Gaffer::Plug *plug );
+		
 		IECore::PathMatcherData *expandedPaths();
+		// Returns true if the expansion or selection were modified, false otherwise.
+		bool expandWalk( const std::string &path, size_t depth, GafferScene::PathMatcher &expanded, GafferUI::RenderableGadget::Selection &selected );
+		
+		void updateLookThrough();
 		
 		boost::signals::scoped_connection m_selectionChangedConnection;
 		
@@ -80,6 +104,7 @@ class SceneView : public GafferUI::View3D
 		
 		GafferUI::RenderableGadgetPtr m_renderableGadget;
 	
+		static size_t g_firstPlugIndex;
 		static ViewDescription<SceneView> g_viewDescription;
 	
 };

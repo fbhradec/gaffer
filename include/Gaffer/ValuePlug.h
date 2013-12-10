@@ -98,6 +98,8 @@ class ValuePlug : public Plug
 		static size_t getCacheMemoryLimit();
 		/// Sets the maximum amount of memory the cache may use in bytes.
 		static void setCacheMemoryLimit( size_t bytes );
+		/// Returns the current memory usage of the cache in bytes.
+		static size_t cacheMemoryUsage();
 		//@}
 
 	protected :
@@ -145,7 +147,8 @@ class ValuePlug : public Plug
 		class SetValueAction;
 	
 		void setValueInternal( IECore::ConstObjectPtr value, bool propagateDirtiness );
-	
+		void emitPlugSet();
+		
 		/// For holding the value of input plugs with no input connections.
 		IECore::ConstObjectPtr m_staticValue;
 
@@ -157,9 +160,9 @@ typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, ValuePlug> > ValuePlu
 typedef FilteredChildIterator<PlugPredicate<Plug::In, ValuePlug> > InputValuePlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, ValuePlug> > OutputValuePlugIterator;
 
-typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, ValuePlug> > RecursiveValuePlugIterator;
-typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, ValuePlug> > RecursiveInputValuePlugIterator;
-typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, ValuePlug> > RecursiveOutputValuePlugIterator;
+typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, ValuePlug>, PlugPredicate<> > RecursiveValuePlugIterator;
+typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, ValuePlug>, PlugPredicate<> > RecursiveInputValuePlugIterator;
+typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, ValuePlug>, PlugPredicate<> > RecursiveOutputValuePlugIterator;
 
 } // namespace Gaffer
 

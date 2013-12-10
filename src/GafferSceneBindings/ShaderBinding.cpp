@@ -39,6 +39,7 @@
 #include "GafferBindings/DependencyNodeBinding.h"
 
 #include "GafferScene/Shader.h"
+#include "GafferScene/ShaderSwitch.h"
 
 #include "GafferSceneBindings/ShaderBinding.h"
 
@@ -61,5 +62,7 @@ void GafferSceneBindings::bindShader()
 		.def( "stateHash", (void (Shader::*)( IECore::MurmurHash &h ) const )&Shader::stateHash )
 		.def( "state", &state )
 	;
+
+	GafferBindings::DependencyNodeClass<ShaderSwitch>();
 
 }

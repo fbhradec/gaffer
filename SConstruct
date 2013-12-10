@@ -97,9 +97,22 @@ options.Add(
 )
 
 options.Add(
+	"DEPENDENCIES_INSTALL_DIR",
+	"The destination directory for a separate installation of only the dependencies.",
+	"./install/gafferDependencies-${GAFFER_MAJOR_VERSION}.${GAFFER_MINOR_VERSION}.${GAFFER_PATCH_VERSION}-${GAFFER_PLATFORM}",
+)
+
+options.Add(
 	"PACKAGE_FILE",
 	"The file in which the final gaffer file will be created by the package target.",
 	"${INSTALL_DIR}.tar.gz",
+)
+
+options.Add(
+	"DEPENDENCIES_PACKAGE_FILE",
+	"The file created by the dependenciesPackage target. This can be used to package prebuilt dependencies "
+	"to create a good starting point for another build.",
+	"${DEPENDENCIES_INSTALL_DIR}.tar.gz",
 )
 
 options.Add( 
@@ -135,7 +148,7 @@ options.Add(
 options.Add(
 	"BOOST_SRC_DIR",
 	"The location of the boost source to be used if BUILD_DEPENDENCY_BOOST is specified.",
-	"$DEPENDENCIES_SRC_DIR/boost_1_43_0",
+	"$DEPENDENCIES_SRC_DIR/boost_1_51_0",
 )
 
 options.Add(
@@ -285,7 +298,7 @@ options.Add(
 options.Add(
 	"CORTEX_SRC_DIR",
 	"The location of the boost source to be used if BUILD_DEPENDENCY_CORTEX is specified.",
-	"$DEPENDENCIES_SRC_DIR/cortex-8.0.0a19",
+	"$DEPENDENCIES_SRC_DIR/cortex-8.0.0b5",
 )
 
 options.Add(
@@ -443,7 +456,7 @@ options.Add(
 options.Add(
 	"OIIO_LIB_SUFFIX",
 	"The suffix used when locating the OpenImageIO libraries.",
-	"-1",
+	"",
 )
 
 options.Add(
@@ -484,7 +497,7 @@ env = Environment(
 	options = options,
 
 	GAFFER_MAJOR_VERSION = "0",
-	GAFFER_MINOR_VERSION = "83",
+	GAFFER_MINOR_VERSION = "87",
 	GAFFER_PATCH_VERSION = "0",
 
 )
@@ -590,6 +603,9 @@ env["PYTHON_LINK_FLAGS"] = pythonLinkFlags
 depEnv["PYTHON_VERSION"] = pythonVersion
 env["PYTHON_VERSION"] = pythonVersion
 
+if depEnv["BUILD_DEPENDENCY_BOOST"] :
+	runCommand( "cd $BOOST_SRC_DIR; ./bootstrap.sh --prefix=$BUILD_DIR --with-python=$BUILD_DIR/bin/python --with-python-root=$BUILD_DIR && ./bjam -d+2 variant=release link=shared threading=multi install" )
+
 if depEnv["BUILD_DEPENDENCY_JPEG"] :
 	runCommand( "cd $JPEG_SRC_DIR && ./configure --prefix=$BUILD_DIR && make clean && make && make install" )
 
@@ -602,9 +618,6 @@ if depEnv["BUILD_DEPENDENCY_PNG"] :
 if depEnv["BUILD_DEPENDENCY_FREETYPE"] :
 	runCommand( "cd $FREETYPE_SRC_DIR && ./configure --prefix=$BUILD_DIR && make clean && make && make install" )
 			
-if depEnv["BUILD_DEPENDENCY_BOOST"] :
-	runCommand( "cd $BOOST_SRC_DIR; ./bootstrap.sh --prefix=$BUILD_DIR --with-python=$BUILD_DIR/bin/python --with-python-root=$BUILD_DIR && ./bjam -d+2 variant=release link=shared threading=multi install" )
-
 if depEnv["BUILD_DEPENDENCY_TBB"] :
 	runCommand( "cd $TBB_SRC_DIR; make clean; make" )
 	if depEnv["PLATFORM"]=="darwin" :
@@ -636,13 +649,8 @@ if depEnv["BUILD_DEPENDENCY_OIIO"] :
 	runCommand( "cd $OIIO_SRC_DIR && make clean && make THIRD_PARTY_TOOLS_HOME=$BUILD_DIR OCIO_PATH=$BUILD_DIR USE_OPENJPEG=0" )
 	if depEnv["PLATFORM"]=="darwin" :
 		runCommand( "cd $OIIO_SRC_DIR && cp -r dist/macosx/* $BUILD_DIR" )
-		## \todo Come up with something better.
-		# move the library to a new name so it doesn't conflict with the libOpenImageIO that arnold uses.
-		# Ideally they'd both use the same one but currently Arnold is using a pre-version-1 version.
-		runCommand( "mv $BUILD_DIR/lib/libOpenImageIO.dylib $BUILD_DIR/lib/libOpenImageIO-1.dylib" )
 	else :
 		runCommand( "cd $OIIO_SRC_DIR && cp -r dist/linux64/* $BUILD_DIR" )
-		runCommand( "mv $BUILD_DIR/lib/libOpenImageIO.so $BUILD_DIR/lib/libOpenImageIO-1.so" )
 
 if depEnv["BUILD_DEPENDENCY_LLVM"] :
 	# removing MACOSX_DEPLOYMENT_TARGET because it causes rpath link error
@@ -650,13 +658,11 @@ if depEnv["BUILD_DEPENDENCY_LLVM"] :
 	runCommand( "cd $LLVM_SRC_DIR && ./configure --prefix=$BUILD_DIR --enable-shared --enable-optimized --enable-assertions=no && env MACOSX_DEPLOYMENT_TARGET="" REQUIRES_RTTI=1 make VERBOSE=1 -j 4 && make install" )
 
 if depEnv["BUILD_DEPENDENCY_OSL"] :
-	# OPENIMAGEIO_NAMESPACE
-	# had to edit src/cmake/oiio.cmake to give libOpenImageIO-1 as the name for the OIIO library
 	runCommand( "cd $OSL_SRC_DIR && make nuke && make MY_CMAKE_FLAGS='-DENABLERTTI=1' ILMBASE_HOME=$BUILD_DIR OPENIMAGEIOHOME=$BUILD_DIR LLVM_DIRECTORY=$BUILD_DIR VERBOSE=1 USE_BOOST_WAVE=1" )
 	oslPlatform = "macosx" if depEnv["PLATFORM"]=="darwin" else "linux64"
 	runCommand( "cd $OSL_SRC_DIR && cp -r dist/" +  oslPlatform + "/include/OSL $BUILD_DIR/include" )
 	runCommand( "cd $OSL_SRC_DIR && cp -r dist/" +  oslPlatform + "/lib/libosl* $BUILD_DIR/lib" )
-	runCommand( "cd $OSL_SRC_DIR && cp -r dist/" +  oslPlatform + "/bin/osl* $BUILD_DIR/bin" )
+	runCommand( "cd $OSL_SRC_DIR && cp -r dist/" +  oslPlatform + "/bin/* $BUILD_DIR/bin" )
 	runCommand( "mkdir -p $BUILD_DIR/shaders && cp $OSL_SRC_DIR/dist/" + oslPlatform + "/shaders/stdosl.h $BUILD_DIR/shaders" )
 	runCommand( "mkdir -p $BUILD_DIR/doc/osl && cd $OSL_SRC_DIR && cp dist/" + oslPlatform + "/doc/*.pdf $BUILD_DIR/doc/osl" )
 
@@ -665,6 +671,7 @@ if depEnv["BUILD_DEPENDENCY_HDF5"] :
 
 if depEnv["BUILD_DEPENDENCY_ALEMBIC"] :
 	# may need to hand edit build/AlembicBoost.cmake in the alembic distribution to remove Boost_USE_STATIC_LIBS.
+	# may also need to set ALEMBIC_NO_TESTS=TRUE on OSX (in CMakeLists.txt).
 	runCommand( "cd $ALEMBIC_SRC_DIR && rm -f CMakeCache.txt && cmake -DCMAKE_INSTALL_PREFIX=$BUILD_DIR -DBoost_NO_SYSTEM_PATHS=TRUE -DBoost_NO_BOOST_CMAKE=TRUE -DBOOST_ROOT=$BUILD_DIR -DILMBASE_ROOT=$BUILD_DIR -DUSE_PYILMBASE=FALSE -DUSE_PYALEMBIC=FALSE && make clean && make -j 4 && make install" )
 	runCommand( "mv $BUILD_DIR/alembic-*/include/* $BUILD_DIR/include" )
 	runCommand( "mv $BUILD_DIR/alembic-*/lib/static/* $BUILD_DIR/lib" )
@@ -906,6 +913,8 @@ libraries = {
 			"LIBS" : [ "GafferUI", "GafferSceneUI" ],
 		},
 	},
+
+	"GafferSceneUITest" : {},
 	
 	"GafferImage" : {
 		"envAppends" : {
@@ -1010,10 +1019,8 @@ libraries = {
 
 			# images
 			( "ImageThinner", "ops/image/thinner" ),
-			( "Grade", "ops/image/composite" ),
 			( "ImagePremultiplyOp", "ops/image/premultiply" ),
 			( "ImageUnpremultiplyOp", "ops/image/unpremultiply" ),
-			( "Grade", "ops/image/grade" ),
 			( "CurveTracer", "ops/image/traceCurves" ),
 
 			# curves
@@ -1223,9 +1230,15 @@ def buildGraphics( target, source, env ) :
 				)
 			)
 
-graphicsBuild = env.Command( "$BUILD_DIR/graphics/arrowDown10.png", "resources/graphics.svg", buildGraphics )
-env.NoCache( graphicsBuild )
-env.Alias( "build", graphicsBuild )
+for source, target in (
+	( "resources/graphics.svg", "arrowDown10.png" ),
+	( "resources/GafferLogo.svg", "GafferLogo.png" ),
+	( "resources/GafferLogoMini.svg", "GafferLogoMini.png" ),
+) :
+	
+	graphicsBuild = env.Command( os.path.join( "$BUILD_DIR/graphics/", target ), source, buildGraphics )
+	env.NoCache( graphicsBuild )
+	env.Alias( "build", graphicsBuild )
 
 #########################################################################################################
 # Licenses
@@ -1350,20 +1363,14 @@ docEnv.Alias( "build", docInstall )
 # Installation
 #########################################################################################################
 
-manifest = [
+dependenciesManifest = [
 
-	"bin/gaffer",
-	"bin/gaffer.py",
 	"bin/python",
 	"bin/python*[0-9]", # get the versioned python binaries, but not python-config etc
-	
+
 	"bin/maketx",
 	"bin/oslc",
 	"bin/oslinfo",
-	
-	"LICENSE",
-
-	"apps/*/*-1.py",
 
 	"lib/libboost_signals" + boostLibSuffix + "$SHLIBSUFFIX*",
 	"lib/libboost_thread" + boostLibSuffix + "$SHLIBSUFFIX*",
@@ -1374,9 +1381,9 @@ manifest = [
 	"lib/libboost_filesystem" + boostLibSuffix + "$SHLIBSUFFIX*",
 	"lib/libboost_iostreams" + boostLibSuffix + "$SHLIBSUFFIX*",
 	"lib/libboost_system" + boostLibSuffix + "$SHLIBSUFFIX*",
+	"lib/libboost_chrono" + boostLibSuffix + "$SHLIBSUFFIX*",
 
 	"lib/libIECore*$SHLIBSUFFIX",
-	"lib/libGaffer*$SHLIBSUFFIX",
 	
 	"lib/libIex*$SHLIBSUFFIX*",
 	"lib/libHalf*$SHLIBSUFFIX*",
@@ -1413,8 +1420,6 @@ manifest = [
 	"lib/QtCore.framework",
 	"lib/QtGui.framework",
 	"lib/QtOpenGL.framework",
-	
-	"startup/*/*.py",
 
 	"fonts",
 	"ops",
@@ -1424,17 +1429,15 @@ manifest = [
 
 	"openColorIO",
 
-	"graphics/*.png",
 	"glsl/IECoreGL",
 	"glsl/*.frag",
 	"glsl/*.vert",
+
 	"doc/licenses",
-	"doc/gaffer/html",
 	"doc/cortex/html",
 	"doc/osl*",
 
 	"python/IECore*",
-	"python/Gaffer*",
 	"python/PySide/*.py",
 	"python/PySide/QtCore.so",
 	"python/PySide/QtGui.so",
@@ -1445,7 +1448,6 @@ manifest = [
 	"python/PyOpenColorIO*",
 
 	"include/IECore*",
-	"include/Gaffer*",
 	"include/boost",
 	"include/GL",
 	"include/OpenEXR",
@@ -1454,7 +1456,30 @@ manifest = [
 	
 	"renderMan",
 	"arnold",
+
+]
+
+gafferManifest = dependenciesManifest + [
+
+	"bin/gaffer",
+	"bin/gaffer.py",
 	
+	"LICENSE",
+
+	"apps/*/*-1.py",
+
+	"lib/libGaffer*$SHLIBSUFFIX",
+		
+	"startup/*/*.py",
+
+	"graphics/*.png",
+
+	"doc/gaffer/html",
+
+	"python/Gaffer*",
+
+	"include/Gaffer*",
+		
 ]
 
 def installer( target, source, env ) :
@@ -1483,14 +1508,14 @@ def installer( target, source, env ) :
 					else:
 						shutil.copy2( srcName, dstName )
 	
-	regex = re.compile( "|".join( [ fnmatch.translate( env.subst( "$BUILD_DIR/" + m ) ) for m in manifest ] ) )	
+	regex = re.compile( "|".join( [ fnmatch.translate( env.subst( "$BUILD_DIR/" + m ) ) for m in env["MANIFEST"] ] ) )
 	copyTree( str( source[0] ), str( target[0] ), regex )
 
 if env.subst( "$PACKAGE_FILE" ).endswith( ".dmg" ) :
 	
 	# if the packaging will make a disk image, then build an os x app bundle
 
-	install = env.Command( "$INSTALL_DIR/Gaffer.app/Contents/Resources", "$BUILD_DIR", installer )
+	install = env.Command( "$INSTALL_DIR/Gaffer.app/Contents/Resources", "$BUILD_DIR", installer, MANIFEST=gafferManifest )
 	env.AlwaysBuild( install )
 	env.NoCache( install )
 	env.Alias( "install", install )
@@ -1503,11 +1528,16 @@ if env.subst( "$PACKAGE_FILE" ).endswith( ".dmg" ) :
 	
 else :
 
-	install = env.Command( "$INSTALL_DIR", "$BUILD_DIR", installer )
+	install = env.Command( "$INSTALL_DIR", "$BUILD_DIR", installer, MANIFEST=gafferManifest )
 	env.AlwaysBuild( install )
 	env.NoCache( install )
 
 	env.Alias( "install", install )
+
+dependenciesInstall = env.Command( "$DEPENDENCIES_INSTALL_DIR", "$BUILD_DIR", installer, MANIFEST=dependenciesManifest )
+env.AlwaysBuild( dependenciesInstall )
+env.NoCache( dependenciesInstall )
+env.Alias( "dependenciesInstall", dependenciesInstall )
 
 #########################################################################################################
 # Packaging
@@ -1528,3 +1558,7 @@ def packager( target, source, env ) :
 package = env.Command( "$PACKAGE_FILE", "$INSTALL_DIR", packager )
 env.NoCache( package )
 env.Alias( "package", package )
+
+dependenciesPackage = env.Command( "$DEPENDENCIES_PACKAGE_FILE", "$DEPENDENCIES_INSTALL_DIR", packager )
+env.NoCache( dependenciesPackage )
+env.Alias( "dependenciesPackage", dependenciesPackage )

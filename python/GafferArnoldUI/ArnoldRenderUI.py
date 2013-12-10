@@ -53,7 +53,14 @@ GafferUI.PlugValueWidget.registerCreator(
 	GafferArnold.ArnoldRender.staticTypeId(),
 	"fileName",
 	lambda plug : GafferUI.PathPlugValueWidget( plug,
-		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter() )
+		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter() ),
+		pathChooserDialogueKeywords = {
+			"bookmarks" : GafferUI.Bookmarks.acquire(
+				plug.ancestor( Gaffer.ApplicationRoot.staticTypeId() ),
+				category = "ass",
+			),
+			"leaf" : True,
+		},
 	),
 )
 

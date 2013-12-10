@@ -75,6 +75,11 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 	
 		return self.__row[0]
 	
+	def setHighlighted( self, highlighted ) :
+
+		GafferUI.PlugValueWidget.setHighlighted( self, highlighted )
+		self.pathWidget().setHighlighted( highlighted )
+
 	def getToolTip( self ) :
 	
 		result = GafferUI.PlugValueWidget.getToolTip( self )
@@ -115,8 +120,9 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 		
 		if pathCopy.isEmpty() :
 			# choose a sensible starting location if the path is empty.
-			if isinstance( pathCopy, ( Gaffer.SequencePath, Gaffer.FileSystemPath ) ) :
-				pathCopy.setFromString( os.getcwd() )
+			bookmarks = self.__pathChooserDialogueKeywords.get( "bookmarks", None )
+			if bookmarks is not None :
+				pathCopy.setFromString( bookmarks.getDefault() )
 			else :
 				pathCopy.setFromString( "/" )
 		

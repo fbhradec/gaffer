@@ -34,20 +34,16 @@
 //  
 //////////////////////////////////////////////////////////////////////////
 
+#include "IECore/AngleConversion.h"
+
 #include "Gaffer/Context.h"
-#include "GafferImage/ImageProcessor.h"
+
 #include "GafferImage/ImageTransform.h"
 #include "GafferImage/Reformat.h"
 #include "GafferImage/Filter.h"
 #include "GafferImage/FormatPlug.h"
 #include "GafferImage/ImagePlug.h"
 #include "GafferImage/Sampler.h"
-#include "IECore/AngleConversion.h"
-#include "IECore/FastFloat.h"
-#include "IECore/BoxAlgo.h"
-#include "IECore/BoxOps.h"
-#include "boost/format.hpp"
-#include "boost/bind.hpp"
 
 using namespace Gaffer;
 using namespace IECore;
@@ -75,10 +71,10 @@ class Implementation : public ImageProcessor
 		
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Implementation, ImageTransformImplementationTypeId, ImageProcessor );
 	
-		virtual void hashFormatPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashDataWindowPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelNamesPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelDataPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		virtual void hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		virtual void hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		virtual void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		
 		virtual GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const;
 		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
@@ -204,24 +200,27 @@ bool Implementation::enabled() const
 	return true;
 }
 
-void Implementation::hashFormatPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void Implementation::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	h = outputFormatPlug()->hash();
 }
 
-void Implementation::hashDataWindowPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void Implementation::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	ImageProcessor::hashDataWindow( output, context, h );
 	inPlug()->dataWindowPlug()->hash( h );
 	transformPlug()->hash( h );
 }
 
-void Implementation::hashChannelNamesPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void Implementation::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	inPlug()->channelNamesPlug()->hash( h );
+	h = inPlug()->channelNamesPlug()->hash();
 }
 
-void Implementation::hashChannelDataPlug( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+void Implementation::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
+	ImageProcessor::hashChannelData( output, context, h );
+
 	// Hash all of the tiles that the sample requires for this tile.	
 	Imath::V2i tileOrigin( Context::current()->get<Imath::V2i>( ImagePlug::tileOriginContextName ) );
 	std::string channelName( Context::current()->get<std::string>( ImagePlug::channelNameContextName ) );
@@ -236,7 +235,6 @@ void Implementation::hashChannelDataPlug( const GafferImage::ImagePlug *output, 
 	filterPlug()->hash( h );
 	
 	// Finally we hash the transformation.
-	Imath::V2f t = transformPlug()->translatePlug()->getValue();
 
 	///\ todo: Ideally we should only hash the offset of the transform from the data window so that when translated by ImagePlug::tileSize()
 	/// we can reuse the cache. However this involves changing the ImageProcessor so that it hashes each tile relative to it's data window
@@ -349,7 +347,7 @@ IECore::ConstFloatVectorDataPtr Implementation::computeChannelData( const std::s
 	Imath::Box2i tile( tileOrigin, Imath::V2i( tileOrigin.x + ImagePlug::tileSize() - 1, tileOrigin.y + ImagePlug::tileSize() - 1 ) );
 
 	// Work out the sample area that we require to compute this tile.
-	Format inputFormat = inPlug()->formatPlug()->getValue();
+
 	Imath::M33f t = computeAdjustedMatrix().inverse();
 	Imath::Box2i inWindow( inPlug()->dataWindowPlug()->getValue() );
 	Imath::Box2i sampleBox( transformBox( t, tile ) );

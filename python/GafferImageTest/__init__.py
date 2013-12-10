@@ -54,6 +54,9 @@ from DisplayTest import DisplayTest
 from ImageStatsTest import ImageStatsTest
 from ImageTransformTest import ImageTransformTest
 from RemoveChannelsTest import RemoveChannelsTest
+from ClampTest import ClampTest
+from ImageSwitchTest import ImageSwitchTest
+from ImageTimeWarpTest import ImageTimeWarpTest
 
 if __name__ == "__main__":
 	import unittest

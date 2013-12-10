@@ -140,6 +140,7 @@ from OpPathPreview import OpPathPreview
 from NumericSlider import NumericSlider
 from ColorChooser import ColorChooser
 from ColorChooserDialogue import ColorChooserDialogue
+from MessageWidget import MessageWidget
 from NotificationMessageHandler import NotificationMessageHandler
 from AttributeCachePathPreview import AttributeCachePathPreview
 from MenuButton import MenuButton
@@ -149,6 +150,7 @@ from DisplayTransform import DisplayTransform
 from Divider import Divider
 import _Pointer
 from SplineWidget import SplineWidget
+from Bookmarks import Bookmarks
 
 # then stuff specific to graph uis
 
@@ -181,6 +183,7 @@ from Frame import Frame
 from CompoundNumericPlugValueWidget import CompoundNumericPlugValueWidget
 from NodeUI import NodeUI
 from StandardNodeUI import StandardNodeUI
+from ColorSwatchPlugValueWidget import ColorSwatchPlugValueWidget
 from ColorPlugValueWidget import ColorPlugValueWidget
 from AboutWindow import AboutWindow
 import ApplicationMenu
@@ -206,6 +209,7 @@ from RampPlugValueWidget import RampPlugValueWidget
 from NodeFinderDialogue import NodeFinderDialogue
 from ConnectionPlugValueWidget import ConnectionPlugValueWidget
 import View3DToolbar
+from Playback import Playback
 
 # then stuff specific to parameterised objects
 

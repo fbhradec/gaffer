@@ -46,9 +46,20 @@ template<typename BaseType>
 const IECore::RunTimeTyped::TypeDescription<ContextProcessor<BaseType> > ContextProcessor<BaseType>::g_typeDescription;
 
 template<typename BaseType>
+size_t ContextProcessor<BaseType>::g_firstPlugIndex = 0;
+
+template<typename BaseType>
 ContextProcessor<BaseType>::ContextProcessor( const std::string &name )
 	:	BaseType( name )
 {
+	BaseType::storeIndexOfNextChild( g_firstPlugIndex );
+
+	if( !BaseType::enabledPlug() )
+	{
+		// if the base class doesn't provide an enabledPlug(),
+		// then we'll provide our own.
+		BaseType::addChild( new BoolPlug( "enabled", Gaffer::Plug::In, true ) );
+	}
 }
 
 template<typename BaseType>
@@ -57,16 +68,59 @@ ContextProcessor<BaseType>::~ContextProcessor()
 }
 
 template<typename BaseType>
+BoolPlug *ContextProcessor<BaseType>::enabledPlug()
+{
+	if( BoolPlug *p = BaseType::enabledPlug() )
+	{
+		return p;
+	}
+	return BaseType::template getChild<BoolPlug>( g_firstPlugIndex );
+}
+
+template<typename BaseType>
+const BoolPlug *ContextProcessor<BaseType>::enabledPlug() const
+{
+	if( const BoolPlug *p = BaseType::enabledPlug() )
+	{
+		return p;
+	}
+	return BaseType::template getChild<BoolPlug>( g_firstPlugIndex );
+}
+
+template<typename BaseType>
+Plug *ContextProcessor<BaseType>::correspondingInput( const Plug *output )
+{
+	if( const ValuePlug *v = IECore::runTimeCast<const ValuePlug>( output ) )
+	{
+		return const_cast<Plug *>( static_cast<const Plug *>( oppositePlug( v ) ) );
+	}
+	return NULL;
+}
+
+template<typename BaseType>
+const Plug *ContextProcessor<BaseType>::correspondingInput( const Plug *output ) const
+{
+	if( const ValuePlug *v = IECore::runTimeCast<const ValuePlug>( output ) )
+	{
+		return oppositePlug( v );
+	}
+	return NULL;
+}
+
+template<typename BaseType>
 void ContextProcessor<BaseType>::affects( const Plug *input, DependencyNode::AffectedPlugsContainer &outputs ) const
 {
 	BaseType::affects( input, outputs );
 	
-	if( const ValuePlug *inputValuePlug = IECore::runTimeCast<const ValuePlug>( input ) )
+	if( input->direction() == Plug::In )
 	{
-		const ValuePlug *output = oppositePlug( inputValuePlug );
-		if( output ) 
+		if( const ValuePlug *inputValuePlug = IECore::runTimeCast<const ValuePlug>( input ) )
 		{
-			outputs.push_back( output );
+			const ValuePlug *output = oppositePlug( inputValuePlug );
+			if( output )
+			{
+				outputs.push_back( output );
+			}
 		}
 	}
 }
@@ -101,10 +155,17 @@ void ContextProcessor<BaseType>::hash( const ValuePlug *output, const Context *c
 	const ValuePlug *input = oppositePlug( output );
 	if( input )
 	{
-		ContextPtr modifiedContext = new Context( *context );
-		processContext( modifiedContext.get() );
-		Context::Scope scopedContext( modifiedContext.get() );
-		h = input->hash();
+		if( enabledPlug()->getValue() )
+		{
+			ContextPtr modifiedContext = new Context( *context );
+			processContext( modifiedContext.get() );
+			Context::Scope scopedContext( modifiedContext.get() );
+			h = input->hash();
+		}
+		else
+		{
+			h = input->hash();
+		}
 		return;
 	}
 
@@ -117,10 +178,17 @@ void ContextProcessor<BaseType>::compute( ValuePlug *output, const Context *cont
 	const ValuePlug *input = oppositePlug( output );
 	if( input )
 	{
-		ContextPtr modifiedContext = new Context( *context );
-		processContext( modifiedContext.get() );
-		Context::Scope scopedContext( modifiedContext.get() );
-		output->setFrom( input );
+		if( enabledPlug()->getValue() )
+		{
+			ContextPtr modifiedContext = new Context( *context );
+			processContext( modifiedContext.get() );
+			Context::Scope scopedContext( modifiedContext.get() );
+			output->setFrom( input );
+		}
+		else
+		{
+			output->setFrom( input );
+		}
 		return;
 	}
 		
