@@ -268,7 +268,7 @@ options.Add(
 options.Add(
 	"OSL_SRC_DIR",
 	"The location of the OSL source to be used if BUILD_DEPENDENCY_OSL is specified.",
-	"$DEPENDENCIES_SRC_DIR/OpenShadingLanguage-Release-1.3.3",
+	"$DEPENDENCIES_SRC_DIR/OpenShadingLanguage-Release-1.4.0",
 )
 
 options.Add(
@@ -926,7 +926,14 @@ libraries = {
 		"requiredOptions" : [ "OIIO_SRC_DIR", "OCIO_SRC_DIR" ],
 	},
 	
-	"GafferImageTest" : {},
+	"GafferImageTest" : {
+		"envAppends" : {
+			"LIBS" : [ "Gaffer", "GafferImage", "OpenImageIO$OIIO_LIB_SUFFIX",  ],
+		},
+		"pythonEnvAppends" : {
+			"LIBS" : [ "GafferImageTest", "GafferImageBindings" ],
+		},
+	},
 	
 	"GafferImageUITest" : {},
 	

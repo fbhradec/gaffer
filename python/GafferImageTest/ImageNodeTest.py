@@ -1,25 +1,25 @@
 ##########################################################################
-#  
+#
 #  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-#  
+#
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
 #  met:
-#  
+#
 #      * Redistributions of source code must retain the above
 #        copyright notice, this list of conditions and the following
 #        disclaimer.
-#  
+#
 #      * Redistributions in binary form must reproduce the above
 #        copyright notice, this list of conditions and the following
 #        disclaimer in the documentation and/or other materials provided with
 #        the distribution.
-#  
+#
 #      * Neither the name of John Haddon nor the names of
 #        any other contributors to this software may be used to endorse or
 #        promote products derived from this software without specific prior
 #        written permission.
-#  
+#
 #  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 #  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 #  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,67 +31,65 @@
 #  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 #  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#  
+#
 ##########################################################################
 
-import os
 import unittest
+import threading
+
+import IECore
 
 import Gaffer
-import GafferScene
+import GafferTest
+import GafferImage
 
-class ScenePathTest( unittest.TestCase ) :
+class ImageNodeTest( GafferTest.TestCase ) :
 
-	def test( self ) :
+	def testCacheThreadSafety( self ) :
 	
-		a = GafferScene.AlembicSource()
-		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/cube.abc" )
+		c = GafferImage.Constant()
+		c["format"].setValue( GafferImage.Format( 200, 200, 1.0 ) )
+		g = GafferImage.Grade()
+		g["in"].setInput( c["out"] )
+		g["multiply"].setValue( IECore.Color3f( 0.4, 0.5, 0.6 ) )
 		
-		p = GafferScene.ScenePath( a["out"], Gaffer.Context(), "/" )
-		c = p.children()
-	
-		self.assertEqual( len( c ), 1 )
-		self.assertEqual( str( c[0] ), "/group1" )
-	
-	def testRelative( self ) :
-	
-		a = GafferScene.AlembicSource()
-		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/cube.abc" )
-		
-		p = GafferScene.ScenePath( a["out"], Gaffer.Context(), "group1" )
-		self.assertEqual( str( p ), "group1" )
-		self.assertEqual( p.root(), "" )
-		self.assertEqual( [ str( c ) for c in p.children() ], [ "group1/pCube1" ] )
-		
-		p2 = p.copy()
-		self.assertEqual( str( p2 ), "group1" )
-		self.assertEqual( p2.root(), "" )
-		self.assertEqual( [ str( c ) for c in p2.children() ], [ "group1/pCube1" ] )
-	
-	def testIsValid( self ) :
-	
-		plane = GafferScene.Plane()
-		group = GafferScene.Group()
-		group["in"].setInput( plane["out"] )
-		
-		p = GafferScene.ScenePath( group["out"], Gaffer.Context(), "/" )
-		self.assertTrue( p.isValid() )
-		
-		p.setFromString( "/group" )
-		self.assertTrue( p.isValid() )
-		
-		p.setFromString( "/group/plane" )
-		self.assertTrue( p.isValid() )
+		gradedImage = g["out"].image()
 
-		p.setFromString( "/group/plane2" )
-		self.assertFalse( p.isValid() )
+		# not enough for both images - will cause cache thrashing
+		Gaffer.ValuePlug.setCacheMemoryLimit( 2 * g["out"].channelData( "R", IECore.V2i( 0 ) ).memoryUsage() )
 		
-		p.setFromString( "/group2/plane" )
-		self.assertFalse( p.isValid() )
+		images = []
+		exceptions = []
+		def grader() :
+		
+			try :
+				images.append( g["out"].image() )
+			except Exception, e :
+				exceptions.append( e )
+				
+		threads = []
+		for i in range( 0, 10 ) :
+			thread = threading.Thread( target = grader )
+			threads.append( thread )
+			thread.start()
+		
+		for thread in threads :
+			thread.join()
 
-		p.setFromString( "" )
-		self.assertFalse( p.isValid() )
+		for image in images :
+			self.assertEqual( image, gradedImage )
+			
+		for e in exceptions :
+			raise e
+	
+	def setUp( self ) :
+	
+		self.__previousCacheMemoryLimit = Gaffer.ValuePlug.getCacheMemoryLimit()
+	
+	def tearDown( self ) :
+	
+		Gaffer.ValuePlug.setCacheMemoryLimit( self.__previousCacheMemoryLimit )
 		
 if __name__ == "__main__":
 	unittest.main()
-	
+

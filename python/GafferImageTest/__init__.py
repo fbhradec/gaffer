@@ -35,6 +35,8 @@
 #  
 ##########################################################################
 
+from _GafferImageTest import *
+
 from ImagePlugTest import ImagePlugTest
 from ImageReaderTest import ImageReaderTest
 from OpenColorIOTest import OpenColorIOTest
@@ -58,6 +60,7 @@ from ClampTest import ClampTest
 from ImageSwitchTest import ImageSwitchTest
 from ImageTimeWarpTest import ImageTimeWarpTest
 from ImageSamplerTest import ImageSamplerTest
+from ImageNodeTest import ImageNodeTest
 
 if __name__ == "__main__":
 	import unittest

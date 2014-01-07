@@ -69,3 +69,4 @@ import CustomOptionsUI
 import SceneViewToolbar
 import SceneSwitchUI
 import ShaderSwitchUI
+import ShaderAssignmentUI

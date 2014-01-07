@@ -34,64 +34,24 @@
 #  
 ##########################################################################
 
-import os
-import unittest
-
 import Gaffer
+import GafferUI
+
 import GafferScene
+import GafferSceneUI
 
-class ScenePathTest( unittest.TestCase ) :
+GafferUI.Metadata.registerNodeDescription(
 
-	def test( self ) :
-	
-		a = GafferScene.AlembicSource()
-		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/cube.abc" )
-		
-		p = GafferScene.ScenePath( a["out"], Gaffer.Context(), "/" )
-		c = p.children()
-	
-		self.assertEqual( len( c ), 1 )
-		self.assertEqual( str( c[0] ), "/group1" )
-	
-	def testRelative( self ) :
-	
-		a = GafferScene.AlembicSource()
-		a["fileName"].setValue( os.path.dirname( __file__ ) + "/alembicFiles/cube.abc" )
-		
-		p = GafferScene.ScenePath( a["out"], Gaffer.Context(), "group1" )
-		self.assertEqual( str( p ), "group1" )
-		self.assertEqual( p.root(), "" )
-		self.assertEqual( [ str( c ) for c in p.children() ], [ "group1/pCube1" ] )
-		
-		p2 = p.copy()
-		self.assertEqual( str( p2 ), "group1" )
-		self.assertEqual( p2.root(), "" )
-		self.assertEqual( [ str( c ) for c in p2.children() ], [ "group1/pCube1" ] )
-	
-	def testIsValid( self ) :
-	
-		plane = GafferScene.Plane()
-		group = GafferScene.Group()
-		group["in"].setInput( plane["out"] )
-		
-		p = GafferScene.ScenePath( group["out"], Gaffer.Context(), "/" )
-		self.assertTrue( p.isValid() )
-		
-		p.setFromString( "/group" )
-		self.assertTrue( p.isValid() )
-		
-		p.setFromString( "/group/plane" )
-		self.assertTrue( p.isValid() )
+GafferScene.ShaderAssignment,
 
-		p.setFromString( "/group/plane2" )
-		self.assertFalse( p.isValid() )
-		
-		p.setFromString( "/group2/plane" )
-		self.assertFalse( p.isValid() )
+"""Assigns shaders to objects.""",
 
-		p.setFromString( "" )
-		self.assertFalse( p.isValid() )
-		
-if __name__ == "__main__":
-	unittest.main()
-	
+"shader",
+{
+	"description" : """The shader to be assigned.""",
+	"nodeGadget:nodulePosition" : "left",
+}
+
+)
+
+GafferUI.Nodule.registerNodule( GafferScene.ShaderAssignment.staticTypeId(), "shader", GafferUI.StandardNodule )
