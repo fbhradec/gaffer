@@ -42,10 +42,10 @@
 #include "IECoreGL/Selector.h"
 
 #include "Gaffer/TypedObjectPlug.h"
-#include "Gaffer/ScriptNode.h"
 #include "Gaffer/CompoundPlug.h"
 #include "Gaffer/StandardSet.h"
 #include "Gaffer/DependencyNode.h"
+#include "Gaffer/Metadata.h"
 
 #include "GafferUI/StandardNodeGadget.h"
 #include "GafferUI/Nodule.h"
@@ -55,7 +55,6 @@
 #include "GafferUI/CompoundNodule.h"
 #include "GafferUI/StandardNodule.h"
 #include "GafferUI/SpacerGadget.h"
-#include "GafferUI/Metadata.h"
 
 using namespace GafferUI;
 using namespace Gaffer;
@@ -115,7 +114,6 @@ StandardNodeGadget::StandardNodeGadget( Gaffer::NodePtr node, LinearContainer::O
 	);
 
 	column->addChild( topNoduleContainer );
-	column->addChild( new SpacerGadget( Box3f( V3f( 0 ), V3f( minWidth, g_spacing, 0 ) ) ) );
 	
 	LinearContainerPtr row = new LinearContainer(
 		"row",
@@ -131,14 +129,24 @@ StandardNodeGadget::StandardNodeGadget( Gaffer::NodePtr node, LinearContainer::O
 	
 	row->addChild( leftNoduleContainer );
 	
+	LinearContainerPtr contentsColumn = new LinearContainer(
+		"contentsColumn",
+		LinearContainer::Y,
+		LinearContainer::Centre,
+		0.0f,
+		LinearContainer::Decreasing
+	);
+	row->addChild( contentsColumn );
+	
 	IndividualContainerPtr contentsContainer = new IndividualContainer();
 	contentsContainer->setName( "contentsContainer" );
 	contentsContainer->setPadding( Box3f( V3f( -g_borderWidth ), V3f( g_borderWidth ) ) );
 	
-	row->addChild( contentsContainer );
+	contentsColumn->addChild( new SpacerGadget( Box3f( V3f( 0 ), V3f( minWidth, g_spacing, 0 ) ) ) );
+	contentsColumn->addChild( contentsContainer );
+	contentsColumn->addChild( new SpacerGadget( Box3f( V3f( 0 ), V3f( minWidth, g_spacing, 0 ) ) ) );
 	
 	row->addChild( rightNoduleContainer );
-	column->addChild( new SpacerGadget( Box3f( V3f( 0 ), V3f( minWidth, g_spacing, 0 ) ) ) );
 	column->addChild( bottomNoduleContainer );
 	
 	setChild( column );
@@ -153,13 +161,6 @@ StandardNodeGadget::StandardNodeGadget( Gaffer::NodePtr node, LinearContainer::O
 
 	// connect to the signals we need in order to operate
 	////////////////////////////////////////////////////////
-
-	Gaffer::ScriptNodePtr script = node->scriptNode();
-	if( script )
-	{
-		script->selection()->memberAddedSignal().connect( boost::bind( &StandardNodeGadget::selectionChanged, this, ::_1,  ::_2 ) );
-		script->selection()->memberRemovedSignal().connect( boost::bind( &StandardNodeGadget::selectionChanged, this, ::_1,  ::_2 ) );
-	}
 	
 	node->childAddedSignal().connect( boost::bind( &StandardNodeGadget::childAdded, this, ::_1,  ::_2 ) );
 	node->childRemovedSignal().connect( boost::bind( &StandardNodeGadget::childRemoved, this, ::_1,  ::_2 ) );
@@ -208,13 +209,7 @@ Imath::Box3f StandardNodeGadget::bound() const
 void StandardNodeGadget::doRender( const Style *style ) const
 {
 	// decide what state we're rendering in
-	Gaffer::ConstScriptNodePtr script = node()->scriptNode();
-	
-	Style::State state = Style::NormalState;
-	if( script && script->selection()->contains( node() ) )
-	{
-		state = Style::HighlightedState;
-	}
+	Style::State state = getHighlighted() ? Style::HighlightedState : Style::NormalState;
 	
 	// draw our background frame
 	Box3f b = bound();
@@ -350,10 +345,10 @@ LinearContainer *StandardNodeGadget::noduleContainer( Edge edge )
 	}
 	else if( edge == BottomEdge )
 	{
-		return column->getChild<LinearContainer>( 4 );
+		return column->getChild<LinearContainer>( 2 );
 	}
 	
-	Gadget *row = column->getChild<Gadget>( 2 );
+	Gadget *row = column->getChild<Gadget>( 1 );
 	if( edge == LeftEdge )
 	{
 		return row->getChild<LinearContainer>( 0 );
@@ -371,20 +366,15 @@ const LinearContainer *StandardNodeGadget::noduleContainer( Edge edge ) const
 
 IndividualContainer *StandardNodeGadget::contentsContainer()
 {
-	return getChild<Gadget>()->getChild<Gadget>( 2 )->getChild<IndividualContainer>( 1 );
+	return getChild<Gadget>() // column
+		->getChild<Gadget>( 1 ) // row
+		->getChild<Gadget>( 1 ) // contentsColumn
+		->getChild<IndividualContainer>( 1 );
 }
 
 const IndividualContainer *StandardNodeGadget::contentsContainer() const
 {
-	return getChild<Gadget>()->getChild<Gadget>( 2 )->getChild<IndividualContainer>( 1 );
-}
-
-void StandardNodeGadget::selectionChanged( Gaffer::Set *selection, IECore::RunTimeTyped *n )
-{
-	if( n==node() )
-	{
-		renderRequestSignal()( this );
-	}
+	return const_cast<StandardNodeGadget *>( this )->contentsContainer();
 }
 
 void StandardNodeGadget::childAdded( Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child )

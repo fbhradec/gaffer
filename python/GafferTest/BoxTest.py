@@ -518,6 +518,113 @@ class BoxTest( unittest.TestCase ) :
 		# likewise here, the enclosed network had no external connections so the
 		# box should have no additional children other than the nested box.
 		self.assertEqual( b2.keys(), Gaffer.Box().keys() + [ b.getName() ] )
+	
+	def testMetadata( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["a1"] = GafferTest.AddNode()
+		s["a2"] = GafferTest.AddNode()
+		s["a2"]["op1"].setInput( s["a1"]["sum"] )
+	
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["a2"] ] ) )
+	
+		self.assertEqual( b.getPlugMetadata( b["in"], "description" ), None )
+		self.assertEqual( Gaffer.Metadata.plugValue( b["in"], "description" ), None )
+		
+		b.setPlugMetadata( b["in"], "description", "hello" )
+		self.assertEqual( b.getPlugMetadata( b["in"], "description" ), IECore.StringData( "hello" ) )
+		self.assertEqual( Gaffer.Metadata.plugValue( b["in"], "description" ), "hello" )
+	
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		
+		self.assertEqual( s2["Box"].getPlugMetadata( s2["Box"]["in"], "description" ), IECore.StringData( "hello" ) )
+		self.assertEqual( Gaffer.Metadata.plugValue( s2["Box"]["in"], "description" ), "hello" )
+	
+	def testCantPromoteReadOnlyPlug( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["n"] = Gaffer.Node()
+		s["n"]["i"] = Gaffer.IntPlug()
+		s["n"]["c"] = Gaffer.Color3fPlug()
+		
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
+		
+		self.assertTrue( b.canPromotePlug( b["n"]["i"] ) )
+		self.assertTrue( b.canPromotePlug( b["n"]["c"] ) )
+		self.assertTrue( b.canPromotePlug( b["n"]["c"]["r"] ) )
+		
+		b["n"]["i"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+		b["n"]["c"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+		b["n"]["c"]["r"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+		
+		self.assertFalse( b.canPromotePlug( b["n"]["i"] ) )
+		self.assertFalse( b.canPromotePlug( b["n"]["c"] ) )
+		self.assertFalse( b.canPromotePlug( b["n"]["c"]["r"] ) )
+		
+		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["i"] )
+		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["c"] )
+		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["c"]["r"] )
+		
+		k = b.keys()
+		uk = b["user"].keys()
+		try :
+			b.promotePlug( b["n"]["i"] )
+		except Exception, e :
+			self.assertTrue( "Cannot promote" in str( e ) )
+			self.assertTrue( "read only" in str( e ) )
+			self.assertEqual( b.keys(), k )
+			self.assertEqual( b["user"].keys(), uk )
+	
+	def testCantPromotePlugWithReadOnlyChildren( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["n"] = Gaffer.Node()
+		s["n"]["c"] = Gaffer.Color3fPlug()
+		
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
+		
+		self.assertTrue( b.canPromotePlug( b["n"]["c"] ) )
+		self.assertTrue( b.canPromotePlug( b["n"]["c"]["r"] ) )
+		
+		b["n"]["c"]["r"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+		
+		self.assertFalse( b.canPromotePlug( b["n"]["c"] ) )
+		self.assertFalse( b.canPromotePlug( b["n"]["c"]["r"] ) )
+		
+		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["c"] )
+		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["c"]["r"] )
+		
+		k = b.keys()
+		uk = b["user"].keys()
+		try :
+			b.promotePlug( b["n"]["c"] )
+		except Exception, e :
+			self.assertTrue( "Cannot promote" in str( e ) )
+			self.assertTrue( "read only" in str( e ) )
+			self.assertEqual( b.keys(), k )
+			self.assertEqual( b["user"].keys(), uk )
+	
+	def testMakePlugReadOnlyAfterPromoting( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["n"] = GafferTest.AddNode()
+		s["n"]["op1"].setValue( 0 )
+		s["n"]["op2"].setValue( 0 )
+		
+		self.assertEqual( s["n"]["sum"].getValue(), 0 )
+		
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
+		
+		op1 = b.promotePlug( b["n"]["op1"] )
+		b["n"]["op1"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+		
+		op1.setValue( 1 )
+		self.assertEqual( b["n"]["sum"].getValue(), 1 )
 		
 if __name__ == "__main__":
 	unittest.main()

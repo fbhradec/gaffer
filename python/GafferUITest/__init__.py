@@ -82,7 +82,6 @@ from ScriptWindowTest import ScriptWindowTest
 from CompoundPlugValueWidgetTest import CompoundPlugValueWidgetTest
 from CompoundEditorTest import CompoundEditorTest
 from MultiSelectionMenuTest import MultiSelectionMenuTest
-from MetadataTest import MetadataTest
 from StandardGraphLayoutTest import StandardGraphLayoutTest
 from StandardNodeUITest import StandardNodeUITest
 from ViewTest import ViewTest
@@ -95,6 +94,9 @@ from BookmarksTest import BookmarksTest
 from SectionedCompoundDataPlugValueWidgetTest import SectionedCompoundDataPlugValueWidgetTest
 from PlaybackTest import PlaybackTest
 from SpacerGadgetTest import SpacerGadgetTest
+from BoxUITest import BoxUITest
+from ConnectionGadgetTest import ConnectionGadgetTest
+from MessageWidgetTest import MessageWidgetTest
 
 if __name__ == "__main__":
 	unittest.main()

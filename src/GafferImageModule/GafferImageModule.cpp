@@ -43,7 +43,6 @@
 #include "GafferBindings/ExecutableBinding.h"
 
 #include "GafferImage/ImageNode.h"
-#include "GafferImage/ImageReader.h"
 #include "GafferImage/Display.h"
 #include "GafferImage/ImageProcessor.h"
 #include "GafferImage/FilterProcessor.h"
@@ -69,6 +68,8 @@
 #include "GafferImageBindings/RemoveChannelsBinding.h"
 #include "GafferImageBindings/ChannelMaskPlugBindings.h"
 #include "GafferImageBindings/MixinBinding.h"
+#include "GafferImageBindings/FormatDataBinding.h"
+#include "GafferImageBindings/ImageReaderBinding.h"
 
 using namespace boost::python;
 using namespace GafferImage;
@@ -109,7 +110,6 @@ BOOST_PYTHON_MODULE( _GafferImage )
 	;
 
 	GafferBindings::DependencyNodeClass<ImageNode>();
-	GafferBindings::DependencyNodeClass<ImageReader>();
 	GafferBindings::DependencyNodeClass<ImagePrimitiveNode>();
 	GafferBindings::DependencyNodeClass<Display>()
 		.def( "dataReceivedSignal", &Display::dataReceivedSignal, return_value_policy<reference_existing_object>() ).staticmethod( "dataReceivedSignal" )
@@ -139,6 +139,8 @@ BOOST_PYTHON_MODULE( _GafferImage )
 	GafferImageBindings::bindSampler();
 	GafferImageBindings::bindFilters();
 	GafferImageBindings::bindMixin();
+	GafferImageBindings::bindFormatData();
+	GafferImageBindings::bindImageReader();
 	
 	GafferBindings::NodeClass<ImageWriter> imageWriter;
 	GafferBindings::ExecutableBinding< GafferBindings::NodeClass<ImageWriter>, ImageWriter>::bind( imageWriter );

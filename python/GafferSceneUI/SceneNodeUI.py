@@ -47,7 +47,7 @@ import GafferSceneUI
 
 # SceneNode
 
-GafferUI.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNodeDescription(
 
 GafferScene.SceneNode,
 
@@ -208,7 +208,7 @@ GafferUI.PlugValueWidget.registerCreator(
 
 # Plane
 
-GafferUI.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNodeDescription(
 
 GafferScene.Plane,
 
@@ -224,7 +224,7 @@ GafferScene.Plane,
 
 # Cube
 
-GafferUI.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNodeDescription(
 
 GafferScene.Cube,
 
@@ -247,6 +247,12 @@ GafferUI.PlugValueWidget.registerCreator(
 	GafferScene.PathFilter.staticTypeId(),
 	"paths",
 	__pathsPlugWidgetCreator,
+)
+
+GafferUI.Nodule.registerNodule(
+	GafferScene.PathFilter.staticTypeId(),
+	"paths",
+	lambda plug : None,
 )
 
 # UnionFilter

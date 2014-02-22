@@ -46,9 +46,6 @@ import GafferUI
 ## This class forms the base class for all uis for nodes.
 class NodeUI( GafferUI.Widget ) :
 	
-	## Derived classes may override the default ui by passing
-	# their own top level widget - otherwise a standard ui is built
-	# using the result of _plugsWidget().
 	def __init__( self, node, topLevelWidget, **kw ) :
 
 		GafferUI.Widget.__init__( self, topLevelWidget, **kw )
@@ -105,4 +102,4 @@ class NodeUI( GafferUI.Widget ) :
 
 GafferUI.Nodule.registerNodule( Gaffer.Node.staticTypeId(), "user", lambda plug : None )
 
-GafferUI.Metadata.registerPlugValue( Gaffer.Node, "user", "nodeUI:section", "User" )
+Gaffer.Metadata.registerPlugValue( Gaffer.Node, "user", "nodeUI:section", "User" )

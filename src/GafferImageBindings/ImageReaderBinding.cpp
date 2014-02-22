@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //  
-//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2014, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -34,24 +34,36 @@
 //  
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERUI_METADATA_INL
-#define GAFFERUI_METADATA_INL
+#include "boost/python.hpp"
 
-namespace GafferUI
-{
+#include "GafferBindings/DependencyNodeBinding.h"
 
-template<typename T>
-typename T::ConstPtr Metadata::nodeValue( const Gaffer::Node *node, IECore::InternedString key, bool inherit )
+#include "GafferImage/ImageReader.h"
+
+#include "GafferImageBindings/ImageReaderBinding.h"
+
+using namespace GafferImage;
+
+static boost::python::list supportedExtensions()
 {
-	return IECore::runTimeCast<const T>( nodeValueInternal( node, key, inherit ) );
+	std::vector<std::string> e;
+	ImageReader::supportedExtensions( e );
+	
+	boost::python::list result;
+	for( std::vector<std::string>::const_iterator it = e.begin(), eIt = e.end(); it != eIt; ++it )
+	{
+		result.append( *it );
+	}
+	
+	return result;
 }
 
-template<typename T>
-typename T::ConstPtr Metadata::plugValue( const Gaffer::Plug *plug, IECore::InternedString key, bool inherit )
+void GafferImageBindings::bindImageReader()
 {
-	return IECore::runTimeCast<const T>( plugValueInternal( plug, key, inherit ) );
+	
+	GafferBindings::DependencyNodeClass<ImageReader>()
+		.def( "supportedExtensions", &supportedExtensions )
+		.staticmethod( "supportedExtensions" )
+	;
+		
 }
-
-} // namespace GafferUI
-
-#endif // GAFFERUI_METADATA_INL

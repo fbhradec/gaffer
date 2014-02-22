@@ -1,7 +1,7 @@
 ##########################################################################
 #  
-#  Copyright (c) 2011-2013, John Haddon. All rights reserved.
-#  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2011-2014, John Haddon. All rights reserved.
+#  Copyright (c) 2011-2014, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -168,13 +168,13 @@ options.Add(
 options.Add(
 	"ILMBASE_SRC_DIR",
 	"The location of the ilmbase source to be used if BUILD_DEPENDENCY_OPENEXR is specified.",
-	"$DEPENDENCIES_SRC_DIR/ilmbase-1.0.3",
+	"$DEPENDENCIES_SRC_DIR/ilmbase-2.1.0",
 )
 
 options.Add(
 	"OPENEXR_SRC_DIR",
 	"The location of the exr source to be used if BUILD_DEPENDENCY_OPENEXR is specified.",
-	"$DEPENDENCIES_SRC_DIR/openexr-1.7.1",
+	"$DEPENDENCIES_SRC_DIR/openexr-2.1.0",
 )
 
 options.Add(
@@ -250,7 +250,7 @@ options.Add(
 options.Add(
 	"OIIO_SRC_DIR",
 	"The location of the OIIO source to be used if BUILD_DEPENDENCY_OIIO is specified.",
-	"$DEPENDENCIES_SRC_DIR/oiio-Release-1.2.1",
+	"$DEPENDENCIES_SRC_DIR/oiio-Release-1.3.12",
 )
 
 options.Add(
@@ -268,7 +268,7 @@ options.Add(
 options.Add(
 	"OSL_SRC_DIR",
 	"The location of the OSL source to be used if BUILD_DEPENDENCY_OSL is specified.",
-	"$DEPENDENCIES_SRC_DIR/OpenShadingLanguage-Release-1.4.0",
+	"$DEPENDENCIES_SRC_DIR/OpenShadingLanguage-Release-1.4.1",
 )
 
 options.Add(
@@ -298,7 +298,7 @@ options.Add(
 options.Add(
 	"CORTEX_SRC_DIR",
 	"The location of the boost source to be used if BUILD_DEPENDENCY_CORTEX is specified.",
-	"$DEPENDENCIES_SRC_DIR/cortex-8.0.0b5",
+	"$DEPENDENCIES_SRC_DIR/cortex-8.0.0",
 )
 
 options.Add(
@@ -323,16 +323,6 @@ options.Add(
 	"ARNOLD_ROOT",
 	"The directory in which Arnold is installed. Used to build GafferArnold",
 	"",
-)
-
-options.Add(
-	BoolVariable( "BUILD_DEPENDENCY_PKGCONFIG", "Set this to build the pkgconfig library.", "$BUILD_DEPENDENCIES" )
-)
-
-options.Add(
-	"PKGCONFIG_SRC_DIR",
-	"The location of the pkg-config source to be used if BUILD_DEPENDENCY_PKGCONFIG is specified.",
-	"$DEPENDENCIES_SRC_DIR/pkg-config-0.23",
 )
 
 options.Add(
@@ -497,8 +487,8 @@ env = Environment(
 	options = options,
 
 	GAFFER_MAJOR_VERSION = "0",
-	GAFFER_MINOR_VERSION = "87",
-	GAFFER_PATCH_VERSION = "1",
+	GAFFER_MINOR_VERSION = "90",
+	GAFFER_PATCH_VERSION = "0",
 
 )
 
@@ -554,7 +544,6 @@ depEnv["ENV"].update(
 		"PATH" : depEnv.subst( "$BUILD_DIR/bin:" + os.environ["PATH"] ),
 		"PYTHONPATH" : depEnv.subst( "$BUILD_DIR/python" ),
  		"M4PATH" : depEnv.subst( "$BUILD_DIR/share/aclocal" ),
-		"PKG_CONFIG_PATH" : depEnv.subst( "$BUILD_DIR/lib/pkgconfig" ),
 		"CMAKE_PREFIX_PATH" : depEnv.subst( "$BUILD_DIR" ),
 		"HOME" : os.environ["HOME"],
 		"CPPFLAGS" : depEnv.subst( "-I$BUILD_DIR/include" ),
@@ -573,9 +562,6 @@ def runCommand( command ) :
 	command = depEnv.subst( command )
 	sys.stderr.write( command + "\n" )
 	subprocess.check_call( command, shell=True, env=depEnv["ENV"] )
-
-if depEnv["BUILD_DEPENDENCY_PKGCONFIG"] :
-	runCommand( "cd $PKGCONFIG_SRC_DIR && ./configure --prefix=$BUILD_DIR && make clean && make && make install" )
 
 if depEnv["BUILD_DEPENDENCY_PYTHON"] :
 	
@@ -646,7 +632,15 @@ if depEnv["BUILD_DEPENDENCY_OCIO"] :
 	runCommand( "cp -r $OCIO_CONFIG_DIR/luts $BUILD_DIR/openColorIO" )
 
 if depEnv["BUILD_DEPENDENCY_OIIO"] :
-	runCommand( "cd $OIIO_SRC_DIR && make clean && make THIRD_PARTY_TOOLS_HOME=$BUILD_DIR OCIO_PATH=$BUILD_DIR USE_OPENJPEG=0" )
+	runCommand(
+		"cd $OIIO_SRC_DIR && "
+		"make clean && "
+		"make "
+		"THIRD_PARTY_TOOLS_HOME=$BUILD_DIR "
+		"OCIO_PATH=$BUILD_DIR "
+		"USE_OPENJPEG=0 "
+		"MY_CMAKE_FLAGS='-DILMBASE_HOME=$BUILD_DIR -DILMBASE_CUSTOM=TRUE -DILMBASE_CUSTOM_LIBRARIES=\"Imath Half IlmThread Iex\" -DOPENEXR_HOME=$BUILD_DIR -DOPENEXR_CUSTOM=TRUE -DOPENEXR_CUSTOM_LIBRARY=IlmImf'"
+	)
 	if depEnv["PLATFORM"]=="darwin" :
 		runCommand( "cd $OIIO_SRC_DIR && cp -r dist/macosx/* $BUILD_DIR" )
 	else :
@@ -658,7 +652,13 @@ if depEnv["BUILD_DEPENDENCY_LLVM"] :
 	runCommand( "cd $LLVM_SRC_DIR && ./configure --prefix=$BUILD_DIR --enable-shared --enable-optimized --enable-assertions=no && env MACOSX_DEPLOYMENT_TARGET="" REQUIRES_RTTI=1 make VERBOSE=1 -j 4 && make install" )
 
 if depEnv["BUILD_DEPENDENCY_OSL"] :
-	runCommand( "cd $OSL_SRC_DIR && make nuke && make MY_CMAKE_FLAGS='-DENABLERTTI=1' ILMBASE_HOME=$BUILD_DIR OPENIMAGEIOHOME=$BUILD_DIR LLVM_DIRECTORY=$BUILD_DIR VERBOSE=1 USE_BOOST_WAVE=1" )
+	runCommand(
+		"cd $OSL_SRC_DIR && "
+		"make nuke && "
+		"make "
+		"MY_CMAKE_FLAGS='-DENABLERTTI=1 -DILMBASE_CUSTOM=TRUE -DILMBASE_HOME=$BUILD_DIR -DILMBASE_CUSTOM_LIBRARIES=\"Imath Half IlmThread Iex\"' "
+		"OPENIMAGEIOHOME=$BUILD_DIR LLVM_DIRECTORY=$BUILD_DIR VERBOSE=1 USE_BOOST_WAVE=1"
+	)
 	oslPlatform = "macosx" if depEnv["PLATFORM"]=="darwin" else "linux64"
 	runCommand( "cd $OSL_SRC_DIR && cp -r dist/" +  oslPlatform + "/include/OSL $BUILD_DIR/include" )
 	runCommand( "cd $OSL_SRC_DIR && cp -r dist/" +  oslPlatform + "/lib/libosl* $BUILD_DIR/lib" )

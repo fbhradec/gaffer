@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //  
-//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2013-2014, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -53,6 +53,15 @@ class Transform : public SceneElementProcessor
 		virtual ~Transform();
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Transform, TransformTypeId, SceneElementProcessor );
+		
+		enum Space
+		{
+			World,
+			Object
+		};
+		
+		Gaffer::IntPlug *spacePlug();
+		const Gaffer::IntPlug *spacePlug() const;
 		
 		Gaffer::TransformPlug *transformPlug();
 		const Gaffer::TransformPlug *transformPlug() const;

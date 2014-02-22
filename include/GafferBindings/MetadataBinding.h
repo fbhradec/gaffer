@@ -34,14 +34,14 @@
 //  
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERUIBINDINGS_METADATABINDING_H
-#define GAFFERUIBINDINGS_METADATABINDING_H
+#ifndef GAFFERBINDINGS_METADATABINDING_H
+#define GAFFERBINDINGS_METADATABINDING_H
 
-namespace GafferUIBindings
+namespace GafferBindings
 {
 
 void bindMetadata();
 
-} // namespace GafferUIBindings
+} // namespace GafferBindings
 
-#endif // GAFFERUIBINDINGS_METADATABINDING_H
+#endif // GAFFERBINDINGS_METADATABINDING_H

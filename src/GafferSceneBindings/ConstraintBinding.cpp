@@ -41,6 +41,7 @@
 #include "GafferScene/Constraint.h"
 #include "GafferScene/AimConstraint.h"
 #include "GafferScene/PointConstraint.h"
+#include "GafferScene/ParentConstraint.h"
 
 #include "GafferSceneBindings/ConstraintBinding.h"
 
@@ -66,5 +67,6 @@ void GafferSceneBindings::bindConstraint()
 	
 	GafferBindings::DependencyNodeClass<AimConstraint>();
 	GafferBindings::DependencyNodeClass<PointConstraint>();
+	GafferBindings::DependencyNodeClass<ParentConstraint>();
 	
 }

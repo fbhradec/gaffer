@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //  
 //  Copyright (c) 2012, John Haddon. All rights reserved.
-//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2013-2014, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -716,7 +716,9 @@ class ImageViewGadget : public GafferUI::Gadget
 			{
 				color = Color4f( .2f, .2f, .2f, 1.f );
 				glColor( color );
-				drawWindow( dataRasterBox, m_dataWindow.min, m_dataWindow.max, style );
+
+				const int newY = m_displayWindow.max.y - m_dataWindow.max.y;
+				drawWindow( dataRasterBox, V2f( m_dataWindow.min.x, newY ), V2f( m_dataWindow.max.x + 1, m_dataWindow.size().y + newY + 1 ), style );
 			}
 
 			/// Draw the selection window.
@@ -917,20 +919,21 @@ ImageView::ImageView( const std::string &name )
 	preprocessor->addChild( preprocessorInput );
 
 	ImageStatsPtr statsNode = new ImageStats( "__imageStats" );
-	addChild( statsNode ); /// \todo Store this in the preprocessor when we've disallowed the changing of it by subclasses
+	preprocessor->addChild( statsNode );
 	statsNode->inPlug()->setInput( preprocessorInput );
 	statsNode->channelsPlug()->setInput( preprocessorInput->channelNamesPlug() );
 
 	ImageSamplerPtr samplerNode = new ImageSampler( "__imageSampler" );
-	addChild( samplerNode ); /// \todo Store this in the preprocessor when we've disallowed the changing of it by subclasses
+	preprocessor->addChild( samplerNode );
 	samplerNode->imagePlug()->setInput( preprocessorInput );
 	/// \todo This gives us nearest neighbour filtering which is what we want,
 	// but only because the Sampler class doesn't do Box sampling properly.
 	samplerNode->filterPlug()->setValue( "Box" );
 	
 	ClampPtr clampNode = new Clamp();
-	preprocessor->setChild(  "__clipping", clampNode );
+	preprocessor->setChild(  "__clamp", clampNode );
 	clampNode->inPlug()->setInput( preprocessorInput );
+	clampNode->enabledPlug()->setValue( false );
 	clampNode->minClampToEnabledPlug()->setValue( true );
 	clampNode->maxClampToEnabledPlug()->setValue( true );
 	clampNode->minClampToPlug()->setValue( Color4f( 1.0f, 1.0f, 1.0f, 0.0f ) );
@@ -939,7 +942,6 @@ ImageView::ImageView( const std::string &name )
 	BoolPlugPtr clippingPlug = new BoolPlug( "clipping" );
 	clippingPlug->setFlags( Plug::AcceptsInputs, false );
 	addChild( clippingPlug );
-	clampNode->enabledPlug()->setInput( clippingPlug );
 
 	GradePtr gradeNode = new Grade;
 	preprocessor->setChild( "__grade", gradeNode );
@@ -952,9 +954,6 @@ ImageView::ImageView( const std::string &name )
 	PlugPtr gammaPlug = gradeNode->gammaPlug()->getChild( 0 )->createCounterpart( "gamma", Plug::In );
 	gammaPlug->setFlags( Plug::AcceptsInputs, false );
 	addChild( gammaPlug );
-	gradeNode->gammaPlug()->getChild( 0 )->setInput( gammaPlug );
-	gradeNode->gammaPlug()->getChild( 1 )->setInput( gammaPlug );
-	gradeNode->gammaPlug()->getChild( 2 )->setInput( gammaPlug );
 
 	addChild( new StringPlug( "displayTransform", Plug::In, "Default", Plug::Default & ~Plug::AcceptsInputs ) );
 
@@ -1053,22 +1052,32 @@ const Gaffer::StringPlug *ImageView::displayTransformPlug() const
 				
 GafferImage::ImageStats *ImageView::imageStatsNode()
 {
-	return getChild<ImageStats>( "__imageStats" );
+	return getPreprocessor<Node>()->getChild<ImageStats>( "__imageStats" );
 }
 
 const GafferImage::ImageStats *ImageView::imageStatsNode() const
 {
-	return getChild<ImageStats>( "__imageStats" );
+	return getPreprocessor<Node>()->getChild<ImageStats>( "__imageStats" );
 }
 
 GafferImage::ImageSampler *ImageView::imageSamplerNode()
 {
-	return getChild<ImageSampler>( "__imageSampler" );
+	return getPreprocessor<Node>()->getChild<ImageSampler>( "__imageSampler" );
 }
 
 const GafferImage::ImageSampler *ImageView::imageSamplerNode() const
 {
-	return getChild<ImageSampler>( "__imageSampler" );
+	return getPreprocessor<Node>()->getChild<ImageSampler>( "__imageSampler" );
+}
+
+GafferImage::Clamp *ImageView::clampNode()
+{
+	return getPreprocessor<Node>()->getChild<Clamp>( "__clamp" );
+}
+
+const GafferImage::Clamp *ImageView::clampNode() const
+{
+	return getPreprocessor<Node>()->getChild<Clamp>( "__clamp" );
 }
 
 GafferImage::Grade *ImageView::gradeNode()
@@ -1083,58 +1092,32 @@ const GafferImage::Grade *ImageView::gradeNode() const
 
 void ImageView::update()
 {
-	IECore::ConstImagePrimitivePtr image = 0;
-	{
-		Context::Scope context( getContext() );
-		ImagePlug *imagePlug = preprocessedInPlug<ImagePlug>();
-		if( !imagePlug )
-		{
-			throw IECore::Exception( "ImageView::preprocessedInPlug() is not an ImagePlug" );
-		}
-		image = imagePlug->image();
-	}
+	Context::Scope context( getContext() );
+	ConstImagePrimitivePtr image = preprocessedInPlug<ImagePlug>()->image();
 
-	if( image )
+	Detail::ImageViewGadgetPtr imageViewGadget = new Detail::ImageViewGadget( image, imageStatsNode(), imageSamplerNode(), m_channelToView, m_mousePos, m_sampleColor, m_minColor, m_maxColor, m_averageColor );
+	bool hadChild = viewportGadget()->getChild<Gadget>();
+	viewportGadget()->setChild( imageViewGadget );
+	if( !hadChild )
 	{
-		GafferImage::ImagePlug *imagePlug( inPlug<ImagePlug>() ? inPlug<ImagePlug>() : preprocessedInPlug<ImagePlug>() );
-		if( !imagePlug )
-		{
-			throw IECore::Exception("ImageView: Failed to find an input ImagePlug");
-		}
-
-		/// \todo We should be able to remove this when we remove the python binding
-		/// which takes an input plug and allows a derived class to call setPreprocessor itself.
-		imageStatsNode()->inPlug()->setInput( imagePlug );
-		imageStatsNode()->channelsPlug()->setInput( imagePlug->channelNamesPlug() );
-
-		Detail::ImageViewGadgetPtr imageViewGadget = new Detail::ImageViewGadget( image, imageStatsNode(), imageSamplerNode(), m_channelToView, m_mousePos, m_sampleColor, m_minColor, m_maxColor, m_averageColor );
-		bool hadChild = viewportGadget()->getChild<Gadget>();
-		viewportGadget()->setChild( imageViewGadget );
-		if( !hadChild )
-		{
-			viewportGadget()->frame( imageViewGadget->bound() );
-		}
-	}
-	else
-	{
-		viewportGadget()->setChild( 0 );	
+		viewportGadget()->frame( imageViewGadget->bound() );
 	}
 }
 
 void ImageView::plugSet( Gaffer::Plug *plug )
 {
-	if( plug == exposurePlug() )
+	if( plug == clippingPlug() )
 	{
-		Grade *g = gradeNode();
-		// we have to guard against g not existing until we've removed
-		// the deprecated constructor, after which no subclasses should
-		// be calling setPreprocessor().
-		/// \todo Remove guard when removing constructor
-		if( g )
-		{
-			const float m = pow( 2.0f, exposurePlug()->getValue() );
-			g->multiplyPlug()->setValue( Color3f( m ) );
-		}
+		clampNode()->enabledPlug()->setValue( clippingPlug()->getValue() );
+	}
+	else if( plug == exposurePlug() )
+	{
+		const float m = pow( 2.0f, exposurePlug()->getValue() );
+		gradeNode()->multiplyPlug()->setValue( Color3f( m ) );
+	}
+	else if( plug == gammaPlug() )
+	{
+		gradeNode()->gammaPlug()->setValue( Color3f( gammaPlug()->getValue() ) );
 	}
 	else if( plug == displayTransformPlug() )
 	{
@@ -1144,14 +1127,6 @@ void ImageView::plugSet( Gaffer::Plug *plug )
 
 void ImageView::insertDisplayTransform()
 {
-	Grade *grade = gradeNode();
-	if( !grade )
-	{
-		/// \todo Remove this guard when we know no
-		/// subclasses are calling setPreprocessor.
-		return;
-	}
-	
 	const std::string name = displayTransformPlug()->getValue();
 	
 	ImageProcessorPtr displayTransform;
@@ -1177,12 +1152,12 @@ void ImageView::insertDisplayTransform()
 	
 	if( displayTransform )
 	{
-		displayTransform->inPlug()->setInput( grade->outPlug() );
+		displayTransform->inPlug()->setInput( gradeNode()->outPlug() );
 		getPreprocessor<Node>()->getChild<Plug>( "out" )->setInput( displayTransform->outPlug() );
 	}
 	else
 	{
-		getPreprocessor<Node>()->getChild<Plug>( "out" )->setInput( grade->outPlug() );
+		getPreprocessor<Node>()->getChild<Plug>( "out" )->setInput( gradeNode()->outPlug() );
 	}
 }		
 

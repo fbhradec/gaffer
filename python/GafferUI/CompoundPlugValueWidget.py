@@ -141,6 +141,9 @@ class CompoundPlugValueWidget( GafferUI.PlugValueWidget ) :
 				continue
 			if isinstance( w, GafferUI.PlugValueWidget ) :
 				w.setReadOnly( readOnly )
+			elif isinstance(  w, GafferUI.PlugWidget ) :
+				w.labelPlugValueWidget().setReadOnly( readOnly )
+				w.plugValueWidget().setReadOnly( readOnly )
 			else :
 				w.plugValueWidget().setReadOnly( readOnly )
 
@@ -189,6 +192,8 @@ class CompoundPlugValueWidget( GafferUI.PlugValueWidget ) :
 	
 		return self.getPlug().children()
 	
+	## \todo Mapping plugName->widget makes us vulnerable to name changes.
+	# See similar comments in StandardNodeUI and StandardNodeToolbar.
 	def __updateChildPlugUIs( self ) :
 	
 		# ditch child uis we don't need any more
@@ -209,13 +214,16 @@ class CompoundPlugValueWidget( GafferUI.PlugValueWidget ) :
 				if widget is not None :
 					if isinstance( widget, GafferUI.PlugValueWidget ) :
 						widget.setReadOnly( self.getReadOnly() )
+					elif isinstance(  widget, GafferUI.PlugWidget ) :
+						widget.labelPlugValueWidget().setReadOnly( self.getReadOnly() )
+						widget.plugValueWidget().setReadOnly( self.getReadOnly() )
 					else :
 						widget.plugValueWidget().setReadOnly( self.getReadOnly() )
 			else :
 				widget = self.__childPlugUIs[childPlug.getName()]
 			if widget is not None :	
 				orderedChildUIs.append( widget )
-				if GafferUI.Metadata.plugValue( childPlug, "divider" ) :
+				if Gaffer.Metadata.plugValue( childPlug, "divider" ) :
 					orderedChildUIs.append( GafferUI.Divider() )
 		
 		# add header and footer

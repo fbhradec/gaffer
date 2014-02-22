@@ -82,6 +82,7 @@
 #include "GafferBindings/BehaviourBinding.h"
 #include "GafferBindings/ArrayPlugBinding.h"
 #include "GafferBindings/Serialisation.h"
+#include "GafferBindings/MetadataBinding.h"
 
 using namespace boost::python;
 using namespace Gaffer;
@@ -131,6 +132,7 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindReference();
 	bindArrayPlug();
 	bindSerialisation();
+	bindMetadata();
 			
 	NodeClass<Backdrop>();
 
@@ -147,4 +149,10 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	
 	bindBehaviours();
 
+	// Various parts of gaffer create new threads from C++, and those
+	// threads may call back into Python via wrapped classes at any time.
+	// We must prepare Python for this by calling PyEval_InitThreads().
+
+	PyEval_InitThreads();
+	
 }

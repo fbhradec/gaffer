@@ -107,6 +107,8 @@ enum TypeId
 	UnionFilterTypeId = 110562,
 	SceneSwitchTypeId = 110563,
 	ShaderSwitchTypeId = 110564,
+	ParentConstraintTypeId = 110565,
+	ParentTypeId = 110566,
 	
 	LastTypeId = 110650
 };
