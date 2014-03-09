@@ -81,10 +81,13 @@ class NodeGraph( GafferUI.EditorWidget ) :
 	
 		return self.graphGadgetWidget().getViewportGadget().getChild()
 
-	## Frames the specified nodes in the viewport.
-	def frame( self, nodes ) :
+	## Frames the specified nodes in the viewport. If extend is True
+	# then the current framing will be extended to include the specified
+	# nodes, if False then the framing will be reset to frame only the
+	# nodes specified.
+	def frame( self, nodes, extend=False ) :
 	
-		self.__frame( nodes )
+		self.__frame( nodes, extend )
 	
 	def getTitle( self ) :
 		
@@ -300,7 +303,7 @@ class NodeGraph( GafferUI.EditorWidget ) :
 	
 		return False
 		
-	def __frame( self, nodes ) :
+	def __frame( self, nodes, extend = False ) :
 	
 		graphGadget = self.graphGadget()
 		
@@ -322,18 +325,28 @@ class NodeGraph( GafferUI.EditorWidget ) :
 			
 		# pad it a little bit so
 		# it sits nicer in the frame
-		bound.min -= IECore.V3f( 5, 5, 0 )
-		bound.max += IECore.V3f( 5, 5, 0 )
-				
-		# now adjust the bounds so that we don't zoom in further than we want to
-		boundSize = bound.size()
-		widgetSize = IECore.V3f( self._qtWidget().width(), self._qtWidget().height(), 0 )
-		pixelsPerUnit = widgetSize / boundSize
-		adjustedPixelsPerUnit = min( pixelsPerUnit.x, pixelsPerUnit.y, 10 )
-		newBoundSize = widgetSize / adjustedPixelsPerUnit
-		boundCenter = bound.center()
-		bound.min = boundCenter - newBoundSize / 2.0
-		bound.max = boundCenter + newBoundSize / 2.0
+		bound.min -= IECore.V3f( 1, 1, 0 )
+		bound.max += IECore.V3f( 1, 1, 0 )
+		
+		if extend :
+			# we're extending the existing framing, which we assume the
+			# user was happy with other than it not showing the nodes in question.
+			# so we just take the union of the existing frame and the one for the nodes.
+			cb = self.__currentFrame()
+			bound.extendBy( IECore.Box3f( IECore.V3f( cb.min.x, cb.min.y, 0 ), IECore.V3f( cb.max.x, cb.max.y, 0 ) ) )
+		else :
+			# we're reframing from scratch, so the frame for the nodes is all we need.
+			# we do however want to make sure that we don't zoom in too far if the node
+			# bounds are small, as having a single node filling the screen is of little use -
+			# it's better to see some context around it.
+			boundSize = bound.size()
+			widgetSize = IECore.V3f( self._qtWidget().width(), self._qtWidget().height(), 0 )
+			pixelsPerUnit = widgetSize / boundSize
+			adjustedPixelsPerUnit = min( pixelsPerUnit.x, pixelsPerUnit.y, 10 )
+			newBoundSize = widgetSize / adjustedPixelsPerUnit
+			boundCenter = bound.center()
+			bound.min = boundCenter - newBoundSize / 2.0
+			bound.max = boundCenter + newBoundSize / 2.0
 			
 		self.__gadgetWidget.getViewportGadget().frame( bound )
 	
@@ -371,6 +384,16 @@ class NodeGraph( GafferUI.EditorWidget ) :
 			return [ x for x in dragData if isinstance( x, Gaffer.Node ) ]
 			
 		return []
+	
+	def __currentFrame( self ) :
+	
+		camera = self.graphGadgetWidget().getViewportGadget().getCamera()
+		frame = camera.parameters()["screenWindow"].value
+		translation = camera.getTransform().matrix.translation()
+		frame.min += IECore.V2f( translation.x, translation.y )
+		frame.max += IECore.V2f( translation.x, translation.y )
+	
+		return frame
 		
 	def __rootChanged( self, graphGadget, previousRoot ) :
 	
@@ -387,13 +410,7 @@ class NodeGraph( GafferUI.EditorWidget ) :
 			
 			return result
 		
-		camera = self.graphGadgetWidget().getViewportGadget().getCamera()
-		frame = camera.parameters()["screenWindow"].value
-		translation = camera.getTransform().matrix.translation()
-		frame.min += IECore.V2f( translation.x, translation.y )
-		frame.max += IECore.V2f( translation.x, translation.y )
-		
-		__framePlug( previousRoot, True ).setValue( frame )
+		__framePlug( previousRoot, True ).setValue( self.__currentFrame() )
 		
 		newFramePlug = __framePlug( self.graphGadget().getRoot() )
 		if newFramePlug is not None :

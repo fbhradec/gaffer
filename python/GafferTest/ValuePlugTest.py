@@ -156,6 +156,82 @@ class ValuePlugTest( GafferTest.TestCase ) :
 
 		self.assertEqual( len( cs ), 1 )
 	
+	def testCopyPasteDoesntRetainComputedValues( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["add1"] = GafferTest.AddNode()
+		s["add2"] = GafferTest.AddNode()
+		
+		s["add1"]["op1"].setValue( 2 )
+		s["add1"]["op2"].setValue( 3 )
+		s["add2"]["op1"].setInput( s["add1"]["sum"] )
+		s["add2"]["op2"].setValue( 0 )
+		
+		self.assertEqual( s["add2"]["sum"].getValue(), 5 )
+		
+		ss = s.serialise( filter = Gaffer.StandardSet( [ s["add2"] ] ) )
+		
+		s = Gaffer.ScriptNode()
+		s.execute( ss )
+		
+		self.assertTrue( s["add2"]["op1"].getInput() is None )
+		self.assertEqual( s["add2"]["op1"].getValue(), 0 )
+		self.assertEqual( s["add2"]["sum"].getValue(), 0 )
+	
+	def testSerialisationOmitsDefaultValues( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["n"] = GafferTest.AddNode()
+		self.assertEqual( s["n"]["op1"].getValue(), s["n"]["op1"].defaultValue() )
+		self.assertEqual( s["n"]["op2"].getValue(), s["n"]["op2"].defaultValue() )
+		
+		self.assertFalse( "setValue" in s.serialise() )
+		
+		s["n"]["op1"].setValue( 10 )
+		
+		self.assertTrue( "[\"op1\"].setValue" in s.serialise() )
+
+	def testFloatPlugOmitsDefaultValues( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["n"] = Gaffer.Node()
+		s["n"]["f"] = Gaffer.FloatPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		
+		self.assertFalse( "setValue" in s.serialise() )
+		
+		s["n"]["f"].setValue( 10.1 )
+		
+		self.assertTrue( "[\"f\"].setValue" in s.serialise() )
+
+	def testBoolPlugOmitsDefaultValues( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["n"] = Gaffer.Node()
+		s["n"]["f"] = Gaffer.BoolPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		
+		self.assertFalse( "setValue" in s.serialise() )
+		
+		s["n"]["f"].setValue( True )
+		
+		self.assertTrue( "[\"f\"].setValue" in s.serialise() )
+
+	def testBoolPlugOmitsDefaultValuesWhenDefaultIsTrue( self ) :
+	
+		s = Gaffer.ScriptNode()
+		
+		s["n"] = Gaffer.Node()
+		s["n"]["f"] = Gaffer.BoolPlug( defaultValue = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		
+		self.assertFalse( "setValue" in s.serialise() )
+		
+		s["n"]["f"].setValue( False )
+		
+		self.assertTrue( "[\"f\"].setValue" in s.serialise() )
+		
 	def setUp( self ) :
 	
 		self.__originalCacheMemoryLimit = Gaffer.ValuePlug.getCacheMemoryLimit()

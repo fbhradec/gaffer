@@ -82,17 +82,11 @@ class MessageWidget( GafferUI.Widget ) :
 				GafferUI.Spacer( IECore.V2i( 10 ) )
 			
 			self.__text = GafferUI.MultiLineTextWidget( editable=False )
-			self.__textChangedConnection = self.__text.textChangedSignal().connect( Gaffer.WeakMethod( self.__textChanged ) )
 	
+		self.__messageLevel = IECore.Msg.Level.Info
 		self.__messageHandler = _MessageHandler( self )
+		self.__messages = []
 		self.__processingEvents = False
-	
-	## Returns the MultiLineTextWidget used internally for displaying the messages.
-	# This can be manipulated directly to clear the output or to interleave the messages
-	# with text from another source.
-	def textWidget( self ) :
-	
-		return self.__text
 	
 	## Returns a MessageHandler which will output to this Widget.
 	## \threading It is safe to use the handler on threads other than the main thread.
@@ -109,68 +103,58 @@ class MessageWidget( GafferUI.Widget ) :
 	
 		return self.__messageHandler._forwarder
 	
+	## Sets an IECore.MessageHandler.Level specifying which
+	# type of messages will be visible to the user - levels above
+	# that specified will be invisible. Note that the invisible
+	# messages are still stored, so they can be made visible at a later
+	# time by a suitable call to setMessageLevel(). This can be useful
+	# for revealing debug messages only after a warning or error has
+	# alerted the user to a problem.
+	def setMessageLevel( self, messageLevel ) :
+	
+		assert( isinstance( messageLevel, IECore.MessageHandler.Level ) )
+		
+		if messageLevel == self.__messageLevel :
+			return
+		
+		self.__messageLevel = messageLevel
+		self.__text.setText( "" )
+		for message in self.__messages :
+			self.__appendMessageToText( *message )
+				
+	def getMessageLevel( self ) :
+	
+		return self.__messageLevel
+	
 	## May be called to append a message manually.
 	# \note Because these are not real messages, they are not
 	# passed to the forwardingMessageHandler().
 	# \deprecated.
 	def appendMessage( self, level, context, message ) :
 	
-		# make sure relevant button is shown
 		self.__levelButtons[level].setVisible( True )
-		
-		# append message text
-		formatted = "<h1 class='%s'>%s : %s </h1><span class='message'>%s</span><br>" % ( 
-			IECore.Msg.levelAsString( level ),
-			IECore.Msg.levelAsString( level ),
-			context,
-			message.replace( "\n", "<br>" )
-		)
-		
-		with Gaffer.BlockedConnection( self.__textChangedConnection ) :
-			self.__text._qtWidget().appendHtml( formatted )
-
-		# Update the gui so messages are output as they occur, rather than all getting queued
-		# up till the end. We have to be careful to avoid recursion when doing this - another
-		# thread may be queuing up loads of messages using self.messageHandler(), and those
-		# will get processed by processEvents(), resulting in a recursive call to appendMessage().
-		# If the other thread supplies messages fast enough and we don't guard against recursion
-		# then we can end up exceeding Python's stack limit very quickly.
-		if not self.__processingEvents :
-			try :
-				self.__processingEvents = True
-				QtGui.QApplication.instance().processEvents( QtCore.QEventLoop.ExcludeUserInputEvents )
-			finally :
-				self.__processingEvents = False
-	
-	## May be called to append a message describing an exception. By default the currently handled exception is displayed
-	# but another exception can be displayed by specifying exceptionInfo in the same format as returned by sys.exc_info().
-	# \note Because these are not real messages, they are not
-	# passed to the forwardingMessageHandler().
-	# \deprecated.
-	def appendException( self, exceptionInfo=None ) :
-	
-		if exceptionInfo is None :
-			exceptionInfo = sys.exc_info()
-	
-		if exceptionInfo[0] is None :
-			return
-
-		self.appendMessage(
-			IECore.Msg.Level.Error,
-			str( exceptionInfo[1] ),
-			"".join( traceback.format_exception( *exceptionInfo ) )
-		)
+		self.__messages.append( ( level, context, message ) )
+		if self.__appendMessageToText( level, context, message ) :
+				
+			# Update the gui so messages are output as they occur, rather than all getting queued
+			# up till the end. We have to be careful to avoid recursion when doing this - another
+			# thread may be queuing up loads of messages using self.messageHandler(), and those
+			# will get processed by processEvents(), resulting in a recursive call to appendMessage().
+			# If the other thread supplies messages fast enough and we don't guard against recursion
+			# then we can end up exceeding Python's stack limit very quickly.
+			if not self.__processingEvents :
+				try :
+					self.__processingEvents = True
+					QtGui.QApplication.instance().processEvents( QtCore.QEventLoop.ExcludeUserInputEvents )
+				finally :
+					self.__processingEvents = False
 	
 	## Returns the number of messages being displayed, optionally
 	# restricted to the specified level.
 	def messageCount( self, level = None ) :
 	
-		# rather than count the number of times we receive a call to
-		# appendMessage(), we instead search for messages that are being
-		# displayed in the text. this is necessary because we allow direct
-		# access to textWidget(), so anyone can change the content at any time.
 		if level is not None :
-			return len( re.findall( "^" + IECore.Msg.levelAsString( level ) + " : ", self.__text.getText(), re.MULTILINE ) )
+			return reduce( lambda x, y : x + ( 1 if y[0] == level else 0 ), self.__messages, 0 )
 		else :
 			return sum(
 				[
@@ -180,25 +164,42 @@ class MessageWidget( GafferUI.Widget ) :
 					self.messageCount( IECore.Msg.Level.Error ),
 				]
 			)
+	
+	## Clears all the displayed messages.
+	def clear( self ) :
+	
+		self.__text.setText( "" )
+		self.__messages = []
+		for button in self.__levelButtons.values() :
+			button.setVisible( False )
 			
 	def __buttonClicked( self, button ) :
 		
-		## \todo Decide how we allow this to be achieved directly using the public
-		# interface of MultiLineTextWidget.
+		# make sure messages of this level are being displayed
+		if button.__level > self.__messageLevel :
+			self.setMessageLevel( button.__level )
+		
+		# scroll to the next one
 		toFind = IECore.Msg.levelAsString( button.__level ) + " : "
 		if not self.__text._qtWidget().find( toFind ) :
 			self.__text._qtWidget().moveCursor( QtGui.QTextCursor.Start )
 			self.__text._qtWidget().find( toFind )
 
-	def __textChanged( self, widget ) :
+	def __appendMessageToText( self, level, context, message ) :
 	
-		assert( widget is self.__text )
+		if level > self.__messageLevel :
+			return False
+	
+		formatted = "<h1 class='%s'>%s : %s </h1><span class='message'>%s</span><br>" % ( 
+			IECore.Msg.levelAsString( level ),
+			IECore.Msg.levelAsString( level ),
+			context,
+			message.replace( "\n", "<br>" )
+		)
+							
+		self.__text.appendHTML( formatted )
 		
-		# if someone else has changed the text behind our backs, then we need to
-		# update our button visibility based on the contents.
-		t = self.__text.getText()
-		for level, button in self.__levelButtons.items() :
-			button.setVisible( IECore.Msg.levelAsString( button.__level ) + " : " in t )
+		return True
 
 class _MessageHandler( IECore.MessageHandler ) :
 
