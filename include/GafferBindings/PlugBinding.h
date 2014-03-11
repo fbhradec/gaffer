@@ -58,12 +58,33 @@ class PlugWrapper : public GraphComponentWrapper<WrappedType>
 		{
 		}		
 
+		virtual bool isInstanceOf( IECore::TypeId typeId ) const
+		{
+			// Optimise for common queries we know should fail.
+			// The standard wrapper implementation of isInstanceOf()
+			// would have to enter Python only to discover this inevitable
+			// failure as it doesn't have knowledge of the relationships
+			// among types. Entering Python is incredibly costly for such
+			// a simple operation, and we perform these operations often,
+			// so this optimisation is well worth it.
+			if(
+				typeId == (IECore::TypeId)Gaffer::ScriptNodeTypeId ||
+				typeId == (IECore::TypeId)Gaffer::NodeTypeId ||
+				typeId == (IECore::TypeId)Gaffer::DependencyNodeTypeId ||
+				typeId == (IECore::TypeId)Gaffer::ComputeNodeTypeId
+			)
+			{
+				return false;
+			}
+			return GraphComponentWrapper<WrappedType>::isInstanceOf( typeId );
+		}
+
 		virtual bool acceptsInput( const Gaffer::Plug *input ) const
 		{
-			IECorePython::ScopedGILLock gilLock;
-			if( PyObject_HasAttrString( GraphComponentWrapper<WrappedType>::m_pyObject, "acceptsInput" ) )
+			if( this->isSubclassed() )
 			{
-				boost::python::override f = this->get_override( "acceptsInput" );
+				IECorePython::ScopedGILLock gilLock;
+				boost::python::object f = this->methodOverride( "acceptsInput" );
 				if( f )
 				{
 					return f( Gaffer::PlugPtr( const_cast<Gaffer::Plug *>( input ) ) );
@@ -74,10 +95,10 @@ class PlugWrapper : public GraphComponentWrapper<WrappedType>
 	
 		virtual void setInput( Gaffer::PlugPtr input )
 		{
-			IECorePython::ScopedGILLock gilLock;
-			if( PyObject_HasAttrString( GraphComponentWrapper<WrappedType>::m_pyObject, "setInput" ) )
+			if( this->isSubclassed() )
 			{
-				boost::python::override f = this->get_override( "setInput" );
+				IECorePython::ScopedGILLock gilLock;
+				boost::python::object f = this->methodOverride( "setInput" );
 				if( f )
 				{
 					f( IECore::constPointerCast<Gaffer::Plug>( input ) );
@@ -89,13 +110,14 @@ class PlugWrapper : public GraphComponentWrapper<WrappedType>
 
 		virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Gaffer::Plug::Direction direction ) const
 		{
-			IECorePython::ScopedGILLock gilLock;
-			if( PyObject_HasAttrString( GraphComponentWrapper<WrappedType>::m_pyObject, "createCounterpart" ) )
+			if( this->isSubclassed() )
 			{
-				boost::python::override f = this->get_override( "createCounterpart" );
+				IECorePython::ScopedGILLock gilLock;
+				boost::python::object f = this->methodOverride( "createCounterpart" );
 				if( f )
 				{
-					return f( name, direction );
+					Gaffer::PlugPtr result = boost::python::extract<Gaffer::PlugPtr>( f( name, direction ) );
+					return result;
 				}
 			}
 			return WrappedType::createCounterpart( name, direction );
