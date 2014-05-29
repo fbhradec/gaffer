@@ -298,7 +298,7 @@ options.Add(
 options.Add(
 	"CORTEX_SRC_DIR",
 	"The location of the boost source to be used if BUILD_DEPENDENCY_CORTEX is specified.",
-	"$DEPENDENCIES_SRC_DIR/cortex-8.0.0",
+	"$DEPENDENCIES_SRC_DIR/cortex-8.4.0",
 )
 
 options.Add(
@@ -455,6 +455,12 @@ options.Add(
 	"",
 )
 
+options.Add(
+	"OSL_LIB_SUFFIX",
+	"The suffix used when locating the OpenShadingLanguage libraries.",
+	"",
+)
+
 # general variables
 
 options.Add(
@@ -487,7 +493,7 @@ env = Environment(
 	options = options,
 
 	GAFFER_MAJOR_VERSION = "0",
-	GAFFER_MINOR_VERSION = "92",
+	GAFFER_MINOR_VERSION = "95",
 	GAFFER_PATCH_VERSION = "0",
 
 )
@@ -554,6 +560,9 @@ depEnv["ENV"].update(
 if depEnv["PLATFORM"]=="darwin" :
 	depEnv["ENV"]["DYLD_LIBRARY_PATH"] = depEnv.subst( "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/ImageIO.framework/Resources:$BUILD_DIR/lib" )
 	depEnv["ENV"]["DYLD_FALLBACK_FRAMEWORK_PATH"] = depEnv.subst( "$BUILD_DIR/lib" )
+	# we add this to the main env because we need it for building gaffer,
+	# but we don't need it for our dependencies.
+	del depEnv["ENV"]["MACOSX_DEPLOYMENT_TARGET"]
 else :
 	depEnv["ENV"]["LD_LIBRARY_PATH"] = depEnv.subst( "$BUILD_DIR/lib" )
 
@@ -647,9 +656,8 @@ if depEnv["BUILD_DEPENDENCY_OIIO"] :
 		runCommand( "cd $OIIO_SRC_DIR && cp -r dist/linux64/* $BUILD_DIR" )
 
 if depEnv["BUILD_DEPENDENCY_LLVM"] :
-	# removing MACOSX_DEPLOYMENT_TARGET because it causes rpath link error
 	# need to put matching clang src code in $LLVM_SRC_DIR/tools/clang
-	runCommand( "cd $LLVM_SRC_DIR && ./configure --prefix=$BUILD_DIR --enable-shared --enable-optimized --enable-assertions=no && env MACOSX_DEPLOYMENT_TARGET="" REQUIRES_RTTI=1 make VERBOSE=1 -j 4 && make install" )
+	runCommand( "cd $LLVM_SRC_DIR && ./configure --prefix=$BUILD_DIR --enable-shared --enable-optimized --enable-assertions=no && env REQUIRES_RTTI=1 make VERBOSE=1 -j 4 && make install" )
 
 if depEnv["BUILD_DEPENDENCY_OSL"] :
 	runCommand(
@@ -729,9 +737,6 @@ if depEnv["BUILD_DEPENDENCY_PYQT"] :
 	runCommand( "cd $SIP_SRC_DIR && python configure.py -d $BUILD_DIR/python && make clean && make && make install" )
 	runCommand( "cd $PYQT_SRC_DIR && python configure.py -d $BUILD_DIR/python  --confirm-license && make && make install" )
 
-# having MACOS_DEPLOYMENT_TARGET set breaks the pyside build for some reason
-if "MACOSX_DEPLOYMENT_TARGET" in depEnv["ENV"] :
-	del depEnv["ENV"]["MACOSX_DEPLOYMENT_TARGET"]
 if depEnv["BUILD_DEPENDENCY_PYSIDE"] :
 	if depEnv["PLATFORM"]=="darwin" :
 		runCommand(
@@ -851,6 +856,18 @@ basePythonEnv.Append(
 
 if basePythonEnv["PLATFORM"]=="darwin" :
 	basePythonEnv.Append( SHLINKFLAGS = "-single_module" )
+
+###############################################################################################
+# An environment for running commands with access to the applications we've built
+###############################################################################################
+
+commandEnv = env.Clone()
+commandEnv["ENV"]["PATH"] = commandEnv.subst( "$BUILD_DIR/bin:" ) + commandEnv["ENV"]["PATH"]
+
+if commandEnv["PLATFORM"]=="darwin" :
+	commandEnv["ENV"]["DYLD_LIBRARY_PATH"] = commandEnv.subst( "$BUILD_DIR/lib" )
+else :
+	commandEnv["ENV"]["LD_LIBRARY_PATH"] = commandEnv.subst( "$BUILD_DIR/lib" )
 
 ###############################################################################################
 # Definitions for the libraries we wish to build
@@ -985,7 +1002,7 @@ libraries = {
 	"GafferOSL" : {
 		"envAppends" : {
 			"CPPPATH" : [ "$BUILD_DIR/include/OSL" ],
-			"LIBS" : [ "Gaffer", "GafferScene", "GafferImage", "OpenImageIO$OIIO_LIB_SUFFIX", "oslquery", "oslexec" ],
+			"LIBS" : [ "Gaffer", "GafferScene", "GafferImage", "OpenImageIO$OIIO_LIB_SUFFIX", "oslquery$OSL_LIB_SUFFIX", "oslexec$OSL_LIB_SUFFIX" ],
 		},
 		"pythonEnvAppends" : {
 			"CPPPATH" : [ "$BUILD_DIR/include/OSL" ],
@@ -1196,7 +1213,7 @@ for libraryName, libraryDef in libraries.items() :
 	for oslShader in libraryDef.get( "oslShaders", [] ) :
 		oslShaderInstall = env.InstallAs( "$BUILD_DIR/" + oslShader, oslShader )
 		env.Alias( "build", oslShader )
-		compiledFile = depEnv.Command( os.path.splitext( str( oslShaderInstall[0] ) )[0] + ".oso", oslShader, "oslc -o $TARGET $SOURCE" )
+		compiledFile = commandEnv.Command( os.path.splitext( str( oslShaderInstall[0] ) )[0] + ".oso", oslShader, "oslc -I./shaders -o $TARGET $SOURCE" )
 		env.Depends( compiledFile, "oslHeaders" )
 		env.Alias( "build", compiledFile )
 	

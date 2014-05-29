@@ -1,6 +1,6 @@
 ##########################################################################
 #  
-#  Copyright (c) 2011, John Haddon. All rights reserved.
+#  Copyright (c) 2014, John Haddon. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -34,4 +34,47 @@
 #  
 ##########################################################################
 
-import SLOMenu
+import Gaffer
+import GafferUI
+
+import GafferScene
+
+##########################################################################
+# Metadata
+##########################################################################
+
+Gaffer.Metadata.registerNodeDescription(
+
+GafferScene.Duplicate,
+
+"""Duplicates elements of a scene.""",
+
+"target",
+"The element to be duplicated.",
+
+"copies",
+"""The number of copies to be made.""",
+
+"transform",
+"""The transform to be applied to the copies.""",
+
+)
+
+##########################################################################
+# Widgets and nodules
+##########################################################################
+
+# we hide the parent (which comes from the base class) because the value for it is
+# computed from the target plug automatically.
+GafferUI.PlugValueWidget.registerCreator( GafferScene.Duplicate.staticTypeId(), "parent", None )
+
+GafferUI.PlugValueWidget.registerCreator(
+	GafferScene.Duplicate.staticTypeId(),
+	"target",
+	lambda plug : GafferUI.PathPlugValueWidget(
+		plug,
+		path = GafferScene.ScenePath( plug.node()["in"], plug.node().scriptNode().context(), "/" ),
+	),
+)
+
+GafferUI.PlugValueWidget.registerCreator( GafferScene.Duplicate.staticTypeId(), "transform", GafferUI.TransformPlugValueWidget, collapsed=None )

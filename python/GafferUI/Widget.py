@@ -515,6 +515,20 @@ class Widget( object ) :
 		if self._parentChangedSignal is None :
 			self._parentChangedSignal = GafferUI.WidgetSignal()
 		return self._parentChangedSignal
+	
+	## A signal emitted whenever the keyboard focus moves from one Widget
+	# to another. The signature for slots is ( oldWidget, newWidget ).
+	## \todo Add methods for setting and querying the focus. TextWidget
+	# and MultiLineTextWidget provide their own methods for this but these
+	# don't apply generally so they should be replaced. Currently I'm favouring
+	# simple setFocus( widget ) and getFocus() class methods on the Widget class - 
+	# since there can be only one focussed widget at a time it doesn't really make
+	# sense for it to be a property of each widget.
+	@classmethod
+	def focusChangedSignal( cls ) :
+	
+		cls.__ensureFocusChangedConnection()
+		return cls.__focusChangedSignal
 		
 	## Returns the tooltip to be displayed. This may be overriden
 	# by derived classes to provide sensible default behaviour, but
@@ -730,6 +744,28 @@ class Widget( object ) :
 		else :
 			self._qtWidget().setMouseTracking( True )
 
+
+	__focusChangedSignal = Gaffer.Signal2()
+	__focusChangedConnected = False
+	@classmethod
+	def __ensureFocusChangedConnection( cls ) :
+	
+		if not cls.__focusChangedConnected :
+			QtGui.QApplication.instance().focusChanged.connect( cls.__focusChanged )
+			cls.__focusChangedConnected = True
+	
+	@classmethod
+	def __focusChanged( cls, oldWidget, newWidget ) :
+	
+		cls.__focusChangedSignal( cls._owner( oldWidget ), cls._owner( newWidget ) )
+
+		if cls.__focusChangedSignal.empty() :
+			# if nothing's connected to the signal currently, then disconnect, because
+			# we don't want the overhead of dealing with focus changes when no-one is
+			# interested.
+			QtGui.QApplication.instance().focusChanged.disconnect( cls.__focusChanged )
+			cls.__focusChangedConnected = False
+		
 	def _repolish( self, qtWidget=None ) :
 	
 		if qtWidget is None :
@@ -2033,27 +2069,38 @@ class _EventFilter( QtCore.QObject ) :
 		
 	def __endDrag( self, qObject, qEvent ) :
 		
+		# Reset self.__dragDropEvent to None before emitting
+		# dropSignal or dragEndSignal, because slots connected
+		# to those signals could do anything at all - including
+		# popping up modal dialogues which then want to start new
+		# drags.
+		
+		dragDropEvent = self.__dragDropEvent
+		self.__dragDropEvent = None
+		
+		# Emit dropSignal() on the destination.
+		
 		cursorPos = IECore.V2i( qEvent.globalPos().x(), qEvent.globalPos().y() )
 
-		dst = self.__dragDropEvent.destinationWidget
+		dst = dragDropEvent.destinationWidget
 		if dst is not None and dst._dropSignal :
 		
-			self.__dragDropEvent.line = self.__positionToLine( cursorPos - dst.bound().min )
-			self.__dragDropEvent.dropResult = dst._dropSignal( dst, self.__dragDropEvent )
+			dragDropEvent.line = self.__positionToLine( cursorPos - dst.bound().min )
+			dragDropEvent.dropResult = dst._dropSignal( dst, dragDropEvent )
 		
-		src = self.__dragDropEvent.sourceWidget
+		# Emit dragEndSignal() on source.
+		
+		src = dragDropEvent.sourceWidget
 		if src._dragEndSignal :
 			
-			self.__dragDropEvent.line = self.__positionToLine( cursorPos - src.bound().min )
+			dragDropEvent.line = self.__positionToLine( cursorPos - src.bound().min )
 			
 			src._dragEndSignal(
 				src,
-				self.__dragDropEvent
+				dragDropEvent
 			)
-			
-		self.__dragDropEvent = None
-			
-		return True	
+		
+		return True
 
 	def __positionToLine( self, pos ) :
 	

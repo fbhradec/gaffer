@@ -178,6 +178,7 @@ from PathPlugValueWidget import PathPlugValueWidget
 from VectorDataPlugValueWidget import VectorDataPlugValueWidget
 from PathVectorDataPlugValueWidget import PathVectorDataPlugValueWidget
 from PlugWidget import PlugWidget
+from PlugLayout import PlugLayout
 from EditorWidget import EditorWidget
 from ScriptEditor import ScriptEditor
 from GadgetWidget import GadgetWidget
@@ -195,6 +196,7 @@ import LayoutMenu
 import EditMenu
 from Frame import Frame
 from CompoundNumericPlugValueWidget import CompoundNumericPlugValueWidget
+from BoxPlugValueWidget import BoxPlugValueWidget
 from NodeUI import NodeUI
 from StandardNodeUI import StandardNodeUI
 from NodeToolbar import NodeToolbar
@@ -227,6 +229,7 @@ from NodeFinderDialogue import NodeFinderDialogue
 from ConnectionPlugValueWidget import ConnectionPlugValueWidget
 import View3DToolbar
 from Playback import Playback
+from UIEditor import UIEditor
 
 # then stuff specific to parameterised objects
 

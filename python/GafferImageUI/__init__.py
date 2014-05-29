@@ -43,4 +43,5 @@ from FilterPlugValueWidget import FilterPlugValueWidget
 from ChannelMaskPlugValueWidget import ChannelMaskPlugValueWidget
 
 import ImageViewToolbar
+import ImageTransformUI
 import NodeUIs # Put this at the bottom or we get ordering issues!

@@ -44,6 +44,7 @@
 
 #include "Gaffer/ValuePlug.h"
 #include "Gaffer/Node.h"
+#include "Gaffer/Reference.h"
 
 #include "GafferBindings/ValuePlugBinding.h"
 #include "GafferBindings/PlugBinding.h"
@@ -124,34 +125,74 @@ std::string ValuePlugSerialiser::constructor( const Gaffer::GraphComponent *grap
 
 std::string ValuePlugSerialiser::postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
 {
-	const Plug *plug = static_cast<const Plug *>( graphComponent );
-	// output a setValue() call if the plug is serialisable and has no input.
-	// we don't do this for non-leaf plugs, since some children may have connections
-	// which make setting the value inappropriate.
-	if( plug->direction() == Plug::In && plug->getFlags( Plug::Serialisable ) && !plug->children().size() )
+	const ValuePlug *plug = static_cast<const ValuePlug *>( graphComponent );
+	if( valueNeedsSerialisation( plug, serialisation ) )
 	{
-		if( !plug->getInput<Plug>() )
+		object pythonPlug( ValuePlugPtr( const_cast<ValuePlug *>( plug ) ) );
+		if( PyObject_HasAttrString( pythonPlug.ptr(), "getValue" ) )
 		{
-			object pythonPlug( PlugPtr( const_cast<Plug *>( plug ) ) );
-			if( PyObject_HasAttrString( pythonPlug.ptr(), "getValue" ) )
+			object pythonValue = pythonPlug.attr( "getValue" )();
+			
+			bool omitDefaultValue = true;
+			if( IECore::runTimeCast<const Reference>( plug->node() ) )
 			{
-				object pythonValue = pythonPlug.attr( "getValue" )();
-				
-				if( PyObject_HasAttrString( pythonPlug.ptr(), "defaultValue" ) )
-				{
-					object pythonDefaultValue = pythonPlug.attr( "defaultValue" )();
-					if( pythonValue == pythonDefaultValue )
-					{
-						return "";
-					}
-				}
-				
-				std::string value = extract<std::string>( pythonValue.attr( "__repr__" )() );
-				return identifier + ".setValue( " + value + " )\n";
+				// We always emit setValue() calls for plugs held directly on
+				// Reference nodes, even if they are at the default value.
+				// This is because the user may have exported the
+				// reference with the plug at a non-default value, but then
+				// set the value back to the default in a file that references
+				// it back in.
+				/// \todo Consider whether or not we might like to have a plug flag
+				/// to control this behaviour, so that ValuePlugSerialiser doesn't
+				/// need explicit knowledge of Reference Nodes.
+				omitDefaultValue = false;
 			}
+			
+			if( omitDefaultValue && PyObject_HasAttrString( pythonPlug.ptr(), "defaultValue" ) )
+			{
+				object pythonDefaultValue = pythonPlug.attr( "defaultValue" )();
+				if( pythonValue == pythonDefaultValue )
+				{
+					return "";
+				}
+			}
+			
+			std::string value = extract<std::string>( pythonValue.attr( "__repr__" )() );
+			return identifier + ".setValue( " + value + " )\n";
 		}
 	}
 	return "";
+}
+
+bool ValuePlugSerialiser::valueNeedsSerialisation( const Gaffer::ValuePlug *plug, const Serialisation &serialisation ) const
+{
+	if(
+		plug->direction() != Plug::In ||
+		!plug->getFlags( Plug::Serialisable ) ||
+		plug->getInput<Plug>()
+	)
+	{
+		return false;
+	}
+	
+	if( const ValuePlug *parent = plug->parent<ValuePlug>() )
+	{
+		const Serialiser *parentSerialiser = Serialisation::acquireSerialiser( parent );
+		if( parentSerialiser )
+		{
+			if( const ValuePlugSerialiser *v = dynamic_cast<const ValuePlugSerialiser *>( parentSerialiser ) )
+			{
+				if( v->valueNeedsSerialisation( parent, serialisation ) )
+				{
+					// the parent will be serialising the value,
+					// so we don't need to.
+					return false;
+				}
+			}
+		}
+	}
+	
+	return true;
 }
 
 void GafferBindings::bindValuePlug()

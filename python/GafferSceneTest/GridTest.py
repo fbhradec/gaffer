@@ -1,7 +1,6 @@
 ##########################################################################
 #  
-#  Copyright (c) 2012, John Haddon. All rights reserved.
-#  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2014, John Haddon. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -35,32 +34,47 @@
 #  
 ##########################################################################
 
-import fnmatch
+import unittest
+
+import IECore
 
 import Gaffer
+import GafferTest
 import GafferScene
-import GafferUI
+import GafferSceneTest
 
-##########################################################################
-# Metadata
-##########################################################################
+class GridTest( GafferSceneTest.SceneTestCase ) :
 
-Gaffer.Metadata.registerNodeDescription(
+	def test( self ) :
+	
+		g = GafferScene.Grid()
+		self.assertSceneValid( g["out"] )
+		
+		g["dimensions"].setValue( IECore.V2f( 100, 5 ) )
+		self.assertSceneValid( g["out"] )
+	
+	def testChildNames( self ) :
+	
+		g = GafferScene.Grid()
+		self.assertEqual( g["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "grid" ] ) )
+		self.assertEqual( g["out"].childNames( "/grid" ), IECore.InternedStringVectorData( [ "gridLines", "centerLines", "borderLines" ] ) )
+		
+		cs = GafferTest.CapturingSlot( g.plugDirtiedSignal() )
+		g["name"].setValue( "g" )
+		self.assertTrue( g["out"]["childNames"] in [ x[0] for x in cs ] )
 
-GafferScene.Render,
-
-"""A base class for nodes which can render scenes.""",
-
-"in",
-"The scene to be rendered.",
-
-)
-
-##########################################################################
-# Widgets and nodules
-##########################################################################
-
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Render.staticTypeId(), "in", None )
-
-GafferUI.Nodule.registerNodule( GafferScene.Render.staticTypeId(), fnmatch.translate( "*" ), lambda plug : None )
-GafferUI.Nodule.registerNodule( GafferScene.Render.staticTypeId(), "in", GafferUI.StandardNodule )
+		self.assertTrue( g["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "g" ] ) )
+	
+	def testAttributes( self ) :
+	
+		g = GafferScene.Grid()
+		
+		a = g["out"].attributes( "/grid" )
+		self.assertEqual( a["shader"], IECore.Shader( "Constant", "gl:surface", { "Cs" : IECore.Color3f( 1 ) } ) )
+		
+		g["centerPixelWidth"].setValue( 2 )
+		a2 = g["out"].attributes( "/grid/centerLines" )
+		self.assertEqual( a2, IECore.CompoundObject( { "gl:curvesPrimitive:glLineWidth" : IECore.FloatData( 2 ) } ) )
+		
+if __name__ == "__main__":
+	unittest.main()

@@ -69,8 +69,7 @@ def __noduleCreator( plug ) :
 	return None
 
 GafferUI.Nodule.registerNodule( GafferScene.SceneNode.staticTypeId(), fnmatch.translate( "*" ), __noduleCreator )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.SceneNode.staticTypeId(), "in", None )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.SceneNode.staticTypeId(), "out", None )
+GafferUI.PlugValueWidget.registerType( GafferScene.ScenePlug.staticTypeId(), None )
 
 Gaffer.Metadata.registerPlugValue( GafferScene.SceneNode.staticTypeId(), "enabled", "nodeUI:section", "Node" )
 
@@ -94,23 +93,6 @@ GafferUI.PlugValueWidget.registerCreator(
 
 ## \todo Once it's possible to register Widgets to go on the right of a PlugWidget, place the refresh button there.
 
-# SceneReader
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.SceneReader.staticTypeId(),
-	"fileName",
-	lambda plug : GafferUI.PathPlugValueWidget( plug,
-		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter( extensions = IECore.SceneInterface.supportedExtensions() ) ),
-		pathChooserDialogueKeywords = {
-			"bookmarks" : GafferUI.Bookmarks.acquire(
-				plug.ancestor( Gaffer.ApplicationRoot.staticTypeId() ),
-				category = "sceneCache",
-			),
-			"leaf" : True,
-		},
-	)
-)
-
 # AlembicSource
 
 GafferUI.PlugValueWidget.registerCreator(
@@ -119,10 +101,7 @@ GafferUI.PlugValueWidget.registerCreator(
 	lambda plug : GafferUI.PathPlugValueWidget( plug,
 		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter( extensions = [ "abc" ] ) ),
 		pathChooserDialogueKeywords = {
-			"bookmarks" : GafferUI.Bookmarks.acquire(
-				plug.ancestor( Gaffer.ApplicationRoot.staticTypeId() ),
-				category = "sceneCache",
-			),
+			"bookmarks" : GafferUI.Bookmarks.acquire( plug, category = "sceneCache" ),
 			"leaf" : True,
 		},
 	)

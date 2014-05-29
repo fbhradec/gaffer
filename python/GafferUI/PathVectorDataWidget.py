@@ -41,16 +41,24 @@ import IECore
 import Gaffer
 import GafferUI
 
-## The VectorDataWidget provides a list view for IECore.StringVectorData,
-# with additional features for editing the strings as paths
+## The PathVectorDataWidget provides a list view for IECore.StringVectorData,
+# with additional features for editing the strings as paths.
 class PathVectorDataWidget( GafferUI.VectorDataWidget ) :
 
+	## The pathChooserDialogueKeywords are passed to the PathChooserDialogue
+	# that is opened when the user wishes to browse for a new path - they can
+	# be specified to customise the path chooser appropriately. They may be
+	# passed either as a dictionary, or as a callable which returns a dictionary -
+	# in the latter case the callable will be evaluated just prior to opening
+	# the dialogue each time.
 	def __init__( self, data=None, editable=True, header=False, showIndices=True, path=None, pathChooserDialogueKeywords={}, **kw ) :
 	
 		GafferUI.VectorDataWidget.__init__( self, data=data, editable=editable, header=header, showIndices=showIndices, **kw )
 						
 		self.__path = path if path is not None else Gaffer.FileSystemPath( "/" )
 		self.__pathChooserDialogueKeywords = pathChooserDialogueKeywords
+	
+		self.__editConnection = self.editSignal().connect( Gaffer.WeakMethod( self.__edit ) )
 	
 	def setData( self, data ) :
 		
@@ -61,52 +69,87 @@ class PathVectorDataWidget( GafferUI.VectorDataWidget ) :
 			assert( isinstance( data, ( IECore.StringVectorData, type( None ) ) ) )
 		
 		GafferUI.VectorDataWidget.setData( self, data )
-
-	def _contextMenuDefinition( self, selectedIndices ) :
-	
-		m = GafferUI.VectorDataWidget._contextMenuDefinition( self, selectedIndices )
-		
-		if self.getEditable() and len( selectedIndices ) :
-		
-			m.prepend( "/PathDivider", { "divider" : True } )
-			m.prepend( "/Choose path...", { "command" : IECore.curry( Gaffer.WeakMethod( self.__editPath ), selectedIndices[0] ) } )
-			
-		return m
 	
 	def _createRows( self ) :
 	
+		pathChooserDialogueKeywords = self._pathChooserDialogueKeywords()
+		
 		path = self.__path.copy()
-		bookmarks = self.__pathChooserDialogueKeywords.get( "bookmarks", None )
+		bookmarks = pathChooserDialogueKeywords.get( "bookmarks", None )
 		if bookmarks is not None :
 			path.setFromString( bookmarks.getDefault() )
 		
-		dialogue = GafferUI.PathChooserDialogue( path, allowMultipleSelection=True, **self.__pathChooserDialogueKeywords )
+		dialogue = GafferUI.PathChooserDialogue( path, allowMultipleSelection=True, **pathChooserDialogueKeywords )
 		paths = dialogue.waitForPaths( parentWindow = self.ancestor( GafferUI.Window ) )
 		if not paths :
 			return None
 			
 		return [ IECore.StringVectorData( [ str( p ) for p in paths ] ) ]
+	
+	def _pathChooserDialogueKeywords( self ) :
+	
+		result = self.__pathChooserDialogueKeywords
+		if callable( result ) :
+			result = result()
+	
+		return result
+	
+	def __edit( self, vectorDataWidget, column, row ) :
+	
+		return _Editor( self.__path.copy() )
 		
-	def __editPath( self, index ) :
+class _Editor( GafferUI.ListContainer ) :
+
+	def __init__( self, path ) :
+	
+		GafferUI.ListContainer.__init__( self, orientation = GafferUI.ListContainer.Orientation.Horizontal )
 		
-		data = self.getData()[0]
+		with self :
+			GafferUI.PathWidget( path )
+			button = GafferUI.Button( image = "pathChooser.png", hasFrame = False )
+			self.__buttonClickedConnection = button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ) )
 		
-		path = self.__path.copy()
-		if index < len( data ) and len( data[index] ) :
-			path.setFromString( data[index] )
-		else :
-			bookmarks = self.__pathChooserDialogueKeywords.get( "bookmarks", None )
+		# needed to give the focus to our main editable field when editing starts.
+		self._qtWidget().setFocusProxy( self.__pathWidget()._qtWidget() )
+		
+		self.__dialogue = None
+		self.__focusChangedConnection = GafferUI.Widget.focusChangedSignal().connect( Gaffer.WeakMethod( self.__focusChanged ) )
+		
+	def setValue( self, value ) :
+	
+		self.__pathWidget().getPath().setFromString( value )
+		
+	def getValue( self ) :
+	
+		return str( self.__pathWidget().getPath() )
+
+	def __pathWidget( self ) :
+	
+		return self[0]
+
+	def __buttonClicked( self, button ) :
+	
+		parent = self.ancestor( PathVectorDataWidget )
+		pathChooserDialogueKeywords = parent._pathChooserDialogueKeywords()
+		
+		path = self.__pathWidget().getPath().copy()
+		if path.isEmpty() :
+			bookmarks = pathChooserDialogueKeywords.get( "bookmarks", None )
 			if bookmarks is not None :
 				path.setFromString( bookmarks.getDefault() )
 		
-		dialogue = GafferUI.PathChooserDialogue( path, **self.__pathChooserDialogueKeywords )
-		path = dialogue.waitForPath( parentWindow = self.ancestor( GafferUI.Window ) )
+		self.__dialogue = GafferUI.PathChooserDialogue( path, **pathChooserDialogueKeywords )
+		chosenPath = self.__dialogue.waitForPath( parentWindow = self.ancestor( GafferUI.Window ) )
+		self.__dialogue = None
 		
-		if path is not None :
-			
-			if index < len( data ) :
-				data[index] = str( path )
-			else :
-				data.append( str( path ) )
-				
-			self.dataChangedSignal()( self )
+		if chosenPath is not None :
+			self.__pathWidget().getPath().setFromString( str( chosenPath ) )
+		
+		# finish editing
+		self.setVisible( False )
+
+	def __focusChanged( self, oldWidget, newWidget ) :
+	
+		if not self.isAncestorOf( newWidget ) and self.__dialogue is None :
+			# the focus has moved to another widget - finish editing.
+			self.setVisible( False )

@@ -254,7 +254,45 @@ class CompoundDataPlugTest( unittest.TestCase ) :
 		m = p.addMember( "c", IECore.StringData( "abc" ) )
 		self.assertTrue( m["value"].defaultValue(), "abc" )
 		self.assertTrue( m["value"].getValue(), "abc" )
-				
+	
+	def testAddMembers( self ) :
+	
+		p = Gaffer.CompoundDataPlug()
+		
+		p.addMembers( IECore.CompoundData( { "one" : 1, "two" : 2 } ) )
+		self.assertEqual( len( p ), 2 )
+		self.assertEqual( p[0].getName(), "member1" )
+		self.assertEqual( p[1].getName(), "member2" )
+		
+		c = IECore.CompoundData()
+		p.fillCompoundData( c )
+		self.assertEqual( c, IECore.CompoundData( { "one" : 1, "two" : 2 } ) )
+	
+	def testAddMembersWithSpecificNames( self ) :
+	
+		p = Gaffer.CompoundDataPlug()
+		p.addMembers( IECore.CompoundData( { "one" : 1 } ), useNameAsPlugName=True )
+		
+		self.assertEqual( len( p ), 1 )
+		self.assertEqual( p[0].getName(), "one" )
+
+		o = IECore.CompoundObject()
+		p.fillCompoundObject( o )
+		self.assertEqual( o, IECore.CompoundObject( { "one" : IECore.IntData( 1 ) } ) )
+	
+	def testBoxTypes( self ) :
+	
+		p = Gaffer.CompoundDataPlug()
+		
+		for name, value in [
+			( "b2f", IECore.Box2fData( IECore.Box2f( IECore.V2f( 0, 1 ), IECore.V2f( 1, 2 ) ) ) ),
+			( "b2i", IECore.Box2iData( IECore.Box2i( IECore.V2i( -1, 10 ), IECore.V2i( 11, 20 ) ) ) ),
+			( "b3f", IECore.Box3fData( IECore.Box3f( IECore.V3f( 0, 1, 2 ), IECore.V3f( 3, 4, 5 ) ) ) ),
+			( "b3i", IECore.Box3iData( IECore.Box3i( IECore.V3i( 0, 1, 2 ), IECore.V3i( 3, 4, 5 ) ) ) ),
+		] :
+			m = p.addMember( name, value )
+			self.assertEqual( p.memberDataAndName( m ), ( value, name ) )
+			
 if __name__ == "__main__":
 	unittest.main()
 	

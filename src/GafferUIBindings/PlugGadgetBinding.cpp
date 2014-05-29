@@ -36,11 +36,12 @@
 
 #include "boost/python.hpp"
 
+#include "Gaffer/Plug.h"
+#include "Gaffer/Context.h"
+
 #include "GafferUIBindings/GadgetBinding.h"
 #include "GafferUIBindings/PlugGadgetBinding.h"
 #include "GafferUI/PlugGadget.h"
-
-#include "IECorePython/RunTimeTypedBinding.h"
 
 using namespace boost::python;
 using namespace GafferUIBindings;
@@ -60,8 +61,7 @@ static ContextPtr getContext( PlugGadget &g )
 void GafferUIBindings::bindPlugGadget()
 {
 
-	IECorePython::RunTimeTypedClass<PlugGadget>()
-		.GAFFERUIBINDINGS_DEFGADGETWRAPPERFNS( PlugGadget )
+	GadgetClass<PlugGadget>()
 		.def( "setPlug", &PlugGadget::setPlug )
 		.def( "getPlug", &getPlug )
 		.def( "setContext", &PlugGadget::setContext )

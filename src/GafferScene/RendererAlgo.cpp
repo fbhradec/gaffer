@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //  
-//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2014, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -46,41 +46,19 @@
 
 #include "Gaffer/Context.h"
 
-#include "GafferScene/Render.h"
-#include "GafferScene/ScenePlug.h"
+#include "GafferScene/RendererAlgo.h"
 #include "GafferScene/SceneProcedural.h"
+#include "GafferScene/PathMatcherData.h"
 
+using namespace std;
 using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
-using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( Render );
-
-size_t Render::g_firstPlugIndex = 0;
-
-Render::Render( const std::string &name )
-	:	Node( name )
+namespace GafferScene
 {
-	storeIndexOfNextChild( g_firstPlugIndex );
-	addChild( new ScenePlug( "in" ) );
-}
 
-Render::~Render()
-{
-}
-
-ScenePlug *Render::inPlug()
-{
-	return getChild<ScenePlug>( g_firstPlugIndex );
-}
-
-const ScenePlug *Render::inPlug() const
-{
-	return getChild<ScenePlug>( g_firstPlugIndex );
-}
-
-void Render::outputScene( const ScenePlug *scene, IECore::Renderer *renderer ) const
+void outputScene( const ScenePlug *scene, IECore::Renderer *renderer )
 {
 	ConstCompoundObjectPtr globals = scene->globalsPlug()->getValue();
 	outputOptions( globals, renderer );
@@ -95,7 +73,7 @@ void Render::outputScene( const ScenePlug *scene, IECore::Renderer *renderer ) c
 	}
 }
 
-void Render::outputOptions( const IECore::CompoundObject *globals, IECore::Renderer *renderer ) const
+void outputOptions( const IECore::CompoundObject *globals, IECore::Renderer *renderer )
 {
 	CompoundObject::ObjectMap::const_iterator it, eIt;
 	for( it = globals->members().begin(), eIt = globals->members().end(); it != eIt; it++ )
@@ -111,7 +89,7 @@ void Render::outputOptions( const IECore::CompoundObject *globals, IECore::Rende
 	}
 }
 
-void Render::outputCamera( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer ) const
+void outputCamera( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
 {
 	// get the camera from the scene
 	
@@ -137,12 +115,18 @@ void Render::outputCamera( const ScenePlug *scene, const IECore::CompoundObject 
 		camera = new IECore::Camera();
 	}
 	
-	// apply the resolution
+	// apply the resolution and crop window
 	
 	const V2iData *resolutionData = globals->member<V2iData>( "render:resolution" );
 	if( resolutionData )
 	{
 		camera->parameters()["resolution"] = resolutionData->copy();
+	}
+	
+	const Box2fData *cropWindowData = globals->member<Box2fData>( "render:cropWindow" );
+	if( cropWindowData )
+	{
+		camera->parameters()["cropWindow"] = cropWindowData->copy();
 	}
 	
 	camera->addStandardParameters();
@@ -157,31 +141,26 @@ void Render::outputCamera( const ScenePlug *scene, const IECore::CompoundObject 
 	
 }
 
-void Render::outputLights( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer ) const
+void outputLights( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
 {
-	const CompoundData *forwardDeclarations = globals->member<CompoundData>( "gaffer:forwardDeclarations" );
-	if( !forwardDeclarations )
+	const CompoundData *sets = globals->member<CompoundData>( "gaffer:sets" );
+	if( !sets )
+	{
+		return;
+	}
+	
+	const PathMatcherData *lightSet = sets->member<PathMatcherData>( "__lights" );
+	if( !lightSet )
 	{
 		return;
 	}
 
-	CompoundDataMap::const_iterator it, eIt;
-	for( it = forwardDeclarations->readable().begin(), eIt = forwardDeclarations->readable().end(); it != eIt; it++ )
+	vector<string> paths;
+	lightSet->readable().paths( paths );
+	for( vector<string>::const_iterator it = paths.begin(), eIt = paths.end(); it != eIt; ++it )
 	{
-		const CompoundData *declaration = runTimeCast<const CompoundData>( it->second.get() );
-		if( !declaration )
-		{
-			continue;
-		}
-		
-		const IECore::TypeId type = (IECore::TypeId)declaration->member<IntData>( "type", true )->readable();
-		if( type != IECore::LightTypeId )
-		{
-			continue;
-		}
-		
 		ScenePlug::ScenePath path;
-		ScenePlug::stringToPath( it->first.string(), path );
+		ScenePlug::stringToPath( *it, path );
 		
 		IECore::ConstLightPtr constLight = runTimeCast<const IECore::Light>( scene->object( path ) );
 		if( !constLight )
@@ -190,7 +169,7 @@ void Render::outputLights( const ScenePlug *scene, const IECore::CompoundObject 
 		}
 		
 		ConstCompoundObjectPtr attributes = scene->fullAttributes( path );
-		const BoolData *visibilityData = attributes->member<BoolData>( "gaffer:visibility" );
+		const BoolData *visibilityData = attributes->member<BoolData>( "scene:visible" );
 		if( visibilityData && !visibilityData->readable() )
 		{
 			continue;
@@ -199,12 +178,12 @@ void Render::outputLights( const ScenePlug *scene, const IECore::CompoundObject 
 		M44f transform = scene->fullTransform( path );
 		
 		LightPtr light = constLight->copy();
-		light->setHandle( it->first.string() );
+		light->setHandle( *it );
 		
 		{
 			AttributeBlock attributeBlock( renderer );
 		
-			renderer->setAttribute( "name", new StringData( it->first ) );
+			renderer->setAttribute( "name", new StringData( *it ) );
 		
 			CompoundObject::ObjectMap::const_iterator aIt, aeIt;
 			for( aIt = attributes->members().begin(), aeIt = attributes->members().end(); aIt != aeIt; aIt++ )
@@ -223,7 +202,7 @@ void Render::outputLights( const ScenePlug *scene, const IECore::CompoundObject 
 	}
 }
 
-void Render::createDisplayDirectories( const IECore::CompoundObject *globals ) const
+void createDisplayDirectories( const IECore::CompoundObject *globals )
 {
 	CompoundObject::ObjectMap::const_iterator it, eIt;
 	for( it = globals->members().begin(), eIt = globals->members().end(); it != eIt; it++ )
@@ -240,7 +219,7 @@ void Render::createDisplayDirectories( const IECore::CompoundObject *globals ) c
 	}
 }
 
-Imath::V2f Render::shutter( const IECore::CompoundObject *globals ) const
+Imath::V2f shutter( const IECore::CompoundObject *globals )
 {
 	const BoolData *cameraBlurData = globals->member<BoolData>( "render:cameraBlur" );
 	const bool cameraBlur = cameraBlurData ? cameraBlurData->readable() : false;
@@ -262,7 +241,7 @@ Imath::V2f Render::shutter( const IECore::CompoundObject *globals ) const
 	return shutter;
 }
 
-IECore::TransformPtr Render::transform( const ScenePlug *scene, const ScenePlug::ScenePath &path, const Imath::V2f &shutter, bool motionBlur ) const
+IECore::TransformPtr transform( const ScenePlug *scene, const ScenePlug::ScenePath &path, const Imath::V2f &shutter, bool motionBlur )
 {
 	int numSamples = 1;
 	if( motionBlur )
@@ -279,7 +258,7 @@ IECore::TransformPtr Render::transform( const ScenePlug *scene, const ScenePlug:
 	}
 
 	MatrixMotionTransformPtr result = new MatrixMotionTransform();
-	ContextPtr transformContext = new Context( *Context::current() );
+	ContextPtr transformContext = new Context( *Context::current(), Context::Borrowed );
 	Context::Scope scopedContext( transformContext );
 	for( int i = 0; i < numSamples; i++ )
 	{
@@ -290,3 +269,5 @@ IECore::TransformPtr Render::transform( const ScenePlug *scene, const ScenePlug:
 
 	return result;
 }
+
+} // namespace GafferScene

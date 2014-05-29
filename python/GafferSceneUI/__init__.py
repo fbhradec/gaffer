@@ -41,11 +41,11 @@ from SceneHierarchy import SceneHierarchy
 from SceneInspector import SceneInspector
 from FilterPlugValueWidget import FilterPlugValueWidget
 import SceneNodeUI
+import SceneReaderUI
 import SceneProcessorUI
 import FilteredSceneProcessorUI
 import PruneUI
 import SubTreeUI
-import RenderUI
 import DisplaysUI
 import OptionsUI
 import OpenGLAttributesUI
@@ -60,6 +60,7 @@ import TransformUI
 import AttributesUI
 import LightUI
 import InteractiveRenderUI
+import ExecutableRenderUI
 import SphereUI
 import MapProjectionUI
 import MapOffsetUI
@@ -71,6 +72,9 @@ import ShaderSwitchUI
 import ShaderAssignmentUI
 import ParentConstraintUI
 import ParentUI
+import PrimitiveVariablesUI
+import DuplicateUI
+import GridUI
 
 # then all the PathPreviewWidgets. note that the order
 # of import controls the order of display.

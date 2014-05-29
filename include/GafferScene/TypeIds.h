@@ -89,7 +89,7 @@ enum TypeId
 	MeshTypeTypeId = 110544,
 	FilteredSceneProcessorTypeId = 110545,
 	PruneTypeId = 110546,
-	RenderTypeId = 110547,
+	FreezeTransformTypeId = 110547,
 	ExecutableRenderTypeId = 110548,
 	OpenGLRenderTypeId = 110549,
 	InteractiveRenderTypeId = 110550,
@@ -109,6 +109,10 @@ enum TypeId
 	ShaderSwitchTypeId = 110564,
 	ParentConstraintTypeId = 110565,
 	ParentTypeId = 110566,
+	PrimitiveVariablesTypeId = 110567,
+	DuplicateTypeId = 110568,
+	GridTypeId = 110569,
+	SetTypeId = 110570,
 	
 	LastTypeId = 110650
 };

@@ -37,8 +37,6 @@
 #ifndef GAFFER_BOX_H
 #define GAFFER_BOX_H
 
-#include "IECore/CompoundData.h"
-
 #include "Gaffer/Node.h"
 
 namespace GafferBindings
@@ -71,15 +69,20 @@ class Box : public Node
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Box, BoxTypeId, Node );
 		
-		/// Returns true if promotePlug() can be used with the
-		/// specified descendant.
-		bool canPromotePlug( const Plug *descendantPlug ) const;
-		/// Creates a user plug on the Box and connects it as the
-		/// input of the specified descendantPlug, which should belong
-		/// to one of the Nodes contained in the Box. Returns the
-		/// newly created plug.
+		/// Returns true if it would be valid to call promotePlug( descendantPlug, asUserPlug ),
+		/// and false otherwise.
+		bool canPromotePlug( const Plug *descendantPlug, bool asUserPlug = true ) const;
+		/// Promotes the internal descendantPlug so that it is represented
+		/// as an external plug on the Box. The descendantPlug must belong
+		/// to one of the nodes contained in the box.
+		/// Returns the newly created plug.
 		/// \undoable
-		Plug *promotePlug( Plug *descendantPlug );
+		/// \note If asUserPlug is true, then the external plug will be parented
+		/// under userPlug(), otherwise it will be parented directly to the Box.
+		/// The asUserPlug parameter will be removed in a future version, and
+		/// promoted plugs will always be parented directly under the Box - 
+		/// see issue #801 for further information.
+		Plug *promotePlug( Plug *descendantPlug, bool asUserPlug = true );
 		/// Returns true if the descendantPlug has been promoted.
 		bool plugIsPromoted( const Plug *descendantPlug ) const;
 		/// Unpromotes a previously promoted plug, removing the
@@ -87,11 +90,13 @@ class Box : public Node
 		/// \undoable
 		void unpromotePlug( Plug *promotedDescandantPlug );
 
-		/// Because the content of Boxes is user generated, it doesn't
-		/// make sense to register a fixed set of metadata as with other
-		/// node types. Instead, each instance stores its own metadata, which
-		/// can be queried and set with these methods.
+		/// \deprecated Use Metadata methods instead.
+		const IECore::Data *getNodeMetadata( IECore::InternedString key ) const;
+		/// \deprecated Use Metadata methods instead.
+		void setNodeMetadata( IECore::InternedString key, IECore::ConstDataPtr value );
+		/// \deprecated Use Metadata methods instead.
 		const IECore::Data *getPlugMetadata( const Plug *plug, IECore::InternedString key ) const;
+		/// \deprecated Use Metadata methods instead.
 		void setPlugMetadata( const Plug *plug, IECore::InternedString key, IECore::ConstDataPtr value );
 
 		/// Exports the contents of the Box so that it can be referenced
@@ -105,14 +110,8 @@ class Box : public Node
 
 	private :
 
-		bool validatePromotability( const Plug *descendantPlug, bool throwExceptions, bool checkNode = true ) const;
-		
-		typedef std::map<ConstPlugPtr, IECore::CompoundDataPtr> PlugMetadataMap;
-		
-		PlugMetadataMap m_plugMetadata;
-
-		friend class GafferBindings::BoxSerialiser;
-		
+		bool validatePromotability( const Plug *descendantPlug, bool asUserPlug, bool throwExceptions, bool childPlug = false ) const;
+				
 };
 
 typedef FilteredChildIterator<TypePredicate<Box> > BoxIterator;

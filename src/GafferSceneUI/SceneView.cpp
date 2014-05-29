@@ -133,6 +133,7 @@ SceneView::SceneView( const std::string &name )
 	m_selectionChangedConnection = m_renderableGadget->selectionChangedSignal().connect( boost::bind( &SceneView::selectionChanged, this, ::_1 ) );
 	viewportGadget()->keyPressSignal().connect( boost::bind( &SceneView::keyPress, this, ::_1, ::_2 ) );
 
+	m_renderableGadget->baseState()->add( const_cast<IECoreGL::State *>( baseState() ) );
 	baseStateChangedSignal().connect( boost::bind( &SceneView::baseStateChanged, this ) );
 	
 	//////////////////////////////////////////////////////////////////////////
@@ -395,7 +396,7 @@ void SceneView::collapseSelection()
 	
 	set<string> pathsToSelect;
 	vector<const string *> pathsToDeselect;
-	IECore::PathMatcherData *expandedData = expandedPaths();
+	GafferScene::PathMatcherData *expandedData = expandedPaths();
 	PathMatcher &expanded = expandedData->writable();
 	
 	for( RenderableGadget::Selection::const_iterator it = selection.begin(), eIt = selection.end(); it != eIt; it++ )
@@ -442,18 +443,18 @@ void SceneView::transferSelectionToContext()
 	getContext()->set( "ui:scene:selectedPaths", s.get() );
 }
 
-IECore::PathMatcherData *SceneView::expandedPaths()
+GafferScene::PathMatcherData *SceneView::expandedPaths()
 {
-	const IECore::PathMatcherData *m = getContext()->get<IECore::PathMatcherData>( "ui:scene:expandedPaths", 0 );
+	const GafferScene::PathMatcherData *m = getContext()->get<GafferScene::PathMatcherData>( "ui:scene:expandedPaths", 0 );
 	if( !m )
 	{
-		PathMatcherDataPtr rootOnly = new IECore::PathMatcherData;
+		GafferScene::PathMatcherDataPtr rootOnly = new GafferScene::PathMatcherData;
 		rootOnly->writable().addPath( "/" );
 		BlockedConnection blockedConnection( contextChangedConnection() );
 		getContext()->set( "ui:scene:expandedPaths", rootOnly.get() );
-		m = getContext()->get<IECore::PathMatcherData>( "ui:scene:expandedPaths", 0 );
+		m = getContext()->get<GafferScene::PathMatcherData>( "ui:scene:expandedPaths", 0 );
 	}
-	return const_cast<IECore::PathMatcherData *>( m );
+	return const_cast<GafferScene::PathMatcherData *>( m );
 }
 
 void SceneView::baseStateChanged()
@@ -507,6 +508,15 @@ void SceneView::updateLookThrough()
 				{
 					camera = constCamera->copy();
 					camera->setTransform( new MatrixTransform( scene->fullTransform( cameraPath ) ) );
+					
+					// if the camera has an existing screen window, remove it.
+					// if we didn't, it would conflict with the resolution we set
+					// below, yielding squashed/stretched images.
+					/// \todo Properly specify how cameras are represented in Gaffer
+					/// (the Cortex representation is very renderer-centric, with no
+					/// real world parameters like film back) so that this isn't necessary,
+					/// and add nice overlays for resolution gate etc.
+					camera->parameters().erase( "screenWindow" );
 				}
 			}
 			catch( ... )

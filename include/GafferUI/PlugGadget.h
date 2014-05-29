@@ -37,10 +37,15 @@
 #ifndef GAFFERUI_PLUGGADGET_H
 #define GAFFERUI_PLUGGADGET_H
 
-#include "Gaffer/Plug.h"
-#include "Gaffer/Context.h"
-
 #include "GafferUI/ContainerGadget.h"
+
+namespace Gaffer
+{
+
+IE_CORE_FORWARDDECLARE( Plug )
+IE_CORE_FORWARDDECLARE( Context )
+
+} // namespace Gaffer
 
 namespace GafferUI
 {
@@ -88,6 +93,9 @@ class PlugGadget : public ContainerGadget
 };
 
 IE_CORE_DECLAREPTR( PlugGadget )
+
+typedef Gaffer::FilteredChildIterator<Gaffer::TypePredicate<PlugGadget> > PlugGadgetIterator;
+typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::TypePredicate<PlugGadget> > RecursivePlugGadgetIterator;
 
 } // namespace GafferUI
 

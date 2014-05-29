@@ -53,7 +53,7 @@ namespace GafferBindings
 void bindNode();
 
 template<typename T, typename Ptr=IECore::IntrusivePtr<T> >
-class NodeClass : public IECorePython::RunTimeTypedClass<T, Ptr>
+class NodeClass : public GraphComponentClass<T, Ptr>
 {
 	public :
 	
@@ -120,6 +120,9 @@ class NodeSerialiser : public Serialisation::Serialiser
 
 	public :
 	
+		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules ) const;
+		/// Implemented to serialise per-instance metadata.
+		virtual std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const;
 		/// Implemented so that only plugs are serialised - child nodes are expected to
 		/// be a part of the implementation of the node rather than something the user
 		/// has created themselves.

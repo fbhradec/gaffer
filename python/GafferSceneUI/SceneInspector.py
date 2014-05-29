@@ -69,11 +69,13 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 
 		self.__scenePlugs = []
 		self.__plugDirtiedConnections = []
+		self.__parentChangedConnections = []
 		for node in self.getNodeSet()[-2:] :
 			outputScenePlugs = [ p for p in node.children( GafferScene.ScenePlug.staticTypeId() ) if p.direction() == Gaffer.Plug.Direction.Out ]
 			if len( outputScenePlugs ) :
 				self.__scenePlugs.append( outputScenePlugs[0] )
 				self.__plugDirtiedConnections.append( node.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ) ) )
+				self.__parentChangedConnections.append( outputScenePlugs[0].parentChangedSignal().connect( Gaffer.WeakMethod( self.__plugParentChanged ) ) )
 
 		self.__update()
 				
@@ -93,6 +95,13 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 		if isinstance( plug, GafferScene.ScenePlug ) and plug.direction() == Gaffer.Plug.Direction.Out :
 			self.__pendingUpdate = True
 			GafferUI.EventLoop.addIdleCallback( self.__update )
+
+	def __plugParentChanged( self, plug, oldParent ) :
+	
+		# if a plug has been removed or moved to another node, then
+		# we need to stop viewing it - _updateFromSet() will find the
+		# next suitable plug from the current node set.
+		self._updateFromSet()
 
 	def __update( self ) :
 
@@ -232,7 +241,7 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 		elif isinstance( value, ( IECore.Box3f, IECore.Box3d ) ) :
 			return self.__formatBox( value )
 		elif isinstance( value, IECore.ObjectVector ) and key.startswith( "attr:" ) and key.endswith( ":shader" ) :
-			return value[-1].name
+			return self.__formatShader( value )
 		else :
 			return str( value )
 	
@@ -267,4 +276,13 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 
 		return ( "%.4f" % value ).rstrip( '0' ).rstrip( '.' )
 
+	def __formatShader( self, value ) :
+	
+		shaderName = value[-1].name
+		nodeName = value[-1].blindData().get( "gaffer:nodeName", None )
+		if nodeName is not None and nodeName.value != shaderName :
+			return "%s (%s)" % ( nodeName.value, shaderName )
+		else :
+			return shaderName
+		
 GafferUI.EditorWidget.registerType( "SceneInspector", SceneInspector )

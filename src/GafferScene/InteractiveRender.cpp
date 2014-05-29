@@ -36,9 +36,11 @@
 
 #include "boost/bind.hpp"
 
+#include "Gaffer/Context.h"
 #include "Gaffer/ScriptNode.h"
 
 #include "GafferScene/InteractiveRender.h"
+#include "GafferScene/RendererAlgo.h"
 
 using namespace std;
 using namespace Imath;
@@ -51,9 +53,10 @@ IE_CORE_DEFINERUNTIMETYPED( InteractiveRender );
 size_t InteractiveRender::g_firstPlugIndex = 0;
 
 InteractiveRender::InteractiveRender( const std::string &name )
-	:	Render( name )
+	:	Node( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
+	addChild( new ScenePlug( "in" ) );
 	addChild( new IntPlug( "state", Plug::In, Stopped, Stopped, Paused, Plug::Default & ~Plug::Serialisable ) );
 	addChild( new BoolPlug( "updateLights", Plug::In, true ) );
 	addChild( new BoolPlug( "updateShaders", Plug::In, true ) );
@@ -69,34 +72,44 @@ InteractiveRender::~InteractiveRender()
 {
 }
 
+ScenePlug *InteractiveRender::inPlug()
+{
+	return getChild<ScenePlug>( g_firstPlugIndex );
+}
+
+const ScenePlug *InteractiveRender::inPlug() const
+{
+	return getChild<ScenePlug>( g_firstPlugIndex );
+}
+
 Gaffer::IntPlug *InteractiveRender::statePlug()
 {
-	return getChild<IntPlug>( g_firstPlugIndex );
+	return getChild<IntPlug>( g_firstPlugIndex + 1 );
 }
 
 const Gaffer::IntPlug *InteractiveRender::statePlug() const
 {
-	return getChild<IntPlug>( g_firstPlugIndex );
+	return getChild<IntPlug>( g_firstPlugIndex + 1);
 }
 		
 Gaffer::BoolPlug *InteractiveRender::updateLightsPlug()
 {
-	return getChild<BoolPlug>( g_firstPlugIndex + 1 );
+	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
 }
 
 const Gaffer::BoolPlug *InteractiveRender::updateLightsPlug() const
 {
-	return getChild<BoolPlug>( g_firstPlugIndex + 1 );
+	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
 }
 
 Gaffer::BoolPlug *InteractiveRender::updateShadersPlug()
 {
-	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
+	return getChild<BoolPlug>( g_firstPlugIndex + 3 );
 }
 
 const Gaffer::BoolPlug *InteractiveRender::updateShadersPlug() const
 {
-	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
+	return getChild<BoolPlug>( g_firstPlugIndex + 3 );
 }
 
 void InteractiveRender::plugInputChanged( const Gaffer::Plug *plug )
@@ -227,7 +240,7 @@ void InteractiveRender::updateShaders( const ScenePlug::ScenePath &path )
 		}
 		
 		CompoundDataMap parameters;
-		parameters["scopename"] = new StringData( name );
+		parameters["exactscopename"] = new StringData( name );
 		m_renderer->editBegin( "attribute", parameters );
 		
 			for( ObjectVector::MemberContainer::const_iterator it = shader->members().begin(), eIt = shader->members().end(); it != eIt; it++ )

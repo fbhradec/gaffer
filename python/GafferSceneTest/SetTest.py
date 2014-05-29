@@ -1,6 +1,6 @@
 ##########################################################################
 #  
-#  Copyright (c) 2011, John Haddon. All rights reserved.
+#  Copyright (c) 2014, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -34,44 +34,41 @@
 #  
 ##########################################################################
 
-import os
+import unittest
 
 import IECore
 
 import Gaffer
+import GafferScene
+import GafferSceneTest
 
-class RIBRendererNode( Gaffer.Node ) :
-
-	def __init__( self, name="RIBRenderer", inputs={}, dynamicPlugs=() ) :
+class SetTest( GafferSceneTest.SceneTestCase ) :
+		
+	def test( self ) :
 	
-		Gaffer.Node.__init__( self, name )
+		p = GafferScene.Plane()
+		s = GafferScene.Set()
+		s["in"].setInput( p["out"] )
 		
-		fileNamePlug = Gaffer.StringPlug( "fileName", Gaffer.Plug.Direction.In )
-		self.addChild( fileNamePlug )
+		s["paths"].setValue( IECore.StringVectorData( [ "/one", "/plane" ] ) )
+		g = s["out"]["globals"].getValue()
+		self.assertEqual( g.keys(), [ "gaffer:sets" ] )
+		self.assertEqual( g["gaffer:sets"].keys(), [ "set" ] )
+		self.assertEqual( set( g["gaffer:sets"]["set"].value.paths() ), set( [ "/one", "/plane" ] ) )
 		
-		resultPlug = Gaffer.IntPlug( "output", Gaffer.Plug.Direction.Out )
-		self.addChild( resultPlug )
+		s["name"].setValue( "shinyThings" )
 
-		self._init( inputs, dynamicPlugs )
+		g = s["out"]["globals"].getValue()
+		self.assertEqual( g.keys(), [ "gaffer:sets" ] )
+		self.assertEqual( g["gaffer:sets"].keys(), [ "shinyThings" ] )
+		self.assertEqual( set( g["gaffer:sets"]["shinyThings"].value.paths() ), set( [ "/one", "/plane" ] ) )
 		
-	def dirty( self, plug ) :
-		
-		if plug.getName()=="fileName" :
-		
-			self["output"].setDirty()
-			
-	def compute( self, plug ) :
-	
-		assert( plug.isSame( self["output"] ) )
-		
-		fileName = self["fileName"].getValue()
-		if fileName :
-		
-			os.system( "renderdl \"%s\"" % fileName )
-		
-		## \todo Need to output useful information about what was rendered.
-		# I think this should include filenames of all images, maps, ptcs
-		# generated.
-		plug.setValue( 0 )
+		s["paths"].setValue( IECore.StringVectorData( [ "/two", "/sphere" ] ) )
 
-IECore.registerRunTimeTyped( RIBRendererNode )
+		g = s["out"]["globals"].getValue()
+		self.assertEqual( g.keys(), [ "gaffer:sets" ] )
+		self.assertEqual( g["gaffer:sets"].keys(), [ "shinyThings" ] )
+		self.assertEqual( set( g["gaffer:sets"]["shinyThings"].value.paths() ), set( [ "/two", "/sphere" ] ) )
+		
+if __name__ == "__main__":
+	unittest.main()

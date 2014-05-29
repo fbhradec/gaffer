@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //  
-//  Copyright (c) 2013, John Haddon. All rights reserved.
+//  Copyright (c) 2013-2014, John Haddon. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -36,7 +36,7 @@
 
 #include "tbb/mutex.h"
 
-#include "oslquery.h"
+#include "OSL/oslquery.h"
 
 #include "IECore/MessageHandler.h"
 #include "IECore/AttributeBlock.h"
@@ -59,10 +59,7 @@ using namespace GafferOSL;
 // LRUCache of ShadingEngines
 //////////////////////////////////////////////////////////////////////////
 
-namespace GafferOSL
-{
-
-namespace Detail
+namespace
 {
 
 struct ShadingEngineCacheKey
@@ -93,7 +90,7 @@ struct ShadingEngineCacheKey
 
 };
 
-static OSLRenderer::ConstShadingEnginePtr getter( const ShadingEngineCacheKey &key, size_t &cost )
+OSLRenderer::ConstShadingEnginePtr getter( const ShadingEngineCacheKey &key, size_t &cost )
 {
 	cost = 1;
 	
@@ -116,6 +113,7 @@ static OSLRenderer::ConstShadingEnginePtr getter( const ShadingEngineCacheKey &k
 		if( const char *searchPath = getenv( "OSL_SHADER_PATHS" ) )
 		{
 			g_renderer->setOption( "osl:searchpath:shader", new StringData( searchPath ) );
+			g_renderer->setOption( "osl:lockgeom", new IntData( 1 ) );
 		}
 		g_renderer->worldBegin();
 	}
@@ -135,11 +133,9 @@ static OSLRenderer::ConstShadingEnginePtr getter( const ShadingEngineCacheKey &k
 }
 
 typedef LRUCache<ShadingEngineCacheKey, OSLRenderer::ConstShadingEnginePtr> ShadingEngineCache;
-static ShadingEngineCache g_shadingEngineCache( getter, 10000 );
+ShadingEngineCache g_shadingEngineCache( getter, 10000 );
 
-} // namespace Detail
-
-} // namespace GafferOSL
+} // namespace
 
 //////////////////////////////////////////////////////////////////////////
 // OSLShader
@@ -158,7 +154,53 @@ OSLShader::~OSLShader()
 
 OSLRenderer::ConstShadingEnginePtr OSLShader::shadingEngine() const
 {
-	return Detail::g_shadingEngineCache.get( Detail::ShadingEngineCacheKey( this ) );
+	return g_shadingEngineCache.get( ShadingEngineCacheKey( this ) );
+}
+
+bool OSLShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) const
+{
+	if( !Shader::acceptsInput( plug, inputPlug ) )
+	{
+		return false;
+	}
+	
+	if( !inputPlug )
+	{
+		return true;
+	}
+	
+	if( parametersPlug()->isAncestorOf( plug ) )
+	{
+		const Plug *sourcePlug = inputPlug->source<Plug>();
+		const GafferScene::Shader *sourceShader = runTimeCast<const GafferScene::Shader>( sourcePlug->node() );
+		const Plug *sourceShaderOutPlug = sourceShader ? sourceShader->outPlug() : NULL;
+		
+		if( sourceShaderOutPlug && ( sourceShaderOutPlug == inputPlug || sourceShaderOutPlug->isAncestorOf( inputPlug ) ) )
+		{
+			// source is the output of a shader node, so it'd better be
+			// a generic osl shader.
+			if( !sourceShader->isInstanceOf( staticTypeId() ) )
+			{
+				return false;
+			}
+			if( sourceShader->typePlug()->getValue() != "osl:shader" )
+			{
+				return false;
+			}
+			// osl disallows the connection of vectors to colours
+			if( plug->isInstanceOf( Color3fPlug::staticTypeId() ) && inputPlug->isInstanceOf( V3fPlug::staticTypeId() ) )
+			{
+				return false;
+			}
+			// and we can only connect closures into closures
+			if( plug->typeId() == Plug::staticTypeId() && inputPlug->typeId() != Plug::staticTypeId() )
+			{
+				return false;
+			}
+		}
+	}
+	
+	return true;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -224,19 +266,21 @@ static Plug *loadStringParameter( const OSLQuery::Parameter *parameter, Gaffer::
 template<typename PlugType>
 static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent )
 {
-	typename PlugType::ValueType defaultValue( 0 );
+	typedef typename PlugType::ValueType ValueType;
+	
+	ValueType defaultValue( 0 );
 	if( parameter->idefault.size() )
 	{
-		defaultValue = parameter->idefault[0];
+		defaultValue = ValueType( parameter->idefault[0] );
 	}
 	else if( parameter->fdefault.size() )
 	{
-		defaultValue = parameter->fdefault[0];
+		defaultValue = ValueType( parameter->fdefault[0] );
 	}
 
 	/// \todo Get from metadata
-	typename PlugType::ValueType minValue( Imath::limits<float>::min() );
-	typename PlugType::ValueType maxValue( Imath::limits<float>::max() );
+	ValueType minValue( Imath::limits<ValueType>::min() );
+	ValueType maxValue( Imath::limits<ValueType>::max() );
 
 	const string name = plugName( parameter );
 	PlugType *existingPlug = parent->getChild<PlugType>( name );
@@ -262,25 +306,28 @@ static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer:
 template <typename PlugType>
 static Plug *loadCompoundNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent )
 {	
-	typename PlugType::ValueType defaultValue( 0 );
+	typedef typename PlugType::ValueType ValueType;
+	typedef typename ValueType::BaseType BaseType;
+	
+	ValueType defaultValue( 0 );
 	if( parameter->idefault.size() )
 	{
 		for( size_t i = 0; i < PlugType::ValueType::dimensions(); ++i )
 		{
-			defaultValue[i] = parameter->idefault[i];	
+			defaultValue[i] = BaseType( parameter->idefault[i] );
 		}
 	}
 	else if( parameter->fdefault.size() )
 	{
 		for( size_t i = 0; i < PlugType::ValueType::dimensions(); ++i )
 		{
-			defaultValue[i] = parameter->fdefault[i];	
+			defaultValue[i] = BaseType( parameter->fdefault[i] );
 		}
 	}
 	
 	/// \todo Get from metadata
-	typename PlugType::ValueType minValue( Imath::limits<float>::min() );
-	typename PlugType::ValueType maxValue( Imath::limits<float>::max() );
+	ValueType minValue( Imath::limits<BaseType>::min() );
+	ValueType maxValue( Imath::limits<BaseType>::max() );
 	
 	const string name = plugName( parameter );
 	PlugType *existingPlug = parent->getChild<PlugType>( name );
@@ -529,46 +576,119 @@ void OSLShader::loadShader( const std::string &shaderName, bool keepExistingValu
 	
 	namePlug()->setValue( shaderName );
 	typePlug()->setValue( "osl:" + query.shadertype() );
+	
+	m_metadata = NULL;
 }
 
+//////////////////////////////////////////////////////////////////////////
+// Metadata loading code
+//////////////////////////////////////////////////////////////////////////
 
-bool OSLShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) const
+static IECore::DataPtr convertMetadata( const OSLQuery::Parameter &metadata )
 {
-	if( !Shader::acceptsInput( plug, inputPlug ) )
+	if( metadata.type == TypeDesc::FLOAT )
 	{
-		return false;
+		return new IECore::FloatData( metadata.fdefault[0] );
 	}
-	
-	if( parametersPlug()->isAncestorOf( plug ) )
+	else if( metadata.type == TypeDesc::INT )
 	{
-		const Plug *sourcePlug = inputPlug->source<Plug>();
-		const GafferScene::Shader *sourceShader = runTimeCast<const GafferScene::Shader>( sourcePlug->node() );
-		const Plug *sourceShaderOutPlug = sourceShader ? sourceShader->outPlug() : NULL;
-		
-		if( sourceShaderOutPlug && ( sourceShaderOutPlug == inputPlug || sourceShaderOutPlug->isAncestorOf( inputPlug ) ) )
+		return new IECore::IntData( metadata.idefault[0] );
+	}
+	else if( metadata.type == TypeDesc::STRING )
+	{
+		return new IECore::StringData( metadata.sdefault[0] );
+	}
+
+	return NULL;
+}
+
+static IECore::CompoundDataPtr convertMetadata( const std::vector<OSLQuery::Parameter> &metadata )
+{
+	CompoundDataPtr result = new CompoundData;
+	for( std::vector<OSLQuery::Parameter>::const_iterator it = metadata.begin(), eIt = metadata.end(); it != eIt; ++it )
+	{
+		DataPtr data = convertMetadata( *it );
+		if( data )
 		{
-			// source is the output of a shader node, so it'd better be
-			// a generic osl shader. 
-			if( !sourceShader->isInstanceOf( staticTypeId() ) )
-			{
-				return false;
-			}
-			if( sourceShader->typePlug()->getValue() != "osl:shader" )
-			{
-				return false;
-			}
-			// osl disallows the connection of vectors to colours
-			if( plug->isInstanceOf( Color3fPlug::staticTypeId() ) && inputPlug->isInstanceOf( V3fPlug::staticTypeId() ) )
-			{
-				return false;
-			}
-			// and we can only connect closures into closures
-			if( plug->typeId() == Plug::staticTypeId() && inputPlug->typeId() != Plug::staticTypeId() )
-			{
-				return false;
-			}
-		}		
+			result->writable()[it->name] = data;
+		}
+	}
+	return result;
+}
+
+static IECore::ConstCompoundDataPtr metadataGetter( const std::string &key, size_t &cost )
+{
+	cost = 1;
+	if( !key.size() )
+	{
+		return NULL;
 	}
 	
-	return true;
+	const char *searchPath = getenv( "OSL_SHADER_PATHS" );
+	OSLQuery query;
+	if( !query.open( key, searchPath ? searchPath : "" ) )
+	{
+		throw Exception( query.error() );
+	}
+	
+	CompoundDataPtr metadata = new CompoundData;
+	metadata->writable()["shader"] = convertMetadata( query.metadata() );
+	
+	CompoundDataPtr parameterMetadata = new CompoundData;
+	metadata->writable()["parameter"] = parameterMetadata;
+	for( size_t i = 0; i < query.nparams(); ++i )
+	{
+		const OSLQuery::Parameter *parameter = query.getparam( i );
+		if( parameter->metadata.size() )
+		{
+			parameterMetadata->writable()[parameter->name] = convertMetadata( parameter->metadata );
+		}
+	}
+	
+	return metadata;
+}
+
+typedef LRUCache<std::string, IECore::ConstCompoundDataPtr> MetadataCache;
+MetadataCache g_metadataCache( metadataGetter, 10000 );
+
+const IECore::CompoundData *OSLShader::metadata() const
+{
+	if( m_metadata )
+	{
+		return m_metadata;
+	}
+	
+	m_metadata = g_metadataCache.get( namePlug()->getValue() );
+	return m_metadata;
+}
+
+const IECore::Data *OSLShader::shaderMetadata( const IECore::InternedString &key ) const
+{
+	const IECore::CompoundData *m = metadata();
+	if( !m )
+	{
+		return NULL;
+	}
+	return m->member<IECore::CompoundData>( "shader" )->member<IECore::Data>( key );
+}
+
+const IECore::Data *OSLShader::parameterMetadata( const Gaffer::Plug *plug, const IECore::InternedString &key ) const
+{
+	const IECore::CompoundData *m = metadata();
+	if( !m )
+	{
+		return NULL;
+	}
+	
+	if( plug->parent<Plug>() != parametersPlug() )
+	{
+		return NULL;
+	}
+	
+	const IECore::CompoundData *p = m->member<IECore::CompoundData>( "parameter" )->member<IECore::CompoundData>( plug->getName() );
+	if( !p )
+	{
+		return NULL;
+	}
+	return p->member<IECore::Data>( key );
 }

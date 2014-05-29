@@ -56,7 +56,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-SceneProcedural::SceneProcedural( ConstScenePlugPtr scenePlug, const Gaffer::Context *context, const ScenePlug::ScenePath &scenePath, const IECore::PathMatcherData *pathsToExpand, size_t minimumExpansionDepth )
+SceneProcedural::SceneProcedural( ConstScenePlugPtr scenePlug, const Gaffer::Context *context, const ScenePlug::ScenePath &scenePath, const PathMatcherData *pathsToExpand, size_t minimumExpansionDepth )
 	:	m_scenePlug( scenePlug ), m_context( new Context( *context ) ), m_scenePath( scenePath ), m_pathsToExpand( pathsToExpand ? pathsToExpand->copy() : 0 ), m_minimumExpansionDepth( minimumExpansionDepth )
 {
 	// get a reference to the script node to prevent it being destroyed while we're doing a render:
@@ -91,7 +91,7 @@ SceneProcedural::SceneProcedural( ConstScenePlugPtr scenePlug, const Gaffer::Con
 }
 
 SceneProcedural::SceneProcedural( const SceneProcedural &other, const ScenePlug::ScenePath &scenePath )
-	:	m_scenePlug( other.m_scenePlug ), m_context( new Context( *(other.m_context) ) ), m_scenePath( scenePath ),
+	:	m_scenePlug( other.m_scenePlug ), m_context( new Context( *(other.m_context), Context::Shared ) ), m_scenePath( scenePath ),
 		m_pathsToExpand( other.m_pathsToExpand ), m_minimumExpansionDepth( other.m_minimumExpansionDepth ? other.m_minimumExpansionDepth - 1 : 0 ),
 		m_options( other.m_options ), m_attributes( other.m_attributes )
 {
@@ -115,7 +115,7 @@ Imath::Box3f SceneProcedural::bound() const
 	/// is fixed.
 	try
 	{
-		ContextPtr timeContext = new Context( *m_context );
+		ContextPtr timeContext = new Context( *m_context, Context::Borrowed );
 		Context::Scope scopedTimeContext( timeContext );
 		
 		/// \todo This doesn't take account of the unfortunate fact that our children may have differing
@@ -178,7 +178,7 @@ void SceneProcedural::render( RendererPtr renderer ) const
 		// get all the attributes, and early out if we're not visibile
 	
 		ConstCompoundObjectPtr attributes = m_scenePlug->attributesPlug()->getValue();
-		const BoolData *visibilityData = attributes->member<BoolData>( "gaffer:visibility" );
+		const BoolData *visibilityData = attributes->member<BoolData>( "scene:visible" );
 		if( visibilityData && !visibilityData->readable() )
 		{
 			return;
@@ -201,7 +201,7 @@ void SceneProcedural::render( RendererPtr renderer ) const
 		std::set<float> transformTimes;
 		motionTimes( ( m_options.transformBlur && m_attributes.transformBlur ) ? m_attributes.transformBlurSegments : 0, transformTimes );
 		{
-			ContextPtr timeContext = new Context( *m_context );
+			ContextPtr timeContext = new Context( *m_context, Context::Borrowed );
 			Context::Scope scopedTimeContext( timeContext );
 			
 			MotionBlock motionBlock( renderer, transformTimes, transformTimes.size() > 1 );
@@ -243,7 +243,7 @@ void SceneProcedural::render( RendererPtr renderer ) const
 		std::set<float> deformationTimes;
 		motionTimes( ( m_options.deformationBlur && m_attributes.deformationBlur ) ? m_attributes.deformationBlurSegments : 0, deformationTimes );
 		{
-			ContextPtr timeContext = new Context( *m_context );
+			ContextPtr timeContext = new Context( *m_context, Context::Borrowed );
 			Context::Scope scopedTimeContext( timeContext );
 		
 			unsigned timeIndex = 0;

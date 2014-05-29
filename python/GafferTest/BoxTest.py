@@ -297,7 +297,6 @@ class BoxTest( unittest.TestCase ) :
 		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n1"] ] ) )
 
 		self.assertTrue( b.canPromotePlug( b["n1"]["op1"] ) )
-		self.assertFalse( b.canPromotePlug( b["n1"]["sum"] ) )
 		self.assertFalse( b.canPromotePlug( s["n2"]["op1"] ) )
 
 		self.assertFalse( b.plugIsPromoted( b["n1"]["op1"] ) )
@@ -625,7 +624,147 @@ class BoxTest( unittest.TestCase ) :
 		
 		op1.setValue( 1 )
 		self.assertEqual( b["n"]["sum"].getValue(), 1 )
+	
+	def testMetadataSignalling( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["r"] = Gaffer.Random()
+	
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["r"] ] ) )
+		p = b.promotePlug( b["r"]["floatRange"] )
+		
+		cs = GafferTest.CapturingSlot( Gaffer.Metadata.plugValueChangedSignal() )
+		
+		b.setPlugMetadata( p, "description", "hello" )
+		
+		self.assertEqual( len( cs ), 1 )
+		self.assertEqual( cs[0], ( Gaffer.Box.staticTypeId(), p.relativeName( b ), "description" ) )
+	
+	def testNodeMetadata( self ) :
+	
+		s = Gaffer.ScriptNode()
+	
+		s["b"] = Gaffer.Box()
+		self.assertEqual( s["b"].getNodeMetadata( "description" ), None )
+		
+		cs = GafferTest.CapturingSlot( Gaffer.Metadata.nodeValueChangedSignal() )
+		
+		s["b"].setNodeMetadata( "description", "aaa" )
+		self.assertEqual( s["b"].getNodeMetadata( "description" ), IECore.StringData( "aaa" ) )
+		self.assertEqual( Gaffer.Metadata.nodeValue( s["b"], "description" ), "aaa" )
+
+		self.assertEqual( len( cs ), 1 )
+		self.assertEqual( cs[0], ( Gaffer.Box.staticTypeId(), "description" ) )
+		
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		
+		self.assertEqual( s2["b"].getNodeMetadata( "description" ), IECore.StringData( "aaa" ) )
+
+	def testMetadataSignallingIgnoresIdenticalValues( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["r"] = Gaffer.Random()
+	
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["r"] ] ) )
+		p = b.promotePlug( b["r"]["floatRange"] )
+		
+		ncs = GafferTest.CapturingSlot( Gaffer.Metadata.nodeValueChangedSignal() )
+		pcs = GafferTest.CapturingSlot( Gaffer.Metadata.plugValueChangedSignal() )
+		
+		b.setNodeMetadata( "description", "t" )
+		b.setPlugMetadata( p, "description", "tt" )
+		
+		self.assertEqual( len( ncs ), 1 )
+		self.assertEqual( len( pcs ), 1 )
+		self.assertEqual( ncs[0], ( Gaffer.Box.staticTypeId(), "description" ) )
+		self.assertEqual( pcs[0], ( Gaffer.Box.staticTypeId(), p.relativeName( b ), "description" ) )
+	
+		b.setNodeMetadata( "description", "t" )
+		b.setPlugMetadata( p, "description", "tt" )
+		
+		self.assertEqual( len( ncs ), 1 )
+		self.assertEqual( len( pcs ), 1 )
+		
+		b.setNodeMetadata( "description", "d" )
+		b.setPlugMetadata( p, "description", "dd" )
+		
+		self.assertEqual( len( ncs ), 2 )
+		self.assertEqual( len( pcs ), 2 )
+		self.assertEqual( ncs[1], ( Gaffer.Box.staticTypeId(), "description" ) )
+		self.assertEqual( pcs[1], ( Gaffer.Box.staticTypeId(), p.relativeName( b ), "description" ) )
+	
+	def testMetadataUndo( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferTest.AddNode()
+	
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
+		p = b.promotePlug( b["n"]["op1"] )
+		
+		self.assertEqual( b.getNodeMetadata( "description" ), None )
+		self.assertEqual( b.getPlugMetadata( p, "description" ), None )
+		
+		with Gaffer.UndoContext( s ) :
+			b.setNodeMetadata( "description", "d" )
+			b.setPlugMetadata( p, "description", "dd" )
+			
+		self.assertEqual( b.getNodeMetadata( "description" ), IECore.StringData( "d" ) )
+		self.assertEqual( b.getPlugMetadata( p, "description" ), IECore.StringData( "dd" ) )
+		
+		with Gaffer.UndoContext( s ) :
+			b.setNodeMetadata( "description", "t" )
+			b.setPlugMetadata( p, "description", "tt" )
+		
+		self.assertEqual( b.getNodeMetadata( "description" ), IECore.StringData( "t" ) )
+		self.assertEqual( b.getPlugMetadata( p, "description" ), IECore.StringData( "tt" ) )
+		
+		s.undo()
+		
+		self.assertEqual( b.getNodeMetadata( "description" ), IECore.StringData( "d" ) )
+		self.assertEqual( b.getPlugMetadata( p, "description" ), IECore.StringData( "dd" ) )
+		
+		s.undo()
+		
+		self.assertEqual( b.getNodeMetadata( "description" ), None )
+		self.assertEqual( b.getPlugMetadata( p, "description" ), None )
+		
+		s.redo()
+		
+		self.assertEqual( b.getNodeMetadata( "description" ), IECore.StringData( "d" ) )
+		self.assertEqual( b.getPlugMetadata( p, "description" ), IECore.StringData( "dd" ) )
+		
+		s.redo()
+
+		self.assertEqual( b.getNodeMetadata( "description" ), IECore.StringData( "t" ) )
+		self.assertEqual( b.getPlugMetadata( p, "description" ), IECore.StringData( "tt" ) )				
+	
+	def testPromoteOutputPlug( self ) :
+	
+		b = Gaffer.Box()
+		b["n"] = GafferTest.AddNode()
+		
+		self.assertFalse( b.canPromotePlug( b["n"]["sum"] ) )
+		self.assertTrue( b.canPromotePlug( b["n"]["sum"], asUserPlug=False ) )
+		
+		sum = b.promotePlug( b["n"]["sum"], asUserPlug=False )
+		self.assertTrue( b.isAncestorOf( sum ) )
+		self.assertTrue( sum.direction() == Gaffer.Plug.Direction.Out )
+		self.assertEqual( sum.getInput(), b["n"]["sum"] )
+		self.assertTrue( b.plugIsPromoted( b["n"]["sum"] ) )
+		self.assertFalse( b.canPromotePlug( b["n"]["sum"], asUserPlug=False ) )
+		self.assertRaises( RuntimeError, b.promotePlug, b["n"]["sum"], asUserPlug=False )
+		
+		b["n"]["op1"].setValue( 10 )
+		b["n"]["op2"].setValue( 12 )
+		
+		self.assertEqual( sum.getValue(), 22 )
+		
+		b.unpromotePlug( b["n"]["sum"] )
+		self.assertFalse( b.plugIsPromoted( b["n"]["sum"] ) )
+		self.assertTrue( sum.parent() is None )
+		self.assertFalse( b.canPromotePlug( b["n"]["sum"] ) )
+		self.assertTrue( b.canPromotePlug( b["n"]["sum"], asUserPlug=False ) )
 		
 if __name__ == "__main__":
 	unittest.main()
-	

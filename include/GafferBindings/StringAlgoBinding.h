@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //  
-//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2014, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -34,46 +34,14 @@
 //  
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/python/list.hpp"
-#include "IECorePython/ScopedGILRelease.h"
-#include "Gaffer/Executable.h"
+#ifndef GAFFERBINDINGS_STRINGALGOBINDING_H
+#define GAFFERBINDINGS_STRINGALGOBINDING_H
 
 namespace GafferBindings
 {
 
-template< typename PythonClass, typename NodeClass >
-void ExecutableBinding<PythonClass,NodeClass>::bind( PythonClass &c )
-{
-	c.def( "executionRequirements", &ExecutableBinding<PythonClass,NodeClass>::executionRequirements )
-	 .def( "executionHash", &NodeClass::executionHash )
-	 .def( "execute", &ExecutableBinding<PythonClass,NodeClass>::execute );
-}
-
-template< typename PythonClass, typename NodeClass >
-boost::python::list ExecutableBinding<PythonClass,NodeClass>::executionRequirements( NodeClass &n, Gaffer::ContextPtr context )
-{
-	Gaffer::Executable::Tasks tasks;
-	n.executionRequirements( context, tasks );
-	boost::python::list result;
-	for ( Gaffer::Executable::Tasks::const_iterator tIt = tasks.begin(); tIt != tasks.end(); tIt++ )
-	{
-		result.append( *tIt );
-	}
-	return result;
-}
-
-template< typename PythonClass, typename NodeClass >
-void ExecutableBinding<PythonClass,NodeClass>::execute( NodeClass &n, const boost::python::list &contextList )
-{
-	Gaffer::Executable::Contexts contexts;
-	size_t len = boost::python::len(contextList);
-	contexts.reserve( len );
-	for ( size_t i = 0; i < len; i++ )
-	{
-		contexts.push_back( boost::python::extract<Gaffer::ConstContextPtr>( contextList[i] ) );
-	}
-	IECorePython::ScopedGILRelease gilRelease;
-	n.execute( contexts );
-}
+void bindStringAlgo();
 
 } // namespace GafferBindings
+
+#endif // GAFFERBINDINGS_STRINGALGOBINDING_H

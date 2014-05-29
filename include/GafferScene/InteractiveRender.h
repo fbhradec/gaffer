@@ -37,15 +37,25 @@
 #ifndef GAFFERSCENE_INTERACTIVERENDER_H
 #define GAFFERSCENE_INTERACTIVERENDER_H
 
-#include "Gaffer/Context.h"
-#include "GafferScene/Render.h"
+#include "IECore/Renderer.h"
+
+#include "Gaffer/Node.h"
+
+#include "GafferScene/ScenePlug.h"
+
+namespace Gaffer
+{
+
+IE_CORE_FORWARDDECLARE( Context )
+
+} // namespace Gaffer
 
 namespace GafferScene
 {
 
 /// Base class for nodes which perform renders embedded in the main gaffer process,
 /// and which can be updated automatically and rerendered as the user tweaks the scene.
-class InteractiveRender : public Render
+class InteractiveRender : public Gaffer::Node
 {
 
 	public :
@@ -53,7 +63,7 @@ class InteractiveRender : public Render
 		InteractiveRender( const std::string &name=defaultName<InteractiveRender>() );
 		virtual ~InteractiveRender();
 		
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::InteractiveRender, InteractiveRenderTypeId, Render );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::InteractiveRender, InteractiveRenderTypeId, Gaffer::Node );
 		
 		enum State
 		{
@@ -61,6 +71,10 @@ class InteractiveRender : public Render
 			Running,
 			Paused
 		};
+		
+		/// The scene to be rendered.
+		ScenePlug *inPlug();
+		const ScenePlug *inPlug() const;
 		
 		Gaffer::IntPlug *statePlug();
 		const Gaffer::IntPlug *statePlug() const;
@@ -75,7 +89,6 @@ class InteractiveRender : public Render
 		Gaffer::Context *getContext();
 		const Gaffer::Context *getContext() const;
 		void setContext( Gaffer::ContextPtr context );
-		
 		
 	protected :
 	

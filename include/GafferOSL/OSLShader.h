@@ -61,10 +61,24 @@ class OSLShader : public GafferScene::Shader
 
 		OSLRenderer::ConstShadingEnginePtr shadingEngine() const;
 
+		/// Returns an OSL metadata item from the shader.
+		const IECore::Data *shaderMetadata( const IECore::InternedString &name ) const;
+		/// Returns an OSL metadata item from the specified shader parameter.
+		const IECore::Data *parameterMetadata( const Gaffer::Plug *plug, const IECore::InternedString &name ) const;
+
 	protected :
 	
 		virtual bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const;
-							
+	
+	private :
+
+		// Shader metadata is stored in a "shader" member of the result and
+		// parameter metadata is stored indexed by name inside a
+		// "parameter" member of the result.
+		const IECore::CompoundData *metadata() const;
+
+		mutable IECore::ConstCompoundDataPtr m_metadata;
+
 };
 
 IE_CORE_DECLAREPTR( OSLShader )

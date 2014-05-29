@@ -99,11 +99,12 @@ class BrowserEditor( GafferUI.EditorWidget ) :
 		
 	class Mode( object ) :
 	
-		def __init__( self, browser ) :
+		def __init__( self, browser, splitPosition = 0.5 ) :
 		
 			self.__browser = weakref.ref( browser ) # avoid circular references
 			self.__directoryPath = None
 			self.__displayMode = None
+			self.__splitPosition = splitPosition
 			
 			# create the op matcher on a separate thread, as it may take a while to trawl
 			# through all the available ops.
@@ -137,19 +138,27 @@ class BrowserEditor( GafferUI.EditorWidget ) :
 			# classes can still modify the bookmarks if they know better.
 			self.browser().pathChooser().setBookmarks(
 				GafferUI.Bookmarks.acquire(
-					self.browser().scriptNode().ancestor( Gaffer.ApplicationRoot.staticTypeId() ),
+					self.browser().scriptNode(),
 					pathType = self.__directoryPath.__class__
 				)
 			)
 			
 			self.__contextMenuConnection = self.browser().pathChooser().pathListingWidget().contextMenuSignal().connect( Gaffer.WeakMethod( self.__contextMenu ) )
-						
+			
+			splitContainer = self.browser().pathChooser().pathListingWidget().ancestor( GafferUI.SplitContainer )
+			splitContainer.setSizes( ( self.__splitPosition, 1.0 - self.__splitPosition ) )
+			
 		def disconnect( self ) :
 	
 			self.__directoryPath[:] = self.browser().pathChooser().directoryPathWidget().getPath()[:]
 			self.__displayMode = self.browser().pathChooser().pathListingWidget().getDisplayMode()
 	
 			self.__contextMenuConnection = None
+			
+			# store current split position so we can restore it in connect()
+			splitContainer = self.browser().pathChooser().pathListingWidget().ancestor( GafferUI.SplitContainer )
+			sizes = splitContainer.getSizes()
+			self.__splitPosition = float( sizes[0] ) / sum( sizes )
 	
 		## Must be implemented by derived classes to return the initial directory path to be viewed.
 		def _initialPath( self ) :
@@ -270,7 +279,7 @@ class FileSequenceMode( BrowserEditor.Mode ) :
 		# we want to share our bookmarks with the non-sequence filesystem paths
 		self.browser().pathChooser().setBookmarks(
 			GafferUI.Bookmarks.acquire(
-				self.browser().scriptNode().ancestor( Gaffer.ApplicationRoot.staticTypeId() ),
+				self.browser().scriptNode(),
 				pathType = Gaffer.FileSystemPath
 			)
 		)
@@ -293,7 +302,7 @@ class OpMode( BrowserEditor.Mode ) :
 
 	def __init__( self, browser, classLoader=None ) :
 	
-		BrowserEditor.Mode.__init__( self, browser )
+		BrowserEditor.Mode.__init__( self, browser, splitPosition = 0.333 )
 		
 		if classLoader is not None :
 			self.__classLoader = classLoader
@@ -331,7 +340,11 @@ class OpMode( BrowserEditor.Mode ) :
 			return
 			
 		op = selectedPaths[0].classLoader().load( str( selectedPaths[0] )[1:] )()
-		opDialogue = GafferUI.OpDialogue( op )
+		node = Gaffer.ParameterisedHolderNode()
+		node.setParameterised( op )
+		GafferUI.ParameterPresets.autoLoad( node )
+		
+		opDialogue = GafferUI.OpDialogue( node, executeInBackground = True )
 		pathListing.ancestor( GafferUI.Window ).addChildWindow( opDialogue )
 		opDialogue.setVisible( True )
 

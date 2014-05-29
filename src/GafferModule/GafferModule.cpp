@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //  
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
-//  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2011-2014, Image Engine Design Inc. All rights reserved.
 //  
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -83,6 +83,7 @@
 #include "GafferBindings/ArrayPlugBinding.h"
 #include "GafferBindings/Serialisation.h"
 #include "GafferBindings/MetadataBinding.h"
+#include "GafferBindings/StringAlgoBinding.h"
 
 using namespace boost::python;
 using namespace Gaffer;
@@ -97,6 +98,7 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindNode();
 	bindDependencyNode();
 	bindComputeNode();
+	bindExecutableNode();
 	bindPlug();
 	bindValuePlug();
 	bindNumericPlug();
@@ -126,13 +128,13 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindRandom();
 	bindBox();
 	bindAction();
-	bindExecutableNode();
 	bindDespatcher();
 	bindExecutableOpHolder();
 	bindReference();
 	bindArrayPlug();
 	bindSerialisation();
 	bindMetadata();
+	bindStringAlgo();
 			
 	NodeClass<Backdrop>();
 

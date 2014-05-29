@@ -1,6 +1,6 @@
 ##########################################################################
 #  
-#  Copyright (c) 2012, John Haddon. All rights reserved.
+#  Copyright (c) 2012-2014, John Haddon. All rights reserved.
 #  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
@@ -35,7 +35,8 @@
 #  
 ##########################################################################
 
-import Gaffer
+__import__( "Gaffer" )
+__import__( "GafferImage" )
 
 from _GafferScene import *
 

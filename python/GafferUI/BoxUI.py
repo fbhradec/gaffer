@@ -1,6 +1,6 @@
 ##########################################################################
 #  
-#  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2013-2014, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -88,16 +88,20 @@ class BoxNodeUI( GafferUI.StandardNodeUI ) :
 
 		self._tabbedContainer().setCornerWidget( toolButton )
 	
+		self.__uiEditor = None
+	
 	def _toolMenuDefinition( self ) :
 	
 		result = IECore.MenuDefinition()
+		result.append( "/Edit UI...", { "command" : Gaffer.WeakMethod( self.__showUIEditor ) } )
+		result.append( "/Export Divider", { "divider" : True } )
 		result.append( "/Export for referencing...", { "command" : Gaffer.WeakMethod( self.__exportForReferencing ) } )
 		
 		return result
 		
 	def __exportForReferencing( self ) :
 	
-		bookmarks = GafferUI.Bookmarks.acquire( self.node().ancestor( Gaffer.ApplicationRoot.staticTypeId() ), category="reference" )
+		bookmarks = GafferUI.Bookmarks.acquire( self.node(), category="reference" )
 
 		path = Gaffer.FileSystemPath( bookmarks.getDefault( self ) )
 		path.setFilter( Gaffer.FileSystemPath.createStandardFilter( [ "grf" ] ) )
@@ -113,6 +117,10 @@ class BoxNodeUI( GafferUI.StandardNodeUI ) :
 			path += ".grf"
 
 		self.node().exportForReference( path )
+		
+	def __showUIEditor( self ) :
+	
+		GafferUI.UIEditor.acquire( self.node() )
 	
 GafferUI.NodeUI.registerNodeUI( Gaffer.Box.staticTypeId(), BoxNodeUI )
 
@@ -140,7 +148,7 @@ def __plugValueWidgetCreator( plug ) :
 		
 GafferUI.PlugValueWidget.registerCreator( Gaffer.Box.staticTypeId(), "user.*" , __plugValueWidgetCreator )
 
-# Plug promotion
+# PlugValueWidget menu
 ##########################################################################
 
 def __promoteToBox( box, plug ) :
@@ -186,3 +194,33 @@ def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 		} )
 			
 __plugPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu )
+
+# NodeGraph plug context menu
+##########################################################################
+
+def __renamePlug( nodeGraph, plug ) :
+
+	d = GafferUI.TextInputDialogue( initialText = plug.getName(), title = "Enter name", confirmLabel = "Rename" )
+	name = d.waitForText( parentWindow = nodeGraph.ancestor( GafferUI.Window ) )
+
+	if not name :
+		return
+
+	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
+		plug.setName( name )
+
+def __deletePlug( plug ) :
+
+	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
+		plug.parent().removeChild( plug )
+
+def __nodeGraphPlugContextMenu( nodeGraph, plug, menuDefinition ) :
+
+	if not isinstance( plug.node(), Gaffer.Box ) :
+		return
+
+	menuDefinition.append( "/Rename...", { "command" : IECore.curry( __renamePlug, nodeGraph, plug ) } )
+	menuDefinition.append( "/DeleteDivider", { "divider" : True } )
+	menuDefinition.append( "/Delete", { "command" : IECore.curry( __deletePlug, plug ) } )
+
+__nodeGraphPlugContextMenuConnection = GafferUI.NodeGraph.plugContextMenuSignal().connect( __nodeGraphPlugContextMenu )
