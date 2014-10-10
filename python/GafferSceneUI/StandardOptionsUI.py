@@ -1,25 +1,25 @@
 ##########################################################################
-#  
+#
 #  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-#  
+#
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
 #  met:
-#  
+#
 #      * Redistributions of source code must retain the above
 #        copyright notice, this list of conditions and the following
 #        disclaimer.
-#  
+#
 #      * Redistributions in binary form must reproduce the above
 #        copyright notice, this list of conditions and the following
 #        disclaimer in the documentation and/or other materials provided with
 #        the distribution.
-#  
+#
 #      * Neither the name of John Haddon nor the names of
 #        any other contributors to this software may be used to endorse or
 #        promote products derived from this software without specific prior
 #        written permission.
-#  
+#
 #  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 #  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 #  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,7 +31,7 @@
 #  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 #  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#  
+#
 ##########################################################################
 
 import Gaffer
@@ -52,12 +52,20 @@ def __cameraSummary( plug ) :
 	if plug["renderResolution"]["enabled"].getValue() :
 		resolution = plug["renderResolution"]["value"].getValue()
 		info.append( "%dx%d" % ( resolution[0], resolution[1] ) )
+	if plug["pixelAspectRatio"]["enabled"].getValue() :
+		pixelAspectRatio = plug["pixelAspectRatio"]["value"].getValue()
+		info.append( "Aspect %s" % __floatToString( pixelAspectRatio ) )
+	if plug["resolutionMultiplier"]["enabled"].getValue() :
+		resolutionMultiplier = plug["resolutionMultiplier"]["value"].getValue()
+		info.append( "Mult %s" % __floatToString( resolutionMultiplier ) )
 	if plug["renderCropWindow"]["enabled"].getValue() :
 		crop = plug["renderCropWindow"]["value"].getValue()
 		info.append( "Crop %s,%s-%s,%s" % tuple( __floatToString( x ) for x in ( crop.min.x, crop.min.y, crop.max.x, crop.max.y ) ) )
+	if plug["overscan"]["enabled"].getValue() :
+		info.append( "Overscan %s" % ( "On" if plug["overscan"]["value"].getValue() else "Off" ) )
 
 	return ", ".join( info )
-	
+
 def __motionBlurSummary( plug ) :
 
 	info = []
@@ -69,26 +77,33 @@ def __motionBlurSummary( plug ) :
 		info.append( "Deformation " + ( "On" if plug["deformationBlur"]["value"].getValue() else "Off" ) )
 	if plug["shutter"]["enabled"].getValue() :
 		info.append( "Shutter " + str( plug["shutter"]["value"].getValue() ) )
-		
-	return ", ".join( info )	
+
+	return ", ".join( info )
 
 GafferUI.PlugValueWidget.registerCreator(
-	
-	GafferScene.StandardOptions.staticTypeId(),
+
+	GafferScene.StandardOptions,
 	"options",
 	GafferUI.SectionedCompoundDataPlugValueWidget,
 	sections = (
-		
+
 		{
 			"label" : "Camera",
 			"summary" : __cameraSummary,
 			"namesAndLabels" : (
 				( "render:camera", "Camera" ),
 				( "render:resolution", "Resolution" ),
+				( "render:pixelAspectRatio", "Pixel Aspect Ratio" ),
+				( "render:resolutionMultiplier", "Resolution Multiplier" ),
 				( "render:cropWindow", "Crop Window" ),
+				( "render:overscan", "Overscan" ),
+				( "render:overscanTop", "Overscan Top" ),
+				( "render:overscanBottom", "Overscan Bottom" ),
+				( "render:overscanLeft", "Overscan Left" ),
+				( "render:overscanRight", "Overscan Right" ),
 			),
 		},
-		
+
 		{
 			"label" : "Motion Blur",
 			"summary" : __motionBlurSummary,
@@ -99,13 +114,13 @@ GafferUI.PlugValueWidget.registerCreator(
 				( "render:shutter", "Shutter" ),
 			),
 		},
-		
+
 	),
-	
+
 )
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.StandardOptions.staticTypeId(),
+	GafferScene.StandardOptions,
 	"options.renderCamera.value",
 	lambda plug : GafferUI.PathPlugValueWidget(
 		plug,

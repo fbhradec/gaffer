@@ -1,25 +1,25 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2013-2014, John Haddon. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,7 +31,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "tbb/mutex.h"
@@ -64,7 +64,12 @@ namespace
 
 struct ShadingEngineCacheKey
 {
-	
+
+	ShadingEngineCacheKey()
+		:	shader( NULL )
+	{
+	}
+
 	ShadingEngineCacheKey( const OSLShader *s )
 		:	shader( s ), hash( s->stateHash() )
 	{
@@ -74,7 +79,7 @@ struct ShadingEngineCacheKey
 	{
 		return hash == other.hash;
 	}
-	
+
 	bool operator != ( const ShadingEngineCacheKey &other ) const
 	{
 		return hash != other.hash;
@@ -84,29 +89,34 @@ struct ShadingEngineCacheKey
 	{
 		return hash < other.hash;
 	}
-	
-	mutable const OSLShader *shader;	
+
+	mutable const OSLShader *shader;
 	MurmurHash hash;
 
 };
 
+inline size_t tbb_hasher( const ShadingEngineCacheKey &cacheKey )
+{
+	return tbb_hasher( cacheKey.hash );
+}
+
 OSLRenderer::ConstShadingEnginePtr getter( const ShadingEngineCacheKey &key, size_t &cost )
 {
 	cost = 1;
-	
+
 	ConstObjectVectorPtr state = key.shader->state();
 	key.shader = NULL; // there's no guarantee the node would even exist after this call, so zero it out to avoid temptation
-	
+
 	if( !state->members().size() )
 	{
 		return NULL;
 	}
-	
-	static OSLRendererPtr g_renderer;	
+
+	static OSLRendererPtr g_renderer;
 	static tbb::mutex g_rendererMutex;
 
 	tbb::mutex::scoped_lock lock( g_rendererMutex );
-		
+
 	if( !g_renderer )
 	{
 		g_renderer = new OSLRenderer;
@@ -117,7 +127,7 @@ OSLRenderer::ConstShadingEnginePtr getter( const ShadingEngineCacheKey &key, siz
 		}
 		g_renderer->worldBegin();
 	}
-	
+
 	IECore::AttributeBlock attributeBlock( g_renderer );
 
 	for( ObjectVector::MemberContainer::const_iterator it = state->members().begin(), eIt = state->members().end(); it != eIt; it++ )
@@ -125,10 +135,10 @@ OSLRenderer::ConstShadingEnginePtr getter( const ShadingEngineCacheKey &key, siz
 		const StateRenderable *s = runTimeCast<const StateRenderable>( it->get() );
 		if( s )
 		{
-			s->render( g_renderer );
+			s->render( g_renderer.get() );
 		}
 	}
-		
+
 	return g_renderer->shadingEngine();
 }
 
@@ -163,18 +173,18 @@ bool OSLShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) const
 	{
 		return false;
 	}
-	
+
 	if( !inputPlug )
 	{
 		return true;
 	}
-	
+
 	if( parametersPlug()->isAncestorOf( plug ) )
 	{
 		const Plug *sourcePlug = inputPlug->source<Plug>();
 		const GafferScene::Shader *sourceShader = runTimeCast<const GafferScene::Shader>( sourcePlug->node() );
 		const Plug *sourceShaderOutPlug = sourceShader ? sourceShader->outPlug() : NULL;
-		
+
 		if( sourceShaderOutPlug && ( sourceShaderOutPlug == inputPlug || sourceShaderOutPlug->isAncestorOf( inputPlug ) ) )
 		{
 			// source is the output of a shader node, so it'd better be
@@ -199,7 +209,7 @@ bool OSLShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) const
 			}
 		}
 	}
-	
+
 	return true;
 }
 
@@ -212,9 +222,9 @@ static std::string plugName( const OSLQuery::Parameter *parameter )
 	size_t i = parameter->name.find( "." );
 	if( i != string::npos )
 	{
-		return parameter->name.substr( i + 1 );
+		return parameter->name.substr( i + 1 ).c_str();
 	}
-	return parameter->name;
+	return parameter->name.c_str();
 }
 
 static void transferConnectionOrValue( Plug *sourcePlug, Plug *destinationPlug )
@@ -223,7 +233,7 @@ static void transferConnectionOrValue( Plug *sourcePlug, Plug *destinationPlug )
 	{
 		return;
 	}
-	
+
 	if( Plug *input = sourcePlug->getInput<Plug>() )
 	{
 		destinationPlug->setInput( input );
@@ -244,30 +254,30 @@ static Plug *loadStringParameter( const OSLQuery::Parameter *parameter, Gaffer::
 	string defaultValue;
 	if( parameter->sdefault.size() )
 	{
-		defaultValue = parameter->sdefault[0];
+		defaultValue = parameter->sdefault[0].c_str();
 	}
-	
+
 	const string name = plugName( parameter );
 	StringPlug *existingPlug = parent->getChild<StringPlug>( name );
 	if(	existingPlug && existingPlug->defaultValue() == defaultValue )
 	{
 		return existingPlug;
 	}
-	
+
 	StringPlugPtr plug = new StringPlug( name, parent->direction(), defaultValue, Plug::Default | Plug::Dynamic );
-	
+
 	transferConnectionOrValue( existingPlug, plug.get() );
-	
+
 	parent->setChild( name, plug );
-	
-	return plug;
+
+	return plug.get();
 }
 
 template<typename PlugType>
 static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent )
 {
 	typedef typename PlugType::ValueType ValueType;
-	
+
 	ValueType defaultValue( 0 );
 	if( parameter->idefault.size() )
 	{
@@ -284,31 +294,31 @@ static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer:
 
 	const string name = plugName( parameter );
 	PlugType *existingPlug = parent->getChild<PlugType>( name );
-	if(	
+	if(
 		existingPlug &&
 		existingPlug->defaultValue() == defaultValue &&
 		existingPlug->minValue() == minValue &&
-		existingPlug->maxValue() == maxValue 
+		existingPlug->maxValue() == maxValue
 	)
 	{
 		return existingPlug;
 	}
-	
+
 	typename PlugType::Ptr plug = new PlugType( name, parent->direction(), defaultValue, minValue, maxValue, Plug::Default | Plug::Dynamic );
-	
+
 	transferConnectionOrValue( existingPlug, plug.get() );
-	
+
 	parent->setChild( name, plug );
-	
-	return plug;
+
+	return plug.get();
 }
 
 template <typename PlugType>
 static Plug *loadCompoundNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent )
-{	
+{
 	typedef typename PlugType::ValueType ValueType;
 	typedef typename ValueType::BaseType BaseType;
-	
+
 	ValueType defaultValue( 0 );
 	if( parameter->idefault.size() )
 	{
@@ -324,57 +334,56 @@ static Plug *loadCompoundNumericParameter( const OSLQuery::Parameter *parameter,
 			defaultValue[i] = BaseType( parameter->fdefault[i] );
 		}
 	}
-	
+
 	/// \todo Get from metadata
 	ValueType minValue( Imath::limits<BaseType>::min() );
 	ValueType maxValue( Imath::limits<BaseType>::max() );
-	
+
 	const string name = plugName( parameter );
 	PlugType *existingPlug = parent->getChild<PlugType>( name );
 	if(
 		existingPlug &&
 		existingPlug->defaultValue() == defaultValue &&
 		existingPlug->minValue() == minValue &&
-		existingPlug->maxValue() == maxValue 
+		existingPlug->maxValue() == maxValue
 	)
 	{
 		return existingPlug;
 	}
-	
+
 	typename PlugType::Ptr plug = new PlugType( name, parent->direction(), defaultValue, minValue, maxValue, Plug::Default | Plug::Dynamic );
-		
+
 	if( existingPlug )
 	{
-		typedef typename PlugType::ChildType ChildType;
 		for( size_t i = 0, e = existingPlug->children().size(); i < e; ++i )
 		{
 			transferConnectionOrValue(
-				existingPlug->template GraphComponent::getChild<ChildType>( i ),
-				plug->template GraphComponent::getChild<ChildType>( i )
+				existingPlug->getChild( i ),
+				plug->getChild( i )
 			);
 		}
 	}
-	
+
 	parent->setChild( name, plug );
-	return plug;
+	return plug.get();
 }
 
 static Plug *loadClosureParameter( const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent )
-{	
+{
 	const string name = plugName( parameter );
 	Plug *existingPlug = parent->getChild<Plug>( name );
 	if(	existingPlug && existingPlug->typeId() == Plug::staticTypeId() )
 	{
 		return existingPlug;
 	}
-	
+
 	PlugPtr plug = new Plug( name, parent->direction(), Plug::Default | Plug::Dynamic );
-	
+
 	transferConnectionOrValue( existingPlug, plug.get() );
-	
+
 	parent->setChild( name, plug );
-	
-	return plug;
+
+	return plug.get();
 }
 
 // forward declaration so loadStructParameter() can call it.
@@ -398,15 +407,21 @@ static Plug *loadStructParameter( const OSLQuery &query, const OSLQuery::Paramet
 	{
 		result = new CompoundPlug( name, parent->direction(), Plug::Default | Plug::Dynamic );
 	}
-	
-	for( vector<string>::const_iterator it = parameter->fields.begin(), eIt = parameter->fields.end(); it != eIt; ++it )
+
+#if OSL_LIBRARY_VERSION_CODE > 10500
+	typedef OIIO::ustring String;
+#else
+	typedef std::string String;
+#endif
+
+	for( vector<String>::const_iterator it = parameter->fields.begin(), eIt = parameter->fields.end(); it != eIt; ++it )
 	{
-		std::string fieldName = parameter->name + "." + *it;
+		std::string fieldName = std::string( parameter->name.c_str() ) + "." + it->c_str();
 		loadShaderParameter( query, query.getparam( fieldName ), result, keepExistingValues );
 	}
-	
+
 	// remove any old plugs which it turned out we didn't need
-	
+
 	if( keepExistingValues )
 	{
 		for( int i = result->children().size() - 1; i >= 0; --i )
@@ -418,16 +433,16 @@ static Plug *loadStructParameter( const OSLQuery &query, const OSLQuery::Paramet
 			}
 		}
 	}
-	
+
 	parent->setChild( name, result );
-	
+
 	return result;
 }
 
 static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent, bool keepExistingValues )
 {
 	Plug *result = NULL;
-	
+
 	if( parameter->isstruct )
 	{
 		result = loadStructParameter( query, parameter, parent, keepExistingValues );
@@ -458,7 +473,7 @@ static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Paramet
 				{
 					if( parameter->type.vecsemantics == TypeDesc::COLOR )
 					{
-						result = loadCompoundNumericParameter<Color3fPlug>( parameter, parent );						
+						result = loadCompoundNumericParameter<Color3fPlug>( parameter, parent );
 					}
 					else
 					{
@@ -483,25 +498,25 @@ static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Paramet
 
 	if( !result )
 	{
-		msg( Msg::Warning, "OSLShader::loadShader", boost::format( "Parameter \"%s\" has unsupported type" ) % parameter->name );
+		msg( Msg::Warning, "OSLShader::loadShader", boost::format( "Parameter \"%s\" has unsupported type" ) % parameter->name.c_str() );
 	}
-	
+
 	return result;
 }
 
 static void loadShaderParameters( const OSLQuery &query, Gaffer::CompoundPlug *parametersPlug, bool keepExistingValues )
-{	
-	
+{
+
 	// if we're not preserving existing values then remove all existing parameter plugs - the various
 	// plug creators above know that if a plug exists then they should preserve its values.
-	
+
 	if( !keepExistingValues )
 	{
 		parametersPlug->clearChildren();
 	}
-	
+
 	// make sure we have a plug to represent each parameter, reusing plugs wherever possible.
-	
+
 	set<string> validPlugNames;
 	for( size_t i = 0; i < query.nparams(); ++i )
 	{
@@ -510,24 +525,24 @@ static void loadShaderParameters( const OSLQuery &query, Gaffer::CompoundPlug *p
 		if( direction != parametersPlug->direction() )
 		{
 			continue;
-		} 
-		
+		}
+
 		if( parameter->name.find( "." ) != string::npos )
 		{
 			// member of a struct - will be loaded when the struct is loaded
 			continue;
 		}
-		
+
 		const Plug *plug = loadShaderParameter( query, parameter, parametersPlug, keepExistingValues );
 
 		if( plug )
 		{
-			validPlugNames.insert( parameter->name );
+			validPlugNames.insert( parameter->name.c_str() );
 		}
 	}
-	
+
 	// remove any old plugs which it turned out we didn't need
-	
+
 	if( keepExistingValues )
 	{
 		for( int i = parametersPlug->children().size() - 1; i >= 0; --i )
@@ -539,7 +554,7 @@ static void loadShaderParameters( const OSLQuery &query, Gaffer::CompoundPlug *p
 			}
 		}
 	}
-	
+
 }
 
 void OSLShader::loadShader( const std::string &shaderName, bool keepExistingValues )
@@ -551,9 +566,9 @@ void OSLShader::loadShader( const std::string &shaderName, bool keepExistingValu
 	{
 		throw Exception( query.error() );
 	}
-	
+
 	loadShaderParameters( query, parametersPlug(), keepExistingValues );
-	
+
 	if( query.shadertype() == "shader" )
 	{
 		CompoundPlug *existingOut = getChild<CompoundPlug>( "out" );
@@ -562,7 +577,7 @@ void OSLShader::loadShader( const std::string &shaderName, bool keepExistingValu
 			CompoundPlugPtr outPlug = new CompoundPlug( "out", Plug::Out, Plug::Default | Plug::Dynamic );
 			setChild( "out", outPlug );
 		}
-		loadShaderParameters( query, getChild<CompoundPlug>( "out" ), keepExistingValues );		
+		loadShaderParameters( query, getChild<CompoundPlug>( "out" ), keepExistingValues );
 	}
 	else
 	{
@@ -573,10 +588,10 @@ void OSLShader::loadShader( const std::string &shaderName, bool keepExistingValu
 			setChild( "out", outPlug );
 		}
 	}
-	
+
 	namePlug()->setValue( shaderName );
-	typePlug()->setValue( "osl:" + query.shadertype() );
-	
+	typePlug()->setValue( std::string( "osl:" ) + query.shadertype().c_str() );
+
 	m_metadata = NULL;
 }
 
@@ -596,7 +611,7 @@ static IECore::DataPtr convertMetadata( const OSLQuery::Parameter &metadata )
 	}
 	else if( metadata.type == TypeDesc::STRING )
 	{
-		return new IECore::StringData( metadata.sdefault[0] );
+		return new IECore::StringData( metadata.sdefault[0].c_str() );
 	}
 
 	return NULL;
@@ -610,7 +625,7 @@ static IECore::CompoundDataPtr convertMetadata( const std::vector<OSLQuery::Para
 		DataPtr data = convertMetadata( *it );
 		if( data )
 		{
-			result->writable()[it->name] = data;
+			result->writable()[it->name.c_str()] = data;
 		}
 	}
 	return result;
@@ -623,17 +638,17 @@ static IECore::ConstCompoundDataPtr metadataGetter( const std::string &key, size
 	{
 		return NULL;
 	}
-	
+
 	const char *searchPath = getenv( "OSL_SHADER_PATHS" );
 	OSLQuery query;
 	if( !query.open( key, searchPath ? searchPath : "" ) )
 	{
 		throw Exception( query.error() );
 	}
-	
+
 	CompoundDataPtr metadata = new CompoundData;
 	metadata->writable()["shader"] = convertMetadata( query.metadata() );
-	
+
 	CompoundDataPtr parameterMetadata = new CompoundData;
 	metadata->writable()["parameter"] = parameterMetadata;
 	for( size_t i = 0; i < query.nparams(); ++i )
@@ -641,10 +656,10 @@ static IECore::ConstCompoundDataPtr metadataGetter( const std::string &key, size
 		const OSLQuery::Parameter *parameter = query.getparam( i );
 		if( parameter->metadata.size() )
 		{
-			parameterMetadata->writable()[parameter->name] = convertMetadata( parameter->metadata );
+			parameterMetadata->writable()[parameter->name.c_str()] = convertMetadata( parameter->metadata );
 		}
 	}
-	
+
 	return metadata;
 }
 
@@ -655,11 +670,11 @@ const IECore::CompoundData *OSLShader::metadata() const
 {
 	if( m_metadata )
 	{
-		return m_metadata;
+		return m_metadata.get();
 	}
-	
+
 	m_metadata = g_metadataCache.get( namePlug()->getValue() );
-	return m_metadata;
+	return m_metadata.get();
 }
 
 const IECore::Data *OSLShader::shaderMetadata( const IECore::InternedString &key ) const
@@ -679,12 +694,12 @@ const IECore::Data *OSLShader::parameterMetadata( const Gaffer::Plug *plug, cons
 	{
 		return NULL;
 	}
-	
+
 	if( plug->parent<Plug>() != parametersPlug() )
 	{
 		return NULL;
 	}
-	
+
 	const IECore::CompoundData *p = m->member<IECore::CompoundData>( "parameter" )->member<IECore::CompoundData>( plug->getName() );
 	if( !p )
 	{

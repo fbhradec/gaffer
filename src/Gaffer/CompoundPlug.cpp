@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 //  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/bind.hpp"
@@ -89,10 +89,9 @@ bool CompoundPlug::acceptsInput( const Plug *input ) const
 		{
 			return false;
 		}
-		ChildContainer::const_iterator it1, it2;
-		for( it1 = children().begin(), it2 = p->children().begin(); it1!=children().end(); it1++, it2++ )
+		for( PlugIterator it1( this ), it2( p ); it1!=it1.end(); ++it1, ++it2 )
 		{
-			if( !IECore::staticPointerCast<Plug>( *it1 )->acceptsInput( IECore::staticPointerCast<Plug>( *it2 ) ) )
+			if( !( *it1 )->acceptsInput( it2->get() ) )
 			{
 				return false;
 			}
@@ -107,13 +106,13 @@ void CompoundPlug::setInput( PlugPtr input )
 	{
 		return;
 	}
-	
+
 	// unfortunately we have to duplicate the check in Plug::setInput()
 	// ourselves as we delay calling Plug::setInput() until we've connected
 	// the children, but need to do the check first.
 	/// \todo I think there's a case for not having CompoundPlug at all,
 	/// and having Plug have all its functionality.
-	if( input && !acceptsInput( input ) )
+	if( input && !acceptsInput( input.get() ) )
 	{
 		std::string what = boost::str(
 			boost::format( "Plug \"%s\" rejects input \"%s\"." )
@@ -122,32 +121,30 @@ void CompoundPlug::setInput( PlugPtr input )
 		);
 		throw IECore::Exception( what );
 	}
-	
+
 	{
 		// we use the plugInputChangedConnection to trigger calls to updateInputFromChildInputs()
 		// when child inputs are changed by code elsewhere. it would be counterproductive for
 		// us to call updateInputFromChildInputs() while we ourselves are changing those inputs,
 		// so we temporarily block the connection.
 		BlockedConnection block( m_plugInputChangedConnection );
-	
+
 		if( !input )
 		{
-			for( ChildContainer::const_iterator it = children().begin(); it!=children().end(); it++ )
+			for( PlugIterator it( this ); it!=it.end(); ++it )
 			{
-				IECore::staticPointerCast<Plug>( *it )->setInput( 0 );			
+				(*it)->setInput( NULL );
 			}
 		}
 		else
 		{
-			CompoundPlugPtr p = IECore::staticPointerCast<CompoundPlug>( input );
-			ChildContainer::const_iterator it1, it2;
-			for( it1 = children().begin(), it2 = p->children().begin(); it1!=children().end(); it1++, it2++ )
+			for( PlugIterator it1( this ), it2( input.get() ); it1!=it1.end(); ++it1, ++it2 )
 			{
-				IECore::staticPointerCast<Plug>( *it1 )->setInput( IECore::staticPointerCast<Plug>( *it2 ) );
+				(*it1)->setInput( *it2 );
 			}
 		}
 	}
-	
+
 	// we connect ourselves last, so that all our child plugs are correctly connected
 	// before we signal our own connection change.
 	ValuePlug::setInput( input );
@@ -230,7 +227,7 @@ void CompoundPlug::hash( IECore::MurmurHash &h ) const
 void CompoundPlug::parentChanged()
 {
 	m_plugInputChangedConnection.disconnect();
-	
+
 	Node *n = node();
 	if( n )
 	{
@@ -265,10 +262,10 @@ void CompoundPlug::updateInputFromChildInputs( Plug *checkFirst )
 
 	if( !checkFirst )
 	{
-		checkFirst = IECore::staticPointerCast<Plug>( *( children().begin() ) );
+		checkFirst = static_cast<Plug *>( children().front().get() );
 	}
 
-	PlugPtr input = checkFirst->getInput<Plug>();	
+	Plug *input = checkFirst->getInput<Plug>();
 	if( !input || !input->ancestor<CompoundPlug>() )
 	{
 		// calling ValuePlug::setInput explicitly rather than setInput
@@ -277,8 +274,8 @@ void CompoundPlug::updateInputFromChildInputs( Plug *checkFirst )
 		ValuePlug::setInput( 0 );
 		return;
 	}
-	
-	CompoundPlugPtr commonParent = input->ancestor<CompoundPlug>();
+
+	CompoundPlug *commonParent = input->ancestor<CompoundPlug>();
 	if( !acceptsInput( commonParent ) )
 	{
 		// if we're never going to accept the candidate input anyway, then
@@ -288,10 +285,9 @@ void CompoundPlug::updateInputFromChildInputs( Plug *checkFirst )
 		return;
 	}
 
-	ChildContainer::const_iterator it;
-	for( it = children().begin(); it!=children().end(); it++ )
+	for( PlugIterator it( this ); it!=it.end(); ++it )
 	{
-		input = IECore::staticPointerCast<Plug>(*it)->getInput<Plug>();
+		input = (*it)->getInput<Plug>();
 		if( !input || input->ancestor<CompoundPlug>()!=commonParent )
 		{
 			ValuePlug::setInput( 0 );

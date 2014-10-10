@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 //  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/python.hpp"
@@ -54,18 +54,18 @@ using namespace Gaffer;
 static std::string maskedRepr( const Plug *plug, unsigned flagsMask )
 {
 	std::string result = Serialisation::classPath( plug ) + "( \"" + plug->getName().string() + "\", ";
-	
+
 	if( plug->direction()!=Plug::In )
 	{
 		result += "direction = " + PlugSerialiser::directionRepr( plug->direction() ) + ", ";
 	}
-	
+
 	const unsigned flags = plug->getFlags() & flagsMask;
 	if( flags != Plug::Default )
 	{
 		result += "flags = " + PlugSerialiser::flagsRepr( flags ) + ", ";
 	}
-		
+
 	result += ")";
 
 	return result;
@@ -118,7 +118,7 @@ std::string PlugSerialiser::postHierarchy( const Gaffer::GraphComponent *graphCo
 		{
 			result += identifier + ".setFlags( Gaffer.Plug.Flags.ReadOnly, True )\n";
 		}
-		
+
 		if( !plug->ancestor<Reference>() )
 		{
 			/// \todo Perhaps we need some sort of plug flag the Reference node can
@@ -126,7 +126,7 @@ std::string PlugSerialiser::postHierarchy( const Gaffer::GraphComponent *graphCo
 			/// doesn't need to know about References at all?
 			result += metadataSerialisation( plug, identifier );
 		}
-		
+
 		return result;
 	}
 	return "";
@@ -149,7 +149,7 @@ std::string PlugSerialiser::flagsRepr( unsigned flags )
 {
 	static const Plug::Flags values[] = { Plug::Dynamic, Plug::Serialisable, Plug::AcceptsInputs, Plug::PerformsSubstitutions, Plug::Cacheable, Plug::ReadOnly, Plug::None };
 	static const char *names[] = { "Dynamic", "Serialisable", "AcceptsInputs", "PerformsSubstitutions", "Cacheable", "ReadOnly", 0 };
-	
+
 	int defaultButOffCount = 0;
 	std::string defaultButOff;
 	std::string nonDefaultButOn;
@@ -171,7 +171,7 @@ std::string PlugSerialiser::flagsRepr( unsigned flags )
 				defaultButOffCount += 1;
 			}
 		}
-		
+
 		if( s )
 		{
 			if( s->size() )
@@ -200,7 +200,7 @@ std::string PlugSerialiser::flagsRepr( unsigned flags )
 	{
 		result += " & ~" + defaultButOff;
 	}
-		
+
 	return result;
 }
 
@@ -217,9 +217,8 @@ static PlugPtr source( Plug &p )
 void GafferBindings::bindPlug()
 {
 	typedef PlugWrapper<Plug> Wrapper;
-	IE_CORE_DECLAREPTR( Wrapper );
-	
-	IECorePython::RunTimeTypedClass<Plug, WrapperPtr> c;
+
+	PlugClass<Plug, Wrapper> c;
 	{
 		scope s( c );
 		enum_<Plug::Direction>( "Direction" )
@@ -239,7 +238,7 @@ void GafferBindings::bindPlug()
 			.value( "All", Plug::All )
 		;
 	}
-			
+
 	c.def(  init< const std::string &, Plug::Direction, unsigned >
 			(
 				(
@@ -247,7 +246,7 @@ void GafferBindings::bindPlug()
 					arg( "direction" ) = Plug::In,
 					arg( "flags" ) = Plug::Default
 				)
-			)	
+			)
 		)
 		.def( "node", &node )
 		.def( "direction", &Plug::direction )
@@ -255,14 +254,13 @@ void GafferBindings::bindPlug()
 		.def( "getFlags", (bool (Plug::*)( unsigned ) const )&Plug::getFlags )
 		.def( "setFlags", (void (Plug::*)( unsigned ) )&Plug::setFlags )
 		.def( "setFlags", (void (Plug::*)( unsigned, bool ) )&Plug::setFlags )
-		.GAFFERBINDINGS_DEFPLUGWRAPPERFNS( Plug )
 		.def( "getInput", &getInput )
 		.def( "source", &source )
 		.def( "removeOutputs", &Plug::removeOutputs )
 		.def( "outputs", &outputs )
 		.def( "__repr__", &repr )
 	;
-	
+
 	Serialisation::registerSerialiser( Gaffer::Plug::staticTypeId(), new PlugSerialiser );
-	
+
 }

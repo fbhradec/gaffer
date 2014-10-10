@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 //  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,31 +32,42 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #ifndef GAFFERBINDINGS_PLUGBINDING_H
 #define GAFFERBINDINGS_PLUGBINDING_H
+
+#include "IECorePython/ScopedGILRelease.h"
 
 #include "Gaffer/Plug.h"
 
 #include "GafferBindings/GraphComponentBinding.h"
 #include "GafferBindings/Serialisation.h"
 
-#include "IECorePython/ScopedGILRelease.h"
-
 namespace GafferBindings
 {
+
+void bindPlug();
+
+template<typename T, typename TWrapper=T>
+class PlugClass : public GraphComponentClass<T, TWrapper>
+{
+	public :
+
+		PlugClass( const char *docString = 0 );
+
+};
 
 template<typename WrappedType>
 class PlugWrapper : public GraphComponentWrapper<WrappedType>
 {
 	public :
-	
+
 		PlugWrapper( PyObject *self, const std::string &name, Gaffer::Plug::Direction direction, unsigned flags )
 			:	GraphComponentWrapper<WrappedType>( self, name, direction, flags )
 		{
-		}		
+		}
 
 		virtual bool isInstanceOf( IECore::TypeId typeId ) const
 		{
@@ -92,7 +103,7 @@ class PlugWrapper : public GraphComponentWrapper<WrappedType>
 			}
 			return WrappedType::acceptsInput( input );
 		}
-	
+
 		virtual void setInput( Gaffer::PlugPtr input )
 		{
 			if( this->isSubclassed() )
@@ -101,7 +112,7 @@ class PlugWrapper : public GraphComponentWrapper<WrappedType>
 				boost::python::object f = this->methodOverride( "setInput" );
 				if( f )
 				{
-					f( IECore::constPointerCast<Gaffer::Plug>( input ) );
+					f( boost::const_pointer_cast<Gaffer::Plug>( input ) );
 					return;
 				}
 			}
@@ -122,54 +133,25 @@ class PlugWrapper : public GraphComponentWrapper<WrappedType>
 			}
 			return WrappedType::createCounterpart( name, direction );
 		}
-	
+
 };
-
-/// This must be used in /every/ plug binding. See the lengthy comments in
-/// IECorePython/ParameterBinding.h for an explanation.
-/// \todo Make a PlugClass in the same way we have a NodeClass, and use
-/// that for all the bindings - then nobody will have to remember to
-/// use this macro because it will be done automatically.
-#define GAFFERBINDINGS_DEFPLUGWRAPPERFNS( CLASSNAME )\
-	def( "acceptsInput", &acceptsInput<CLASSNAME> )\
-	.def( "setInput", &setInput<CLASSNAME> )\
-	.def( "createCounterpart", &createCounterpart<CLASSNAME> )
-
-template<typename T>
-static bool acceptsInput( const T &p, Gaffer::ConstPlugPtr input )
-{
-	return p.T::acceptsInput( input );
-}
-
-template<typename T>
-static void setInput( T &p, Gaffer::PlugPtr input )
-{
-	IECorePython::ScopedGILRelease r;
-	p.T::setInput( input );
-}
-
-template<typename T>
-static Gaffer::PlugPtr createCounterpart( T &p, const std::string &name, Gaffer::Plug::Direction direction )
-{
-	return p.T::createCounterpart( name, direction );
-}
-	
-void bindPlug();
 
 class PlugSerialiser : public Serialisation::Serialiser
 {
 
 	public :
-	
+
 		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules ) const;
 		virtual std::string constructor( const Gaffer::GraphComponent *graphComponent ) const;
 		virtual std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const;
-		
+
 		static std::string directionRepr( Gaffer::Plug::Direction direction );
 		static std::string flagsRepr( unsigned flags );
 
 };
 
 } // namespace GafferBindings
+
+#include "GafferBindings/PlugBinding.inl"
 
 #endif // GAFFERBINDINGS_PLUGBINDING_H

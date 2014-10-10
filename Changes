@@ -1,3 +1,434 @@
+# 0.2.0.0
+
+This release brings significant optimisations, further additions to the SceneInspector, and the usual collection of miscellaneous enhancements and bug fixes.
+
+#### Core
+
+- Optimised Context::substitute(). This gives a 73% reduction in runtime for a substitutions benchmark.
+- Added '\' as an escape character in Context::substitute() (#997).
+- Boxes may now be enabled/disabled and define pass-through behaviours (#1015).
+- Significant optimisations to the computation engine.
+- Added TaskList node for grouping the dispatch of several input requirements.
+
+#### Image
+
+- Fixed Display node for bucket sizes larger than the native tile size.
+- Fixed problems when running embedded in Maya.
+
+#### Scene
+
+- Added code to clear caches after full procedural expansion in batch renders.
+- Added scene pass-through to the InteractiveRender node. This allows it to be seen in the Viewer, SceneHierarchy, SceneInspector etc.
+- Significant optimisations. A benchmark scene can now be generated in 3% of its previous runtime.
+
+#### RenderMan
+
+- Added "command" plug to RenderManRender. This allows the user to customise the command used to render the RIB (#1017).
+
+#### UI
+
+- SceneInspector improvements
+	- Added set membership section (#930).
+	- Added sets section to globals (#895).
+	- Improved responsiveness.
+- MenuButton improvements
+	- Menus are shown on press rather than release (#742).
+	- Added menu indicator (#493).
+- Fixed OpDialogue bug which caused it to return to the parameters pane when it should have been displaying an error.
+- Dispatcher improvements
+	- Added PlaybackRange to the frames mode menu (#1007).
+	- Renamed ScriptRange to FullRange.
+
+#### API
+
+- Added custom Diff support to SceneInspector.
+- Fixed crashes when passing None to PathMatcher python methods.
+- Added accessors for the buttons on VectorDataWidget (#1003).
+- Fixed broken SceneInspector.Row.getAlternate() method.
+- Added SceneProcedural::allRenderedSignal().
+- Added Context::remove() method.
+
+#### Incompatible changes
+
+- SceneInspector API changes.
+- Box rederived from DependencyNode.
+- Dispatcher ScriptRange renamed to FullRange.
+
+#### Build
+
+- Improved Travis continuous integration setup
+	- Added running of unit tests
+	- Added GafferRenderMan support
+- Fixed installation to paths starting with "./"
+- Fixed RenderManShader compilation in Clang 3.4
+- GafferOSL compatibility for OSL version 1.5
+
+# 0.1.1.0
+
+#### Core
+
+- Optimised computation for long chains of nodes (#963).
+	- Optimised repeat calls to Context::hash().
+	- Added Context::changed() method.
+	- Made Context::hash() ignore "ui:" prefixed entries.
+	- Refactored ValuePlug::hash() to delegate to Computation.
+
+#### UI
+
+- Fixed Execute->Repeat Previous menu item.
+- Fixed display of '<', '>' and '&' in SceneInspector.
+
+#### Scene
+
+- Added an ExternalProcedural node (#722).
+- Added pass-through plugs to ExecutableRender nodes and SceneWriter.
+- Added pixelAspectRatio, overscan, and resolutionMultiplier options (#979).
+
+#### Image
+
+- Added pass-through plugs for ImageWriter.
+
+#### Build
+
+- Requires Cortex 9.0.0-a6
+- Fixed typedef issues when building with GCC 4.8
+- Added Travis config for build verification (doesn't run the tests yet)
+
+# 0.1.0.0
+
+#### Apps
+
+- The "gui" app now tolerates errors when loading scripts from the command line. Note that currently errors are only reported to the shell.
+- The "execute" app can now handle nodes inside Boxes.
+
+#### Core
+
+- Improved version numbering (#980)
+	- Versions are now MILESTONE.MAJOR.MINOR.PATCH
+		- Changes to MILESTONE version denote major development landmarks
+		- Changes to MAJOR version denote backwards incompatible changes
+		- Changes to MINOR version denote new backwards compatible features
+		- Changes to PATCH version denote bug fixes
+	- Added Gaffer.About.compatibilityVersion() method
+	- Added GAFFER_COMPATIBILITY_VERSION macro for conditional compilation of C++ extensions
+- Fixed bug whereby GraphComponent::setName() could allow duplicate names
+- Dispatcher improvements
+	- `Dispatcher::postDispatchSignal()` is now always executed, even if execution is cancelled or fails. A new boolean argument is passed to specify whether or not dispatch succeeded.
+	- Dispatcher now creates job directories automatically, so derived classes don't have to
+
+#### Incompatible changes
+
+- `Dispatcher::postDispatchSignal()` signature change.
+- Dispatcher jobDirectory() semantics change.
+- Dispatcher jobDirectoryPlug() -> jobsDirectoryPlug() rename.
+
+#### Build
+
+- Requires Cortex 9.0.0-a5
+
+# 0.101.0
+
+#### Core
+
+- ExecutableNodes now accept Boxes as requirements inputs and outputs.
+- Dispatchers accept Boxes for direct dispatching (#925).
+- Added SystemCommand executable node.
+- Optimised plug dirty propagation.
+- Added matchMultiple() function to StringAlgo.h.
+
+#### Scene
+
+- Renamed Displays node to Outputs. Also changed "label" plug to "name" and the old "name" plug to "fileName" (#54).
+- Fixed dirty propagation bug in Outputs node.
+- Added an outputOutputs() method to RendererAlgo.h, so outputOptions() need only output actual options.
+- Added DeleteGlobals node.
+- Added DeleteOutputs node.
+- Added DeleteOptions node (#965).
+- Added wildcard matching to DeleteAttributes and DeletePrimitiveVariables.
+- Prefixed options in scene globals with "option:".
+- Added global mode to Attributes node, which places the attributes in the globals (with "attribute:" prefixes).
+- Updated render nodes to support global attributes.
+- Added global attribute support to SceneProcedural (#964).
+- Fixed RendererAlgo outputScene() to include coordinate systems.
+
+#### UI
+
+- Added Outputs section to the SceneInspector (#921).
+- Updated SceneInspector to display global attributes.
+- Fixed display of single empty bounding box in SceneInspector.
+
+#### RenderMan
+
+- Added FrameBegin/FrameEnd in RIBs generated by RenderManRender (#358). Requires Cortex 9.0.0-a5.
+
+#### OSL
+
+- Fixed default arguments for OSL In* and Out* shaders.
+
+#### Build
+
+- Set default compiler optimisation level to -O3.
+- Added missing OSL, OIIO, OCIO includes to the dependency package.
+- Clang compatibility fixes.
+
+# 0.100.0
+
+This release features significant improvements to Dispatcher and SceneInspector functionality, along with the usual bunch of small fixes and improvements.
+
+#### Apps
+
+- Changed shutdown warnings to debug messages.
+
+#### Core
+
+- Dispatcher improvements
+	- Dispatching can be cancelled via preDispatchSignal() (#929).
+	- Added batching (#870, #871).
+	- Optimised foreground execution in LocalDispatcher.
+	- Added per-node foreground execution overrides for LocalDispatcher (#927).
+- Added support for module level config files.
+
+#### UI
+
+- SceneInspector improvements
+	- Added history tracebacks (#834).
+	- Added attribute inheritance diagramming (#206).
+	- Added value drag/drop (#830).
+	- Improved transform section (#896).
+	- Optimised by deferring updates during playback.
+	- Optimised by deferring updates when not directly visible.
+	- Fixed errors where the selected path doesn't exist.
+
+#### Scene
+
+- Fixed SceneWriter::hash() to include file path.
+- Fixed SceneWriter when caching multiple time samples.
+- Added support for coordinate systems.
+
+#### API
+
+- Fixed Fixed python bindings crash when passing None for a scene path.
+- Added removeOnClose argument to Window.addChildWindow() method.
+- Fixed EventLoop bug where exection was thrown if an idle callback was removed and re-added during the same idle event.
+- Added hotspots to Pointer class.
+- Refactored ExecutableNode API
+	- Removed "execution" prefix from method names.
+	- ExecutableNodes now execute() using the current Context. Multi-context execution can be accomplished using executeSequence( frames ) assuming the client only needs to vary the frame of the current Context. requiresSequenceExecution() can be defined by nodes with special needs (SceneWriter for example), to alert clients that sequence execution is more appropriate.
+	- Dispatcher::doDispatch() is now passed a DAG of TaskBatch nodes, simplifying the task of implementing more complex dispatchers.
+- Fixed call sequence for GraphComponent::parentChanging(). When a child is being transferred from one parent to another, it is now called at a point where the child still has the original parent.
+- Added ViewportGadget raster<->world space conversion methods.
+- Added Handle::dragOffset() method.
+
+#### Build
+
+- Best used with 3delight version 11.0.96. This has bug fixes to support moving coordinate systems during IPR.
+- Requires Cortex 9.0.0-a3.
+
+# 0.99.0
+
+#### Apps
+
+- Fixed potential startup error in gui viewer.py configuration file.
+
+#### Core
+
+- Added background execution mode to the LocalDispatcher.
+
+#### UI
+
+- Added a gnomon to the 3d viewer (#41).
+- Improved SceneInspector
+	- Reimplemented as a hierarchy with a registration mechanism for custom sections (#36, #821).
+	- Improved diff formatting (#894).
+	- Improved numeric formatting and alignment.
+	- Added options section (#197).
+- Implemented error tolerant loading for file menu operations. Errors are reported via a dialogue, and will no longer prevent loading of a script (#746).
+- Fixed ScriptEditor to execute code in the right context. Prior to this, any queries performed in the script editor were always evaluated at frame 1.
+- Dispatcher UI no longer forces background execution - this is now controlled by per-dispatcher settings.
+
+#### Scene
+
+- Improved IPR
+	- Fixed hang during shutdown with active IPR render (#855).
+	- Implemented camera edits for IPR rendering (#190).
+	- Prevented errors in other nodes from causing incomplete edits.
+	- Fixed UI errors caused by deleting camera during IPR (#898).
+	- Optimised updates by pruning invisible hierarchies.
+	- Fixed bug in shader edits at non-leaf locations.
+- Optimised Instancer, especially the computation of the bounding box for all the instances. This particular operation is now 18x faster on a 6 core machine, 7x faster on a 2 core machine.
+- Added an automatically created set for tracking all cameras in the scene.
+- Improved reporting of invalid cameras (#371).
+- Fixed FilteredSceneProcessor::acceptsInput() crash when inputPlug is null.
+
+#### API
+
+- Registered automatic from-python conversions for ScenePlug::ScenePath. This replaces the need to manually wrap any functions taking a ScenePath, making the bindings simpler.
+- Added exists() method to SceneAlgo. This can be used to query whether or not a particular location exists within a scene.
+- Replaced boost_intrusive_ptr with raw pointer where appropriate, to follow the convention laid out in Cortex.
+- Removed deprecated Box metadata methods. The standard Metadata API should be used instead.
+- Added missing wrapper for NodeGadget::nodule() overload.
+- Added OpDialogue preExecuteSignal() and postExecuteSignal().
+- Added OpDialogue parameterisedHolder() method.
+- Added a flags argument to ParameterHandler::setupPlug(). This allows clients to choose the default flags for their plugs, rather than being forced to have (Default | Dynamic) plugs.
+- Added ViewDescription constructor for 3 argument registerView.
+- Added Style::renderTranslateHandle() method.
+- Added GafferUI::Handle gadget.
+- Moved translatePythonException() to a new ExceptionAlgo.h header.
+- Added formatPythonException() function to ExceptionAlgo.h.
+- Added continueOnError argument to ScriptNode execution methods.
+- Added error return value to ScriptNode execution methods.
+- Improved EventLoop.executeOnUIThread() to execute immediately when used on main thread.
+
+#### Build
+
+- Requires Cortex-9.0.0a2
+- Updated default build to use PySide 1.2.2.
+- Stopped using python-config for build configuration. It was unreliable on Mac, and the hardcoded paths it returns prevented us from building with prebuilt binary dependencies.
+
+-------------------------------------------------------------------------------
+
+# 0.98.0
+
+This release makes dispatchers available via the UI for the first time. Dispatchers allow many tasks (such as rib generation, rendering and compositing) to be processed for a series of frames, with dependencies between the tasks determining the execution order. It also adds support for adding and removing lights during IPR renders, and the usual  small fixes and improvements.
+
+#### Apps
+
+- Added context parameter to the execute app. This takes a series of key/value pairs that allow additional context variables to be specified.
+- Fixed shutdown warning when running `gaffer test GafferTest`.
+- Added repeat parameter to test app.
+
+#### UI
+
+- Integrated Dispatchers into the UI with a Dispatcher window, which can be launched in any of the following ways :
+	- The /Execute/ExecuteSelected menu item (Ctrl+E)
+	- The Execute button the NodeEditor
+	- The right click node menu in the NodeGraph.
+- Fixed several shutdown warnings.
+- Fixed bug in Reference node menu item.
+
+#### Core
+
+- Added jobName and jobDirectory plugs to Dispatcher. These control the creation of a location for storing temporary files needed for the dispatch.
+- Added Frame Range options to Dispatcher.
+- Improved LocalDispatcher to dispatch tasks in a subprocess (#866).
+- Fixed ExecutableOpHolder hash computation.
+- Implemented variable substitutions for ExecutableOpHolder.
+- Fixed ObjectWriter hash computation (#878).
+
+#### Scene
+
+- Implemented light add/remove/hide/show for IPR (#874).
+- Stopped ExecutableRender saving the script when it executes (#310). This is now done automatically by the dispatchers, which save a copy into the job directory.
+- Fixed ExecutableRender hash computation.
+- Fixed SceneWriter hash computation.
+
+#### Image
+
+- Fixed ImageWriter hash computation.
+
+#### API
+
+- Added ScenePlug::pathToString() method.
+- Added outputLight() method to RendererAlgo.h.
+- Fixed bug in DependencyNode dirty propagation order. This ensures that dirtiness is only signalled for a plug after it has been signalled for all the plugs it depends on and all its children.
+- Derived all Gaffer unit tests from GafferTest.TestCase.
+- Simplified Dispatcher implementations by providing doDispatch with the unique task list.
+- Made Dispatcher::uniqueTasks() private.
+- Dispatchers now require that all nodes belong to the same ScriptNode.
+- Fixed ExecutableNode::Task comparison functions and member access (#865).
+- Improved Plug bindings with a new PlugClass helper class.
+- ExecutableNode::executionHash() must now call the base class implementation first - see documentation for details.
+
+# 0.97.0
+
+This release is focussed mainly on optimisation and bug fixes, with significant speedups being provided by moving to a new caching implementation provided by Cortex 9. Behind the scenes it also contains progress towards exposing Dispatcher functionality at the user level.
+
+#### Core
+
+- Optimised FilteredChildIterator and PlugIterator. This alone gives more than a 5% speedup in a simple Instancer benchmark.
+- Fixed serialisation of non-dynamic ArrayPlugs. This bug caused the appearance of duplicate requirements plugs on executable nodes (#580).
+
+#### UI
+
+- Added a grid to the 3D viewer.
+- Added NodeGraph menu item for selecting objects affected by a node - accessed by right clicking on a filtered scene node.
+- Fixed several causes of zombie widgets which could cause errors at shutdown.
+- Moved the Execute button for ExecutableNodes to a prominent position in the header of the NodeEditor.
+- Added SceneWriter to the node menu. Also reorganised the Scene menu to include a File submenu, and simplified the Object menu by moving generators into the Source submenu.
+
+#### Scene
+
+- Optimised Shader network computation - reducing runtime by 35% for typical production networks.
+
+#### Arnold
+
+- Fixed ArnoldRender "Generate expanded .ass" mode. It was using a "-resaveop" command line flag removed from kick in Arnold version 4.0.10.0.
+
+#### API
+
+- Added ability for Gadgets to have child Gadgets. Previously only ContainerGadgets could have children.
+- Rederived NodeGadget from Gadget rather than IndividualContainer. This allows more flexibility in NodeGadget implementations, and also better hides the implementation details.
+- Added methods for controlling Gadget visibility.
+- Rederived ViewportGadget from Gadget rather than IndividualContainer. This allows viewports to have multiple child gadgets, which paves the way for more complex views and interactive manipulators.
+- Made UI registration methods accept classes in place of TypeIds.
+- Added public GafferScene::Filter methods for specifying input scene via Context.
+- Added SceneAlgo.h with methods for querying all objects matching a filter.
+- Continued refactoring the Executable framework, in preparation for exposing it to users
+	- Americanized spelling.
+	- Renamed ExecuteUI to DispatcherUI.
+	- Renamed ExecutableNode "dispatcherParameters" plug to simply "dispatcher".
+	- Rederived SceneWriter from ExecutableNode.
+	- Rederived Dispatcher from Node, to allow settings to be specified via plugs.
+	- Renamed Dispatcher::addAllPlugs() to Dispatcher::setupPlugs().
+	- Renamed Dispatcher::addPlugs() to Dispatcher::doSetupPlugs.
+- Added shutdown checks for zombie widgets and scripts.
+- Fixed "base class not created yet" GafferRenderMan import error.
+- Added _copy parameter to Shader::state() python binding.
+
+#### Documentation
+
+- Improved formatting of Doxygen documentation - a brief description of each class is now shown above the detailed member documentation.
+
+#### Build
+
+- Requires Cortex 9.0.0-a1.
+- Recent Cortex LRUCache improvements offer significant performance gains.
+- Updated default TBB version to 4.2.
+
+# 0.96.0
+
+#### Core
+
+- Added support for Box data to CompoundDataPlug.
+- Optimised the Context class considerably, particularly for temporary Contexts created during computation. A synthetic test which does nothing but create temporary Contexts shows a reduction in runtime of 97%, resulting in a 30% reduction in total runtime for a more real-world test using the Instancer node (#427).
+- Fixed Context copy construction doubling in Python bindings.
+- Fixed circular references within the undo system, which caused memory leaks where scripts were not destroyed at the appropriate time (#397).
+- Optimised ComputeNode::hash(). This yields ~14% reduction in runtime for a simple Reformat benchmark.
+
+#### UI
+
+- Fixed PyQt circular references within GafferUI.Menu (#397).
+- Fixed crash caused by File->Quit menu item.
+- Improved UI for BoxPlugs.
+
+#### Scene
+
+- Added crop window to StandardOptions node (#688).
+- Renamed gaffer:visibility attribute to scene:visible, to support the standard attribute with that name in Cortex scene caches.
+- Added a SetFilter node (#92).
+- Fixed deadlock removing input from running InteractiveRender node, or undoing or redoing such an operation.
+- Added pausing for interactive renders (#646).
+
+#### API
+
+- Renamed BoxPlug min() and max() methods to minPlug() and maxPlug().
+- Made Context::Scope noncopyable.
+- Added GAFFERTEST_ASSERT macro. This should be used by test cases implemented in C++, and throws an exception which can be caught and reported by the Python unit test runner.
+- Added _copy argument to Context::get() bindings.
+- Added optimised Context copy constructor, primarily for use in constructing temporary Contexts. See class documentation for details.
+- Added checks for zombie ScriptNodes and Widgets at app shutdown. This can catch many common programming errors.
+- Added BoxPlugValueWidget class.
+
 # 0.95.0
 
 #### UI

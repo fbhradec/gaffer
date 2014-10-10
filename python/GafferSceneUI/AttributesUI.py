@@ -44,7 +44,7 @@ Gaffer.Metadata.registerNodeDescription(
 
 GafferScene.Attributes,
 
-"""The base type for nodes that apply attributes to the scene. 
+"""The base type for nodes that apply attributes to the scene.
 """,
 
 "attributes",
@@ -52,7 +52,14 @@ GafferScene.Attributes,
 as children of this plug via the user interface, or using the CompoundDataPlug API via
 python.""",
 
+"global",
+{
+	"description" : "Causes the attributes to be applied to the scene globals "
+	                "instead of the individual locations defined by the filter.",
+	"nodeUI:section" : "Filter",
+}
+
 )
 
 
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Attributes.staticTypeId(), "attributes", GafferUI.CompoundDataPlugValueWidget, collapsed=None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.Attributes, "attributes", GafferUI.CompoundDataPlugValueWidget, collapsed=None )

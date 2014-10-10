@@ -1,25 +1,25 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,7 +31,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/Context.h"
@@ -53,6 +53,11 @@ Isolate::Isolate( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new BoolPlug( "adjustBounds", Plug::In, false ) );
+	
+	// Direct pass-throughs
+	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
+	outPlug()->attributesPlug()->setInput( inPlug()->attributesPlug() );
+	outPlug()->objectPlug()->setInput( inPlug()->objectPlug() );
 }
 
 Isolate::~Isolate()
@@ -93,8 +98,7 @@ void Isolate::hashBound( const ScenePath &path, const Gaffer::Context *context, 
 {
 	if( adjustBoundsPlug()->getValue() )
 	{
-		Filter::Result match = (Filter::Result)filterPlug()->getValue();
-		if( match == Filter::DescendantMatch )
+		if( filterValue( context ) == Filter::DescendantMatch )
 		{
 			h = hashOfTransformedChildBounds( path, outPlug() );
 			return;
@@ -105,25 +109,12 @@ void Isolate::hashBound( const ScenePath &path, const Gaffer::Context *context, 
 	h = inPlug()->boundPlug()->hash();
 }
 
-void Isolate::hashTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
-{
-	h = inPlug()->transformPlug()->hash();
-}
-
-void Isolate::hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
-{
-	h = inPlug()->attributesPlug()->hash();
-}
-
-void Isolate::hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
-{
-	h = inPlug()->objectPlug()->hash();
-}
-
 void Isolate::hashChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Filter::Result match = (Filter::Result)filterPlug()->getValue();
-	if( match == Filter::DescendantMatch )
+	ContextPtr tmpContext = filterContext( context );
+	Context::Scope scopedContext( tmpContext.get() );
+
+	if( filterPlug()->getValue() == Filter::DescendantMatch )
 	{
 		// we might be computing new childnames for this level.
 		FilteredSceneProcessor::hashChildNames( path, context, parent, h );
@@ -141,52 +132,35 @@ void Isolate::hashGlobals( const Gaffer::Context *context, const ScenePlug *pare
 {
 	FilteredSceneProcessor::hashGlobals( context, parent, h );
 	inPlug()->globalsPlug()->hash( h );
-	filterPlug()->hash( h );
+	filterHash( context, h );
 }
 
 Imath::Box3f Isolate::computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	if( adjustBoundsPlug()->getValue() )
 	{
-		Filter::Result match = (Filter::Result)filterPlug()->getValue();
-		if( match == Filter::DescendantMatch )
+		if( filterValue( context ) == Filter::DescendantMatch )
 		{
 			return unionOfTransformedChildBounds( path, outPlug() );
 		}
 	}
-	
+
 	return inPlug()->boundPlug()->getValue();
-}
-
-Imath::M44f Isolate::computeTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
-{
-	return inPlug()->transformPlug()->getValue();
-}
-
-IECore::ConstCompoundObjectPtr Isolate::computeAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
-{
-	return inPlug()->attributesPlug()->getValue();
-}
-
-IECore::ConstObjectPtr Isolate::computeObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
-{
-	return inPlug()->objectPlug()->getValue();
 }
 
 IECore::ConstInternedStringVectorDataPtr Isolate::computeChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	Filter::Result match = (Filter::Result)filterPlug()->getValue();
-	if( match == Filter::DescendantMatch )
+	ContextPtr tmpContext = filterContext( context );
+	Context::Scope scopedContext( tmpContext.get() );
+
+	if( filterPlug()->getValue() == Filter::DescendantMatch )
 	{
 		// we may need to delete one or more of our children
 		ConstInternedStringVectorDataPtr inputChildNamesData = inPlug()->childNamesPlug()->getValue();
 		const vector<InternedString> &inputChildNames = inputChildNamesData->readable();
-		
+
 		InternedStringVectorDataPtr outputChildNamesData = new InternedStringVectorData;
 		vector<InternedString> &outputChildNames = outputChildNamesData->writable();
-		
-		ContextPtr tmpContext = new Context( *context, Context::Borrowed );
-		Context::Scope scopedContext( tmpContext );
 
 		ScenePath childPath = path;
 		childPath.push_back( InternedString() ); // for the child name
@@ -199,7 +173,7 @@ IECore::ConstInternedStringVectorDataPtr Isolate::computeChildNames( const Scene
 				outputChildNames.push_back( *it );
 			}
 		}
-		
+
 		return outputChildNamesData;
 	}
 	else
@@ -217,13 +191,13 @@ IECore::ConstCompoundObjectPtr Isolate::computeGlobals( const Gaffer::Context *c
 	{
 		return inputGlobals;
 	}
-	
+
 	CompoundObjectPtr outputGlobals = inputGlobals->copy();
 	CompoundDataPtr outputSets = new CompoundData;
 	outputGlobals->members()["gaffer:sets"] = outputSets;
 
-	ContextPtr tmpContext = new Context( *context, Context::Borrowed );
-	Context::Scope scopedContext( tmpContext );
+	ContextPtr tmpContext = filterContext( context );
+	Context::Scope scopedContext( tmpContext.get() );
 	ScenePath path;
 
 	for( CompoundDataMap::const_iterator it = inputSets->readable().begin(), eIt = inputSets->readable().end(); it != eIt; ++it )
@@ -233,14 +207,14 @@ IECore::ConstCompoundObjectPtr Isolate::computeGlobals( const Gaffer::Context *c
 		/// and just trim out the nodes we didn't want.
 		const PathMatcher &inputSet = static_cast<const PathMatcherData *>( it->second.get() )->readable();
 		PathMatcher &outputSet = outputSets->member<PathMatcherData>( it->first, /* throwExceptions = */ false, /* createIfMissing = */ true )->writable();
-		
+
 		vector<string> inputPaths;
 		inputSet.paths( inputPaths );
 		for( vector<string>::const_iterator pIt = inputPaths.begin(), peIt = inputPaths.end(); pIt != peIt; ++pIt )
 		{
 			path.clear();
 			ScenePlug::stringToPath( *pIt, path );
-			
+
 			tmpContext->set( ScenePlug::scenePathContextName, path );
 			if( filterPlug()->getValue() != Filter::NoMatch )
 			{
@@ -248,7 +222,7 @@ IECore::ConstCompoundObjectPtr Isolate::computeGlobals( const Gaffer::Context *c
 			}
 		}
 	}
-	
+
 	return outputGlobals;
 }
 

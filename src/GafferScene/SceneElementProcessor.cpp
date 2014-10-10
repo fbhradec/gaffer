@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2012, John Haddon. All rights reserved.
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,8 +32,10 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
+
+#include "IECore/Exception.h"
 
 #include "Gaffer/Context.h"
 
@@ -52,18 +54,24 @@ SceneElementProcessor::SceneElementProcessor( const std::string &name, Filter::R
 	:	FilteredSceneProcessor( name, filterDefault )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
+	
+	// We don't ever want to change the scene hierarchy or globals, so we make
+	// pass-through connections for them. This is quicker than implementing a
+	// pass through of the input in hashChildNames()/computeChildNames().
+	outPlug()->childNamesPlug()->setInput( inPlug()->childNamesPlug() );
+	outPlug()->globalsPlug()->setInput( inPlug()->globalsPlug() );
 }
 
 SceneElementProcessor::~SceneElementProcessor()
 {
 }
-		
+
 void SceneElementProcessor::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	/// \todo Our base classes will say that enabledPlug() affects all children of outPlug() - perhaps
 	/// we can do better by affecting only the plugs we know we're going to process?
 	FilteredSceneProcessor::affects( input, outputs );
-	
+
 	const ScenePlug *in = inPlug();
 	if( input->parent<ScenePlug>() == in )
 	{
@@ -80,7 +88,7 @@ void SceneElementProcessor::affects( const Plug *input, AffectedPlugsContainer &
 
 void SceneElementProcessor::hashBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	switch( boundMethod() )
+	switch( boundMethod( context ) )
 	{
 		case Direct :
 			FilteredSceneProcessor::hashBound( path, context, parent, h );
@@ -98,10 +106,10 @@ void SceneElementProcessor::hashBound( const ScenePath &path, const Gaffer::Cont
 
 void SceneElementProcessor::hashTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	unsigned match = Filter::NoMatch;
+	Filter::Result match = Filter::NoMatch;
 	if( processesTransform() )
 	{
-		match = filterPlug()->getValue();
+		match = filterValue( context );
 	}
 
 	if( match & Filter::ExactMatch )
@@ -119,10 +127,10 @@ void SceneElementProcessor::hashTransform( const ScenePath &path, const Gaffer::
 
 void SceneElementProcessor::hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	unsigned match = Filter::NoMatch;
+	Filter::Result match = Filter::NoMatch;
 	if( processesAttributes() )
 	{
-		match = filterPlug()->getValue();
+		match = filterValue( context );
 	}
 
 	if( match & Filter::ExactMatch )
@@ -140,10 +148,10 @@ void SceneElementProcessor::hashAttributes( const ScenePath &path, const Gaffer:
 
 void SceneElementProcessor::hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	unsigned match = Filter::NoMatch;
+	Filter::Result match = Filter::NoMatch;
 	if( processesObject() )
 	{
-		match = filterPlug()->getValue();
+		match = filterValue( context );
 	}
 
 	if( match & Filter::ExactMatch )
@@ -159,19 +167,9 @@ void SceneElementProcessor::hashObject( const ScenePath &path, const Gaffer::Con
 	}
 }
 
-void SceneElementProcessor::hashChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
-{
-	h = inPlug()->childNamesPlug()->hash();
-}
-
-void SceneElementProcessor::hashGlobals( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
-{
-	h = inPlug()->globalsPlug()->hash();
-}
-
 Imath::Box3f SceneElementProcessor::computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	switch( boundMethod() )
+	switch( boundMethod( context ) )
 	{
 		case Direct :
 			return computeProcessedBound( path, context, inPlug()->boundPlug()->getValue() );
@@ -184,7 +182,7 @@ Imath::Box3f SceneElementProcessor::computeBound( const ScenePath &path, const G
 
 Imath::M44f SceneElementProcessor::computeTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( filterPlug()->getValue() & Filter::ExactMatch )
+	if( filterValue( context ) & Filter::ExactMatch )
 	{
 		return computeProcessedTransform( path, context, inPlug()->transformPlug()->getValue() );
 	}
@@ -196,7 +194,7 @@ Imath::M44f SceneElementProcessor::computeTransform( const ScenePath &path, cons
 
 IECore::ConstCompoundObjectPtr SceneElementProcessor::computeAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( filterPlug()->getValue() & Filter::ExactMatch )
+	if( filterValue( context ) & Filter::ExactMatch )
 	{
 		return computeProcessedAttributes( path, context, inPlug()->attributesPlug()->getValue() );
 	}
@@ -208,7 +206,7 @@ IECore::ConstCompoundObjectPtr SceneElementProcessor::computeAttributes( const S
 
 IECore::ConstObjectPtr SceneElementProcessor::computeObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( filterPlug()->getValue() & Filter::ExactMatch )
+	if( filterValue( context ) & Filter::ExactMatch )
 	{
 		return computeProcessedObject( path, context, inPlug()->objectPlug()->getValue() );
 	}
@@ -216,16 +214,6 @@ IECore::ConstObjectPtr SceneElementProcessor::computeObject( const ScenePath &pa
 	{
 		return inPlug()->objectPlug()->getValue();
 	}
-}
-
-IECore::ConstInternedStringVectorDataPtr SceneElementProcessor::computeChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
-{
-	return inPlug()->childNamesPlug()->getValue();
-}
-
-IECore::ConstCompoundObjectPtr SceneElementProcessor::computeGlobals( const Gaffer::Context *context, const ScenePlug *parent ) const
-{
-	return inPlug()->globalsPlug()->getValue();
 }
 
 bool SceneElementProcessor::processesBound() const
@@ -285,14 +273,14 @@ IECore::ConstObjectPtr SceneElementProcessor::computeProcessedObject( const Scen
 }
 
 /// \todo This needs updating to return a bitmask now that filters return a bitmask.
-SceneElementProcessor::BoundMethod SceneElementProcessor::boundMethod() const
+SceneElementProcessor::BoundMethod SceneElementProcessor::boundMethod( const Gaffer::Context *context ) const
 {
 	const bool pBound = processesBound();
 	const bool pTransform = processesTransform();
-	
+
 	if( pBound || pTransform )
 	{
-		unsigned f = filterPlug()->getValue();
+		const Filter::Result f = filterValue( context );
 		if( f & Filter::ExactMatch )
 		{
 			if( pBound )
@@ -310,6 +298,6 @@ SceneElementProcessor::BoundMethod SceneElementProcessor::boundMethod() const
 			return Union;
 		}
 	}
-	
+
 	return PassThrough;
 }

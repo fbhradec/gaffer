@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2012, John Haddon. All rights reserved.
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include <stack>
@@ -55,18 +55,18 @@ using namespace IECore;
 static InternedString g_frame( "frame" );
 
 Context::Context()
-	:	m_changedSignal( NULL )
+	:	m_changedSignal( NULL ), m_hashValid( false )
 {
 	set( g_frame, 1.0f );
 }
 
 Context::Context( const Context &other, Ownership ownership )
-	:	m_map( other.m_map ), m_changedSignal( NULL )
+	:	m_map( other.m_map ), m_changedSignal( NULL ), m_hash( other.m_hash ), m_hashValid( other.m_hashValid )
 {
 	// We used the (shallow) Map copy constructor in our initialiser above
 	// because it offers a big performance win over iterating and inserting copies
 	// ourselves. Now we need to go in and tweak our copies based on the ownership.
-	
+
 	for( Map::iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; ++it )
 	{
 		it->second.ownership = ownership;
@@ -98,8 +98,27 @@ Context::~Context()
 			it->second.data->removeRef();
 		}
 	}
-	
+
 	delete m_changedSignal;
+}
+
+void Context::remove( const IECore::InternedString &name )
+{
+	Map::iterator it = m_map.find( name );
+	if( it != m_map.end() )
+	{
+		m_map.erase( it );
+		m_hashValid = false;
+	}
+}
+
+void Context::changed( const IECore::InternedString &name )
+{
+	m_hashValid = false;
+	if( m_changedSignal )
+	{
+		(*m_changedSignal)( this, name );
+	}
 }
 
 void Context::names( std::vector<IECore::InternedString> &names ) const
@@ -137,13 +156,25 @@ Context::ChangedSignal &Context::changedSignal()
 
 IECore::MurmurHash Context::hash() const
 {
-	IECore::MurmurHash result;
+	if( m_hashValid )
+	{
+		return m_hash;
+	}
+
+	m_hash = IECore::MurmurHash();
 	for( Map::const_iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; it++ )
 	{
-		result.append( it->first );
-		it->second.data->hash( result );
+		/// \todo Perhaps at some point the UI should use a different container for
+		/// these "not computationally important" values, so we wouldn't have to skip
+		/// them here.
+		if( it->first.string().compare( 0, 3, "ui:" ) )
+		{
+			m_hash.append( it->first );
+			it->second.data->hash( m_hash );
+		}
 	}
-	return result;
+	m_hashValid = true;
+	return m_hash;
 }
 
 bool Context::operator == ( const Context &other ) const
@@ -160,7 +191,7 @@ bool Context::operator == ( const Context &other ) const
 			return false;
 		}
 	}
-	
+
 	return true;
 }
 
@@ -173,7 +204,7 @@ std::string Context::substitute( const std::string &s ) const
 {
 	std::string result;
 	result.reserve( s.size() ); // might need more or less, but this is a decent ballpark
-	substituteInternal( s, result, 0 );
+	substituteInternal( s.c_str(), result, 0 );
 	return result;
 }
 
@@ -186,6 +217,7 @@ bool Context::hasSubstitutions( const std::string &input )
 			case '$' :
 			case '#' :
 			case '~' :
+			case '\\' :
 				return true;
 			default :
 				; // do nothing
@@ -194,92 +226,120 @@ bool Context::hasSubstitutions( const std::string &input )
 	return false;
 }
 
-void Context::substituteInternal( const std::string &s, std::string &result, const int recursionDepth ) const
+void Context::substituteInternal( const char *s, std::string &result, const int recursionDepth ) const
 {
 	if( recursionDepth > 8 )
 	{
 		throw IECore::Exception( "Context::substitute() : maximum recursion depth reached." );
 	}
 
-	for( size_t i=0, size=s.size(); i<size; )
+	while( *s )
 	{
-		if( s[i] == '$' )
+		switch( *s )
 		{
-			std::string variableName;
-			i++; // skip $
-			bool bracketed = ( i < size ) && s[i]=='{';
-			if( bracketed )
+			case '\\' :
 			{
-				i++; // skip initial bracket
-				while( i < size && s[i] != '}' )
+				s++;
+				if( *s )
 				{
-					variableName.push_back( s[i] );
-					i++;
+					result.push_back( *s++ );
 				}
-				i++; // skip final bracket
+				break;
 			}
-			else
+			case '$' :
 			{
-				while( i < size && isalnum( s[i] ) )
+				s++; // skip $
+				bool bracketed = *s =='{';
+				const char *variableNameStart = NULL;
+				const char *variableNameEnd = NULL;
+				if( bracketed )
 				{
-					variableName.push_back( s[i] );
-					i++;
+					s++; // skip initial bracket
+					variableNameStart = s;
+					while( *s && *s != '}' )
+					{
+						s++;
+					}
+					variableNameEnd = s;
+					if( *s )
+					{
+						s++; // skip final bracket
+					}
 				}
-			}
-			
-			const IECore::Data *d = get<IECore::Data>( variableName, NULL );
-			if( d )
-			{
-				switch( d->typeId() )
+				else
 				{
-					case IECore::StringDataTypeId :
-						substituteInternal( static_cast<const IECore::StringData *>( d )->readable(), result, recursionDepth + 1 );
-						break;
-					case IECore::FloatDataTypeId :
-						result += boost::lexical_cast<std::string>(
-							static_cast<const IECore::FloatData *>( d )->readable()
-						);
-						break;
-					case IECore::IntDataTypeId :
-						result += boost::lexical_cast<std::string>(
-							static_cast<const IECore::IntData *>( d )->readable()
-						);
-						break;	
-					default :
-						break;
+					variableNameStart = s;
+					while( isalnum( *s ) )
+					{
+						s++;
+					}
+					variableNameEnd = s;
 				}
+
+#ifdef IECORE_INTERNEDSTRING_RANGECONSTRUCTOR
+				InternedString variableName( variableNameStart, variableNameEnd - variableNameStart );
+#else
+				InternedString variableName( std::string( variableNameStart, variableNameEnd - variableNameStart ) );
+#endif
+				const IECore::Data *d = get<IECore::Data>( variableName, NULL );
+				if( d )
+				{
+					switch( d->typeId() )
+					{
+						case IECore::StringDataTypeId :
+							substituteInternal( static_cast<const IECore::StringData *>( d )->readable().c_str(), result, recursionDepth + 1 );
+							break;
+						case IECore::FloatDataTypeId :
+							result += boost::lexical_cast<std::string>(
+								static_cast<const IECore::FloatData *>( d )->readable()
+							);
+							break;
+						case IECore::IntDataTypeId :
+							result += boost::lexical_cast<std::string>(
+								static_cast<const IECore::IntData *>( d )->readable()
+							);
+							break;
+						default :
+							break;
+					}
+				}
+				else if( const char *v = getenv( variableName.c_str() ) )
+				{
+					// variable not in context - try environment
+					result += v;
+				}
+				break;
 			}
-			else if( const char *v = getenv( variableName.c_str() ) )
+			case '#' :
 			{
-				// variable not in context - try environment
-				result += v;
+				int padding = 0;
+				while( *s == '#' )
+				{
+					padding++;
+					s++;
+				}
+				int frame = (int)round( getFrame() );
+				std::ostringstream padder;
+				padder << std::setw( padding ) << std::setfill( '0' ) << frame;
+				result += padder.str();
+				break;
 			}
-		}
-		else if( s[i] == '#' )
-		{
-			int padding = 0;
-			while( i < size && s[i]=='#' )
+			case '~' :
 			{
-				padding++;
-				i++;
+				if( result.size() == 0 )
+				{
+					if( const char *v = getenv( "HOME" ) )
+					{
+						result += v;
+					}
+					++s;
+					break;
+				}
+				// fall through
 			}
-			int frame = (int)round( getFrame() );
-			std::ostringstream padder;
-			padder << std::setw( padding ) << std::setfill( '0' ) << frame;
-			result += padder.str();
-		}
-		else if( s[i] == '~' && result.size()==0 )
-		{
-			if( const char *v = getenv( "HOME" ) )
-			{
-				result += v;
-			}
-			i++;
-		}
-		else
-		{
-			result.push_back( s[i] );
-			i++;
+			default :
+				result.push_back( *s++ );
+				break;
 		}
 	}
 }
@@ -311,7 +371,7 @@ const Context *Context::current()
 	ContextStack &stack = g_threadContexts.local();
 	if( !stack.size() )
 	{
-		return g_defaultContext;
+		return g_defaultContext.get();
 	}
 	return stack.top();
 }

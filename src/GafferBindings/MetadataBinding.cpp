@@ -1,25 +1,25 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,7 +31,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/python.hpp"
@@ -52,7 +52,7 @@ using namespace boost::python;
 using namespace IECore;
 using namespace Gaffer;
 
-namespace GafferBindings
+namespace
 {
 
 struct PythonNodeValueFunction
@@ -61,16 +61,16 @@ struct PythonNodeValueFunction
 		:	m_fn( fn )
 	{
 	}
-	
+
 	ConstDataPtr operator()( const Node *node )
 	{
 		IECorePython::ScopedGILLock gilLock;
 		ConstDataPtr result = extract<ConstDataPtr>( m_fn( NodePtr( const_cast<Node *>( node ) ) ) );
 		return result;
 	}
-	
+
 	private :
-	
+
 		object m_fn;
 
 };
@@ -81,16 +81,16 @@ struct PythonPlugValueFunction
 		:	m_fn( fn )
 	{
 	}
-	
+
 	ConstDataPtr operator()( const Plug *plug )
 	{
 		IECorePython::ScopedGILLock gilLock;
 		ConstDataPtr result = extract<ConstDataPtr>( m_fn( PlugPtr( const_cast<Plug *>( plug ) ) ) );
 		return result;
 	}
-	
+
 	private :
-	
+
 		object m_fn;
 
 };
@@ -98,7 +98,7 @@ struct PythonPlugValueFunction
 struct SimpleTypedDataGetter
 {
 	typedef object ReturnType;
-	
+
 	template<typename T>
 	object operator()( typename T::Ptr data )
 	{
@@ -106,26 +106,7 @@ struct SimpleTypedDataGetter
 	}
 };
 
-/// \todo Consider implementing this as an automatic conversion
-/// for any bound TypeId argument anywhere. This is implemented
-/// already in https://gist.github.com/johnhaddon/7943557 but
-/// I'm unsure if we want this behaviour everywhere or not - erring
-/// on the side of caution for now.
-static IECore::TypeId objectToTypeId( object o )
-{
-	extract<IECore::TypeId> typeIdExtractor( o );
-	if( typeIdExtractor.check() )
-	{
-		return typeIdExtractor();
-	}
-	else
-	{
-		object t = o.attr( "staticTypeId" )();
-		return extract<IECore::TypeId>( t );
-	}
-}
-
-static Metadata::NodeValueFunction objectToNodeValueFunction( object o )
+Metadata::NodeValueFunction objectToNodeValueFunction( object o )
 {
 	extract<IECore::DataPtr> dataExtractor( o );
 	if( dataExtractor.check() )
@@ -138,7 +119,7 @@ static Metadata::NodeValueFunction objectToNodeValueFunction( object o )
 	}
 }
 
-static Metadata::PlugValueFunction objectToPlugValueFunction( object o )
+Metadata::PlugValueFunction objectToPlugValueFunction( object o )
 {
 	extract<IECore::DataPtr> dataExtractor( o );
 	if( dataExtractor.check() )
@@ -151,17 +132,17 @@ static Metadata::PlugValueFunction objectToPlugValueFunction( object o )
 	}
 }
 
-static void registerNodeValue( object nodeTypeId, IECore::InternedString key, object &value )
+void registerNodeValue( IECore::TypeId nodeTypeId, IECore::InternedString key, object &value )
 {
-	Metadata::registerNodeValue( objectToTypeId( nodeTypeId ), key, objectToNodeValueFunction( value ) );
+	Metadata::registerNodeValue( nodeTypeId, key, objectToNodeValueFunction( value ) );
 }
 
-static object nodeValue( const Node *node, const char *key, bool inherit, bool instanceOnly )
+object nodeValue( const Node *node, const char *key, bool inherit, bool instanceOnly )
 {
 	ConstDataPtr d = Metadata::nodeValue<Data>( node, key, inherit, instanceOnly );
 	if( d )
 	{
-		return despatchTypedData<SimpleTypedDataGetter, TypeTraits::IsSimpleTypedData>( constPointerCast<Data>( d ) );
+		return despatchTypedData<SimpleTypedDataGetter, TypeTraits::IsSimpleTypedData>( const_cast<Data *>( d.get() ) );
 	}
 	else
 	{
@@ -169,9 +150,9 @@ static object nodeValue( const Node *node, const char *key, bool inherit, bool i
 	}
 }
 
-static object registerNodeDescription( tuple args, dict kw )
+object registerNodeDescription( tuple args, dict kw )
 {
-	IECore::TypeId nodeTypeId = objectToTypeId( args[0] );
+	IECore::TypeId nodeTypeId = extract<IECore::TypeId>( args[0] );
 	Metadata::registerNodeDescription( nodeTypeId, objectToNodeValueFunction( args[1] ) );
 
 	for( size_t i = 2, e = len( args ); i < e; i += 2 )
@@ -199,17 +180,17 @@ static object registerNodeDescription( tuple args, dict kw )
 	return object(); // none
 }
 
-static void registerPlugValue( object nodeTypeId, const char *plugPath, IECore::InternedString key, object &value )
+void registerPlugValue( IECore::TypeId nodeTypeId, const char *plugPath, IECore::InternedString key, object &value )
 {
-	Metadata::registerPlugValue( objectToTypeId( nodeTypeId ), plugPath, key, objectToPlugValueFunction( value ) );
+	Metadata::registerPlugValue( nodeTypeId, plugPath, key, objectToPlugValueFunction( value ) );
 }
 
-static object plugValue( const Plug *plug, const char *key, bool inherit, bool instanceOnly )
+object plugValue( const Plug *plug, const char *key, bool inherit, bool instanceOnly )
 {
 	ConstDataPtr d = Metadata::plugValue<Data>( plug, key, inherit, instanceOnly );
 	if( d )
 	{
-		return despatchTypedData<SimpleTypedDataGetter, TypeTraits::IsSimpleTypedData>( constPointerCast<Data>( d ) );
+		return despatchTypedData<SimpleTypedDataGetter, TypeTraits::IsSimpleTypedData>( const_cast<Data *>( d.get() ) );
 	}
 	else
 	{
@@ -217,9 +198,9 @@ static object plugValue( const Plug *plug, const char *key, bool inherit, bool i
 	}
 }
 
-static void registerPlugDescription( object nodeTypeId, const char *plugPath, object &description )
+void registerPlugDescription( IECore::TypeId nodeTypeId, const char *plugPath, object &description )
 {
-	Metadata::registerPlugDescription( objectToTypeId( nodeTypeId ), plugPath, objectToPlugValueFunction( description ) );
+	Metadata::registerPlugDescription( nodeTypeId, plugPath, objectToPlugValueFunction( description ) );
 }
 
 struct ValueChangedSlotCaller
@@ -236,42 +217,47 @@ struct ValueChangedSlotCaller
 		slot( nodeTypeId, plugPath.c_str(), key.c_str() );
 		return boost::signals::detail::unusable();
 	}
-	
+
 };
 
-static list keysToList( const std::vector<InternedString> &keys )
+list keysToList( const std::vector<InternedString> &keys )
 {
 	list result;
 	for( std::vector<InternedString>::const_iterator it = keys.begin(); it != keys.end(); ++it )
 	{
 		result.append( it->c_str() );
 	}
-	
+
 	return result;
 }
 
-static list registeredNodeValues( const Node *node, bool inherit, bool instanceOnly )
+list registeredNodeValues( const Node *node, bool inherit, bool instanceOnly )
 {
 	std::vector<InternedString> keys;
 	Metadata::registeredNodeValues( node, keys, inherit, instanceOnly );
 	return keysToList( keys );
 }
 
-static list registeredPlugValues( const Plug *plug, bool inherit, bool instanceOnly )
+list registeredPlugValues( const Plug *plug, bool inherit, bool instanceOnly )
 {
 	std::vector<InternedString> keys;
 	Metadata::registeredPlugValues( plug, keys, inherit, instanceOnly );
 	return keysToList( keys );
 }
 
+} // namespace
+
+namespace GafferBindings
+{
+
 void bindMetadata()
-{	
+{
 	scope s = class_<Metadata>( "Metadata", no_init )
-		
+
 		.def( "registerNodeValue", &registerNodeValue )
 		.def( "registerNodeValue", (void (*)( Node *, InternedString key, ConstDataPtr value ))&Metadata::registerNodeValue )
 		.staticmethod( "registerNodeValue" )
-		
+
 		.def( "registeredNodeValues", &registeredNodeValues,
 			(
 				boost::python::arg( "node" ),
@@ -290,22 +276,22 @@ void bindMetadata()
 			)
 		)
 		.staticmethod( "nodeValue" )
-		
+
 		.def( "registerNodeDescription", boost::python::raw_function( &registerNodeDescription, 2 ) )
 		.staticmethod( "registerNodeDescription" )
-		
-		.def( "nodeDescription", &Metadata::nodeDescription, 
+
+		.def( "nodeDescription", &Metadata::nodeDescription,
 			(
 				boost::python::arg( "node" ),
 				boost::python::arg( "inherit" ) = true
 			)
 		)
 		.staticmethod( "nodeDescription" )
-		
+
 		.def( "registerPlugValue", &registerPlugValue )
 		.def( "registerPlugValue", (void (*)( Plug *, InternedString key, ConstDataPtr value ))&Metadata::registerPlugValue )
 		.staticmethod( "registerPlugValue" )
-		
+
 		.def( "registeredPlugValues", &registeredPlugValues,
 			(
 				boost::python::arg( "plug" ),
@@ -314,7 +300,7 @@ void bindMetadata()
 			)
 		)
 		.staticmethod( "registeredPlugValues" )
-		
+
 		.def( "plugValue", &plugValue,
 			(
 				boost::python::arg( "plug" ),
@@ -324,21 +310,21 @@ void bindMetadata()
 			)
 		)
 		.staticmethod( "plugValue" )
-		
+
 		.def( "registerPlugDescription", &registerPlugDescription )
 		.staticmethod( "registerPlugDescription" )
-		
-		.def( "plugDescription", &Metadata::plugDescription, 
+
+		.def( "plugDescription", &Metadata::plugDescription,
 			(
 				boost::python::arg( "plug" ),
 				boost::python::arg( "inherit" ) = true
 			)
 		)
 		.staticmethod( "plugDescription" )
-				
+
 		.def( "nodeValueChangedSignal", &Metadata::nodeValueChangedSignal, return_value_policy<reference_existing_object>() )
 		.staticmethod( "nodeValueChangedSignal" )
-	
+
 		.def( "plugValueChangedSignal", &Metadata::plugValueChangedSignal, return_value_policy<reference_existing_object>() )
 		.staticmethod( "plugValueChangedSignal" )
 	;
@@ -352,14 +338,14 @@ std::string metadataSerialisation( const Gaffer::Node *node, const std::string &
 {
 	std::vector<InternedString> keys;
 	Metadata::registeredNodeValues( node, keys, false, true );
-	
+
 	std::string result;
 	for( std::vector<InternedString>::const_iterator it = keys.begin(), eIt = keys.end(); it != eIt; ++it )
 	{
-		const Data *value = Metadata::nodeValue<Data>( node, *it );
-		object pythonValue( DataPtr( const_cast<Data *>( value ) ) );
+		ConstDataPtr value = Metadata::nodeValue<Data>( node, *it );
+		object pythonValue( boost::const_pointer_cast<Data>( value ) );
 		std::string stringValue = extract<std::string>( pythonValue.attr( "__repr__" )() );
-				
+
 		result += boost::str(
 			boost::format( "Gaffer.Metadata.registerNodeValue( %s, \"%s\", %s )\n" ) %
 				identifier %
@@ -367,7 +353,7 @@ std::string metadataSerialisation( const Gaffer::Node *node, const std::string &
 				stringValue
 		);
 	}
-	
+
 	return result;
 }
 
@@ -375,14 +361,14 @@ std::string metadataSerialisation( const Plug *plug, const std::string &identifi
 {
 	std::vector<InternedString> keys;
 	Metadata::registeredPlugValues( plug, keys, false, true );
-	
+
 	std::string result;
 	for( std::vector<InternedString>::const_iterator it = keys.begin(), eIt = keys.end(); it != eIt; ++it )
 	{
-		const Data *value = Metadata::plugValue<Data>( plug, *it );
-		object pythonValue( DataPtr( const_cast<Data *>( value ) ) );
+		ConstDataPtr value = Metadata::plugValue<Data>( plug, *it );
+		object pythonValue( boost::const_pointer_cast<Data>( value ) );
 		std::string stringValue = extract<std::string>( pythonValue.attr( "__repr__" )() );
-				
+
 		result += boost::str(
 			boost::format( "Gaffer.Metadata.registerPlugValue( %s, \"%s\", %s )\n" ) %
 				identifier %
@@ -390,7 +376,7 @@ std::string metadataSerialisation( const Plug *plug, const std::string &identifi
 				stringValue
 		);
 	}
-	
+
 	return result;
 }
 

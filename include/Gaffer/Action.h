@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #ifndef GAFFER_ACTION_H
@@ -58,11 +58,17 @@ IE_CORE_FORWARDDECLARE( Action );
 /// is active and an undoable method is called. Because Actions are
 /// essentially an implementation detail of the undo system, subclasses
 /// shouldn't be exposed in the public headers.
+///
+/// Because Actions are held in the undo queue in the ScriptNode, it's
+/// essential that they do not themselves hold an intrusive pointer pointing
+/// back to the ScriptNode - this would result in a circular reference,
+/// preventing the ScriptNode from being deleted appropriately. It is essential
+/// that great care is taken with this when implementing subclasses.
 class Action : public IECore::RunTimeTyped
 {
 
 	public :
-	
+
 		/// The stages of the the do/undo/redo sequence.
 		enum Stage
 		{
@@ -71,7 +77,7 @@ class Action : public IECore::RunTimeTyped
 			Undo,
 			Redo
 		};
-	
+
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Action, ActionTypeId, IECore::RunTimeTyped );
 
 		typedef boost::function<void ()> Function;
@@ -84,14 +90,19 @@ class Action : public IECore::RunTimeTyped
 		/// passed will form the implementation of doAction() and
 		/// undoAction(). Typically the callables would be constructed
 		/// by using boost::bind with private member functions of the class
-		/// implementing the undoable method.
+		/// implementing the undoable method. Note that the Functions
+		/// will be stored in the ScriptNode's undo queue, so must not include
+		/// intrusive pointers back to the ScriptNode, as this would result in a
+		/// circular reference. It is guaranteed that the subject will
+		/// remain alive for as long as the Functions are in use by the undo
+		/// system, so it is sufficient to bind only raw pointers to the subject.
 		static void enact( GraphComponentPtr subject, const Function &doFn, const Function &undoFn );
 
 	protected :
 
 		Action();
 		virtual ~Action();
-		
+
 		/// Must be implemented by derived classes to
 		/// return the subject of the work they perform -
 		/// this is used to find the ScriptNode in which
@@ -120,11 +131,11 @@ class Action : public IECore::RunTimeTyped
 		/// Implementations must call the base class
 		/// implementation before performing their own merging.
 		virtual void merge( const Action *other ) = 0;
-		
+
 	private :
 
 		friend class ScriptNode;
-		
+
 		bool m_done;
 
 };

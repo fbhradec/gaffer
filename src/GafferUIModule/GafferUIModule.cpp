@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 //  Copyright (c) 2011-2014, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/python.hpp"
@@ -64,7 +64,6 @@
 #include "GafferUIBindings/StandardStyleBinding.h"
 #include "GafferUIBindings/ViewportGadgetBinding.h"
 #include "GafferUIBindings/ViewBinding.h"
-#include "GafferUIBindings/View3DBinding.h"
 #include "GafferUIBindings/PlugGadgetBinding.h"
 #include "GafferUIBindings/GraphLayoutBinding.h"
 #include "GafferUIBindings/StandardGraphLayoutBinding.h"
@@ -72,6 +71,7 @@
 #include "GafferUIBindings/BackdropNodeGadgetBinding.h"
 #include "GafferUIBindings/SpacerGadgetBinding.h"
 #include "GafferUIBindings/StandardConnectionGadgetBinding.h"
+#include "GafferUIBindings/HandleBinding.h"
 
 using namespace GafferUIBindings;
 
@@ -105,7 +105,6 @@ BOOST_PYTHON_MODULE( _GafferUI )
 	bindStandardStyle();
 	bindViewportGadget();
 	bindView();
-	bindView3D();
 	bindPlugGadget();
 	bindGraphLayout();
 	bindStandardGraphLayout();
@@ -113,5 +112,6 @@ BOOST_PYTHON_MODULE( _GafferUI )
 	bindBackdropNodeGadget();
 	bindSpacerGadget();
 	bindStandardConnectionGadget();
-	
+	bindHandle();
+
 }

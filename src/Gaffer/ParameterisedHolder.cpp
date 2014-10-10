@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/bind.hpp"
@@ -78,7 +78,7 @@ void ParameterisedHolder<BaseType>::setParameterised( IECore::RunTimeTypedPtr pa
 	{
 		throw IECore::Exception( "Not a ParameterisedInterface derived type." );
 	}
-	
+
 	m_parameterised = parameterised;
 	m_parameterHandler = new CompoundParameterHandler( interface->parameters() );
 	if( keepExistingValues )
@@ -105,7 +105,7 @@ void ParameterisedHolder<BaseType>::setParameterised( const std::string &classNa
 }
 
 template<typename BaseType>
-IECore::RunTimeTypedPtr ParameterisedHolder<BaseType>::getParameterised( std::string *className, int *classVersion, std::string *searchPathEnvVar ) const
+IECore::RunTimeTyped *ParameterisedHolder<BaseType>::getParameterised( std::string *className, int *classVersion, std::string *searchPathEnvVar ) const
 {
 	Node *node = const_cast<Node *>( static_cast<const Node *>( this ) );
 	if( className )
@@ -120,26 +120,26 @@ IECore::RunTimeTypedPtr ParameterisedHolder<BaseType>::getParameterised( std::st
 	{
 		*searchPathEnvVar = node->getChild<StringPlug>( "__searchPathEnvVar" )->getValue();
 	}
-	return m_parameterised;
+	return m_parameterised.get();
 }
 
 template<typename BaseType>
 IECore::ParameterisedInterface *ParameterisedHolder<BaseType>::parameterisedInterface( std::string *className, int *classVersion, std::string *searchPathEnvVar )
 {
-	return dynamic_cast<IECore::ParameterisedInterface *>( getParameterised( className, classVersion, searchPathEnvVar ).get() );
+	return dynamic_cast<IECore::ParameterisedInterface *>( getParameterised( className, classVersion, searchPathEnvVar ) );
 }
 
 
 template<typename BaseType>
-CompoundParameterHandlerPtr ParameterisedHolder<BaseType>::parameterHandler()
+CompoundParameterHandler *ParameterisedHolder<BaseType>::parameterHandler()
 {
-	return m_parameterHandler;
+	return m_parameterHandler.get();
 }
 
 template<typename BaseType>
-ConstCompoundParameterHandlerPtr ParameterisedHolder<BaseType>::parameterHandler() const
+const CompoundParameterHandler *ParameterisedHolder<BaseType>::parameterHandler() const
 {
-	return m_parameterHandler;
+	return m_parameterHandler.get();
 }
 
 template<typename BaseType>
@@ -163,22 +163,22 @@ void ParameterisedHolder<BaseType>::parameterChanged( IECore::RunTimeTyped *para
 }
 
 template<typename BaseType>
-void ParameterisedHolder<BaseType>::plugSet( PlugPtr plug )
+void ParameterisedHolder<BaseType>::plugSet( Plug *plug )
 {
 	if( !m_parameterHandler || !m_parameterHandler->plug()->isAncestorOf( plug ) )
 	{
 		return;
 	}
-		
+
 	std::vector<Plug *> plugHierarchy;
 	while( plug != m_parameterHandler->plug() )
 	{
 		plugHierarchy.push_back( plug );
 		plug = plug->parent<Plug>();
 	}
-	
+
 	IECore::RunTimeTyped *parameterProvider = getParameterised();
-	ParameterHandler *parameterHandler = m_parameterHandler;
+	ParameterHandler *parameterHandler = m_parameterHandler.get();
 	for( std::vector<Plug *>::const_reverse_iterator it = plugHierarchy.rbegin(), eIt = plugHierarchy.rend(); it != eIt; it++ )
 	{
 		IECore::CompoundParameter *compoundParameter = IECore::runTimeCast<IECore::CompoundParameter>( parameterHandler->parameter() );
@@ -186,9 +186,9 @@ void ParameterisedHolder<BaseType>::plugSet( PlugPtr plug )
 		{
 			return;
 		}
-		
+
 		CompoundParameterHandler *compoundParameterHandler = static_cast<CompoundParameterHandler *>( parameterHandler );
-		
+
 		IECore::Parameter *childParameter = compoundParameter->parameter<IECore::Parameter>( (*it)->getName() );
 		parameterHandler = compoundParameterHandler->childParameterHandler( childParameter );
 		IECore::RunTimeTyped *childParameterProvider = compoundParameterHandler->childParameterProvider( childParameter );
@@ -197,7 +197,7 @@ void ParameterisedHolder<BaseType>::plugSet( PlugPtr plug )
 			parameterProvider = childParameterProvider;
 		}
 	}
-	
+
 	if( parameterHandler )
 	{
 		BlockedConnection connectionBlocker( m_plugSetConnection );
@@ -230,7 +230,7 @@ ParameterisedHolder<BaseType>::ParameterModificationContext::~ParameterModificat
 		try
 		{
 			BlockedConnection connectionBlocker( m_parameterisedHolder->m_plugSetConnection );
-			m_parameterisedHolder->m_parameterHandler->setupPlug( m_parameterisedHolder );
+			m_parameterisedHolder->m_parameterHandler->setupPlug( m_parameterisedHolder.get() );
 			m_parameterisedHolder->m_parameterHandler->setPlugValue();
 		}
 		catch( const std::exception &e )
@@ -245,7 +245,7 @@ ParameterisedHolder<BaseType>::ParameterModificationContext::~ParameterModificat
 		{
 			error = "Unknown exception";
 		}
-		
+
 		if( !error.empty() )
 		{
 			// Unfortunately, we also have to guard against the possibility of the message
@@ -253,7 +253,7 @@ ParameterisedHolder<BaseType>::ParameterModificationContext::~ParameterModificat
 			// in python and the original exception came from python.
 			try
 			{
-				IECore::msg( IECore::Msg::Error, "ParameterModificationContext", error );		
+				IECore::msg( IECore::Msg::Error, "ParameterModificationContext", error );
 			}
 			catch( ... )
 			{

@@ -1,26 +1,26 @@
 ##########################################################################
-#  
+#
 #  Copyright (c) 2012, John Haddon. All rights reserved.
 #  Copyright (c) 2013-2014, Image Engine Design Inc. All rights reserved.
-#  
+#
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
 #  met:
-#  
+#
 #      * Redistributions of source code must retain the above
 #        copyright notice, this list of conditions and the following
 #        disclaimer.
-#  
+#
 #      * Redistributions in binary form must reproduce the above
 #        copyright notice, this list of conditions and the following
 #        disclaimer in the documentation and/or other materials provided with
 #        the distribution.
-#  
+#
 #      * Neither the name of John Haddon nor the names of
 #        any other contributors to this software may be used to endorse or
 #        promote products derived from this software without specific prior
 #        written permission.
-#  
+#
 #  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 #  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 #  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 #  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 #  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#  
+#
 ##########################################################################
 
 import fnmatch
@@ -65,26 +65,26 @@ def __noduleCreator( plug ) :
 
 	if isinstance( plug, GafferScene.ScenePlug ) :
 		return GafferUI.StandardNodule( plug )
-		
+
 	return None
 
-GafferUI.Nodule.registerNodule( GafferScene.SceneNode.staticTypeId(), fnmatch.translate( "*" ), __noduleCreator )
-GafferUI.PlugValueWidget.registerType( GafferScene.ScenePlug.staticTypeId(), None )
+GafferUI.Nodule.registerNodule( GafferScene.SceneNode, fnmatch.translate( "*" ), __noduleCreator )
+GafferUI.PlugValueWidget.registerType( GafferScene.ScenePlug, None )
 
-Gaffer.Metadata.registerPlugValue( GafferScene.SceneNode.staticTypeId(), "enabled", "nodeUI:section", "Node" )
+Gaffer.Metadata.registerPlugValue( GafferScene.SceneNode, "enabled", "nodeUI:section", "Node" )
 
 # Instancer
 
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Instancer.staticTypeId(), "instance", None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.Instancer, "instance", None )
 
 # ObjectToScene
 
-GafferUI.Nodule.registerNodule( GafferScene.ObjectToScene.staticTypeId(), "object", GafferUI.StandardNodule )
+GafferUI.Nodule.registerNodule( GafferScene.ObjectToScene, "object", GafferUI.StandardNodule )
 
 # FileSource
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.FileSource.staticTypeId(),
+	GafferScene.FileSource,
 	"refreshCount",
 	GafferUI.IncrementingPlugValueWidget,
 	label = "Refresh",
@@ -96,7 +96,7 @@ GafferUI.PlugValueWidget.registerCreator(
 # AlembicSource
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.AlembicSource.staticTypeId(),
+	GafferScene.AlembicSource,
 	"fileName",
 	lambda plug : GafferUI.PathPlugValueWidget( plug,
 		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter( extensions = [ "abc" ] ) ),
@@ -110,7 +110,7 @@ GafferUI.PlugValueWidget.registerCreator(
 # AttributeCache
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.AttributeCache.staticTypeId(),
+	GafferScene.AttributeCache,
 	"fileName",
 	lambda plug : GafferUI.PathPlugValueWidget(
 		plug,
@@ -121,7 +121,7 @@ GafferUI.PlugValueWidget.registerCreator(
 # BranchCreator
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.BranchCreator.staticTypeId(),
+	GafferScene.BranchCreator,
 	"parent",
 	lambda plug : GafferUI.PathPlugValueWidget(
 		plug,
@@ -131,17 +131,17 @@ GafferUI.PlugValueWidget.registerCreator(
 
 # Group
 
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Group.staticTypeId(), "in[0-9]*", None )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Group.staticTypeId(), "transform", GafferUI.TransformPlugValueWidget, collapsed=None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.Group, "in[0-9]*", None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.Group, "transform", GafferUI.TransformPlugValueWidget, collapsed=None )
 
 # Filter
 
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Filter.staticTypeId(), "match", None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.Filter, "match", None )
 
 # Camera
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.Camera.staticTypeId(),
+	GafferScene.Camera,
 	"projection",
 	GafferUI.EnumPlugValueWidget,
 	labelsAndValues = (
@@ -153,7 +153,7 @@ GafferUI.PlugValueWidget.registerCreator(
 # Constraint
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.Constraint.staticTypeId(),
+	GafferScene.Constraint,
 	"target",
 	lambda plug : GafferUI.PathPlugValueWidget(
 		plug,
@@ -162,21 +162,21 @@ GafferUI.PlugValueWidget.registerCreator(
 )
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.Constraint.staticTypeId(),
+	GafferScene.Constraint,
 	"targetMode",
 	GafferUI.EnumPlugValueWidget,
 	labelsAndValues = (
 		( "Origin", GafferScene.Constraint.TargetMode.Origin ),
 		( "BoundMin", GafferScene.Constraint.TargetMode.BoundMin ),
 		( "BoundMax", GafferScene.Constraint.TargetMode.BoundMax ),
-		( "BoundCenter", GafferScene.Constraint.TargetMode.BoundCenter ),	
+		( "BoundCenter", GafferScene.Constraint.TargetMode.BoundCenter ),
 	)
 )
 
 # MeshType
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.MeshType.staticTypeId(),
+	GafferScene.MeshType,
 	"meshType",
 	GafferUI.EnumPlugValueWidget,
 	labelsAndValues = (
@@ -220,17 +220,17 @@ GafferScene.Cube,
 def __pathsPlugWidgetCreator( plug ) :
 
 	result = GafferUI.VectorDataPlugValueWidget( plug )
-	result.vectorDataWidget().setDragPointer( "objects.png" )
+	result.vectorDataWidget().setDragPointer( "objects" )
 	return result
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.PathFilter.staticTypeId(),
+	GafferScene.PathFilter,
 	"paths",
 	__pathsPlugWidgetCreator,
 )
 
 GafferUI.Nodule.registerNodule(
-	GafferScene.PathFilter.staticTypeId(),
+	GafferScene.PathFilter,
 	"paths",
 	lambda plug : None,
 )
@@ -238,13 +238,13 @@ GafferUI.Nodule.registerNodule(
 # UnionFilter
 
 GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.UnionFilter.staticTypeId(),
+	GafferScene.UnionFilter,
 	"in",
 	None,
 )
 
 GafferUI.Nodule.registerNodule(
-	GafferScene.UnionFilter.staticTypeId(),
+	GafferScene.UnionFilter,
 	"in",
 	GafferUI.CompoundNodule
 )

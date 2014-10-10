@@ -36,6 +36,7 @@
 ##########################################################################
 
 import os
+import gc
 
 import IECore
 
@@ -85,9 +86,11 @@ class gui( Gaffer.Application ) :
 			for fileName in args["scripts"] :
 				scriptNode = Gaffer.ScriptNode( os.path.splitext( os.path.basename( fileName ) )[0] )
 				scriptNode["fileName"].setValue( os.path.abspath( fileName ) )
-				scriptNode.load()
+				# \todo: Display load errors in a dialog, like in python/GafferUI/FileMenu.py
+				scriptNode.load( continueOnError = True )
 				self.root()["scripts"].addChild( scriptNode )
 				GafferUI.FileMenu.addRecentFile( self, fileName )
+				del scriptNode
 		else :
 			self.root()["scripts"]["script1"] = Gaffer.ScriptNode()
 		
@@ -97,7 +100,7 @@ class gui( Gaffer.Application ) :
 			primaryWindow.setFullScreen( True )
 			
 		GafferUI.EventLoop.mainEventLoop().start()		
-				
+		
 		return 0
 
 	def __setupClipboardSync( self ) :
@@ -145,6 +148,6 @@ class gui( Gaffer.Application ) :
 		if text :
 			with Gaffer.BlockedConnection( self.__clipboardContentsChangedConnection ) :
 				self.root().setClipboardContents( IECore.StringData( text ) )
-
+		
 IECore.registerRunTimeTyped( gui )
 

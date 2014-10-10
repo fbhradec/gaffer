@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2012, John Haddon. All rights reserved.
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/lexical_cast.hpp"
@@ -61,7 +61,7 @@ Shader::Shader( const std::string &name )
 	addChild( new CompoundPlug( "parameters", Plug::In, Plug::Default & ~Plug::AcceptsInputs ) );
 	addChild( new BoolPlug( "enabled", Gaffer::Plug::In, true ) );
 	addChild( new StringPlug( "__nodeName", Gaffer::Plug::In, name, Plug::Default & ~(Plug::Serialisable | Plug::AcceptsInputs | Plug::PerformsSubstitutions ) ) );
-	
+
 	nameChangedSignal().connect( boost::bind( &Shader::nameChanged, this ) );
 }
 
@@ -151,7 +151,7 @@ IECore::ConstObjectVectorPtr Shader::state() const
 void Shader::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	DependencyNode::affects( input, outputs );
-		
+
 	if(
 		parametersPlug()->isAncestorOf( input ) ||
 		input == enabledPlug() ||
@@ -239,7 +239,7 @@ IECore::DataPtr Shader::parameterValue( const Gaffer::Plug *parameterPlug, Netwo
 	{
 		return Gaffer::CompoundDataPlug::extractDataFromPlug( valuePlug );
 	}
-	
+
 	return NULL;
 }
 
@@ -281,29 +281,37 @@ IECore::MurmurHash Shader::NetworkBuilder::shaderHash( const Shader *shaderNode 
 		h.append( Shader::staticTypeId() );
 		return h;
 	}
-	
+
 	ShaderAndHash &shaderAndHash = m_shaders[shaderNode];
 	if( shaderAndHash.hash != IECore::MurmurHash() )
 	{
 		return shaderAndHash.hash;
 	}
-	
+
 	shaderAndHash.hash.append( shaderNode->typeId() );
 	shaderNode->namePlug()->hash( shaderAndHash.hash );
 	shaderNode->typePlug()->hash( shaderAndHash.hash );
-	
-	for( RecursiveInputPlugIterator it( shaderNode->parametersPlug() ); it!=it.end(); ++it )
+
+	parameterHashWalk( shaderNode, shaderNode->parametersPlug(), shaderAndHash.hash );
+
+	shaderNode->nodeNamePlug()->hash( shaderAndHash.hash );
+
+	return shaderAndHash.hash;
+}
+
+void Shader::NetworkBuilder::parameterHashWalk( const Shader *shaderNode, const Gaffer::Plug *parameterPlug, IECore::MurmurHash &h )
+{
+	for( InputPlugIterator it( parameterPlug ); it != it.end(); ++it )
 	{
-		if( (*it)->typeId() != CompoundPlug::staticTypeId() )
+		if( (*it)->typeId() == CompoundPlug::staticTypeId() )
 		{
-			shaderNode->parameterHash( *it, *this, shaderAndHash.hash );
-			it.prune();
+			parameterHashWalk( shaderNode, it->get(), h );
+		}
+		else
+		{
+			shaderNode->parameterHash( it->get(), *this, h );
 		}
 	}
-	
-	shaderNode->nodeNamePlug()->hash( shaderAndHash.hash );
-	
-	return shaderAndHash.hash;
 }
 
 IECore::Shader *Shader::NetworkBuilder::shader( const Shader *shaderNode )
@@ -313,31 +321,49 @@ IECore::Shader *Shader::NetworkBuilder::shader( const Shader *shaderNode )
 	{
 		return 0;
 	}
-	
+
 	ShaderAndHash &shaderAndHash = m_shaders[shaderNode];
 	if( shaderAndHash.shader )
 	{
-		return shaderAndHash.shader;
+		return shaderAndHash.shader.get();
 	}
-	
+
 	shaderAndHash.shader = new IECore::Shader( shaderNode->namePlug()->getValue(), shaderNode->typePlug()->getValue() );
-	for( RecursiveInputPlugIterator it( shaderNode->parametersPlug() ); it!=it.end(); it++ )
-	{
-		if( (*it)->typeId() != CompoundPlug::staticTypeId() )
-		{
-			IECore::DataPtr value = shaderNode->parameterValue( *it, *this );
-			if( value )
-			{
-				shaderAndHash.shader->parameters()[(*it)->relativeName( shaderNode->parametersPlug() )] = value;
-			}
-			it.prune();
-		}
-	}
+
+	parameterValueWalk( shaderNode, shaderNode->parametersPlug(), IECore::InternedString(), shaderAndHash.shader->parameters() );
 
 	shaderAndHash.shader->blindData()->writable()["gaffer:nodeName"] = new IECore::StringData( shaderNode->nodeNamePlug()->getValue() );
 
 	m_state->members().push_back( shaderAndHash.shader );
-	return shaderAndHash.shader;
+	return shaderAndHash.shader.get();
+}
+
+void Shader::NetworkBuilder::parameterValueWalk( const Shader *shaderNode, const Gaffer::Plug *parameterPlug, const IECore::InternedString &parameterName, IECore::CompoundDataMap &values )
+{
+	for( InputPlugIterator it( parameterPlug ); it != it.end(); ++it )
+	{
+		IECore::InternedString childParameterName;
+		if( parameterName.string().size() )
+		{
+			childParameterName = parameterName.string() + "." + (*it)->getName().string();
+		}
+		else
+		{
+			childParameterName = (*it)->getName();
+		}
+
+		if( (*it)->typeId() == CompoundPlug::staticTypeId() )
+		{
+			parameterValueWalk( shaderNode, it->get(), childParameterName, values );
+		}
+		else
+		{
+			if( IECore::DataPtr value = shaderNode->parameterValue( it->get(), *this ) )
+			{
+				values[childParameterName] = value;
+			}
+		}
+	}
 }
 
 const std::string &Shader::NetworkBuilder::shaderHandle( const Shader *shaderNode )
@@ -348,7 +374,7 @@ const std::string &Shader::NetworkBuilder::shaderHandle( const Shader *shaderNod
 		static std::string emptyString;
 		return emptyString;
 	}
-	
+
 	IECore::StringDataPtr handleData = s->parametersData()->member<IECore::StringData>( "__handle" );
 	if( !handleData )
 	{

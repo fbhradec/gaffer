@@ -1,25 +1,25 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,7 +31,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/format.hpp"
@@ -51,7 +51,7 @@ using namespace Gaffer;
 IE_CORE_DEFINERUNTIMETYPED( Box );
 
 Box::Box( const std::string &name )
-	:	Node( name )
+	:	DependencyNode( name )
 {
 }
 
@@ -77,7 +77,7 @@ Plug *Box::promotePlug( Plug *descendantPlug, bool asUserPlug )
 	// so we need to do that ourselves.
 	if( externalPlug->typeId() == Gaffer::CompoundPlug::staticTypeId() )
 	{
-		for( RecursivePlugIterator it( externalPlug ); it != it.end(); ++it )
+		for( RecursivePlugIterator it( externalPlug.get() ); it != it.end(); ++it )
 		{
 			(*it)->setFlags( Plug::Dynamic, true );
 			if( (*it)->typeId() != Gaffer::CompoundPlug::staticTypeId() )
@@ -89,12 +89,12 @@ Plug *Box::promotePlug( Plug *descendantPlug, bool asUserPlug )
 
 	if( externalPlug->direction() == Plug::In )
 	{
-		if( ValuePlug *externalValuePlug = IECore::runTimeCast<ValuePlug>( externalPlug ) )
+		if( ValuePlug *externalValuePlug = IECore::runTimeCast<ValuePlug>( externalPlug.get() ) )
 		{
 			externalValuePlug->setFrom( static_cast<ValuePlug *>( descendantPlug ) );
 		}
 	}
-	
+
 	if( asUserPlug )
 	{
 		userPlug()->addChild( externalPlug );
@@ -103,7 +103,7 @@ Plug *Box::promotePlug( Plug *descendantPlug, bool asUserPlug )
 	{
 		addChild( externalPlug );
 	}
-	
+
 	if( externalPlug->direction() == Plug::In )
 	{
 		descendantPlug->setInput( externalPlug );
@@ -122,7 +122,7 @@ bool Box::plugIsPromoted( const Plug *descendantPlug ) const
 	{
 		return false;
 	}
-	
+
 	if( descendantPlug->direction() == Plug::In )
 	{
 		const Plug *input = descendantPlug->getInput<Plug>();
@@ -158,7 +158,7 @@ void Box::unpromotePlug( Plug *promotedDescendantPlug )
 			throw IECore::Exception( "Cannot unpromote null plug" );
 		}
 	}
-	
+
 	Plug *externalPlug = NULL;
 	if( promotedDescendantPlug->direction() == Plug::In )
 	{
@@ -178,7 +178,7 @@ void Box::unpromotePlug( Plug *promotedDescendantPlug )
 		assert( externalPlug ); // should be true because we checked plugIsPromoted()
 		externalPlug->setInput( NULL );
 	}
-	
+
 	// remove the top level external plug , but only if
 	// all the children are unused too in the case of a compound plug.
 	bool remove = true;
@@ -217,7 +217,7 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool asUserPlug, bo
 			throw IECore::Exception(  "Cannot promote null plug" );
 		}
 	}
-	
+
 	if( plugIsPromoted( descendantPlug ) )
 	{
 		if( !throwExceptions )
@@ -233,7 +233,7 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool asUserPlug, bo
 			);
 		}
 	}
-	
+
 	if( descendantPlug->direction() == Plug::In )
 	{
 		if( descendantPlug->getFlags( Plug::ReadOnly ) )
@@ -271,7 +271,7 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool asUserPlug, bo
 				);
 			}
 		}
-	
+
 		if( !descendantPlug->getFlags( Plug::AcceptsInputs ) )
 		{
 			if( !throwExceptions )
@@ -347,7 +347,7 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool asUserPlug, bo
 			}
 		}
 	}
-	
+
 	// check all the children of this plug too
 	for( RecursivePlugIterator it( descendantPlug ); it != it.end(); ++it )
 	{
@@ -360,26 +360,6 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool asUserPlug, bo
 	return true;
 }
 
-const IECore::Data *Box::getNodeMetadata( IECore::InternedString key ) const
-{
-	return Metadata::nodeValue<IECore::Data>( this, key, false, true );
-}
-
-void Box::setNodeMetadata( IECore::InternedString key, IECore::ConstDataPtr value )
-{
-	Metadata::registerNodeValue( this, key, value );
-}
-
-const IECore::Data *Box::getPlugMetadata( const Plug *plug, IECore::InternedString key ) const
-{
-	return Metadata::plugValue<IECore::Data>( plug, key, false, true );
-}
-
-void Box::setPlugMetadata( const Plug *plug, IECore::InternedString key, IECore::ConstDataPtr value )
-{
-	Metadata::registerPlugValue( const_cast<Plug *>( plug ), key, value );
-}
-
 void Box::exportForReference( const std::string &fileName ) const
 {
 	const ScriptNode *script = scriptNode();
@@ -387,10 +367,10 @@ void Box::exportForReference( const std::string &fileName ) const
 	{
 		throw IECore::Exception( "Box::exportForReference called without ScriptNode" );
 	}
-	
+
 	// we only want to save out our child nodes and plugs that are visible in the UI, so we build a filter
 	// to specify just the things to export.
-	
+
 	boost::regex invisiblePlug( "^__.*$" );
 	StandardSetPtr toExport = new StandardSet;
 	for( ChildIterator it = children().begin(), eIt = children().end(); it != eIt; ++it )
@@ -403,11 +383,11 @@ void Box::exportForReference( const std::string &fileName ) const
 		{
 			if( !boost::regex_match( plug->getName().c_str(), invisiblePlug ) )
 			{
-				toExport->add( *it );	
+				toExport->add( *it );
 			}
 		}
 	}
-	
+
 	script->serialiseToFile( fileName, this, toExport.get() );
 
 }
@@ -430,7 +410,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 			verifiedChildNodes->add( *nodeIt );
 		}
 	}
-	
+
 	// when a node we're putting in the box has connections to
 	// a node remaining outside, we need to reroute the connection
 	// via an intermediate plug on the box. this mapping maps input
@@ -440,7 +420,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 	PlugMap plugMap;
 
 	for( size_t i = 0, e = verifiedChildNodes->size(); i < e; i++ )
-	{		
+	{
 		Node *childNode = static_cast<Node *>( verifiedChildNodes->member( i ) );
 		// reroute any connections to external nodes
 		for( RecursivePlugIterator plugIt( childNode ); plugIt != plugIt.end(); plugIt++ )
@@ -457,7 +437,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 						PlugPtr intermediateInput = plug->createCounterpart( "in", Plug::In );
 						// we want intermediate inputs to appear on the same side of the node as the
 						// equivalent internal plug, so we copy the relevant metadata over.
-						result->setPlugMetadata( intermediateInput, "nodeGadget:nodulePosition", Metadata::plugValue<IECore::Data>( plug, "nodeGadget:nodulePosition" ) );
+						Metadata::registerPlugValue( intermediateInput.get(), "nodeGadget:nodulePosition", Metadata::plugValue<IECore::Data>( plug, "nodeGadget:nodulePosition" ) );
 						intermediateInput->setFlags( Plug::Dynamic, true );
 						result->addChild( intermediateInput );
 						intermediateInput->setInput( input );
@@ -485,7 +465,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 							if( mapIt == plugMap.end() )
 							{
 								PlugPtr intermediateOutput = plug->createCounterpart( "out", Plug::Out );
-								result->setPlugMetadata( intermediateOutput, "nodeGadget:nodulePosition", Metadata::plugValue<IECore::Data>( plug, "nodeGadget:nodulePosition" ) );
+								Metadata::registerPlugValue( intermediateOutput.get(), "nodeGadget:nodulePosition", Metadata::plugValue<IECore::Data>( plug, "nodeGadget:nodulePosition" ) );
 								intermediateOutput->setFlags( Plug::Dynamic, true );
 								result->addChild( intermediateOutput );
 								intermediateOutput->setInput( plug );
@@ -506,4 +486,70 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 	}
 
 	return result;
+}
+
+void Box::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
+{
+	DependencyNode::affects( input, outputs );
+}
+
+BoolPlug *Box::enabledPlug()
+{
+	return getChild<BoolPlug>( "enabled" );
+}
+
+const BoolPlug *Box::enabledPlug() const
+{
+	return getChild<BoolPlug>( "enabled" );
+}
+
+Plug *Box::correspondingInput( const Plug *output )
+{
+	return const_cast<Plug *>( const_cast<const Box *>( this )->Box::correspondingInput( output ) );
+}
+
+const Plug *Box::correspondingInput( const Plug *output ) const
+{
+	const Plug *internalOutput = output->getInput<Plug>();
+	if( !internalOutput )
+	{
+		return NULL;
+	}
+
+	const DependencyNode *node = IECore::runTimeCast<const DependencyNode>( internalOutput->node() );
+	if( !node )
+	{
+		return NULL;
+	}
+
+	const BoolPlug *externalEnabledPlug = enabledPlug();
+	if( !externalEnabledPlug )
+	{
+		return NULL;
+	}
+
+	const BoolPlug *internalEnabledPlug = node->enabledPlug();
+	if( !internalEnabledPlug )
+	{
+		return NULL;
+	}
+
+	if( internalEnabledPlug->getInput<Plug>() != externalEnabledPlug )
+	{
+		return NULL;
+	}
+
+	const Plug *internalInput = node->correspondingInput( internalOutput );
+	if( !internalInput )
+	{
+		return NULL;
+	}
+
+	const Plug *input = internalInput->getInput<Plug>();
+	if( !input || input->node() != this )
+	{
+		return NULL;
+	}
+
+	return input;
 }

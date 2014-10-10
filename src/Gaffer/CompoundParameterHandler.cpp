@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
-//  Copyright (c) 2011-2012, Image Engine Design Inc. All rights reserved.
+//
+//  Copyright (c) 2011-2014, Image Engine Design Inc. All rights reserved.
 //  Copyright (c) 2011, John Haddon. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "IECore/MessageHandler.h"
@@ -56,14 +56,14 @@ CompoundParameterHandler::~CompoundParameterHandler()
 {
 }
 
-IECore::ParameterPtr CompoundParameterHandler::parameter()
+IECore::Parameter *CompoundParameterHandler::parameter()
 {
-	return m_parameter;
+	return m_parameter.get();
 }
 
-IECore::ConstParameterPtr CompoundParameterHandler::parameter() const
+const IECore::Parameter *CompoundParameterHandler::parameter() const
 {
-	return m_parameter;
+	return m_parameter.get();
 }
 
 void CompoundParameterHandler::restore( GraphComponent *plugParent )
@@ -73,29 +73,29 @@ void CompoundParameterHandler::restore( GraphComponent *plugParent )
 	{
 		return;
 	}
-	
+
 	// call restore for our child handlers
-	
+
 	const CompoundParameter::ParameterVector &children = m_parameter->orderedParameters();
 	for( CompoundParameter::ParameterVector::const_iterator it = children.begin(); it!=children.end(); it++ )
 	{
-		ParameterHandlerPtr h = handler( *it, true );
+		ParameterHandler *h = handler( it->get(), true );
 		if( h )
 		{
-			h->restore( compoundPlug );
+			h->restore( compoundPlug.get() );
 		}
 	}
-	
+
 }
 
-Gaffer::PlugPtr CompoundParameterHandler::setupPlug( GraphComponent *plugParent, Plug::Direction direction )
+Gaffer::Plug *CompoundParameterHandler::setupPlug( GraphComponent *plugParent, Plug::Direction direction, unsigned flags )
 {
 	// decide what name our compound plug should have
-	
+
 	std::string name = plugName();
-	
+
 	// create the compound plug if necessary
-	
+
 	m_plug = plugParent->getChild<CompoundPlug>( name );
 	if( !m_plug || m_plug->direction()!=direction )
 	{
@@ -103,17 +103,17 @@ Gaffer::PlugPtr CompoundParameterHandler::setupPlug( GraphComponent *plugParent,
 		plugParent->setChild( name, m_plug );
 	}
 
-	setupPlugFlags( m_plug );
-	
+	setupPlugFlags( m_plug.get(), flags );
+
 	// remove any child plugs we don't need
-	
+
 	std::vector<PlugPtr> toRemove;
 	for( PlugIterator pIt( m_plug->children().begin(), m_plug->children().end() ); pIt!=pIt.end(); pIt++ )
 	{
 		if( (*pIt)->getName().string().compare( 0, 2, "__" ) == 0 )
 		{
 			// we leave any plugs prefixed with __ alone, on the assumption
-			// that they don't represent child parameters but instead are 
+			// that they don't represent child parameters but instead are
 			// used for bookkeeping by a derived parameter handler (ClassParameterHandler
 			// or ClassVectorParameterHandler for instance).
 			continue;
@@ -123,26 +123,26 @@ Gaffer::PlugPtr CompoundParameterHandler::setupPlug( GraphComponent *plugParent,
 			toRemove.push_back( *pIt );
 		}
 	}
-	
+
 	for( std::vector<PlugPtr>::const_iterator pIt = toRemove.begin(), eIt = toRemove.end(); pIt != eIt; pIt++ )
 	{
 		m_plug->removeChild( *pIt );
 	}
 
 	// and add or update the child plug for each child parameter
-	
+
 	const CompoundParameter::ParameterVector &children = m_parameter->orderedParameters();
 	for( CompoundParameter::ParameterVector::const_iterator it = children.begin(); it!=children.end(); it++ )
 	{
-		ParameterHandlerPtr h = handler( *it, true );
+		ParameterHandler *h = handler( it->get(), true );
 		if( h )
 		{
-			h->setupPlug( m_plug, direction );
+			h->setupPlug( m_plug.get(), direction, flags );
 		}
 	}
-	
+
 	// remove any old child handlers we don't need any more
-	
+
 	for( HandlerMap::iterator it = m_handlers.begin(), eIt = m_handlers.end(); it!=eIt; )
 	{
 		HandlerMap::iterator nextIt = it; nextIt++; // increment now because removing will invalidate iterator
@@ -152,18 +152,18 @@ Gaffer::PlugPtr CompoundParameterHandler::setupPlug( GraphComponent *plugParent,
 		}
 		it = nextIt;
 	}
-	
-	return m_plug;
+
+	return m_plug.get();
 }
 
-Gaffer::PlugPtr CompoundParameterHandler::plug()
+Gaffer::Plug *CompoundParameterHandler::plug()
 {
-	return m_plug;
+	return m_plug.get();
 }
 
-Gaffer::ConstPlugPtr CompoundParameterHandler::plug() const
+const Gaffer::Plug *CompoundParameterHandler::plug() const
 {
-	return m_plug;
+	return m_plug.get();
 }
 
 void CompoundParameterHandler::setParameterValue()
@@ -171,7 +171,7 @@ void CompoundParameterHandler::setParameterValue()
 	const CompoundParameter::ParameterVector &children = m_parameter->orderedParameters();
 	for( CompoundParameter::ParameterVector::const_iterator it = children.begin(); it!=children.end(); it++ )
 	{
-		ParameterHandlerPtr h = handler( *it );
+		ParameterHandler *h = handler( it->get() );
 		if( h )
 		{
 			h->setParameterValue();
@@ -184,7 +184,7 @@ void CompoundParameterHandler::setPlugValue()
 	const CompoundParameter::ParameterVector &children = m_parameter->orderedParameters();
 	for( CompoundParameter::ParameterVector::const_iterator it = children.begin(); it!=children.end(); it++ )
 	{
-		ParameterHandlerPtr h = handler( *it );
+		ParameterHandler *h = handler( it->get() );
 		if( h && !h->plug()->getFlags( Plug::ReadOnly ) )
 		{
 			h->setPlugValue();
@@ -205,12 +205,12 @@ std::string CompoundParameterHandler::plugName() const
 	return result;
 }
 
-ParameterHandlerPtr CompoundParameterHandler::childParameterHandler( IECore::ParameterPtr childParameter )
+ParameterHandler *CompoundParameterHandler::childParameterHandler( IECore::Parameter *childParameter )
 {
 	return handler( childParameter );
 }
 
-ConstParameterHandlerPtr CompoundParameterHandler::childParameterHandler( IECore::ParameterPtr childParameter ) const
+const ParameterHandler *CompoundParameterHandler::childParameterHandler( IECore::Parameter *childParameter ) const
 {
 	// cast is ok, as when passing createIfMissing==false to handler() we don't modify any member data
 	return const_cast<CompoundParameterHandler *>( this )->handler( childParameter );
@@ -221,20 +221,20 @@ IECore::RunTimeTyped *CompoundParameterHandler::childParameterProvider( IECore::
 	return 0;
 }
 
-ParameterHandlerPtr CompoundParameterHandler::handler( const ParameterPtr child, bool createIfMissing )
+ParameterHandler *CompoundParameterHandler::handler( Parameter *child, bool createIfMissing )
 {
 	HandlerMap::const_iterator it = m_handlers.find( child );
 	if( it!=m_handlers.end() )
 	{
-		return it->second;
+		return it->second.get();
 	}
-	
+
 	ParameterHandlerPtr h = 0;
 	if( createIfMissing )
 	{
 		IECore::ConstBoolDataPtr noHostMapping = child->userData()->member<BoolData>( "noHostMapping" );
 		if( !noHostMapping || !noHostMapping->readable() )
-		{	
+		{
 			h = ParameterHandler::create( child );
 			if( !h )
 			{
@@ -242,7 +242,7 @@ ParameterHandlerPtr CompoundParameterHandler::handler( const ParameterPtr child,
 			}
 		}
 	}
-	
+
 	m_handlers[child] = h;
-	return h;
+	return h.get();
 }

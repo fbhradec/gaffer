@@ -1,25 +1,25 @@
 //////////////////////////////////////////////////////////////////////////
-//  
-//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
+//  Copyright (c) 2013-2014, Image Engine Design Inc. All rights reserved.
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,14 +31,13 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "IECore/SimpleTypedData.h"
 #include "IECore/WorldBlock.h"
 
 #include "Gaffer/Context.h"
-#include "Gaffer/ApplicationRoot.h"
 
 #include "GafferScene/ScenePlug.h"
 #include "GafferScene/SceneProcedural.h"
@@ -58,6 +57,8 @@ ExecutableRender::ExecutableRender( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new ScenePlug( "in" ) );
+	addChild( new ScenePlug( "out", Plug::Out, Plug::Default & ~Plug::Serialisable ) );
+	outPlug()->setInput( inPlug() );
 }
 
 ExecutableRender::~ExecutableRender()
@@ -74,14 +75,34 @@ const ScenePlug *ExecutableRender::inPlug() const
 	return getChild<ScenePlug>( g_firstPlugIndex );
 }
 
-IECore::MurmurHash ExecutableRender::executionHash( const Gaffer::Context *context ) const
+ScenePlug *ExecutableRender::outPlug()
 {
-	/// \todo How do we cheaply hash something representing the whole scene?
-	/// Do we just hash the identity of the input node?
-	return IECore::MurmurHash();
+	return getChild<ScenePlug>( g_firstPlugIndex + 1 );
 }
 
-void ExecutableRender::execute( const Contexts &contexts ) const
+const ScenePlug *ExecutableRender::outPlug() const
+{
+	return getChild<ScenePlug>( g_firstPlugIndex + 1 );
+}
+
+IECore::MurmurHash ExecutableRender::hash( const Gaffer::Context *context ) const
+{
+	const ScenePlug *scenePlug = inPlug()->source<ScenePlug>();
+	if ( scenePlug == inPlug() )
+	{
+		return IECore::MurmurHash();
+	}
+
+	Context::Scope scope( context );
+	IECore::MurmurHash h = ExecutableNode::hash( context );
+	/// \todo hash the actual scene when we have a hierarchyHash
+	h.append( (uint64_t)scenePlug );
+	h.append( context->hash() );
+
+	return h;
+}
+
+void ExecutableRender::execute() const
 {
 	const ScenePlug *scene = inPlug()->getInput<ScenePlug>();
 	if( !scene )
@@ -89,46 +110,37 @@ void ExecutableRender::execute( const Contexts &contexts ) const
 		throw IECore::Exception( "No input scene" );
 	}
 
-	/// \todo This doesn't belong here. It'll be the responsibility of the Despatchers
-	/// to save the script if necessary, and to save it to an alternate location than
-	/// the current one.
-	scriptNode()->save();
+	ConstCompoundObjectPtr globals = scene->globalsPlug()->getValue();
 
-	for( Contexts::const_iterator it = contexts.begin(), eIt = contexts.end(); it != eIt; it++ )
+	createDisplayDirectories( globals.get() );
+
+	// Scoping the lifetime of the renderer so that
+	// the destructor is run before we run the system
+	// command. This can be essential for renderman
+	// renders, where the rib stream may not be flushed
+	// to disk before RiEnd is called.
 	{
-		Context::Scope scopedContext( it->get() );
-		ConstCompoundObjectPtr globals = scene->globalsPlug()->getValue();
-
-		createDisplayDirectories( globals );
-
-		IECore::RendererPtr renderer = createRenderer();		
-		outputOptions( globals, renderer );
-		outputCamera( scene, globals, renderer );
+		IECore::RendererPtr renderer = createRenderer();
+		outputOptions( globals.get(), renderer.get() );
+		outputOutputs( globals.get(), renderer.get() );
+		outputCamera( scene, globals.get(), renderer.get() );
 		{
 			WorldBlock world( renderer );
 
-			outputLights( scene, globals, renderer ); 
-			outputWorldProcedural( scene, renderer );
+			outputGlobalAttributes( globals.get(), renderer.get() );
+			outputCoordinateSystems( scene, globals.get(), renderer.get() );
+			outputLights( scene, globals.get(), renderer.get() );
+			outputWorldProcedural( scene, renderer.get() );
 		}
-		
-		std::string systemCommand = command();
-		if( systemCommand.size() )
+	}
+
+	std::string systemCommand = command();
+	if( systemCommand.size() )
+	{
+		int result = system( systemCommand.c_str() );
+		if( result )
 		{
-			const ApplicationRoot *applicationRoot = scene->ancestor<ApplicationRoot>();
-			if( applicationRoot && applicationRoot->getName() == "gui" )
-			{
-				/// \todo We need this weird background execution behaviour because we
-				/// don't want to block the ui while rendering, but really the LocalDespatcher
-				/// should be responsible for launching a separate process to do the execution
-				/// from anyway.
-				systemCommand += "&";
-			}
-			
-			int result = system( systemCommand.c_str() );
-			if( result )
-			{
-				throw Exception( "System command failed" );
-			}
+			throw Exception( "System command failed" );
 		}
 	}
 }

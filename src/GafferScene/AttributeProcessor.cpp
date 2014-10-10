@@ -1,25 +1,25 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,10 +31,10 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/tokenizer.hpp"
+#include "Gaffer/StringAlgo.h"
 
 #include "GafferScene/AttributeProcessor.h"
 
@@ -52,6 +52,11 @@ AttributeProcessor::AttributeProcessor( const std::string &name )
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "names" ) );
 	addChild( new BoolPlug( "invertNames" ) );
+
+	// Fast pass-throughs for things we don't modify
+	outPlug()->objectPlug()->setInput( inPlug()->objectPlug() );
+	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
+	outPlug()->boundPlug()->setInput( inPlug()->boundPlug() );
 }
 
 AttributeProcessor::~AttributeProcessor()
@@ -81,7 +86,7 @@ const Gaffer::BoolPlug *AttributeProcessor::invertNamesPlug() const
 void AttributeProcessor::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	SceneElementProcessor::affects( input, outputs );
-	
+
 	if( input == namesPlug() || input == invertNamesPlug() )
 	{
 		outputs.push_back( outPlug()->attributesPlug() );
@@ -117,24 +122,19 @@ IECore::ConstCompoundObjectPtr AttributeProcessor::computeProcessedAttributes( c
 	{
 		return inputAttributes;
 	}
-		
-	/// \todo See todos about name matching in PrimitiveVariableProcessor.
-	typedef boost::tokenizer<boost::char_separator<char> > Tokenizer;
-	std::string namesValue = namesPlug()->getValue();
-	Tokenizer names( namesValue, boost::char_separator<char>( " " ) );
-		
-	bool invert = invertNamesPlug()->getValue();
+
+	const std::string names = namesPlug()->getValue();
+	const bool invert = invertNamesPlug()->getValue();
 
 	CompoundObjectPtr result = new CompoundObject;
-	IECore::PrimitiveVariableMap::iterator next;
 	for( CompoundObject::ObjectMap::const_iterator it = inputAttributes->members().begin(), eIt = inputAttributes->members().end(); it != eIt; ++it )
 	{
 		ConstObjectPtr attribute = it->second;
-		bool found = std::find( names.begin(), names.end(), it->first.string() ) != names.end();
-		if( found != invert )
+		if( matchMultiple( it->first, names ) != invert )
 		{
 			attribute = processAttribute( path, context, it->first, attribute.get() );
 		}
+
 		if( attribute )
 		{
 			result->members().insert(
@@ -143,11 +143,11 @@ IECore::ConstCompoundObjectPtr AttributeProcessor::computeProcessedAttributes( c
 					// cast is ok - result is const immediately on
 					// returning from this function, and attribute will
 					// therefore not be modified.
-					constPointerCast<Object>( attribute )
+					boost::const_pointer_cast<Object>( attribute )
 				)
 			);
 		}
 	}
-	
+
 	return result;
 }

@@ -1,25 +1,25 @@
 ##########################################################################
-#  
+#
 #  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-#  
+#
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
 #  met:
-#  
+#
 #      * Redistributions of source code must retain the above
 #        copyright notice, this list of conditions and the following
 #        disclaimer.
-#  
+#
 #      * Redistributions in binary form must reproduce the above
 #        copyright notice, this list of conditions and the following
 #        disclaimer in the documentation and/or other materials provided with
 #        the distribution.
-#  
+#
 #      * Neither the name of John Haddon nor the names of
 #        any other contributors to this software may be used to endorse or
 #        promote products derived from this software without specific prior
 #        written permission.
-#  
+#
 #  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 #  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 #  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,22 +31,22 @@
 #  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 #  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 #  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#  
+#
 ##########################################################################
 
 import GafferUI
 import GafferScene
 
-GafferUI.Nodule.registerNodule( GafferScene.ShaderSwitch.staticTypeId(), "enabled", lambda plug : None )
-GafferUI.Nodule.registerNodule( GafferScene.ShaderSwitch.staticTypeId(), "index", lambda plug : None )
+GafferUI.Nodule.registerNodule( GafferScene.ShaderSwitch, "enabled", lambda plug : None )
+GafferUI.Nodule.registerNodule( GafferScene.ShaderSwitch, "index", lambda plug : None )
 
-GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch.staticTypeId(), "enabled", None )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch.staticTypeId(), "in", None )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch.staticTypeId(), "in[0-9]*", None )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch.staticTypeId(), "out", None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "enabled", None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "in", None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "in[0-9]*", None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "out", None )
 
 def __nodeGadgetCreator( node ) :
 
 	return GafferUI.StandardNodeGadget( node, GafferUI.LinearContainer.Orientation.Y )
 
-GafferUI.NodeGadget.registerNodeGadget( GafferScene.ShaderSwitch.staticTypeId(), __nodeGadgetCreator )
+GafferUI.NodeGadget.registerNodeGadget( GafferScene.ShaderSwitch, __nodeGadgetCreator )

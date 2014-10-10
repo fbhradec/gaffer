@@ -1,25 +1,25 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,7 +31,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "tbb/tbb.h"
@@ -63,7 +63,7 @@ struct NodeMetadata
 
 	NodeValues nodeValues;
 	PlugPathsToValues plugPathsToValues;
-	
+
 };
 
 typedef std::map<IECore::TypeId, NodeMetadata> NodeMetadataMap;
@@ -85,7 +85,7 @@ InstanceMetadataMap &instanceMetadataMap()
 CompoundData *instanceMetadata( const GraphComponent *instance, bool createIfMissing )
 {
 	InstanceMetadataMap &m = instanceMetadataMap();
-	
+
 	InstanceMetadataMap::accessor accessor;
 	if( m.find( accessor, instance ) )
 	{
@@ -100,7 +100,7 @@ CompoundData *instanceMetadata( const GraphComponent *instance, bool createIfMis
 			return accessor->second.get();
 		}
 	}
-	
+
 	return NULL;
 }
 
@@ -121,7 +121,7 @@ void registerInstanceValueAction( const GraphComponent *instance, InternedString
 	{
 		return;
 	}
-	m->writable()[key] = IECore::constPointerCast<IECore::Data>( value );
+	m->writable()[key] = boost::const_pointer_cast<IECore::Data>( value );
 	if( const Node *node = runTimeCast<const Node>( instance ) )
 	{
 		Metadata::nodeValueChangedSignal()( node->typeId(), key );
@@ -140,16 +140,18 @@ void registerInstanceValue( GraphComponent *instance, IECore::InternedString key
 	const IECore::Data *currentValue = instanceValue( instance, key );
 	if(
 		( !currentValue && !value ) ||
-		( currentValue && value && currentValue->isEqualTo( value ) )
+		( currentValue && value && currentValue->isEqualTo( value.get() ) )
 	)
 	{
 		return;
 	}
-	
+
 	Action::enact(
 		instance,
-		boost::bind( &registerInstanceValueAction, GraphComponentPtr( instance ), key, value ),
-		boost::bind( &registerInstanceValueAction, GraphComponentPtr( instance ), key, ConstDataPtr( currentValue ) )
+		// ok to bind raw pointers to instance, because enact() guarantees
+		// the lifetime of the subject.
+		boost::bind( &registerInstanceValueAction, instance, key, value ),
+		boost::bind( &registerInstanceValueAction, instance, key, ConstDataPtr( currentValue ) )
 	);
 }
 
@@ -190,7 +192,7 @@ void Metadata::registeredNodeValues( const Node *node, std::vector<IECore::Inter
 	{
 		return;
 	}
-	
+
 	IECore::TypeId typeId = node->typeId();
 	while( typeId != InvalidTypeId )
 	{
@@ -212,12 +214,12 @@ IECore::ConstDataPtr Metadata::nodeValueInternal( const Node *node, IECore::Inte
 	{
 		return iv;
 	}
-	
+
 	if( instanceOnly )
 	{
 		return NULL;
 	}
-	
+
 	IECore::TypeId typeId = node->typeId();
 	while( typeId != InvalidTypeId )
 	{
@@ -279,13 +281,13 @@ void Metadata::registeredPlugValues( const Plug *plug, std::vector<IECore::Inter
 	{
 		return;
 	}
-	
+
 	const Node *node = plug->node();
 	if( !node )
 	{
 		return;
 	}
-	
+
 	const string plugPath = plug->relativeName( node );
 
 	IECore::TypeId typeId = node->typeId();
@@ -316,7 +318,7 @@ IECore::ConstDataPtr Metadata::plugValueInternal( const Plug *plug, IECore::Inte
 	{
 		return iv;
 	}
-	
+
 	if( instanceOnly )
 	{
 		return NULL;
@@ -327,9 +329,9 @@ IECore::ConstDataPtr Metadata::plugValueInternal( const Plug *plug, IECore::Inte
 	{
 		return NULL;
 	}
-	
+
 	const string plugPath = plug->relativeName( node );
-	
+
 	IECore::TypeId typeId = node->typeId();
 	while( typeId != InvalidTypeId )
 	{
@@ -361,7 +363,7 @@ void Metadata::registerPlugDescription( IECore::TypeId nodeTypeId, const MatchPa
 
 void Metadata::registerPlugDescription( IECore::TypeId nodeTypeId, const MatchPattern &plugPath, PlugValueFunction description )
 {
-	registerPlugValue( nodeTypeId, plugPath, "description", description );	
+	registerPlugValue( nodeTypeId, plugPath, "description", description );
 }
 
 std::string Metadata::plugDescription( const Plug *plug, bool inherit )

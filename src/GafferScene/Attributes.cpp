@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2012, John Haddon. All rights reserved.
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "GafferScene/Attributes.h"
@@ -50,6 +50,17 @@ Attributes::Attributes( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new CompoundDataPlug( "attributes" ) );
+	addChild( new BoolPlug( "global", Plug::In, false ) );
+	
+	// Fast pass-throughs for the things we don't alter.
+	outPlug()->objectPlug()->setInput( inPlug()->objectPlug() );
+	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
+	outPlug()->boundPlug()->setInput( inPlug()->boundPlug() );
+	// Disconnect globals pass-through the SceneElementProcessor made
+	// because we do modify the globals.
+	/// \todo Use plugInputChangedSignal() and plugSetSignal() to
+	/// keep the globals pass-through connected when possible?
+	outPlug()->globalsPlug()->setInput( NULL );
 }
 
 Attributes::~Attributes()
@@ -66,19 +77,77 @@ const Gaffer::CompoundDataPlug *Attributes::attributesPlug() const
 	return getChild<Gaffer::CompoundDataPlug>( g_firstPlugIndex );
 }
 
+Gaffer::BoolPlug *Attributes::globalPlug()
+{
+	return getChild<Gaffer::BoolPlug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::BoolPlug *Attributes::globalPlug() const
+{
+	return getChild<Gaffer::BoolPlug>( g_firstPlugIndex + 1 );
+}
+
 void Attributes::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	SceneElementProcessor::affects( input, outputs );
-	
-	if( attributesPlug()->isAncestorOf( input ) )
+
+	if( attributesPlug()->isAncestorOf( input ) || input == globalPlug() )
 	{
 		outputs.push_back( outPlug()->attributesPlug() );
+		outputs.push_back( outPlug()->globalsPlug() );
 	}
+}
+
+void Attributes::hashGlobals( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
+{
+	if( globalPlug()->getValue() )
+	{
+		// We will modify the globals.
+		SceneElementProcessor::hashGlobals( context, parent, h );
+		inPlug()->globalsPlug()->hash( h );
+		attributesPlug()->hash( h );
+	}
+	else
+	{
+		// We won't modify the globals - pass through the hash.
+		h = inPlug()->globalsPlug()->hash();
+	}
+}
+
+IECore::ConstCompoundObjectPtr Attributes::computeGlobals( const Gaffer::Context *context, const ScenePlug *parent ) const
+{
+	ConstCompoundObjectPtr inputGlobals = inPlug()->globalsPlug()->getValue();
+	if( !globalPlug()->getValue() )
+	{
+		return inputGlobals;
+	}
+
+	const CompoundDataPlug *p = attributesPlug();
+	IECore::CompoundObjectPtr result = new CompoundObject;
+	// Since we're not going to modify any existing members (only add new ones),
+	// and our result becomes const on returning it, we can directly reference
+	// the input members in our result without copying. Be careful not to modify
+	// them though!
+	result->members() = inputGlobals->members();
+
+	std::string name;
+	for( CompoundDataPlug::MemberPlugIterator it( p ); it != it.end(); ++it )
+	{
+		IECore::DataPtr d = p->memberDataAndName( it->get(), name );
+		if( d )
+		{
+			result->members()["attribute:" + name] = d;
+		}
+	}
+
+	return result;
 }
 
 bool Attributes::processesAttributes() const
 {
-	return attributesPlug()->children().size();
+	// Although the base class says that we should return a constant, it should
+	// be OK to return this because it's constant across the hierarchy.
+	return attributesPlug()->children().size() && !globalPlug()->getValue();
 }
 
 void Attributes::hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -93,9 +162,24 @@ IECore::ConstCompoundObjectPtr Attributes::computeProcessedAttributes( const Sce
 	{
 		return inputAttributes;
 	}
-	
-	CompoundObjectPtr result = inputAttributes->copy();
+
+	/// \todo You might think that we wouldn't have to check this again
+	/// because the base class would have used processesAttributes()
+	/// to avoid even calling this function. But that isn't the case for
+	/// some reason.
+	if( globalPlug()->getValue() )
+	{
+		return inputAttributes;
+	}
+
+	CompoundObjectPtr result = new CompoundObject;
+	// Since we're not going to modify any existing members (only add new ones),
+	// and our result becomes const on returning it, we can directly reference
+	// the input members in our result without copying. Be careful not to modify
+	// them though!
+	result->members() = inputAttributes->members();
+
 	ap->fillCompoundObject( result->members() );
-	
+
 	return result;
 }

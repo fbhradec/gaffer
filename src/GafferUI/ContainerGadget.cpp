@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 //  Copyright (c) 2012-2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,15 +32,10 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "GafferUI/ContainerGadget.h"
-
-#include "OpenEXR/ImathBoxAlgo.h"
-
-#include "boost/bind.hpp"
-#include "boost/bind/placeholders.hpp"
 
 using namespace Imath;
 using namespace GafferUI;
@@ -50,35 +45,19 @@ IE_CORE_DEFINERUNTIMETYPED( ContainerGadget );
 ContainerGadget::ContainerGadget( const std::string &name )
 	:	Gadget( name ), m_padding( Box3f( V3f( 0 ), V3f( 0 ) ) )
 {
-	childAddedSignal().connect( boost::bind( &ContainerGadget::childAdded, this, ::_1, ::_2 ) );
-	childRemovedSignal().connect( boost::bind( &ContainerGadget::childRemoved, this, ::_1, ::_2 )  );
 }
 
 ContainerGadget::~ContainerGadget()
 {
 }
 
-bool ContainerGadget::acceptsChild( const Gaffer::GraphComponent *potentialChild ) const
-{
-	return potentialChild->isInstanceOf( Gadget::staticTypeId() );
-}
-
 Imath::Box3f ContainerGadget::bound() const
 {
-	Imath::Box3f result;
-	for( ChildContainer::const_iterator it=children().begin(); it!=children().end(); it++ )
-	{
-		// cast is safe because of the guarantees acceptsChild() gives us
-		const Gadget *c = static_cast<const Gadget *>( it->get() );
-		Imath::Box3f b = c->bound();
-		b = Imath::transform( b, c->getTransform() );
-		result.extendBy( b );
-	}
+	Imath::Box3f result = Gadget::bound();
 	result.min += m_padding.min;
 	result.max += m_padding.max;
 	return result;
 }
-
 
 void ContainerGadget::setPadding( const Imath::Box3f &padding )
 {
@@ -87,39 +66,10 @@ void ContainerGadget::setPadding( const Imath::Box3f &padding )
 		return;
 	}
 	m_padding = padding;
-	renderRequestSignal()( this );	
+	renderRequestSignal()( this );
 }
 
 const Imath::Box3f &ContainerGadget::getPadding() const
 {
 	return m_padding;
-}
-		
-void ContainerGadget::doRender( const Style *style ) const
-{
-	for( ChildContainer::const_iterator it=children().begin(); it!=children().end(); it++ )
-	{
-		// cast is safe because of the guarantees acceptsChild() gives us
-		const Gadget *c = static_cast<const Gadget *>( it->get() );
-		c->render( style );
-	}
-}
-
-void ContainerGadget::childAdded( GraphComponent *parent, GraphComponent *child )
-{
-	assert( parent==this );
-	static_cast<Gadget *>( child )->renderRequestSignal().connect( boost::bind( &ContainerGadget::childRenderRequest, this, ::_1 ) );
-	renderRequestSignal()( this );
-}
-
-void ContainerGadget::childRemoved( GraphComponent *parent, GraphComponent *child )
-{
-	assert( parent==this );
-	static_cast<Gadget *>( child )->renderRequestSignal().disconnect( &ContainerGadget::childRenderRequest );
-	renderRequestSignal()( this );
-}
-
-void ContainerGadget::childRenderRequest( Gadget *child )
-{
-	renderRequestSignal()( this );
 }

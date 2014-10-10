@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2012, John Haddon. All rights reserved.
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/Box.h"
@@ -54,6 +54,11 @@ ShaderAssignment::ShaderAssignment( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new Plug( "shader" ) );
+
+	// Fast pass-throughs for the things we don't alter.
+	outPlug()->objectPlug()->setInput( inPlug()->objectPlug() );
+	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
+	outPlug()->boundPlug()->setInput( inPlug()->boundPlug() );
 }
 
 ShaderAssignment::~ShaderAssignment()
@@ -93,12 +98,12 @@ bool ShaderAssignment::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plu
 	{
 		return false;
 	}
-	
+
 	if( !inputPlug )
 	{
 		return true;
 	}
-	
+
 	if( plug == shaderPlug() )
 	{
 		const Node *sourceNode = inputPlug->source<Plug>()->node();
@@ -137,25 +142,32 @@ void ShaderAssignment::hashProcessedAttributes( const ScenePath &path, const Gaf
 		shader->stateHash( h );
 	}
 }
-		
+
 IECore::ConstCompoundObjectPtr ShaderAssignment::computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputAttributes ) const
 {
-	CompoundObjectPtr result = inputAttributes->copy();
-	
 	const Shader *shader = shaderPlug()->source<Plug>()->ancestor<Shader>();
-	if( shader )
+	if( !shader )
 	{
-		// Shader::state() returns a const object, so that in the future it may
-		// come from a cached value. we're putting it into our result which, once
-		// returned, will also be treated as const and cached. for that reason the
-		// temporary const_cast needed to put it into the result is justified -
-		// we never change the object and nor can anyone after it is returned.
-		ObjectVectorPtr state = constPointerCast<ObjectVector>( shader->state() );
-		if( state->members().size() )
-		{
-			result->members()["shader"] = state;
-		}
+		return inputAttributes;
 	}
-	
+
+	CompoundObjectPtr result = new CompoundObject;
+	// Since we're not going to modify any existing members (only add new ones),
+	// and our result becomes const on returning it, we can directly reference
+	// the input members in our result without copying. Be careful not to modify
+	// them though!
+	result->members() = inputAttributes->members();
+
+	// Shader::state() returns a const object, so that in the future it may
+	// come from a cached value. we're putting it into our result which, once
+	// returned, will also be treated as const and cached. for that reason the
+	// temporary const_cast needed to put it into the result is justified -
+	// we never change the object and nor can anyone after it is returned.
+	ObjectVectorPtr state = boost::const_pointer_cast<ObjectVector>( shader->state() );
+	if( state->members().size() )
+	{
+		result->members()["shader"] = state;
+	}
+
 	return result;
 }

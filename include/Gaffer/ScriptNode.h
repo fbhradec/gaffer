@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 //  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #ifndef GAFFER_SCRIPTNODE_H
@@ -74,14 +74,14 @@ class ScriptNode : public Node
 		virtual ~ScriptNode();
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::ScriptNode, ScriptNodeTypeId, Node );
-				
+
 		/// Accepts parenting only to a ScriptContainer.
 		virtual bool acceptsParent( const GraphComponent *potentialParent ) const;
-		
+
 		/// Convenience function which simply returns ancestor<ApplicationRoot>().
 		ApplicationRoot *applicationRoot();
 		const ApplicationRoot *applicationRoot() const;
-		
+
 		//! @name Selection
 		/// The ScriptNode maintains a list of child Nodes which are considered
 		/// to be selected - actions performing on the script can then use that
@@ -91,7 +91,7 @@ class ScriptNode : public Node
 		StandardSet *selection();
 		const StandardSet *selection() const;
 		//@}
-		
+
 		//! @name History and undo
 		/// Certain methods in the graph API are undoable on request.
 		/// These methods are implemented in terms of the Action class -
@@ -120,7 +120,7 @@ class ScriptNode : public Node
 		/// A signal emitted when an item is added to the undo stack.
 		UndoAddedSignal &undoAddedSignal();
 		//@}
-		
+
 		//! @name Editing
 		/// These methods provide higher level editing functions for the
 		/// script.
@@ -150,25 +150,26 @@ class ScriptNode : public Node
 		/// \undoable
 		void deleteNodes( Node *parent = 0, const Set *filter = 0, bool reconnect = true );
 		//@}
-		
-		//! @name Script evaluation
+
+		//! @name Script evaluation and execution.
 		/// These methods allow the execution of python scripts in the
 		/// context of the ScriptNode. The methods are only available on
 		/// ScriptNode objects created from Python - they will throw Exceptions
 		/// on nodes created from C++. This allows the ScriptNode class to be
 		/// used in the C++ library without introducing dependencies on Python.
-		/// Exceptions are also thrown if execution fails for any reason.
 		////////////////////////////////////////////////////////////////////
 		//@{
 		typedef boost::signal<void ( ScriptNodePtr, const std::string )> ScriptExecutedSignal;
 		typedef boost::signal<void ( ScriptNodePtr, const std::string, PyObject * )> ScriptEvaluatedSignal;
-		/// Runs the specified python script.
-		/// \todo I think we'll need a version of this that takes a python callable.
-		/// We might expose that here or just introduce it in the binding layer for
-		/// use from the python side only.
-		virtual void execute( const std::string &pythonScript, Node *parent = 0 );
+		/// Runs the specified python script. If continueOnError is true, then
+		/// errors are reported via IECore::MessageHandler rather than as exceptions, and
+		/// execution continues at the point after the error. This allows scripts to be loaded as
+		/// best as possible even when certain nodes/plugs/shaders may be missing or
+		/// may have been renamed. A true return value indicates that one or more errors
+		/// were ignored.
+		virtual bool execute( const std::string &pythonScript, Node *parent = 0, bool continueOnError = false );
 		/// As above, but loads the python script from the specified file.
-		virtual void executeFile( const std::string &pythonFile, Node *parent = 0 );
+		virtual bool executeFile( const std::string &pythonFile, Node *parent = 0, bool continueOnError = false );
 		/// This signal is emitted following successful execution of a script.
 		ScriptExecutedSignal &scriptExecutedSignal();
 		/// Evaluates the specified python expression. The caller owns a reference to
@@ -180,7 +181,7 @@ class ScriptNode : public Node
 		/// this if they intend to keep the result.
 		ScriptEvaluatedSignal &scriptEvaluatedSignal();
 		//@}
-		
+
 		//! @name Serialisation
 		/// Scripts may be serialised into a string form, which when executed
 		/// in python will rebuild the node network.
@@ -206,7 +207,9 @@ class ScriptNode : public Node
 		BoolPlug *unsavedChangesPlug();
 		const BoolPlug *unsavedChangesPlug() const;
 		/// Loads the script specified in the filename plug.
-		virtual void load();
+		/// See execute() for a description of the continueOnError argument
+		/// and the return value.
+		virtual bool load( bool continueOnError = false );
 		/// Saves the script to the file specified by the filename plug.
 		virtual void save() const;
 		//@}
@@ -227,7 +230,7 @@ class ScriptNode : public Node
 		CompoundDataPlug *variablesPlug();
 		const CompoundDataPlug *variablesPlug() const;
 		//@}
-		
+
 		//! @name Frame range
 		/// The ScriptNode defines the valid frame range using two numeric plugs.
 		////////////////////////////////////////////////////////////////////
@@ -237,9 +240,9 @@ class ScriptNode : public Node
 		IntPlug *frameEndPlug();
 		const IntPlug *frameEndPlug() const;
 		//@}
-		
+
 	private :
-		
+
 		bool selectionSetAcceptor( const Set *s, const Set::Member *m );
 		StandardSetPtr m_selection;
 		Behaviours::OrphanRemover m_selectionOrphanRemover;
@@ -248,17 +251,17 @@ class ScriptNode : public Node
 
 		friend class Action;
 		friend class UndoContext;
-		
+
 		// Called by the UndoContext and Action classes to
 		// implement the undo system.
 		void pushUndoState( UndoContext::State state, const std::string &mergeGroup );
 		void addAction( ActionPtr action );
 		void popUndoState();
-		
+
 		typedef std::stack<UndoContext::State> UndoStateStack;
 		typedef std::list<CompoundActionPtr> UndoList;
 		typedef UndoList::iterator UndoIterator;
-		
+
 		ActionSignal m_actionSignal;
 		UndoAddedSignal m_undoAddedSignal;
 		UndoStateStack m_undoStateStack; // pushed and popped by the creation and destruction of UndoContexts
@@ -266,16 +269,16 @@ class ScriptNode : public Node
 		UndoList m_undoList; // then the accumulated actions are transferred to this list for storage
 		UndoIterator m_undoIterator; // points to the next thing to redo
 		Action::Stage m_currentActionStage;
-		
+
 		ScriptExecutedSignal m_scriptExecutedSignal;
 		ScriptEvaluatedSignal m_scriptEvaluatedSignal;
-			
+
 		ContextPtr m_context;
-		
+
 		void plugSet( Plug *plug );
 
 		static size_t g_firstPlugIndex;
-	
+
 };
 
 IE_CORE_DECLAREPTR( ScriptNode );

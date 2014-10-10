@@ -1,26 +1,26 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2012-2013, John Haddon. All rights reserved.
 //  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -32,7 +32,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/python.hpp"
@@ -60,15 +60,15 @@ static void initWrapper( PathMatcher &m, boost::python::object paths )
 	for( size_t i = 0, e = len( paths ); i < e; ++i )
 	{
 		object path = paths[i];
-		extract<const char *> stringExtractor( path );
-		if( stringExtractor.check() )
+		extract<const IECore::InternedStringVectorData *> pathDataExtractor( path );
+		const IECore::InternedStringVectorData *pathData = pathDataExtractor.check() ? pathDataExtractor() : NULL;
+		if( pathData )
 		{
-			m.addPath( stringExtractor() );
+			m.addPath( pathData->readable() );
 		}
 		else
 		{
-			IECore::ConstInternedStringVectorDataPtr d = extract<IECore::ConstInternedStringVectorDataPtr>( path );
-			m.addPath( d->readable() );
+			m.addPath( extract<std::string>( path ) );
 		}
 	}
 }
@@ -93,21 +93,6 @@ static PathMatcher *constructFromVectorData( IECore::ConstStringVectorDataPtr pa
 	return new PathMatcher( paths->readable().begin(), paths->readable().end() );
 }
 
-static bool addPathInternedStringVectorData( PathMatcher &p, const IECore::InternedStringVectorData *d )
-{
-	return p.addPath( d->readable() );
-}
-
-static bool removePathInternedStringVectorData( PathMatcher &p, const IECore::InternedStringVectorData *d )
-{
-	return p.removePath( d->readable() );
-}
-
-static unsigned matchInternedStringVectorData( const PathMatcher &p, const IECore::InternedStringVectorData *d )
-{
-	return p.match( d->readable() );
-}
-
 static list paths( const PathMatcher &p )
 {
 	std::vector<std::string> paths;
@@ -128,13 +113,13 @@ void bindPathMatcher()
 		.def( init<const PathMatcher &>() )
 		.def( "init", &initWrapper )
 		.def( "addPath", (bool (PathMatcher::*)( const std::string & ))&PathMatcher::addPath )
-		.def( "addPath", &addPathInternedStringVectorData )
+		.def( "addPath", (bool (PathMatcher::*)( const std::vector<IECore::InternedString> & ))&PathMatcher::addPath )
 		.def( "removePath", (bool (PathMatcher::*)( const std::string & ))&PathMatcher::removePath )
-		.def( "removePath", &removePathInternedStringVectorData )
+		.def( "removePath", (bool (PathMatcher::*)( const std::vector<IECore::InternedString> & ))&PathMatcher::removePath )
 		.def( "clear", &PathMatcher::clear )
 		.def( "paths", &paths )
 		.def( "match", (unsigned (PathMatcher ::*)( const std::string & ) const)&PathMatcher::match )
-		.def( "match", &matchInternedStringVectorData )
+		.def( "match", (unsigned (PathMatcher ::*)( const std::vector<IECore::InternedString> & ) const)&PathMatcher::match )
 		.def( self == self )
 		.def( self != self )
 	;

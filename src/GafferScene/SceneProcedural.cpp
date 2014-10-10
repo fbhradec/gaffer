@@ -1,25 +1,25 @@
 //////////////////////////////////////////////////////////////////////////
-//  
+//
 //  Copyright (c) 2012-2013, John Haddon. All rights reserved.
-//  
+//
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
 //  met:
-//  
+//
 //      * Redistributions of source code must retain the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer.
-//  
+//
 //      * Redistributions in binary form must reproduce the above
 //        copyright notice, this list of conditions and the following
 //        disclaimer in the documentation and/or other materials provided with
 //        the distribution.
-//  
+//
 //      * Neither the name of John Haddon nor the names of
 //        any other contributors to this software may be used to endorse or
 //        promote products derived from this software without specific prior
 //        written permission.
-//  
+//
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
 //  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 //  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -31,7 +31,7 @@
 //  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 //  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 //  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//  
+//
 //////////////////////////////////////////////////////////////////////////
 
 #include "OpenEXR/ImathBoxAlgo.h"
@@ -43,6 +43,7 @@
 #include "IECore/StateRenderable.h"
 #include "IECore/AngleConversion.h"
 #include "IECore/MotionBlock.h"
+#include "IECore/CoordinateSystem.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/ScriptNode.h"
@@ -56,68 +57,85 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
+tbb::atomic<int> SceneProcedural::g_pendingSceneProcedurals;
+
+SceneProcedural::AllRenderedSignal SceneProcedural::g_allRenderedSignal;
+
 SceneProcedural::SceneProcedural( ConstScenePlugPtr scenePlug, const Gaffer::Context *context, const ScenePlug::ScenePath &scenePath, const PathMatcherData *pathsToExpand, size_t minimumExpansionDepth )
-	:	m_scenePlug( scenePlug ), m_context( new Context( *context ) ), m_scenePath( scenePath ), m_pathsToExpand( pathsToExpand ? pathsToExpand->copy() : 0 ), m_minimumExpansionDepth( minimumExpansionDepth )
+	:	m_scenePlug( scenePlug ), m_context( new Context( *context ) ), m_scenePath( scenePath ), m_pathsToExpand( pathsToExpand ? pathsToExpand->copy() : 0 ), m_minimumExpansionDepth( minimumExpansionDepth ), m_rendered( false )
 {
 	// get a reference to the script node to prevent it being destroyed while we're doing a render:
 	m_scriptNode = m_scenePlug->ancestor<ScriptNode>();
-	
+
 	m_context->set( ScenePlug::scenePathContextName, m_scenePath );
 
 	// options
-	
-	Context::Scope scopedContext( m_context );
+
+	Context::Scope scopedContext( m_context.get() );
 	ConstCompoundObjectPtr globals = m_scenePlug->globalsPlug()->getValue();
-	
-	const BoolData *transformBlurData = globals->member<BoolData>( "render:transformBlur" );
+
+	const BoolData *transformBlurData = globals->member<BoolData>( "option:render:transformBlur" );
 	m_options.transformBlur = transformBlurData ? transformBlurData->readable() : false;
-	
-	const BoolData *deformationBlurData = globals->member<BoolData>( "render:deformationBlur" );
+
+	const BoolData *deformationBlurData = globals->member<BoolData>( "option:render:deformationBlur" );
 	m_options.deformationBlur = deformationBlurData ? deformationBlurData->readable() : false;
-	
-	const V2fData *shutterData = globals->member<V2fData>( "render:shutter" );
+
+	const V2fData *shutterData = globals->member<V2fData>( "option:render:shutter" );
 	m_options.shutter = shutterData ? shutterData->readable() : V2f( -0.25, 0.25 );
 	m_options.shutter += V2f( m_context->getFrame() );
-	
+
 	// attributes
+
+	transformBlurData = globals->member<BoolData>( "attribute:gaffer:transformBlur" );
+	m_attributes.transformBlur = transformBlurData ? transformBlurData->readable() : true;
 	
-	m_attributes.transformBlur = true;
-	m_attributes.transformBlurSegments = 1;
-	m_attributes.deformationBlur = true;
-	m_attributes.deformationBlurSegments = 1;
+	const IntData *transformBlurSegmentsData = globals->member<IntData>( "attribute:gaffer:transformBlurSegments" );
+	m_attributes.transformBlurSegments = transformBlurSegmentsData ? transformBlurSegmentsData->readable() : 1;
 	
+	deformationBlurData = globals->member<BoolData>( "attribute:gaffer:deformationBlur" );
+	m_attributes.deformationBlur = deformationBlurData ? deformationBlurData->readable() : true;
+	
+	const IntData *deformationBlurSegmentsData = globals->member<IntData>( "attribute:gaffer:deformationBlurSegments" );
+	m_attributes.deformationBlurSegments = deformationBlurSegmentsData ? deformationBlurSegmentsData->readable() : 1;
+
 	updateAttributes( true );
-	
+	++g_pendingSceneProcedurals;
+
 }
 
 SceneProcedural::SceneProcedural( const SceneProcedural &other, const ScenePlug::ScenePath &scenePath )
 	:	m_scenePlug( other.m_scenePlug ), m_context( new Context( *(other.m_context), Context::Shared ) ), m_scenePath( scenePath ),
 		m_pathsToExpand( other.m_pathsToExpand ), m_minimumExpansionDepth( other.m_minimumExpansionDepth ? other.m_minimumExpansionDepth - 1 : 0 ),
-		m_options( other.m_options ), m_attributes( other.m_attributes )
+		m_options( other.m_options ), m_attributes( other.m_attributes ), m_rendered( false )
 {
 	// get a reference to the script node to prevent it being destroyed while we're doing a render:
 	m_scriptNode = m_scenePlug->ancestor<ScriptNode>();
-	
+
 	m_context->set( ScenePlug::scenePathContextName, m_scenePath );
 
 	updateAttributes( false );
+	++g_pendingSceneProcedurals;
 }
 
 SceneProcedural::~SceneProcedural()
 {
+	if( !m_rendered )
+	{
+		decrementPendingProcedurals();
+	}
 }
 
 Imath::Box3f SceneProcedural::bound() const
 {
 	/// \todo I think we should be able to remove this exception handling in the future.
-	/// Either when we do better error handling in ValuePlug computations, or when 
+	/// Either when we do better error handling in ValuePlug computations, or when
 	/// the bug in IECoreGL that caused the crashes in SceneProceduralTest.testComputationErrors
 	/// is fixed.
 	try
 	{
 		ContextPtr timeContext = new Context( *m_context, Context::Borrowed );
-		Context::Scope scopedTimeContext( timeContext );
-		
+		Context::Scope scopedTimeContext( timeContext.get() );
+
 		/// \todo This doesn't take account of the unfortunate fact that our children may have differing
 		/// numbers of segments than ourselves. To get an accurate bound we would need to know the different sample
 		/// times the children may be using and evaluate a bound at those times as well. We don't want to visit
@@ -143,12 +161,12 @@ Imath::Box3f SceneProcedural::bound() const
 		///    or connections being used on the segments attributes, because they could be used to cheat the system.
 		///    It could potentially be faster than 2) because it wouldn't have to do all nondivisible numbers - it
 		///    could know exactly which numbers of segments were in existence. It still suffers from the
-		///    "pay the price everywhere" problem.	
-				
+		///    "pay the price everywhere" problem.
+
 		std::set<float> times;
 		motionTimes( ( m_options.deformationBlur && m_attributes.deformationBlur ) ? m_attributes.deformationBlurSegments : 0, times );
 		motionTimes( ( m_options.transformBlur && m_attributes.transformBlur ) ? m_attributes.transformBlurSegments : 0, times );
-				
+
 		Box3f result;
 		for( std::set<float>::const_iterator it = times.begin(), eIt = times.end(); it != eIt; it++ )
 		{
@@ -157,7 +175,7 @@ Imath::Box3f SceneProcedural::bound() const
 			M44f t = m_scenePlug->transformPlug()->getValue();
 			result.extendBy( transform( b, t ) );
 		}
-		
+
 		return result;
 	}
 	catch( const std::exception &e )
@@ -167,20 +185,26 @@ Imath::Box3f SceneProcedural::bound() const
 	return Box3f();
 }
 
-void SceneProcedural::render( RendererPtr renderer ) const
-{	
-	Context::Scope scopedContext( m_context );
-	
+void SceneProcedural::render( Renderer *renderer ) const
+{
+	Context::Scope scopedContext( m_context.get() );
+
 	/// \todo See above.
 	try
 	{
-	
+
 		// get all the attributes, and early out if we're not visibile
-	
+
 		ConstCompoundObjectPtr attributes = m_scenePlug->attributesPlug()->getValue();
 		const BoolData *visibilityData = attributes->member<BoolData>( "scene:visible" );
 		if( visibilityData && !visibilityData->readable() )
 		{
+		
+			if( !m_rendered )
+			{
+				decrementPendingProcedurals();
+			}
+			m_rendered = true;
 			return;
 		}
 
@@ -197,24 +221,24 @@ void SceneProcedural::render( RendererPtr renderer ) const
 		renderer->setAttribute( "name", new StringData( name ) );
 
 		// transform
-		
+
 		std::set<float> transformTimes;
 		motionTimes( ( m_options.transformBlur && m_attributes.transformBlur ) ? m_attributes.transformBlurSegments : 0, transformTimes );
 		{
 			ContextPtr timeContext = new Context( *m_context, Context::Borrowed );
-			Context::Scope scopedTimeContext( timeContext );
-			
+			Context::Scope scopedTimeContext( timeContext.get() );
+
 			MotionBlock motionBlock( renderer, transformTimes, transformTimes.size() > 1 );
-			
+
 			for( std::set<float>::const_iterator it = transformTimes.begin(), eIt = transformTimes.end(); it != eIt; it++ )
 			{
 				timeContext->setFrame( *it );
 				renderer->concatTransform( m_scenePlug->transformPlug()->getValue() );
 			}
 		}
-		
+
 		// attributes
-		
+
 		for( CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; it++ )
 		{
 			if( const StateRenderable *s = runTimeCast<const StateRenderable>( it->second.get() ) )
@@ -237,15 +261,15 @@ void SceneProcedural::render( RendererPtr renderer ) const
 				renderer->setAttribute( it->first, d );
 			}
 		}
-		
+
 		// object
-		
+
 		std::set<float> deformationTimes;
 		motionTimes( ( m_options.deformationBlur && m_attributes.deformationBlur ) ? m_attributes.deformationBlurSegments : 0, deformationTimes );
 		{
 			ContextPtr timeContext = new Context( *m_context, Context::Borrowed );
-			Context::Scope scopedTimeContext( timeContext );
-		
+			Context::Scope scopedTimeContext( timeContext.get() );
+
 			unsigned timeIndex = 0;
 			for( std::set<float>::const_iterator it = deformationTimes.begin(), eIt = deformationTimes.end(); it != eIt; it++, timeIndex++ )
 			{
@@ -257,9 +281,9 @@ void SceneProcedural::render( RendererPtr renderer ) const
 					{
 						renderer->motionBegin( deformationTimes );
 					}
-						
+
 						primitive->render( renderer );
-					
+
 					if( deformationTimes.size() > 1 && timeIndex == deformationTimes.size() - 1 )
 					{
 						renderer->motionEnd();
@@ -272,7 +296,7 @@ void SceneProcedural::render( RendererPtr renderer ) const
 					/// means of visualising the cameras.
 					if( renderer->isInstanceOf( "IECoreGL::Renderer" ) )
 					{
-						drawCamera( camera, renderer.get() );
+						drawCamera( camera, renderer );
 					}
 					break; // no motion blur for these chappies.
 				}
@@ -281,7 +305,16 @@ void SceneProcedural::render( RendererPtr renderer ) const
 					/// \todo This doesn't belong here.
 					if( renderer->isInstanceOf( "IECoreGL::Renderer" ) )
 					{
-						drawLight( light, renderer.get() );
+						drawLight( light, renderer );
+					}
+					break; // no motion blur for these chappies.
+				}
+				else if( const CoordinateSystem *coordinateSystem = runTimeCast<const CoordinateSystem>( object.get() ) )
+				{
+					/// \todo This doesn't belong here.
+					if( renderer->isInstanceOf( "IECoreGL::Renderer" ) )
+					{
+						drawCoordinateSystem( coordinateSystem, renderer );
 					}
 					break; // no motion blur for these chappies.
 				}
@@ -290,15 +323,15 @@ void SceneProcedural::render( RendererPtr renderer ) const
 					renderable->render( renderer );
 					break; // no motion blur for these chappies.
 				}
-			
+
 			}
 		}
-	
+
 		// children
 
 		ConstInternedStringVectorDataPtr childNames = m_scenePlug->childNamesPlug()->getValue();
 		if( childNames->readable().size() )
-		{		
+		{
 			bool expand = true;
 			if( m_pathsToExpand )
 			{
@@ -307,14 +340,14 @@ void SceneProcedural::render( RendererPtr renderer ) const
 					expand = m_pathsToExpand->readable().match( m_scenePath ) & Filter::ExactMatch;
 				}
 			}
-			
+
 			if( !expand )
 			{
 				renderer->setAttribute( "gl:primitive:wireframe", new BoolData( true ) );
 				renderer->setAttribute( "gl:primitive:solid", new BoolData( false ) );
 				renderer->setAttribute( "gl:curvesPrimitive:useGLLines", new BoolData( true ) );
 				Box3f b = m_scenePlug->boundPlug()->getValue();
-				CurvesPrimitive::createBox( b )->render( renderer );	
+				CurvesPrimitive::createBox( b )->render( renderer );
 			}
 			else
 			{
@@ -323,16 +356,36 @@ void SceneProcedural::render( RendererPtr renderer ) const
 				for( vector<InternedString>::const_iterator it=childNames->readable().begin(); it!=childNames->readable().end(); it++ )
 				{
 					childScenePath[m_scenePath.size()] = *it;
-					renderer->setAttribute( "name", new StringData( *it ) );
 					renderer->procedural( new SceneProcedural( *this, childScenePath ) );
 				}
-			}	
+			}
 		}
 	}
 	catch( const std::exception &e )
 	{
 		IECore::msg( IECore::Msg::Error, "SceneProcedural::render()", e.what() );
-	}	
+	}
+	if( !m_rendered )
+	{
+		decrementPendingProcedurals();
+	}
+	m_rendered = true;
+}
+
+void SceneProcedural::decrementPendingProcedurals() const
+{
+	--g_pendingSceneProcedurals;
+	if( g_pendingSceneProcedurals == 0 )
+	{
+		try
+		{
+			g_allRenderedSignal();
+		}
+		catch( const std::exception& e )
+		{
+			IECore::msg( IECore::Msg::Error, "SceneProcedural::allRenderedSignal() error", e.what() );
+		}
+	}
 }
 
 IECore::MurmurHash SceneProcedural::hash() const
@@ -343,7 +396,7 @@ IECore::MurmurHash SceneProcedural::hash() const
 
 void SceneProcedural::updateAttributes( bool full )
 {
-	Context::Scope scopedContext( m_context );
+	Context::Scope scopedContext( m_context.get() );
 	ConstCompoundObjectPtr attributes;
 	if( full )
 	{
@@ -351,24 +404,24 @@ void SceneProcedural::updateAttributes( bool full )
 	}
 	else
 	{
-		attributes = m_scenePlug->attributesPlug()->getValue();	
+		attributes = m_scenePlug->attributesPlug()->getValue();
 	}
-	
+
 	if( const BoolData *transformBlurData = attributes->member<BoolData>( "gaffer:transformBlur" ) )
 	{
 		m_attributes.transformBlur = transformBlurData->readable();
 	}
-	
+
 	if( const IntData *transformBlurSegmentsData = attributes->member<IntData>( "gaffer:transformBlurSegments" ) )
 	{
 		m_attributes.transformBlurSegments = transformBlurSegmentsData->readable();
 	}
-	
+
 	if( const BoolData *deformationBlurData = attributes->member<BoolData>( "gaffer:deformationBlur" ) )
 	{
 		m_attributes.deformationBlur = deformationBlurData->readable();
 	}
-	
+
 	if( const IntData *deformationBlurSegmentsData = attributes->member<IntData>( "gaffer:deformationBlurSegments" ) )
 	{
 		m_attributes.deformationBlurSegments = deformationBlurSegmentsData->readable();
@@ -394,7 +447,7 @@ void SceneProcedural::drawCamera( const IECore::Camera *camera, IECore::Renderer
 {
 	CameraPtr fullCamera = camera->copy();
 	fullCamera->addStandardParameters();
-	
+
 	AttributeBlock attributeBlock( renderer );
 
 	renderer->setAttribute( "gl:primitive:wireframe", new BoolData( true ) );
@@ -404,7 +457,7 @@ void SceneProcedural::drawCamera( const IECore::Camera *camera, IECore::Renderer
 
 	CurvesPrimitive::createBox( Box3f(
 		V3f( -0.5, -0.5, 0 ),
-		V3f( 0.5, 0.5, 2.0 )		
+		V3f( 0.5, 0.5, 2.0 )
 	) )->render( renderer );
 
 	const std::string &projection = fullCamera->parametersData()->member<StringData>( "projection" )->readable();
@@ -413,10 +466,10 @@ void SceneProcedural::drawCamera( const IECore::Camera *camera, IECore::Renderer
 	/// use the actual clippings planes. Right now that's not a good idea as it results in /huge/
 	/// framing bounds when the viewer frames a selected camera.
 	V2f clippingPlanes( 0, 5 );
-	
+
 	Box2f near( screenWindow );
 	Box2f far( screenWindow );
-	
+
 	if( projection == "perspective" )
 	{
 		float fov = fullCamera->parametersData()->member<FloatData>( "projection:fov" )->readable();
@@ -426,10 +479,10 @@ void SceneProcedural::drawCamera( const IECore::Camera *camera, IECore::Renderer
 		far.min *= d * clippingPlanes[1];
 		far.max *= d * clippingPlanes[1];
 	}
-			
+
 	V3fVectorDataPtr p = new V3fVectorData;
 	IntVectorDataPtr n = new IntVectorData;
-	
+
 	n->writable().push_back( 5 );
 	p->writable().push_back( V3f( near.min.x, near.min.y, -clippingPlanes[0] ) );
 	p->writable().push_back( V3f( near.max.x, near.min.y, -clippingPlanes[0] ) );
@@ -455,17 +508,17 @@ void SceneProcedural::drawCamera( const IECore::Camera *camera, IECore::Renderer
 	n->writable().push_back( 2 );
 	p->writable().push_back( V3f( near.max.x, near.max.y, -clippingPlanes[0] ) );
 	p->writable().push_back( V3f( far.max.x, far.max.y, -clippingPlanes[1] ) );
-	
+
 	n->writable().push_back( 2 );
 	p->writable().push_back( V3f( near.min.x, near.max.y, -clippingPlanes[0] ) );
 	p->writable().push_back( V3f( far.min.x, far.max.y, -clippingPlanes[1] ) );
-	
+
 	CurvesPrimitivePtr c = new IECore::CurvesPrimitive( n, CubicBasisf::linear(), false, p );
 	c->render( renderer );
 }
 
 void SceneProcedural::drawLight( const IECore::Light *light, IECore::Renderer *renderer ) const
-{	
+{
 	AttributeBlock attributeBlock( renderer );
 
 	renderer->setAttribute( "gl:primitive:wireframe", new BoolData( true ) );
@@ -476,7 +529,7 @@ void SceneProcedural::drawLight( const IECore::Light *light, IECore::Renderer *r
 	const float a = 0.5f;
 	const float phi = 1.0f + sqrt( 5.0f ) / 2.0f;
 	const float b = 1.0f / ( 2.0f * phi );
-	
+
 	// icosahedron points
 	IECore::V3fVectorDataPtr pData = new V3fVectorData;
 	vector<V3f> &p = pData->writable();
@@ -493,16 +546,48 @@ void SceneProcedural::drawLight( const IECore::Light *light, IECore::Renderer *r
 	p[18] = V3f( -a, 0, -b );
 	p[20] = V3f( b, -a, 0 );
 	p[22] = V3f( -b, -a, 0 );
-	
+
 	for( size_t i = 0; i<12; i++ )
 	{
 		p[i*2] = 2.0f * p[i*2].normalized();
 		p[i*2+1] = V3f( 0 );
 	}
-	
+
 	IntVectorDataPtr vertIds = new IntVectorData;
 	vertIds->writable().resize( 12, 2 );
-	
+
 	CurvesPrimitivePtr c = new IECore::CurvesPrimitive( vertIds, CubicBasisf::linear(), false, pData );
 	c->render( renderer );
+}
+
+void SceneProcedural::drawCoordinateSystem( const IECore::CoordinateSystem *coordinateSystem, IECore::Renderer *renderer ) const
+{
+	AttributeBlock attributeBlock( renderer );
+
+	renderer->setAttribute( "gl:primitive:wireframe", new BoolData( true ) );
+	renderer->setAttribute( "gl:primitive:solid", new BoolData( false ) );
+	renderer->setAttribute( "gl:curvesPrimitive:useGLLines", new BoolData( true ) );
+	renderer->setAttribute( "gl:primitive:wireframeColor", new Color4fData( Color4f( 0.06, 0.2, 0.56, 1 ) ) );
+	renderer->setAttribute( "gl:curvesPrimitive:glLineWidth", new FloatData( 2.0f ) );
+
+	IECore::V3fVectorDataPtr pData = new V3fVectorData;
+	vector<V3f> &p = pData->writable();
+	p.reserve( 6 );
+	p.push_back( V3f( 0 ) );
+	p.push_back( V3f( 1, 0, 0 ) );
+	p.push_back( V3f( 0 ) );
+	p.push_back( V3f( 0, 1, 0 ) );
+	p.push_back( V3f( 0 ) );
+	p.push_back( V3f( 0, 0, 1 ) );
+
+	IntVectorDataPtr vertIds = new IntVectorData;
+	vertIds->writable().resize( 3, 2 );
+
+	CurvesPrimitivePtr c = new IECore::CurvesPrimitive( vertIds, CubicBasisf::linear(), false, pData );
+	c->render( renderer );
+}
+
+SceneProcedural::AllRenderedSignal &SceneProcedural::allRenderedSignal()
+{
+	return g_allRenderedSignal;
 }
