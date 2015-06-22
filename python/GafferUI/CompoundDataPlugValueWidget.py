@@ -42,6 +42,10 @@ import IECore
 import Gaffer
 import GafferUI
 
+## \todo Refactor to derive from LayoutPlugValueWidget. Before we can do this we need
+# to stop relying on the _label() and _childPlugWidget() methods to define labels - this
+# is currently overridden in SectionedCompoundDataPlugValueWidget, but we can use metadata
+# to define labels instead.
 class CompoundDataPlugValueWidget( GafferUI.CompoundPlugValueWidget ) :
 
 	def __init__( self, plug, collapsed=True, label=None, summary=None, editable=True, **kw ) :
@@ -70,8 +74,6 @@ class CompoundDataPlugValueWidget( GafferUI.CompoundPlugValueWidget ) :
 
 		return self.__footerWidget
 
-	## May be reimplemented by derived classes to return a suitable label
-	# for the member represented by childPlug.
 	def _label( self, childPlug ) :
 
 		if not childPlug.getFlags( Gaffer.Plug.Flags.Dynamic ) :
@@ -199,3 +201,28 @@ class _MemberPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 GafferUI.PlugValueWidget.registerType( Gaffer.CompoundDataPlug, CompoundDataPlugValueWidget )
 GafferUI.PlugValueWidget.registerType( Gaffer.CompoundDataPlug.MemberPlug, _MemberPlugValueWidget )
+
+##########################################################################
+# Plug menu
+##########################################################################
+
+def __deletePlug( plug ) :
+
+	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+		plug.parent().removeChild( plug )
+
+def __plugPopupMenu( menuDefinition, plugValueWidget ) :
+
+	plug = plugValueWidget.getPlug()
+	memberPlug = plug if isinstance( plug, Gaffer.CompoundDataPlug.MemberPlug ) else None
+	memberPlug = memberPlug if memberPlug is not None else plug.ancestor( Gaffer.CompoundDataPlug.MemberPlug )
+	if memberPlug is None :
+		return
+
+	if not memberPlug.getFlags( Gaffer.Plug.Flags.Dynamic ) :
+		return
+
+	menuDefinition.append( "/DeleteDivider", { "divider" : True } )
+	menuDefinition.append( "/Delete", { "command" : IECore.curry( __deletePlug, memberPlug ), "active" : not plugValueWidget.getReadOnly() } )
+
+__plugPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu )

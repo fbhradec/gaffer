@@ -38,6 +38,10 @@
 
 #include "boost/lambda/lambda.hpp"
 #include "boost/bind.hpp"
+#include "boost/multi_index_container.hpp"
+#include "boost/multi_index/sequenced_index.hpp"
+#include "boost/multi_index/ordered_index.hpp"
+#include "boost/multi_index/member.hpp"
 
 #include "IECore/CompoundData.h"
 
@@ -47,6 +51,7 @@
 #include "Gaffer/Metadata.h"
 
 using namespace std;
+using namespace boost;
 using namespace tbb;
 using namespace IECore;
 using namespace Gaffer;
@@ -57,8 +62,29 @@ namespace
 struct NodeMetadata
 {
 
-	typedef map<InternedString, Metadata::NodeValueFunction> NodeValues;
-	typedef map<InternedString, Metadata::PlugValueFunction> PlugValues;
+	typedef std::pair<InternedString, Metadata::NodeValueFunction> NamedNodeValue;
+	typedef std::pair<InternedString, Metadata::PlugValueFunction> NamedPlugValue;
+
+	typedef multi_index::multi_index_container<
+		NamedNodeValue,
+		multi_index::indexed_by<
+			multi_index::ordered_unique<
+				multi_index::member<NamedNodeValue, InternedString, &NamedNodeValue::first>
+			>,
+			multi_index::sequenced<>
+		>
+	> NodeValues;
+
+	typedef multi_index::multi_index_container<
+		NamedPlugValue,
+		multi_index::indexed_by<
+			multi_index::ordered_unique<
+				multi_index::member<NamedPlugValue, InternedString, &NamedPlugValue::first>
+			>,
+			multi_index::sequenced<>
+		>
+	> PlugValues;
+	
 	typedef map<MatchPattern, PlugValues> PlugPathsToValues;
 
 	NodeValues nodeValues;
@@ -74,7 +100,29 @@ NodeMetadataMap &nodeMetadataMap()
 	return m;
 }
 
-typedef concurrent_hash_map<const GraphComponent *, CompoundDataPtr> InstanceMetadataMap;
+struct NamedInstanceValue
+{
+	NamedInstanceValue( InternedString n, ConstDataPtr v, bool p )
+		:	name( n ), value( v ), persistent( p )
+	{
+	}
+
+	InternedString name;
+	ConstDataPtr value;
+	bool persistent;
+};
+
+typedef multi_index::multi_index_container<
+	NamedInstanceValue,
+	multi_index::indexed_by<
+		multi_index::ordered_unique<
+			multi_index::member<NamedInstanceValue, InternedString, &NamedInstanceValue::name>
+		>,
+		multi_index::sequenced<>
+	>
+> InstanceValues;
+	
+typedef concurrent_hash_map<const GraphComponent *, InstanceValues *> InstanceMetadataMap;
 
 InstanceMetadataMap &instanceMetadataMap()
 {
@@ -82,86 +130,117 @@ InstanceMetadataMap &instanceMetadataMap()
 	return m;
 }
 
-CompoundData *instanceMetadata( const GraphComponent *instance, bool createIfMissing )
+InstanceValues *instanceMetadata( const GraphComponent *instance, bool createIfMissing )
 {
 	InstanceMetadataMap &m = instanceMetadataMap();
 
 	InstanceMetadataMap::accessor accessor;
 	if( m.find( accessor, instance ) )
 	{
-		return accessor->second.get();
+		return accessor->second;
 	}
 	else
 	{
 		if( createIfMissing )
 		{
 			m.insert( accessor, instance );
-			accessor->second = new CompoundData();
-			return accessor->second.get();
+			accessor->second = new InstanceValues();
+			return accessor->second;
 		}
 	}
 
 	return NULL;
 }
 
-const Data *instanceValue( const GraphComponent *instance, InternedString key )
+const Data *instanceValue( const GraphComponent *instance, InternedString key, bool *persistent = NULL )
 {
-	const CompoundData *m = instanceMetadata( instance, false );
+	const InstanceValues *m = instanceMetadata( instance, /* createIfMissing = */ false );
 	if( !m )
 	{
 		return NULL;
 	}
-	return m->member<Data>( key );
+	
+	InstanceValues::const_iterator vIt = m->find( key );
+	if( vIt != m->end() )
+	{
+		if( persistent )
+		{
+			*persistent = vIt->persistent;
+		}
+		return vIt->value.get();
+	}
+	
+	return NULL;
 }
 
-void registerInstanceValueAction( const GraphComponent *instance, InternedString key, IECore::ConstDataPtr value )
+void registerInstanceValueAction( GraphComponent *instance, InternedString key, IECore::ConstDataPtr value, bool persistent )
 {
-	CompoundData *m = instanceMetadata( instance, value != NULL );
+	InstanceValues *m = instanceMetadata( instance, /* createIfMissing = */ value != NULL );
 	if( !m )
 	{
 		return;
 	}
-	m->writable()[key] = boost::const_pointer_cast<IECore::Data>( value );
-	if( const Node *node = runTimeCast<const Node>( instance ) )
+	
+	NamedInstanceValue namedValue( key, value, persistent );
+	
+	InstanceValues::const_iterator it = m->find( key );
+	if( it == m->end() )
 	{
-		Metadata::nodeValueChangedSignal()( node->typeId(), key );
+		m->insert( namedValue );
 	}
-	else if( const Plug *plug = runTimeCast<const Plug>( instance ) )
+	else
+	{
+		m->replace( it, namedValue );
+	}
+	
+	if( Node *node = runTimeCast<Node>( instance ) )
+	{
+		Metadata::nodeValueChangedSignal()( node->typeId(), key, node );
+	}
+	else if( Plug *plug = runTimeCast<Plug>( instance ) )
 	{
 		if( const Node *node = plug->node() )
 		{
-			Metadata::plugValueChangedSignal()( node->typeId(), plug->relativeName( node ), key );
+			Metadata::plugValueChangedSignal()( node->typeId(), plug->relativeName( node ), key, plug );
 		}
 	}
 }
 
-void registerInstanceValue( GraphComponent *instance, IECore::InternedString key, IECore::ConstDataPtr value )
+void registerInstanceValue( GraphComponent *instance, IECore::InternedString key, IECore::ConstDataPtr value, bool persistent )
 {
-	const IECore::Data *currentValue = instanceValue( instance, key );
-	if(
-		( !currentValue && !value ) ||
-		( currentValue && value && currentValue->isEqualTo( value.get() ) )
-	)
+	bool currentPersistent = true;
+	const IECore::Data *currentValue = instanceValue( instance, key, &currentPersistent );
+	if( persistent == currentPersistent )
 	{
-		return;
+		if(
+			( !currentValue && !value ) ||
+			( currentValue && value && currentValue->isEqualTo( value.get() ) )
+		)
+		{
+			return;
+		}
 	}
 
 	Action::enact(
 		instance,
 		// ok to bind raw pointers to instance, because enact() guarantees
 		// the lifetime of the subject.
-		boost::bind( &registerInstanceValueAction, instance, key, value ),
-		boost::bind( &registerInstanceValueAction, instance, key, ConstDataPtr( currentValue ) )
+		boost::bind( &registerInstanceValueAction, instance, key, value, persistent ),
+		boost::bind( &registerInstanceValueAction, instance, key, ConstDataPtr( currentValue ), currentPersistent )
 	);
 }
 
-void registeredInstanceValues( const GraphComponent *graphComponent, std::vector<IECore::InternedString> &keys )
+void registeredInstanceValues( const GraphComponent *graphComponent, std::vector<IECore::InternedString> &keys, bool persistentOnly )
 {
-	if( const CompoundData *im = instanceMetadata( graphComponent, false ) )
+	if( const InstanceValues *im = instanceMetadata( graphComponent, /* createIfMissing = */ false ) )
 	{
-		for( CompoundDataMap::const_iterator it = im->readable().begin(), eIt = im->readable().end(); it != eIt; ++it )
+		const InstanceValues::nth_index<1>::type &index = im->get<1>();
+		for( InstanceValues::nth_index<1>::type::const_iterator vIt = index.begin(), veIt = index.end(); vIt != veIt; ++vIt )
 		{
-			keys.push_back( it->first );
+			if( !persistentOnly || vIt->persistent )
+			{
+				keys.push_back( vIt->name );
+			}
 		}
 	}
 }
@@ -175,37 +254,50 @@ void Metadata::registerNodeValue( IECore::TypeId nodeTypeId, IECore::InternedStr
 
 void Metadata::registerNodeValue( IECore::TypeId nodeTypeId, IECore::InternedString key, NodeValueFunction value )
 {
-	NodeMetadata &nodeMetadata = nodeMetadataMap()[nodeTypeId];
-	nodeMetadata.nodeValues[key] = value;
-	nodeValueChangedSignal()( nodeTypeId, key );
-}
+	NodeMetadata::NodeValues &m = nodeMetadataMap()[nodeTypeId].nodeValues;
 
-void Metadata::registerNodeValue( Node *node, IECore::InternedString key, IECore::ConstDataPtr value )
-{
-	registerInstanceValue( node, key, value );
-}
+	NodeMetadata::NamedNodeValue namedValue( key, value );
 
-void Metadata::registeredNodeValues( const Node *node, std::vector<IECore::InternedString> &keys, bool inherit, bool instanceOnly )
-{
-	registeredInstanceValues( node, keys );
-	if( instanceOnly )
+	NodeMetadata::NodeValues::const_iterator it = m.find( key );
+	if( it == m.end() )
 	{
-		return;
+		m.insert( namedValue );
+	}
+	else
+	{
+		m.replace( it, namedValue );
 	}
 
-	IECore::TypeId typeId = node->typeId();
-	while( typeId != InvalidTypeId )
+	nodeValueChangedSignal()( nodeTypeId, key, NULL );
+}
+
+void Metadata::registerNodeValue( Node *node, IECore::InternedString key, IECore::ConstDataPtr value, bool persistent )
+{
+	registerInstanceValue( node, key, value, persistent );
+}
+
+void Metadata::registeredNodeValues( const Node *node, std::vector<IECore::InternedString> &keys, bool inherit, bool instanceOnly, bool persistentOnly )
+{
+	if( !instanceOnly )
 	{
-		NodeMetadataMap::const_iterator nIt = nodeMetadataMap().find( typeId );
-		if( nIt != nodeMetadataMap().end() )
+		IECore::TypeId typeId = node->typeId();
+		while( typeId != InvalidTypeId )
 		{
-			for( NodeMetadata::NodeValues::const_iterator vIt = nIt->second.nodeValues.begin(), veIt = nIt->second.nodeValues.end(); vIt != veIt; ++vIt )
+			NodeMetadataMap::const_iterator nIt = nodeMetadataMap().find( typeId );
+			if( nIt != nodeMetadataMap().end() )
 			{
-				keys.push_back( vIt->first );
+				const NodeMetadata::NodeValues::nth_index<1>::type &index = nIt->second.nodeValues.get<1>();
+				for( NodeMetadata::NodeValues::nth_index<1>::type::const_reverse_iterator vIt = index.rbegin(), veIt = index.rend(); vIt != veIt; ++vIt )
+				{
+					keys.push_back( vIt->first );
+				}
 			}
+			typeId = inherit ? RunTimeTyped::baseTypeId( typeId ) : InvalidTypeId;
 		}
-		typeId = inherit ? RunTimeTyped::baseTypeId( typeId ) : InvalidTypeId;
+		std::reverse( keys.begin(), keys.end() );
 	}
+
+	registeredInstanceValues( node, keys, persistentOnly );
 }
 
 IECore::ConstDataPtr Metadata::nodeValueInternal( const Node *node, IECore::InternedString key, bool inherit, bool instanceOnly )
@@ -265,51 +357,59 @@ void Metadata::registerPlugValue( IECore::TypeId nodeTypeId, const MatchPattern 
 {
 	NodeMetadata &nodeMetadata = nodeMetadataMap()[nodeTypeId];
 	NodeMetadata::PlugValues &plugValues = nodeMetadata.plugPathsToValues[plugPath];
-	plugValues[key] = value;
-	plugValueChangedSignal()( nodeTypeId, plugPath, key );
-}
+	
+	NodeMetadata::NamedPlugValue namedValue( key, value );
 
-void Metadata::registerPlugValue( Plug *plug, IECore::InternedString key, IECore::ConstDataPtr value )
-{
-	registerInstanceValue( plug, key, value );
-}
-
-void Metadata::registeredPlugValues( const Plug *plug, std::vector<IECore::InternedString> &keys, bool inherit, bool instanceOnly )
-{
-	registeredInstanceValues( plug, keys );
-	if( instanceOnly )
+	NodeMetadata::PlugValues::const_iterator it = plugValues.find( key );
+	if( it == plugValues.end() )
 	{
-		return;
+		plugValues.insert( namedValue );
 	}
+	else
+	{
+		plugValues.replace( it, namedValue );
+	}
+	
+	plugValueChangedSignal()( nodeTypeId, plugPath, key, NULL );
+}
 
+void Metadata::registerPlugValue( Plug *plug, IECore::InternedString key, IECore::ConstDataPtr value, bool persistent )
+{
+	registerInstanceValue( plug, key, value, persistent );
+}
+
+void Metadata::registeredPlugValues( const Plug *plug, std::vector<IECore::InternedString> &keys, bool inherit, bool instanceOnly, bool persistentOnly )
+{
 	const Node *node = plug->node();
-	if( !node )
+	if( node && !instanceOnly )
 	{
-		return;
-	}
+		const string plugPath = plug->relativeName( node );
 
-	const string plugPath = plug->relativeName( node );
-
-	IECore::TypeId typeId = node->typeId();
-	while( typeId != InvalidTypeId )
-	{
-		NodeMetadataMap::const_iterator nIt = nodeMetadataMap().find( typeId );
-		if( nIt != nodeMetadataMap().end() )
+		IECore::TypeId typeId = node->typeId();
+		while( typeId != InvalidTypeId )
 		{
-			NodeMetadata::PlugPathsToValues::const_iterator it, eIt;
-			for( it = nIt->second.plugPathsToValues.begin(), eIt = nIt->second.plugPathsToValues.end(); it != eIt; ++it )
+			NodeMetadataMap::const_iterator nIt = nodeMetadataMap().find( typeId );
+			if( nIt != nodeMetadataMap().end() )
 			{
-				if( match( plugPath, it->first ) )
+				NodeMetadata::PlugPathsToValues::const_iterator it, eIt;
+				for( it = nIt->second.plugPathsToValues.begin(), eIt = nIt->second.plugPathsToValues.end(); it != eIt; ++it )
 				{
-					for( NodeMetadata::PlugValues::const_iterator vIt = it->second.begin(), veIt = it->second.end(); vIt != veIt; ++vIt )
+					if( match( plugPath, it->first ) )
 					{
-						keys.push_back( vIt->first );
+						const NodeMetadata::PlugValues::nth_index<1>::type &index = it->second.get<1>();
+						for( NodeMetadata::PlugValues::nth_index<1>::type::const_reverse_iterator vIt = index.rbegin(), veIt = index.rend(); vIt != veIt; ++vIt )
+						{
+							keys.push_back( vIt->first );
+						}
 					}
 				}
 			}
+			typeId = inherit ? RunTimeTyped::baseTypeId( typeId ) : InvalidTypeId;
 		}
-		typeId = inherit ? RunTimeTyped::baseTypeId( typeId ) : InvalidTypeId;
+		std::reverse( keys.begin(), keys.end() );
 	}
+
+	registeredInstanceValues( plug, keys, persistentOnly );
 }
 
 IECore::ConstDataPtr Metadata::plugValueInternal( const Plug *plug, IECore::InternedString key, bool inherit, bool instanceOnly )
@@ -338,8 +438,20 @@ IECore::ConstDataPtr Metadata::plugValueInternal( const Plug *plug, IECore::Inte
 		NodeMetadataMap::const_iterator nIt = nodeMetadataMap().find( typeId );
 		if( nIt != nodeMetadataMap().end() )
 		{
-			NodeMetadata::PlugPathsToValues::const_iterator it, eIt;
-			for( it = nIt->second.plugPathsToValues.begin(), eIt = nIt->second.plugPathsToValues.end(); it != eIt; ++it )
+			// First do a direct lookup using the plug path.
+			NodeMetadata::PlugPathsToValues::const_iterator it = nIt->second.plugPathsToValues.find( plugPath );
+			const NodeMetadata::PlugPathsToValues::const_iterator eIt = nIt->second.plugPathsToValues.end();
+			if( it != eIt )
+			{
+				NodeMetadata::PlugValues::const_iterator vIt = it->second.find( key );
+				if( vIt != it->second.end() )
+				{
+					return vIt->second( plug );
+				}
+			}
+			// And only if the direct lookups fails, do a full search using
+			// wildcard matches.
+			for( it = nIt->second.plugPathsToValues.begin(); it != eIt; ++it )
 			{
 				if( match( plugPath, it->first ) )
 				{

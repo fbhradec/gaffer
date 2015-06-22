@@ -37,64 +37,16 @@
 
 #include "Gaffer/TypedPlug.h"
 #include "Gaffer/TypedPlug.inl"
-#include "Gaffer/Context.h"
 #include "Gaffer/NumericPlug.h"
 
 namespace Gaffer
 {
 
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::BoolPlug, BoolPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::StringPlug, StringPlugTypeId )
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::M33fPlug, M33fPlugTypeId )
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::M44fPlug, M44fPlugTypeId )
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::AtomicBox3fPlug, AtomicBox3fPlugTypeId )
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::AtomicBox2iPlug, AtomicBox2iPlugTypeId )
-
-// specialise StringPlug::getValue() to perform substitutions.
-
-template<>
-std::string StringPlug::getValue() const
-{
-	IECore::ConstObjectPtr o = getObjectValue();
-	const IECore::StringData *s = IECore::runTimeCast<const IECore::StringData>( o.get() );
-	if( !s )
-	{
-		throw IECore::Exception( "StringPlug::getObjectValue() didn't return StringData - is the hash being computed correctly?" );
-	}
-
-	bool performSubstitution =
-		direction()==Plug::In &&
-		inCompute() &&
-		Plug::getFlags( Plug::PerformsSubstitutions ) &&
-		Context::hasSubstitutions( s->readable() );
-
-	return performSubstitution ? Context::current()->substitute( s->readable() ) : s->readable();
-}
-
-template<>
-IECore::MurmurHash StringPlug::hash() const
-{
-	bool performSubstitution = direction()==Plug::In && !getInput<ValuePlug>() && Plug::getFlags( Plug::PerformsSubstitutions );
-	if( performSubstitution )
-	{
-		IECore::ConstObjectPtr o = getObjectValue();
-		const IECore::StringData *s = IECore::runTimeCast<const IECore::StringData>( o.get() );
-		if( !s )
-		{
-			throw IECore::Exception( "StringPlug::getObjectValue() didn't return StringData - is the hash being computed correctly?" );
-		}
-
-		if( Context::hasSubstitutions( s->readable() ) )
-		{
-			IECore::MurmurHash result;
-			result.append( Context::current()->substitute( s->readable() ) );
-			return result;
-		}
-	}
-
-	// no substitutions
-	return ValuePlug::hash();
-}
 
 // specialise BoolPlug to accept connections from NumericPlugs
 
@@ -135,7 +87,6 @@ void BoolPlug::setFrom( const ValuePlug *other )
 
 // explicit instantiation
 template class TypedPlug<bool>;
-template class TypedPlug<std::string>;
 template class TypedPlug<Imath::M33f>;
 template class TypedPlug<Imath::M44f>;
 template class TypedPlug<Imath::Box3f>;

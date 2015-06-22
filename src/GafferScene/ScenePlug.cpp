@@ -35,14 +35,13 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/tokenizer.hpp"
-
-#include "IECore/Exception.h"
 #include "IECore/NullObject.h"
 
 #include "Gaffer/Context.h"
+#include "Gaffer/StringAlgo.h"
 
 #include "GafferScene/ScenePlug.h"
+#include "GafferScene/PathMatcherData.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
@@ -50,6 +49,7 @@ using namespace GafferScene;
 IE_CORE_DEFINERUNTIMETYPED( ScenePlug );
 
 const IECore::InternedString ScenePlug::scenePathContextName( "scene:path" );
+const IECore::InternedString ScenePlug::setNameContextName( "scene:setName" );
 
 ScenePlug::ScenePlug( const std::string &name, Direction direction, unsigned flags )
 	:	CompoundPlug( name, direction, flags )
@@ -114,6 +114,24 @@ ScenePlug::ScenePlug( const std::string &name, Direction direction, unsigned fla
 		)
 	);
 
+	addChild(
+		new InternedStringVectorDataPlug(
+			"setNames",
+			direction,
+			new IECore::InternedStringVectorData(),
+			childFlags
+		)
+	);
+
+	addChild(
+		new PathMatcherDataPlug(
+			"set",
+			direction,
+			new PathMatcherData(),
+			childFlags
+		)
+	);
+
 }
 
 ScenePlug::~ScenePlug()
@@ -122,7 +140,7 @@ ScenePlug::~ScenePlug()
 
 bool ScenePlug::acceptsChild( const GraphComponent *potentialChild ) const
 {
-	return children().size() != 6;
+	return children().size() != 8;
 }
 
 Gaffer::PlugPtr ScenePlug::createCounterpart( const std::string &name, Direction direction ) const
@@ -201,6 +219,26 @@ Gaffer::CompoundObjectPlug *ScenePlug::globalsPlug()
 const Gaffer::CompoundObjectPlug *ScenePlug::globalsPlug() const
 {
 	return getChild<CompoundObjectPlug>( 5 );
+}
+
+Gaffer::InternedStringVectorDataPlug *ScenePlug::setNamesPlug()
+{
+	return getChild<InternedStringVectorDataPlug>( 6 );
+}
+
+const Gaffer::InternedStringVectorDataPlug *ScenePlug::setNamesPlug() const
+{
+	return getChild<InternedStringVectorDataPlug>( 6 );
+}
+
+PathMatcherDataPlug *ScenePlug::setPlug()
+{
+	return getChild<PathMatcherDataPlug>( 7 );
+}
+
+const PathMatcherDataPlug *ScenePlug::setPlug() const
+{
+	return getChild<PathMatcherDataPlug>( 7 );
 }
 
 Imath::Box3f ScenePlug::bound( const ScenePath &scenePath ) const
@@ -286,6 +324,14 @@ IECore::ConstInternedStringVectorDataPtr ScenePlug::childNames( const ScenePath 
 	return childNamesPlug()->getValue();
 }
 
+ConstPathMatcherDataPtr ScenePlug::set( const IECore::InternedString &setName ) const
+{
+	ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
+	tmpContext->set( setNameContextName, setName );
+	Context::Scope scopedContext( tmpContext.get() );
+	return setPlug()->getValue();
+}
+
 IECore::MurmurHash ScenePlug::boundHash( const ScenePath &scenePath ) const
 {
 	ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
@@ -361,14 +407,18 @@ IECore::MurmurHash ScenePlug::childNamesHash( const ScenePath &scenePath ) const
 	return childNamesPlug()->hash();
 }
 
+IECore::MurmurHash ScenePlug::setHash( const IECore::InternedString &setName ) const
+{
+	ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
+	tmpContext->set( setNameContextName, setName );
+	Context::Scope scopedContext( tmpContext.get() );
+	return setPlug()->hash();
+}
+
 void ScenePlug::stringToPath( const std::string &s, ScenePlug::ScenePath &path )
 {
-	typedef boost::tokenizer<boost::char_separator<char> > Tokenizer;
-	Tokenizer tokenizer( s, boost::char_separator<char>( "/" ) );
-	for( Tokenizer::const_iterator it = tokenizer.begin(), eIt = tokenizer.end(); it != eIt; it++ )
-	{
-		path.push_back( *it );
-	}
+	path.clear();
+	tokenize( s, '/', path );
 }
 
 void ScenePlug::pathToString( const ScenePlug::ScenePath &path, std::string &s )

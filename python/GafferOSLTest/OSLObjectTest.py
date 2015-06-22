@@ -86,7 +86,7 @@ class OSLObjectTest( GafferOSLTest.OSLTestCase ) :
 		filter = GafferScene.PathFilter()
 		filter["paths"].setValue( IECore.StringVectorData( [ "/plane" ] ) )
 
-		o["filter"].setInput( filter["match"] )
+		o["filter"].setInput( filter["out"] )
 
 		self.assertSceneValid( o["out"] )
 
@@ -121,6 +121,15 @@ class OSLObjectTest( GafferOSLTest.OSLTestCase ) :
 
 		self.assertTrue( object["shader"].acceptsInput( switch["out"] ) )
 
+	def testAcceptsDot( self ) :
+
+		object = GafferOSL.OSLObject()
+		switch = GafferScene.ShaderSwitch()
+		dot = Gaffer.Dot()
+		dot.setup( switch["out"] )
+
+		self.assertTrue( object["shader"].acceptsInput( dot["out"] ) )
+
 	def testPrimitiveVariableWithZeroValue( self ) :
 
 		outPoint = GafferOSL.OSLShader()
@@ -142,7 +151,7 @@ class OSLObjectTest( GafferOSLTest.OSLTestCase ) :
 		o = GafferOSL.OSLObject()
 		o["in"].setInput( p["out"] )
 		o["shader"].setInput( primVarShader["out"] )
-		o["filter"].setInput( filter["match"] )
+		o["filter"].setInput( filter["out"] )
 
 		for v in o["out"].object( "/plane" )["velocity"].data :
 			self.assertEqual( v, IECore.V3f( 0 ) )

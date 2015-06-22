@@ -46,18 +46,34 @@ import GafferSceneUI
 # Metadata
 ##########################################################################
 
-Gaffer.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNode(
 
-GafferScene.FilteredSceneProcessor,
+	GafferScene.FilteredSceneProcessor,
 
-"""The base type for scene processors which use a Filter node to control which part of the scene is affected.""",
+	"description",
+	"""
+	The base type for scene processors which use a Filter node to control
+	which part of the scene is affected.
+	""",
 
-"filter",
-{
-	"description" : """The filter used to control which parts of the scene are processed. A Filter node should be connected here.""",
-	"nodeUI:section" : "Filter",
-	"nodeGadget:nodulePosition" : "right",
-}
+	plugs = {
+
+		"filter" : [
+
+			"description",
+			"""
+			The filter used to control which parts of the scene are
+			processed. A Filter node should be connected here.
+			""",
+
+			"layout:section", "Filter",
+			"nodeGadget:nodulePosition", "right",
+			"layout:index", -3, # Just before the enabled plug,
+			"nodule:type", "GafferUI::StandardNodule",
+
+		],
+
+	},
 
 )
 
@@ -71,7 +87,14 @@ GafferUI.PlugValueWidget.registerCreator(
 	GafferSceneUI.FilterPlugValueWidget,
 )
 
-GafferUI.Nodule.registerNodule( GafferScene.FilteredSceneProcessor, "filter", GafferUI.StandardNodule )
+def __nodeGadget( node ) :
+
+	nodeGadget = GafferUI.StandardNodeGadget( node )
+	GafferSceneUI.PathFilterUI.addObjectDropTarget( nodeGadget )
+
+	return nodeGadget
+
+GafferUI.NodeGadget.registerNodeGadget( GafferScene.FilteredSceneProcessor, __nodeGadget )
 
 ##########################################################################
 # NodeGraph context menu
@@ -79,15 +102,44 @@ GafferUI.Nodule.registerNodule( GafferScene.FilteredSceneProcessor, "filter", Ga
 
 def __selectAffected( node, context ) :
 
+	if isinstance( node, GafferScene.FilteredSceneProcessor ) :
+		filter = node["filter"]
+		scenes = [ node["in"] ]
+	else :
+		filter = node
+		scenes = []
+		def walkOutputs( plug ) :
+			for output in plug.outputs() :
+				node = output.node()
+				if isinstance( node, GafferScene.FilteredSceneProcessor ) and output.isSame( node["filter"] ) :
+					scenes.append( node["in"] )
+				walkOutputs( output )
+
+		walkOutputs( filter["out"] )
+
+	pathMatcher = GafferScene.PathMatcher()
 	with context :
-		pathMatcher = GafferScene.PathMatcher()
-		GafferScene.matchingPaths( node["filter"], node["in"], pathMatcher )
-		context["ui:scene:selectedPaths"] = IECore.StringVectorData( pathMatcher.paths() )
+		for scene in scenes :
+			GafferScene.matchingPaths( filter, scene, pathMatcher )
+
+	context["ui:scene:selectedPaths"] = IECore.StringVectorData( pathMatcher.paths() )
 
 def appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition ) :
 
-	if not isinstance( node, GafferScene.FilteredSceneProcessor ) :
+	if not isinstance( node, ( GafferScene.FilteredSceneProcessor, GafferScene.Filter ) ) :
 		return
 
 	menuDefinition.append( "/FilteredSceneProcessorDivider", { "divider" : True } )
 	menuDefinition.append( "/Select Affected Objects", { "command" : IECore.curry( __selectAffected, node, nodeGraph.getContext() ) } )
+
+##########################################################################
+# NodeEditor tool menu
+##########################################################################
+
+def appendNodeEditorToolMenuDefinitions( nodeEditor, node, menuDefinition ) :
+
+	if not isinstance( node, ( GafferScene.FilteredSceneProcessor, GafferScene.Filter ) ) :
+		return
+
+	menuDefinition.append( "/FilteredSceneProcessorDivider", { "divider" : True } )
+	menuDefinition.append( "/Select Affected Objects", { "command" : IECore.curry( __selectAffected, node, nodeEditor.getContext() ) } )

@@ -42,6 +42,8 @@
 #include "Gaffer/Reference.h"
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/CompoundPlug.h"
+#include "Gaffer/Metadata.h"
+#include "Gaffer/StringPlug.h"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -51,7 +53,7 @@ IE_CORE_DEFINERUNTIMETYPED( Reference );
 size_t Reference::g_firstPlugIndex = 0;
 
 Reference::Reference( const std::string &name )
-	:	Node( name )
+	:	SubGraph( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "fileName", Plug::In, "", Plug::Default & ~Plug::AcceptsInputs ) );
@@ -125,6 +127,21 @@ void Reference::load( const std::string &fileName )
 	const bool errors = script->executeFile( fileName, this, /* continueOnError = */ true );
 	fileNamePlug()->setValue( fileName );
 
+	// figure out what version of gaffer was used to save the reference. prior to
+	// version 0.9.0.0, references could contain setValue() calls for promoted plugs,
+	// and we must make sure they don't clobber the user-set values on the reference node.
+	int milestoneVersion = 0;
+	int majorVersion = 0;
+	if( IECore::ConstIntDataPtr v = Metadata::nodeValue<IECore::IntData>( this, "serialiser:milestoneVersion" ) )
+	{
+		milestoneVersion = v->readable();
+	}
+	if( IECore::ConstIntDataPtr v = Metadata::nodeValue<IECore::IntData>( this, "serialiser:majorVersion" ) )
+	{
+		majorVersion = v->readable();
+	}
+	const bool versionPriorTo09 = milestoneVersion == 0 && majorVersion < 9;
+
 	// transfer connections and values from the old plugs onto the corresponding new ones.
 
 	for( std::map<std::string, Plug *>::const_iterator it = previousPlugs.begin(), eIt = previousPlugs.end(); it != eIt; ++it )
@@ -147,7 +164,10 @@ void Reference::load( const std::string &fileName )
 						ValuePlug *newValuePlug = runTimeCast<ValuePlug>( newPlug );
 						if( oldValuePlug && newValuePlug )
 						{
-							newValuePlug->setFrom( oldValuePlug );
+							if( versionPriorTo09 || !oldValuePlug->isSetToDefault() )
+							{
+								newValuePlug->setFrom( oldValuePlug );
+							}
 						}
 					}
 				}
@@ -196,15 +216,33 @@ void Reference::load( const std::string &fileName )
 
 bool Reference::isReferencePlug( const Plug *plug ) const
 {
-	// assume plugs starting with __ are for gaffer's
-	// internal use, so would never come directly from a
-	// reference - this lines up with the export code
-	// in Box::exportForReference(), where such plugs
-	// are excluded from the export.
-	if( boost::starts_with( plug->getName().c_str(), "__" ) )
+	// If a plug is the descendant of a plug starting with
+	// __, and that plug is a direct child of the reference,
+	// assume that it is for gaffer's internal use, so would
+	// never come directly from a reference. This lines up
+	// with the export code in Box::exportForReference(), where
+	// such plugs are excluded from the export.
+	
+	// find ancestor of p which is a direct child of this node:
+	const Plug* ancestorPlug = plug;
+	const GraphComponent* parent = plug->parent<GraphComponent>();
+	while( parent != this )
+	{
+		ancestorPlug = runTimeCast< const Plug >( parent );
+		if( !ancestorPlug )
+		{
+			// Looks like the plug we're looking for doesn't exist,
+			// so we exit the loop.
+			break;
+		}
+		parent = ancestorPlug->parent<GraphComponent>();
+	}
+	
+	if( ancestorPlug && boost::starts_with( ancestorPlug->getName().c_str(), "__" ) )
 	{
 		return false;
 	}
+	
 	// we know these two don't come from a reference,
 	// because they're made during construction.
 	if( plug == fileNamePlug() || plug == userPlug() )

@@ -43,24 +43,26 @@ import GafferUITest
 
 class BoxUITest( GafferUITest.TestCase ) :
 
+	class NodulePositionNode( GafferTest.AddNode ) :
+
+		def __init__( self, name = "NodulePositionNode" ) :
+
+			GafferTest.AddNode.__init__( self, name )
+
+	IECore.registerRunTimeTyped( NodulePositionNode )
+
+	Gaffer.Metadata.registerPlugValue( NodulePositionNode, "op1", "nodeGadget:nodulePosition", "left" )
+	Gaffer.Metadata.registerPlugValue( NodulePositionNode, "sum", "nodeGadget:nodulePosition", "right" )
+
+	Gaffer.Metadata.registerPlugValue( NodulePositionNode, "op2", "nodule:type", "" )
+
 	def testNodulePositions( self ) :
-
-		class NodulePositionNode( GafferTest.AddNode ) :
-
-			def __init__( self, name = "NodulePositionNode" ) :
-
-				GafferTest.AddNode.__init__( self, name )
-
-		IECore.registerRunTimeTyped( NodulePositionNode )
-
-		Gaffer.Metadata.registerPlugValue( NodulePositionNode, "op1", "nodeGadget:nodulePosition", "left" )
-		Gaffer.Metadata.registerPlugValue( NodulePositionNode, "sum", "nodeGadget:nodulePosition", "right" )
 
 		s = Gaffer.ScriptNode()
 		g = GafferUI.GraphGadget( s )
 
 		s["a"] = GafferTest.AddNode()
-		s["n"] = NodulePositionNode()
+		s["n"] = self.NodulePositionNode()
 		s["r"] = GafferTest.AddNode()
 
 		s["n"]["op1"].setInput( s["a"]["sum"] )
@@ -72,6 +74,48 @@ class BoxUITest( GafferUITest.TestCase ) :
 
 		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( box["in"] ) ), IECore.V3f( -1, 0, 0 ) )
 		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( box["out"] ) ), IECore.V3f( 1, 0, 0 ) )
+
+		# Now test that a copy/paste of the box maintains the tangents in the copy.
+
+		s2 = Gaffer.ScriptNode()
+		g2 = GafferUI.GraphGadget( s2 )
+
+		s2.execute( s.serialise() )
+
+		box2 = s2[box.getName()]
+		boxGadget2 = g2.nodeGadget( box2 )
+
+		self.assertEqual( boxGadget2.noduleTangent( boxGadget2.nodule( box2["in"] ) ), IECore.V3f( -1, 0, 0 ) )
+		self.assertEqual( boxGadget2.noduleTangent( boxGadget2.nodule( box2["out"] ) ), IECore.V3f( 1, 0, 0 ) )
+
+	def testNodulePositionsForPromotedPlugs( self ) :
+	
+		s = Gaffer.ScriptNode()
+		g = GafferUI.GraphGadget( s )
+		
+		s["b"] = Gaffer.Box()
+		s["b"]["n"] = self.NodulePositionNode()
+		
+		boxGadget = g.nodeGadget( s["b"] )
+		
+		p1 = s["b"].promotePlug( s["b"]["n"]["op1"] )
+		p2 = s["b"].promotePlug( s["b"]["n"]["sum"] )
+
+		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( p1 ) ), IECore.V3f( -1, 0, 0 ) )
+		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( p2 ) ), IECore.V3f( 1, 0, 0 ) )
+
+	def testDisabledNodulesForPromotedPlugs( self ) :
+
+		s = Gaffer.ScriptNode()
+		g = GafferUI.GraphGadget( s )
+
+		s["b"] = Gaffer.Box()
+		s["b"]["n"] = self.NodulePositionNode()
+
+		boxGadget = g.nodeGadget( s["b"] )
+
+		p = s["b"].promotePlug( s["b"]["n"]["op2"] )
+		self.assertEqual( boxGadget.nodule( p ), None )
 
 	def testRenamingPlugs( self ) :
 
@@ -88,6 +132,53 @@ class BoxUITest( GafferUITest.TestCase ) :
 		w2 = ui.plugValueWidget( box["user"]["b"], lazy=False )
 		self.assertTrue( w2 is not None )
 		self.assertTrue( w2 is w )
+
+	def testUIForNonMatchingPromotedPlugTypes( self ) :
+	
+		box = Gaffer.Box()
+		box["user"]["b"] = Gaffer.BoolPlug()
+		box["node"] = Gaffer.Node()
+		box["node"]["i"] = Gaffer.IntPlug()
+		box["node"]["i"].setInput( box["user"]["b"] )
+		
+		ui = GafferUI.NodeUI.create( box )
+		w = ui.plugValueWidget( box["user"]["b"], lazy=False )
+		
+		self.assertTrue( isinstance( w, GafferUI.BoolPlugValueWidget ) )
+
+	def testUIForOutputPlugTypes( self ) :
+
+		box = Gaffer.Box()
+		box["node"] = Gaffer.Random()
+		p = box.promotePlug( box["node"]["outColor"] )
+
+		nodeUI = GafferUI.NodeUI.create( box["node"] )
+		boxUI = GafferUI.NodeUI.create( box )
+
+		nodeWidget = nodeUI.plugValueWidget( box["node"]["outColor"], lazy = False )
+		boxWidget = boxUI.plugValueWidget( p, lazy = False )
+
+		self.assertTrue( type( boxWidget ) is type( nodeWidget ) )
+
+	def testDisabledNodulesAfterCutAndPaste( self ) :
+
+		s = Gaffer.ScriptNode()
+		g = GafferUI.GraphGadget( s )
+
+		s["b"] = Gaffer.Box()
+		s["b"]["n"] = self.NodulePositionNode()
+
+		g = GafferUI.GraphGadget( s )
+
+		s["b"].promotePlug( s["b"]["n"]["op1"] )
+		p = s["b"].promotePlug( s["b"]["n"]["op2"] )
+		p.setName( "p" )
+
+		self.assertEqual( g.nodeGadget( s["b"] ).nodule( s["b"]["p"] ), None )
+
+		s.execute( s.serialise( filter = Gaffer.StandardSet( [ s["b"] ] ) ) )
+
+		self.assertEqual( g.nodeGadget( s["b1"] ).nodule( s["b1"]["p"] ), None )
 
 if __name__ == "__main__":
 	unittest.main()

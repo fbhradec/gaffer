@@ -35,13 +35,50 @@
 #
 ##########################################################################
 
-import re
-import fnmatch
-
 import IECore
 
 import Gaffer
 import GafferUI
+
+Gaffer.Metadata.registerNode(
+
+	Gaffer.Node,
+
+	"description",
+	"""
+	A container for plugs.
+	""",
+
+	plugs = {
+
+		"user" : (
+
+			"description",
+			"""
+			Container for user-defined plugs. Nodes
+			should never make their own plugs here,
+			so users are free to do as they wish.
+			""",
+
+			"layout:index", -1, # Last
+			"layout:section", "User",
+			"nodule:type", "",
+
+		),
+
+		"*" : (
+
+			"layout:section", lambda plug : "Settings" if isinstance( plug.parent(), Gaffer.Node ) else ""
+
+		),
+
+	}
+
+)
+
+##########################################################################
+# NodeUI
+##########################################################################
 
 ## This class forms the base class for all uis for nodes.
 class NodeUI( GafferUI.Widget ) :
@@ -104,7 +141,3 @@ class NodeUI( GafferUI.Widget ) :
 			nodeTypeId = nodeClassOrTypeId.staticTypeId()
 
 		cls.__nodeUIs[nodeTypeId] = nodeUICreator
-
-GafferUI.Nodule.registerNodule( Gaffer.Node, "user", lambda plug : None )
-
-Gaffer.Metadata.registerPlugValue( Gaffer.Node, "user", "nodeUI:section", "User" )

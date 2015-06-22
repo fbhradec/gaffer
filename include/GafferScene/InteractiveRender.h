@@ -37,6 +37,8 @@
 #ifndef GAFFERSCENE_INTERACTIVERENDER_H
 #define GAFFERSCENE_INTERACTIVERENDER_H
 
+#include "tbb/pipeline.h"
+
 #include "IECore/Renderer.h"
 
 #include "Gaffer/Node.h"
@@ -86,11 +88,11 @@ class InteractiveRender : public Gaffer::Node
 		Gaffer::BoolPlug *updateLightsPlug();
 		const Gaffer::BoolPlug *updateLightsPlug() const;
 
-		Gaffer::BoolPlug *updateShadersPlug();
-		const Gaffer::BoolPlug *updateShadersPlug() const;
+		Gaffer::BoolPlug *updateAttributesPlug();
+		const Gaffer::BoolPlug *updateAttributesPlug() const;
 
-		Gaffer::BoolPlug *updateCameraPlug();
-		const Gaffer::BoolPlug *updateCameraPlug() const;
+		Gaffer::BoolPlug *updateCamerasPlug();
+		const Gaffer::BoolPlug *updateCamerasPlug() const;
 
 		Gaffer::BoolPlug *updateCoordinateSystemsPlug();
 		const Gaffer::BoolPlug *updateCoordinateSystemsPlug() const;
@@ -111,23 +113,40 @@ class InteractiveRender : public Gaffer::Node
 		void parentChanged( Gaffer::GraphComponent *child, Gaffer::GraphComponent *oldParent );
 
 		void update();
+		
+		static void runPipeline(tbb::pipeline *p);
+		void outputScene( bool update );
+		
 		void updateLights();
-		void updateShaders();
-		void updateShadersWalk( const ScenePlug::ScenePath &path );
-		void updateCamera();
+		void updateAttributes();
+		void updateCameras();
 		void updateCoordinateSystems();
 
 		void outputLightsInternal( const IECore::CompoundObject *globals, bool editing );
 
+		void stop();
+
 		typedef std::set<std::string> LightHandles;
 
+		// hierarchical structure for tracking scene information:
+		class SceneGraph;
+		boost::shared_ptr<SceneGraph> m_sceneGraph;
+
+		// tbb classes for performing multithreaded traversals of the scene graph, etc.
+		class SceneGraphBuildTask;
+		class ChildNamesUpdateTask;
+
+		class SceneGraphIteratorFilter;
+		class SceneGraphEvaluatorFilter;
+		class SceneGraphOutputFilter;
+		
 		IECore::RendererPtr m_renderer;
 		ConstScenePlugPtr m_scene;
 		State m_state;
 		LightHandles m_lightHandles;
 		bool m_lightsDirty;
-		bool m_shadersDirty;
-		bool m_cameraDirty;
+		bool m_attributesDirty;
+		bool m_camerasDirty;
 		bool m_coordinateSystemsDirty;
 
 		Gaffer::ContextPtr m_context;

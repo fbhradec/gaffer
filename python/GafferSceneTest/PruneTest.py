@@ -98,7 +98,7 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 
 		filter = GafferScene.PathFilter()
 		filter["paths"].setValue( IECore.StringVectorData( [ "/*" ] ) )
-		prune["filter"].setInput( filter["match"] )
+		prune["filter"].setInput( filter["out"] )
 
 		prune["enabled"].setValue( False )
 
@@ -149,7 +149,7 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 
 		filter = GafferScene.PathFilter()
 		filter["paths"].setValue( IECore.StringVectorData( [ "/groupA/sphereAB" ] ) )
-		prune["filter"].setInput( filter["match"] )
+		prune["filter"].setInput( filter["out"] )
 
 		self.assertNotEqual( prune["out"].childNamesHash( "/groupA" ), input["out"].childNamesHash( "/groupA" ) )
 		self.assertEqual( prune["out"].childNames( "/groupA" ), IECore.InternedStringVectorData( [ "sphereAA" ] ) )
@@ -188,7 +188,7 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 
 		filter = GafferScene.PathFilter()
 		filter["paths"].setValue( IECore.StringVectorData( [ "/group/sphere2" ] ) )
-		prune["filter"].setInput( filter["match"] )
+		prune["filter"].setInput( filter["out"] )
 
 		self.assertEqual( prune["out"].bound( "/" ), sphere2.bound() )
 		self.assertEqual( prune["out"].bound( "/group" ), sphere2.bound() )
@@ -200,7 +200,7 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( prune["out"].bound( "/group" ), sphere1.bound() )
 		self.assertEqual( prune["out"].bound( "/group/sphere1" ), sphere1.bound() )
 
-	def testSets( self ) :
+	def testLightSets( self ) :
 
 		light1 = GafferSceneTest.TestLight()
 		light2 = GafferSceneTest.TestLight()
@@ -209,27 +209,27 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 		group["in"].setInput( light1["out"] )
 		group["in1"].setInput( light2["out"] )
 
-		lightSet = group["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = group["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/light", "/group/light1" ] ) )
 
 		prune = GafferScene.Prune()
 		prune["in"].setInput( group["out"] )
 
-		lightSet = prune["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = prune["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/light", "/group/light1" ] ) )
 
 		filter = GafferScene.PathFilter()
-		prune["filter"].setInput( filter["match"] )
+		prune["filter"].setInput( filter["out"] )
 
-		lightSet = prune["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = prune["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/light", "/group/light1" ] ) )
 
 		filter["paths"].setValue( IECore.StringVectorData( [ "/group/light" ] ) )
-		lightSet = prune["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = prune["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/light1" ] ) )
 
 		filter["paths"].setValue( IECore.StringVectorData( [ "/group/light*" ] ) )
-		lightSet = prune["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = prune["out"].set( "__lights" )
 		self.assertEqual( lightSet.value.paths(), [] )
 
 	def testSetsWhenAncestorPruned( self ) :
@@ -247,7 +247,7 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 		topGroup["in"].setInput( group1["out"] )
 		topGroup["in1"].setInput( group2["out"] )
 
-		lightSet = topGroup["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = topGroup["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/group/light", "/group/group1/light" ] ) )
 
 		filter = GafferScene.PathFilter()
@@ -255,9 +255,9 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 
 		prune = GafferScene.Prune()
 		prune["in"].setInput( topGroup["out"] )
-		prune["filter"].setInput( filter["match"] )
+		prune["filter"].setInput( filter["out"] )
 
-		lightSet = prune["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = prune["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/group1/light" ] ) )
 
 	def testFilterPromotion( self ) :
@@ -268,6 +268,79 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 		self.assertTrue( b.canPromotePlug( b["n"]["filter"] ) )
 		b.promotePlug( b["n"]["filter"] )
 		self.assertTrue( b.plugIsPromoted( b["n"]["filter"] ) )
+
+	def testGlobalsDoNotDependOnScenePath( self ) :
+
+		pathFilter = GafferScene.PathFilter()
+		pathFilter["paths"].setValue( IECore.StringVectorData( [ "/grid/borderLines" ] ) )
+
+		grid = GafferScene.Grid()
+
+		prune = GafferScene.Prune()
+		prune["in"].setInput( grid["out"] )
+		prune["filter"].setInput( pathFilter["out"] )
+
+		c = Gaffer.Context()
+		with c :
+			h1 = prune["out"]["globals"].hash()
+			c["scene:path"] = IECore.InternedStringVectorData( [ "grid" ] )
+			h2 = prune["out"]["globals"].hash()
+			c["scene:path"] = IECore.InternedStringVectorData( [ "grid", "centerLines" ] )
+			h3 = prune["out"]["globals"].hash()
+
+		self.assertEqual( h1, h2 )
+		self.assertEqual( h2, h3 )
+
+	def testSets( self ) :
+
+		setPaths = [
+			[
+				"/a",
+				"/a/b/c/d/e",
+				"/a/b/c",
+				"/b/c",
+			],
+			[
+				"/f/g/h/i",
+			],
+		]
+
+		filterPaths = [
+			[],
+			[
+				"/*",
+			],
+			[
+				"/a",
+			],
+			[
+				"/a/b",
+			],
+			[
+				"/f/g/h/...",
+			],
+		]
+
+		for s in setPaths :
+			for p in filterPaths :
+
+				pathFilter = GafferScene.PathFilter()
+				pathFilter["paths"].setValue( IECore.StringVectorData( p ) )
+
+				setNode = GafferScene.Set()
+				setNode["paths"].setValue( IECore.StringVectorData( s ) )
+
+				prune = GafferScene.Prune()
+				prune["in"].setInput( setNode["out"] )
+				prune["filter"].setInput( pathFilter["out"] )
+
+				outputSet = set( prune["out"].set( "set" ).value.paths() )
+				filterMatcher = GafferScene.PathMatcher( p )
+				for inputSetPath in s :
+					if filterMatcher.match( inputSetPath ) & ( pathFilter.Result.ExactMatch | pathFilter.Result.AncestorMatch ) :
+						self.assertTrue( inputSetPath not in outputSet )
+					else :
+						self.assertTrue( inputSetPath in outputSet )
 
 if __name__ == "__main__":
 	unittest.main()

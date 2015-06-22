@@ -169,11 +169,11 @@ class ScenePlugTest( unittest.TestCase ) :
 		b = Gaffer.Box()
 		b["n"] = GafferScene.StandardAttributes()
 
-		self.assertTrue( b.canPromotePlug( b["n"]["in"], asUserPlug=False ) )
-		self.assertTrue( b.canPromotePlug( b["n"]["out"], asUserPlug=False ) )
+		self.assertTrue( b.canPromotePlug( b["n"]["in"] ) )
+		self.assertTrue( b.canPromotePlug( b["n"]["out"] ) )
 
-		i = b.promotePlug( b["n"]["in"], asUserPlug=False )
-		o = b.promotePlug( b["n"]["out"], asUserPlug=False )
+		i = b.promotePlug( b["n"]["in"] )
+		o = b.promotePlug( b["n"]["out"] )
 
 		self.assertEqual( b["n"]["in"].getInput(), i )
 		self.assertEqual( o.getInput(), b["n"]["out"] )
@@ -185,6 +185,32 @@ class ScenePlugTest( unittest.TestCase ) :
 
 		p = GafferScene.Plane()
 		self.assertRaises( Exception, p["out"].transform, None )
+
+	def testStringToPath( self ) :
+
+		self.assertEqual( GafferScene.ScenePlug.stringToPath( "" ), IECore.InternedStringVectorData() )
+		self.assertEqual( GafferScene.ScenePlug.stringToPath( "/" ), IECore.InternedStringVectorData() )
+		self.assertEqual( GafferScene.ScenePlug.stringToPath( "/a" ), IECore.InternedStringVectorData( [ "a" ] ) )
+		self.assertEqual( GafferScene.ScenePlug.stringToPath( "a" ), IECore.InternedStringVectorData( [ "a" ] ) )
+		self.assertEqual( GafferScene.ScenePlug.stringToPath( "/a/b" ), IECore.InternedStringVectorData( [ "a", "b" ] ) )
+		self.assertEqual( GafferScene.ScenePlug.stringToPath( "/a/b/" ), IECore.InternedStringVectorData( [ "a", "b" ] ) )
+		self.assertEqual( GafferScene.ScenePlug.stringToPath( "//a//b//" ), IECore.InternedStringVectorData( [ "a", "b" ] ) )
+		self.assertEqual( GafferScene.ScenePlug.stringToPath( "/foo/bar/" ), IECore.InternedStringVectorData( [ "foo", "bar" ] ) )
+		self.assertEqual( GafferScene.ScenePlug.stringToPath( "foo/bar/" ), IECore.InternedStringVectorData( [ "foo", "bar" ] ) )
+
+	def testManyStringToPathCalls( self ) :
+
+		GafferSceneTest.testManyStringToPathCalls()
+
+	def testSetPlugs( self ) :
+
+		p = GafferScene.ScenePlug()
+
+		self.assertTrue( isinstance( p["setNames"], Gaffer.InternedStringVectorDataPlug ) )
+		self.assertEqual( p["setNames"].defaultValue(), IECore.InternedStringVectorData() )
+
+		self.assertTrue( isinstance( p["set"], GafferScene.PathMatcherDataPlug ) )
+		self.assertEqual( p["set"].defaultValue(), GafferScene.PathMatcherData() )
 
 if __name__ == "__main__":
 	unittest.main()

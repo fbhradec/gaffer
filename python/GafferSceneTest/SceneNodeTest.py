@@ -170,7 +170,7 @@ class SceneNodeTest( GafferTest.TestCase ) :
 		def traverser() :
 
 			try :
-				GafferSceneTest.traverseScene( g["out"], Gaffer.Context() )
+				GafferSceneTest.traverseScene( g["out"] )
 			except Exception, e :
 				exceptions.append( e )
 
@@ -185,6 +185,10 @@ class SceneNodeTest( GafferTest.TestCase ) :
 
 		for e in exceptions :
 			raise e
+
+	def testNodesConstructWithDefaultValues( self ) :
+
+		self.assertNodesConstructWithDefaultValues( GafferScene )
 
 	def setUp( self ) :
 

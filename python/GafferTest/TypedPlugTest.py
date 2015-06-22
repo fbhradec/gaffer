@@ -209,6 +209,37 @@ class TypedPlugTest( GafferTest.TestCase ) :
 			p.setValue( 1000 )
 			self.assertEqual( b.getValue(), True )
 
+	def testNoChildrenAccepted( self ) :
+
+		p1 = Gaffer.BoolPlug()
+		p2 = Gaffer.BoolPlug()
+
+		self.assertFalse( p1.acceptsChild( p2 ) )
+		self.assertRaises( RuntimeError, p1.addChild, p2 )
+
+	def testPrecomputedHash( self ) :
+
+		n = GafferTest.StringInOutNode()
+		n["in"].setValue( "hi" )
+
+		self.assertEqual( n["out"].getValue(), "hi" )
+		self.assertEqual( n.numHashCalls, 1 )
+		self.assertEqual( n.numComputeCalls, 1 )
+
+		h = n["out"].hash()
+		numHashCalls = n.numHashCalls
+		# Accept either 1 or 2 - it would be reasonable for the ValuePlug
+		# to have either cached the hash or not, but that's not what we're
+		# testing here.
+		self.assertTrue( numHashCalls == 1 or numHashCalls == 2 )
+		self.assertEqual( n.numComputeCalls, 1 )
+
+		# What we care about is that calling getValue() with a precomputed hash
+		# definitely doesn't recompute the hash again.
+		self.assertEqual( n["out"].getValue( _precomputedHash = h ), "hi" )
+		self.assertEqual( n.numHashCalls, numHashCalls )
+		self.assertEqual( n.numComputeCalls, 1 )
+
 if __name__ == "__main__":
 	unittest.main()
 

@@ -37,7 +37,7 @@
 #ifndef GAFFERSCENE_COORDINATESYSTEM_H
 #define GAFFERSCENE_COORDINATESYSTEM_H
 
-#include "GafferScene/ObjectSourceBase.h"
+#include "GafferScene/ObjectSource.h"
 
 namespace GafferScene
 {
@@ -54,11 +54,10 @@ class CoordinateSystem : public ObjectSource
 
 	protected :
 
-		virtual void hashGlobals( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstCompoundObjectPtr computeGlobals( const Gaffer::Context *context, const ScenePlug *parent ) const;
-
 		virtual void hashSource( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual IECore::ConstObjectPtr computeSource( const Gaffer::Context *context ) const;
+
+		virtual IECore::InternedString standardSetName() const;
 
 };
 

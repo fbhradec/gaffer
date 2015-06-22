@@ -37,6 +37,7 @@
 
 import re
 import fnmatch
+import functools
 
 import IECore
 
@@ -145,6 +146,16 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		return result
 
+	## Because Plugs may have child Plugs, so too PlugValueWidgets may
+	# have child PlugValueWidgets to represent the children of their plug.
+	# This method should be reimplemented to return such children. Because
+	# UIs may be built lazily on demand, the lazy flag is provided to
+	# determine whether or not the query should force a build in the case
+	# that one has not been performed yet.
+	def childPlugValueWidget( self, childPlug, lazy=True ) :
+
+		return None
+
 	## Must be implemented by subclasses so that the widget reflects the current
 	# status of the plug. To temporarily suspend calls to this function, use
 	# Gaffer.BlockedConnection( self._plugConnections() ).
@@ -177,6 +188,40 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		return True
 
+	## Called to convert the specified value into something
+	# suitable for passing to a plug.setValue() call. Returns
+	# None if no such conversion is necessary. May be reimplemented
+	# by derived classes to provide more complex conversions than
+	# the standard. The base class uses this method to accept drag/drop
+	# and copy/paste data.
+	def _convertValue( self, value ) :
+
+		if not hasattr( self.getPlug(), "defaultValue" ) :
+			return None
+
+		plugValueType = type( self.getPlug().defaultValue() )
+		if isinstance( value, plugValueType ) :
+			return value
+		elif isinstance( value, IECore.Data ) :
+
+			dataValue = None
+			if hasattr( value, "value" ) :
+				dataValue = value.value
+			else :
+				with IECore.IgnoredExceptions( Exception ) :
+					if len( value ) == 1 :
+						dataValue = value[0]
+
+			if dataValue is None :
+				return None
+			elif isinstance( dataValue, plugValueType ) :
+				return dataValue
+			else :
+				with IECore.IgnoredExceptions( Exception ) :
+					return plugValueType( dataValue )
+
+		return None
+
 	## Adds a useful popup menu to the specified widget, providing useful functions that
 	# operate on the plug. The menu is populated with the result of _popupMenuDefinition(),
 	# and may also be customised by external code using the popupMenuSignal().
@@ -204,6 +249,29 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		menuDefinition = IECore.MenuDefinition()
 
+		if hasattr( self.getPlug(), "getValue" ) :
+
+			applicationRoot = self.getPlug().ancestor( Gaffer.ApplicationRoot )
+			menuDefinition.append(
+				"/Copy Value", {
+					"command" : Gaffer.WeakMethod( self.__copyValue ),
+					"active" : applicationRoot is not None
+				}
+			)
+
+			pasteValue = None
+			if applicationRoot is not None :
+				pasteValue = self._convertValue( applicationRoot.getClipboardContents() )
+			
+			menuDefinition.append(
+				"/Paste Value", {
+					"command" : functools.partial( Gaffer.WeakMethod( self.__setValue ), pasteValue ),
+					"active" : pasteValue is not None
+				}
+			)
+
+			menuDefinition.append( "/CopyPasteDivider", { "divider" : True } )
+
 		if self.getPlug().getInput() is not None :
 			menuDefinition.append( "/Edit input...", { "command" : Gaffer.WeakMethod( self.__editInput ) } )
 			menuDefinition.append( "/EditInputDivider", { "divider" : True } )
@@ -221,6 +289,22 @@ class PlugValueWidget( GafferUI.Widget ) :
 				}
 			)
 
+		if Gaffer.NodeAlgo.hasUserDefault( self.getPlug() ) and self.getPlug().direction() == Gaffer.Plug.Direction.In :
+			menuDefinition.append(
+				"/User Default", {
+					"command" : Gaffer.WeakMethod( self.__applyUserDefault ),
+					"active" : self._editable()
+				}
+			)
+		
+		if Gaffer.NodeAlgo.presets( self.getPlug() ) :
+			menuDefinition.append(
+				"/Preset", {
+					"subMenu" : Gaffer.WeakMethod( self.__presetsSubMenu ),
+					"active" : self._editable()
+				}
+			)
+		
 		self.popupMenuSignal()( menuDefinition, self )
 
 		return menuDefinition
@@ -286,6 +370,8 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 	## Registers a function to create a PlugWidget. None may be passed as creator, to
 	# disable the creation of uis for specific plugs.
+	## \todo Use PlugLayout and "layout:widgetType" metadata everywhere instead of
+	# using this. Then remove this method.
 	@classmethod
 	def registerCreator( cls, nodeClassOrTypeId, plugPath, creator, **creatorKeywordArgs ) :
 
@@ -401,6 +487,19 @@ class PlugValueWidget( GafferUI.Widget ) :
 
 		return True
 
+	def __copyValue( self ) :
+
+		with self.getContext() :
+			value = self.getPlug().getValue()
+
+		if not isinstance( value, IECore.Object ) :
+			# Trick to get Data from a simple type - put
+			# it in a CompoundData (which will convert to
+			# Data automatically) and then get it back out.
+			value = IECore.CompoundData( { "v" : value } )["v"]
+
+		self.getPlug().ancestor( Gaffer.ApplicationRoot ).setClipboardContents( value )
+
 	def __setValue( self, value ) :
 
 		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
@@ -423,6 +522,33 @@ class PlugValueWidget( GafferUI.Widget ) :
 		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
 			self.getPlug().setInput( None )
 
+	def __applyUserDefault( self ) :
+
+		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
+			Gaffer.NodeAlgo.applyUserDefault( self.getPlug() )
+
+	def __presetsSubMenu( self ) :
+
+		with self.getContext() :
+			currentPreset = Gaffer.NodeAlgo.currentPreset( self.getPlug() )
+
+		result = IECore.MenuDefinition()
+		for presetName in Gaffer.NodeAlgo.presets( self.getPlug() ) :
+			result.append(
+				presetName, {
+					"command" : IECore.curry( Gaffer.WeakMethod( self.__applyPreset ), presetName ),
+					"active" : self._editable(),
+					"checkBox" : presetName == currentPreset,
+				}
+			)
+
+		return result
+
+	def __applyPreset( self, presetName, *unused ) :
+	
+		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
+			Gaffer.NodeAlgo.applyPreset( self.getPlug(), presetName )					
+
 	# drag and drop stuff
 
 	def __dragEnter( self, widget, event ) :
@@ -442,7 +568,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 			if self.getPlug().acceptsInput( event.data ) :
 				self.setHighlighted( True )
 				return True
-		elif hasattr( self.getPlug(), "setValue" ) and self._dropValue( event ) is not None :
+		elif hasattr( self.getPlug(), "setValue" ) and self._convertValue( event.data ) is not None :
 			if self.getPlug().settable() :
 				self.setHighlighted( True )
 				return True
@@ -461,40 +587,7 @@ class PlugValueWidget( GafferUI.Widget ) :
 			if isinstance( event.data, Gaffer.Plug ) :
 				self.getPlug().setInput( event.data )
 			else :
-				self.getPlug().setValue( self._dropValue( event ) )
+				self.getPlug().setValue( self._convertValue( event.data ) )
 
 		return True
-
-	## Called from a dragEnter slot to see if the drag data can
-	# be converted to a value suitable for a plug.setValue() call.
-	# If this returns a non-None value then the drag will be accepted
-	# and plug.setValue() will be called in the drop event. May be
-	# reimplemented by derived classes to provide conversions of the
-	# drag data to the type needed for setValue().
-	def _dropValue( self, dragDropEvent ) :
-
-		if not hasattr( self.getPlug(), "defaultValue" ) :
-			return None
-
-		plugValueType = type( self.getPlug().defaultValue() )
-		if isinstance( dragDropEvent.data, plugValueType ) :
-			return dragDropEvent.data
-		elif isinstance( dragDropEvent.data, IECore.Data ) :
-
-			dataValue = None
-			if hasattr( dragDropEvent.data, "value" ) :
-				dataValue = dragDropEvent.data.value
-			else :
-				with IECore.IgnoredExceptions( Exception ) :
-					if len( dragDropEvent.data ) == 1 :
-						dataValue = dragDropEvent.data[0]
-
-			if dataValue is None :
-				return None
-			elif isinstance( dataValue, plugValueType ) :
-				return dataValue
-			else :
-				with IECore.IgnoredExceptions( Exception ) :
-					return plugValueType( dataValue )
-
-		return None
+		

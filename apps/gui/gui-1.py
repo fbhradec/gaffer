@@ -84,7 +84,7 @@ class gui( Gaffer.Application ) :
 		
 		if len( args["scripts"] ) :
 			for fileName in args["scripts"] :
-				scriptNode = Gaffer.ScriptNode( os.path.splitext( os.path.basename( fileName ) )[0] )
+				scriptNode = Gaffer.ScriptNode()
 				scriptNode["fileName"].setValue( os.path.abspath( fileName ) )
 				# \todo: Display load errors in a dialog, like in python/GafferUI/FileMenu.py
 				scriptNode.load( continueOnError = True )
@@ -92,7 +92,7 @@ class gui( Gaffer.Application ) :
 				GafferUI.FileMenu.addRecentFile( self, fileName )
 				del scriptNode
 		else :
-			self.root()["scripts"]["script1"] = Gaffer.ScriptNode()
+			self.root()["scripts"].addChild( Gaffer.ScriptNode() )
 		
 		if args["fullScreen"].value :
 			primaryScript = self.root()["scripts"][-1]
@@ -128,14 +128,14 @@ class gui( Gaffer.Application ) :
 		assert( applicationRoot.isSame( self.root() ) )
 
 		data = applicationRoot.getClipboardContents()
-		if isinstance( data, IECore.StringData ) :
-			QtGui = GafferUI._qtImport( "QtGui" )
-			clipboard = QtGui.QApplication.clipboard()
-			try :
-				self.__ignoreQtClipboardContentsChanged = True # avoid triggering an unecessary copy back in __qtClipboardContentsChanged
-				clipboard.setText( data.value )
-			finally :
-				self.__ignoreQtClipboardContentsChanged = False
+
+		QtGui = GafferUI._qtImport( "QtGui" )
+		clipboard = QtGui.QApplication.clipboard()
+		try :
+			self.__ignoreQtClipboardContentsChanged = True # avoid triggering an unecessary copy back in __qtClipboardContentsChanged
+			clipboard.setText( str( data ) )
+		finally :
+			self.__ignoreQtClipboardContentsChanged = False
 				
 	def __qtClipboardContentsChanged( self ) :
 	

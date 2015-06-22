@@ -35,6 +35,8 @@
 #
 ##########################################################################
 
+import warnings
+
 import GafferUI
 
 class _Section( GafferUI.CompoundDataPlugValueWidget ) :
@@ -54,6 +56,7 @@ class _Section( GafferUI.CompoundDataPlugValueWidget ) :
 
 		return self.__namesToLabels[childPlug["name"].getValue()]
 
+## \todo Remove this class.
 class SectionedCompoundDataPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, sections, **kw ) :
@@ -74,6 +77,8 @@ class SectionedCompoundDataPlugValueWidget( GafferUI.PlugValueWidget ) :
 						labels = [ e[1] for e in section["namesAndLabels"] ],
 					)
 				)
+
+		warnings.warn( "SectionedCompoundDataPlugValueWidget is deprecated, use LayoutPlugValueWidget instead.", DeprecationWarning, 2 )
 
 	def setPlug( self, plug ) :
 

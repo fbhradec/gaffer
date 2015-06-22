@@ -192,8 +192,12 @@ void ViewportGadget::setCamera( const IECore::Camera *camera )
 	{
 		return;
 	}
-
+	// Remember the viewport size
+	const V2i viewport = getViewport();
+	// Because the incoming camera resolution might not be right
 	m_cameraController.setCamera( camera->copy() );
+	// So we must reset the viewport to update the camera
+	setViewport( viewport );
 	m_cameraChangedSignal( this );
 }
 
@@ -216,7 +220,7 @@ void ViewportGadget::frame( const Imath::Box3f &box )
 {
 	m_cameraController.frame( box );
 	m_cameraChangedSignal( this );
- 	renderRequestSignal()( this );
+ 	requestRender();
 }
 
 void ViewportGadget::frame( const Imath::Box3f &box, const Imath::V3f &viewDirection,
@@ -224,7 +228,7 @@ void ViewportGadget::frame( const Imath::Box3f &box, const Imath::V3f &viewDirec
 {
  	m_cameraController.frame( box, viewDirection, upVector );
 	m_cameraChangedSignal( this );
-	renderRequestSignal()( this );
+ 	requestRender();
 }
 
 void ViewportGadget::setDragTracking( bool dragTracking )
@@ -249,7 +253,7 @@ void ViewportGadget::gadgetsAt( const Imath::V2f &rasterPosition, std::vector<Ga
 
 	for( std::vector<HitRecord>::const_iterator it = selection.begin(); it!= selection.end(); it++ )
 	{
-		GadgetPtr gadget = Gadget::select( it->name.value() );
+		GadgetPtr gadget = Gadget::select( it->name );
 		if( gadget )
 		{
 			gadgets.push_back( gadget );
@@ -297,6 +301,11 @@ IECore::LineSegment3f ViewportGadget::rasterToWorldSpace( const Imath::V2f &rast
 Imath::V2f ViewportGadget::worldToRasterSpace( const Imath::V3f &worldPosition ) const
 {
 	return m_cameraController.project( worldPosition );
+}
+
+ViewportGadget::UnarySignal &ViewportGadget::preRenderSignal()
+{
+	return m_preRenderSignal;
 }
 
 void ViewportGadget::doRender( const Style *style ) const
@@ -555,7 +564,7 @@ bool ViewportGadget::dragMove( GadgetPtr gadget, const DragDropEvent &event )
 		{
 			m_cameraController.motionUpdate( V2i( (int)event.line.p1.x, (int)event.line.p1.y ) );
 			m_cameraChangedSignal( this );
-			renderRequestSignal()( this );
+ 			requestRender();
 		}
 		return true;
 	}
@@ -604,9 +613,14 @@ static double currentTime()
 
 void ViewportGadget::trackDrag( const DragDropEvent &event )
 {
-	// early out if tracking is off for any reason.
+	// early out if tracking is off for any reason, or
+	// the drag didn't originate from within the viewport.
 
-	if( !getDragTracking() || !getCameraEditable() )
+	if(
+		!getDragTracking() ||
+		!getCameraEditable() ||
+		!this->isAncestorOf( event.sourceGadget.get() )
+	)
 	{
 		m_dragTrackingIdleConnection.disconnect();
 		return;
@@ -687,7 +701,7 @@ void ViewportGadget::trackDragIdle()
 	dragMove( this, m_dragTrackingEvent );
 
 	m_cameraChangedSignal( this );
-	renderRequestSignal()( this );
+ 	requestRender();
 }
 
 GadgetPtr ViewportGadget::updatedDragDestination( std::vector<GadgetPtr> &gadgets, const DragDropEvent &event )
@@ -780,7 +794,7 @@ bool ViewportGadget::dragEnd( GadgetPtr gadget, const DragDropEvent &event )
 		{
 			m_cameraController.motionEnd( V2i( (int)event.line.p1.x, (int)event.line.p1.y ) );
 			m_cameraChangedSignal( this );
-			renderRequestSignal()( this );
+ 			requestRender();
 		}
 		return true;
 	}
@@ -818,7 +832,7 @@ bool ViewportGadget::wheel( GadgetPtr gadget, const ButtonEvent &event )
 	m_cameraController.motionEnd( position );
 
 	m_cameraChangedSignal( this );
-	renderRequestSignal()( this );
+ 	requestRender();
 
 	return true;
 }
@@ -980,6 +994,12 @@ ViewportGadget::RasterScope::RasterScope( const ViewportGadget *viewportGadget )
 	glMatrixMode( GL_PROJECTION );
 	glPushMatrix();
 	glLoadIdentity();
+
+	if( IECoreGL::Selector *selector = IECoreGL::Selector::currentSelector() )
+	{
+		glMultMatrixd( selector->postProjectionMatrix().getValue() );
+	}
+
 	glOrtho( 0, viewport.x, viewport.y, 0, -1, 1 );
 
 	glMatrixMode( GL_MODELVIEW );

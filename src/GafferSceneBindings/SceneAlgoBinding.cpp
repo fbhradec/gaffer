@@ -36,6 +36,10 @@
 
 #include "boost/python.hpp"
 
+#include "IECore/Camera.h"
+
+#include "IECorePython/ScopedGILRelease.h"
+
 #include "GafferScene/SceneAlgo.h"
 #include "GafferScene/ScenePlug.h"
 #include "GafferScene/Filter.h"
@@ -46,14 +50,57 @@
 using namespace boost::python;
 using namespace GafferScene;
 
+namespace
+{
+
+void matchingPathsHelper1( const Filter *filter, const ScenePlug *scene, PathMatcher &paths )
+{
+	// gil release in case the scene traversal dips back into python:
+	IECorePython::ScopedGILRelease r;
+	matchingPaths( filter, scene, paths );
+}
+
+void matchingPathsHelper2( const Gaffer::IntPlug *filterPlug, const ScenePlug *scene, PathMatcher &paths )
+{
+	// gil release in case the scene traversal dips back into python:
+	IECorePython::ScopedGILRelease r;
+	matchingPaths( filterPlug, scene, paths );
+}
+
+IECore::CompoundDataPtr setsHelper( const ScenePlug *scene, bool copy )
+{
+	IECore::ConstCompoundDataPtr result = sets( scene );
+	return copy ? result->copy() : boost::const_pointer_cast<IECore::CompoundData>( result );
+}
+
+} // namespace
+
 namespace GafferSceneBindings
 {
 
 void bindSceneAlgo()
 {
 	def( "exists", exists );
-	def( "matchingPaths", (void (*)( const GafferScene::Filter *, const GafferScene::ScenePlug *, GafferScene::PathMatcher & ))&matchingPaths );
-	def( "matchingPaths", (void (*)( const Gaffer::IntPlug *, const GafferScene::ScenePlug *, GafferScene::PathMatcher & ))&matchingPaths );
+	def( "visible", visible );
+	def( "matchingPaths", &matchingPathsHelper1 );
+	def( "matchingPaths", &matchingPathsHelper2 );
+	def( "shutter", &shutter );
+	def(
+		"camera",
+		(IECore::CameraPtr (*)( const ScenePlug *, const IECore::CompoundObject * ) )&camera,
+		( arg( "scene" ), arg( "globals" ) = object() )
+	);
+	def(
+		"camera",
+		(IECore::CameraPtr (*)( const ScenePlug *, const ScenePlug::ScenePath &, const IECore::CompoundObject * ) )&camera,
+		( arg( "scene" ), args( "cameraPath" ), arg( "globals" ) = object() )
+	);
+	def( "setExists", &setExists );
+	def(
+		"sets",
+		&setsHelper,
+		( arg( "scene" ), arg( "_copy" ) = true )
+	);
 }
 
 } // namespace GafferSceneBindings

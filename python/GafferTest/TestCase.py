@@ -66,7 +66,7 @@ class TestCase( unittest.TestCase ) :
 	## Attempts to ensure that the hashes for a node
 	# are reasonable by jiggling around input values
 	# and checking that the hash changes when it should.
-	def assertHashesValid( self, node, inputsToIgnore=[] ) :
+	def assertHashesValid( self, node, inputsToIgnore=[], outputsToIgnore=[] ) :
 
 		# find all input ValuePlugs
 		inputPlugs = []
@@ -75,12 +75,7 @@ class TestCase( unittest.TestCase ) :
 				if isinstance( child, Gaffer.CompoundPlug ) :
 					__walkInputs( child )
 				elif isinstance( child, Gaffer.ValuePlug ) :
-					ignore = False
-					for toIgnore in inputsToIgnore :
-						if child.isSame( toIgnore ) :
-							ignore = True
-							break
-					if not ignore :
+					if child not in inputsToIgnore :
 						inputPlugs.append( child )
 		__walkInputs( node )
 
@@ -89,6 +84,9 @@ class TestCase( unittest.TestCase ) :
 		numTests = 0
 		for inputPlug in inputPlugs :
 			for outputPlug in node.affects( inputPlug ) :
+
+				if outputPlug in outputsToIgnore :
+					continue
 
 				hash = outputPlug.hash()
 
@@ -110,7 +108,7 @@ class TestCase( unittest.TestCase ) :
 				if inputPlug.getValue() == value :
 					continue
 
-				self.assertNotEqual( outputPlug.hash(), hash )
+				self.assertNotEqual( outputPlug.hash(), hash, outputPlug.fullName() + " hash not affected by " + inputPlug.fullName() )
 
 				numTests += 1
 
@@ -143,3 +141,70 @@ class TestCase( unittest.TestCase ) :
 				continue
 
 			self.assertEqual( instance.getName(), cls.staticTypeName().rpartition( ":" )[2] )
+
+	def assertNodesAreDocumented( self, module, additionalTerminalPlugTypes = () ) :
+
+		terminalPlugTypes = (
+			Gaffer.ArrayPlug,
+			Gaffer.V2fPlug, Gaffer.V3fPlug,
+			Gaffer.V2iPlug, Gaffer.V3iPlug,
+			Gaffer.Color3fPlug, Gaffer.Color4fPlug,
+			Gaffer.SplineffPlug, Gaffer.SplinefColor3fPlug,
+			Gaffer.Box2iPlug, Gaffer.Box3iPlug,
+			Gaffer.Box2fPlug, Gaffer.Box3fPlug,
+			Gaffer.TransformPlug, Gaffer.Transform2DPlug,
+			Gaffer.CompoundDataPlug.MemberPlug,
+			additionalTerminalPlugTypes
+		)
+
+		undocumentedNodes = []
+		undocumentedPlugs = []
+		for name in dir( module ) :
+
+			cls = getattr( module, name )
+			if not inspect.isclass( cls ) or not issubclass( cls, Gaffer.Node ) :
+				continue
+
+			try :
+				node = cls()
+			except :
+				continue
+
+			description = Gaffer.Metadata.nodeValue( node, "description", inherit = False )
+			if (not description) or description.isspace() :
+				undocumentedNodes.append( node.getName() )
+
+			def checkPlugs( graphComponent ) :
+
+				if isinstance( graphComponent, Gaffer.Plug ) and not graphComponent.getName().startswith( "__" ) :
+					description = Gaffer.Metadata.plugValue( graphComponent, "description" )
+					if (not description) or description.isspace() :
+						undocumentedPlugs.append( graphComponent.fullName() )
+
+				if not isinstance( graphComponent, terminalPlugTypes ) :
+					for plug in graphComponent.children( Gaffer.Plug ) :
+						checkPlugs( plug )
+
+			checkPlugs( node )
+
+		self.assertEqual( undocumentedNodes, [] )
+		self.assertEqual( undocumentedPlugs, [] )
+
+	## We don't serialise plug values when they're at their default, so
+	# newly constructed nodes must have all their plugs be at the default value.
+	def assertNodesConstructWithDefaultValues( self, module ) :
+
+		for name in dir( module ) :
+
+			cls = getattr( module, name )
+			if not inspect.isclass( cls ) or not issubclass( cls, Gaffer.Node ) :
+				continue
+
+			try :
+				node = cls()
+			except :
+				continue
+
+			for plug in node.children( Gaffer.Plug ) :
+				if plug.direction() == plug.Direction.In and isinstance( plug, Gaffer.ValuePlug ) :
+					self.assertTrue( plug.isSetToDefault(), plug.fullName() + " not at default value following construction" )

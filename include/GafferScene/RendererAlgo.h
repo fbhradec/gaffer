@@ -56,8 +56,21 @@ void outputOutputs( const IECore::CompoundObject *globals, IECore::Renderer *ren
 /// Outputs the renderer options specified by the globals.
 void outputOptions( const IECore::CompoundObject *globals, IECore::Renderer *renderer );
 
-/// Outputs the camera specified by the globals.
+/// Outputs all the cameras from the scene, or a default camera if none exist.
+void outputCameras( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer );
+
+/// Outputs the primary camera specified by the globals, or a default camera if none is specified.
 void outputCamera( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer );
+
+/// Outputs the camera from the specified location.
+void outputCamera( const ScenePlug *scene, const ScenePlug::ScenePath &cameraPath, const IECore::CompoundObject *globals, IECore::Renderer *renderer );
+
+/// Outputs all the visible clipping planes from the scene.
+void outputClippingPlanes( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer );
+
+/// Outputs a single clipping plane from the scene. Returns true for success, and false if no clipping plane
+/// was found or if it was invisible.
+bool outputClippingPlane( const ScenePlug *scene, const ScenePlug::ScenePath &path, IECore::Renderer *renderer );
 
 /// Outputs the attributes stored in the globals.
 void outputGlobalAttributes( const IECore::CompoundObject *globals, IECore::Renderer *renderer );
@@ -79,12 +92,9 @@ bool outputCoordinateSystem( const ScenePlug *scene, const ScenePlug::ScenePath 
 /// Creates the directories necessary to receive the Displays in globals.
 void createDisplayDirectories( const IECore::CompoundObject *globals );
 
-/// Calculates the shutter specified by the globals.
-Imath::V2f shutter( const IECore::CompoundObject *globals );
-
-/// Calculates the full transform for the specified location in the scene, sampling motion according to the attributes at that
-/// location if motionBlur is true.
-IECore::TransformPtr transform( const ScenePlug *scene, const ScenePlug::ScenePath &path, const Imath::V2f &shutter, bool motionBlur );
+/// Outputs the specified attributes, which are expected to have been
+/// retrieved from ScenePlug:attributesPlug().
+void outputAttributes( const IECore::CompoundObject *attributes, IECore::Renderer *renderer );
 
 } // namespace GafferScene
 

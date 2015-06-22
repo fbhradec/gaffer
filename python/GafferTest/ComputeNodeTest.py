@@ -368,5 +368,93 @@ class ComputeNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( n["out"].getValue(), a["sum"].getValue() )
 		self.assertEqual( n["out"].hash(), a["sum"].hash() )
 
+	def testErrorSignal( self ) :
+
+		b = GafferTest.BadNode()
+		a = GafferTest.AddNode()
+		a["op1"].setInput( b["out3"] )
+
+		cs = GafferTest.CapturingSlot( b.errorSignal() )
+
+		self.assertRaises( RuntimeError, b["out1"].getValue )
+		self.assertEqual( len( cs ), 1 )
+		self.assertTrue( cs[0][0].isSame( b["out1"] ) )
+		self.assertTrue( cs[0][1].isSame( b["out1"] ) )
+		self.assertTrue( isinstance( cs[0][2], str ) )
+
+		self.assertRaises( RuntimeError, a["sum"].getValue )
+		self.assertEqual( len( cs ), 2 )
+		self.assertTrue( cs[1][0].isSame( b["out3"] ) )
+		self.assertTrue( cs[1][1].isSame( b["out3"] ) )
+		self.assertTrue( isinstance( cs[1][2], str ) )
+
+	def testErrorSignalledOnIntermediateNodes( self ) :
+
+		nodes = [ GafferTest.BadNode() ]
+		for i in range( 0, 10 ) :
+
+			nodes.append( GafferTest.AddNode() )
+			nodes[-1]["op1"].setInput(
+				nodes[-2]["sum"] if i != 0 else nodes[-2]["out3"]
+			)
+
+		slots = [ GafferTest.CapturingSlot( n.errorSignal() ) for n in nodes ]
+
+		self.assertRaises( RuntimeError, nodes[-1]["sum"].getValue )
+		for i, slot in enumerate( slots ) :
+			self.assertEqual( len( slot ), 1 )
+			self.assertTrue( slot[0][0].isSame( nodes[i]["out3"] if i == 0 else nodes[i]["sum"] ) )
+			self.assertTrue( slot[0][1].isSame( nodes[0]["out3"] ) )
+
+	def testErrorSignalledAtScopeTransitions( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+		s["b"]["b"] = GafferTest.BadNode()
+		s["b"]["a"] = GafferTest.AddNode()
+		s["b"]["a"]["op1"].setInput( s["b"]["b"]["out3"] )
+
+		css = GafferTest.CapturingSlot( s.errorSignal() )
+		csb = GafferTest.CapturingSlot( s["b"].errorSignal() )
+		csbb = GafferTest.CapturingSlot( s["b"]["b"].errorSignal() )
+
+		p = s["b"].promotePlug( s["b"]["a"]["sum"] )
+
+		self.assertRaises( RuntimeError, p.getValue )
+		self.assertEqual( len( css ), 0 )
+		self.assertEqual( len( csb ), 1 )
+		self.assertTrue( csb[0][0].isSame( p ) )
+		self.assertTrue( csb[0][1].isSame( s["b"]["b"]["out3"] ) )
+		self.assertEqual( len( csbb ), 1 )
+		self.assertTrue( csbb[0][0].isSame( s["b"]["b"]["out3"] ) )
+		self.assertTrue( csbb[0][1].isSame( s["b"]["b"]["out3"] ) )
+
+	def testErrorSlotsDontSeeException( self ) :
+
+		self.fRan = False
+		def f( *unusedArgs ) :
+
+			# If there's an active python exception (from
+			# the error in BadNode below) when we try this
+			# import, it'll appear (falsely) as if the error
+			# originated from the import, and throw an exception
+			# here. This is not the intention - error slots are
+			# just meant to be informed of the error, without
+			# ever seeing the exception itself.
+			import IECore
+			self.fRan = True
+
+		n = GafferTest.BadNode()
+		c = n.errorSignal().connect( f )
+
+		with IECore.IgnoredExceptions( Exception ) :
+			n["out1"].getValue()
+
+		self.assertTrue( self.fRan )
+
+	def testThreading( self ) :
+
+		GafferTest.testComputeNodeThreading()
+
 if __name__ == "__main__":
 	unittest.main()

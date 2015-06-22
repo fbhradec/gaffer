@@ -41,12 +41,19 @@
 
 #include "IECore/SceneInterface.h"
 
-#include "GafferScene/FileSource.h"
+#include "GafferScene/SceneNode.h"
+
+namespace Gaffer
+{
+
+IE_CORE_FORWARDDECLARE( StringPlug )
+
+} // namespace Gaffer
 
 namespace GafferScene
 {
 
-class SceneReader : public FileSource
+class SceneReader : public SceneNode
 {
 
 	public :
@@ -54,13 +61,18 @@ class SceneReader : public FileSource
 		SceneReader( const std::string &name=defaultName<SceneReader>() );
 		virtual ~SceneReader();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::SceneReader, SceneReaderTypeId, FileSource )
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::SceneReader, SceneReaderTypeId, SceneNode )
+
+		/// Holds the name of the file to be loaded.
+		Gaffer::StringPlug *fileNamePlug();
+		const Gaffer::StringPlug *fileNamePlug() const;
+
+		/// Number of times the node has been refreshed.
+		Gaffer::IntPlug *refreshCountPlug();
+		const Gaffer::IntPlug *refreshCountPlug() const;
 
 		Gaffer::StringPlug *tagsPlug();
 		const Gaffer::StringPlug *tagsPlug() const;
-
-		Gaffer::StringPlug *setsPlug();
-		const Gaffer::StringPlug *setsPlug() const;
 
 		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 
@@ -68,12 +80,19 @@ class SceneReader : public FileSource
 
 	protected :
 
+		/// \todo These methods defer to SceneInterface::hash() to do most of the work, but we could go further.
+		/// Currently we still hash in fileNamePlug() and refreshCountPlug() because we don't trust the current
+		/// implementation of SceneCache::hash() - it should hash the filename and modification time, but instead
+		/// it hashes some pointer value which isn't guaranteed to be unique (see sceneHash() in IECore/SceneCache.cpp).
+		/// Additionally, we don't have a way of hashing in the tags, which we would need in hashChildNames().
 		virtual void hashBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
 		virtual void hashTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
 		virtual void hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
 		virtual void hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
 		virtual void hashChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
 		virtual void hashGlobals( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
+		virtual void hashSetNames( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
+		virtual void hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
 
 		virtual Imath::Box3f computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
 		virtual Imath::M44f computeTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
@@ -81,6 +100,8 @@ class SceneReader : public FileSource
 		virtual IECore::ConstObjectPtr computeObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
 		virtual IECore::ConstInternedStringVectorDataPtr computeChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const;
 		virtual IECore::ConstCompoundObjectPtr computeGlobals( const Gaffer::Context *context, const ScenePlug *parent ) const;
+		virtual IECore::ConstInternedStringVectorDataPtr computeSetNames( const Gaffer::Context *context, const ScenePlug *parent ) const;
+		virtual GafferScene::ConstPathMatcherDataPtr computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const;
 
 	private :
 

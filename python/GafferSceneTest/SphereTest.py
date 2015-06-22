@@ -148,10 +148,11 @@ class SphereTest( GafferSceneTest.SceneTestCase ) :
 		ss = GafferTest.CapturingSlot( s.plugDirtiedSignal() )
 
 		s["name"].setValue( "ball" )
-		self.assertEqual( len( ss ), 3 )
+		self.assertEqual( len( ss ), 4 )
 		self.failUnless( ss[0][0].isSame( s["name"] ) )
 		self.failUnless( ss[1][0].isSame( s["out"]["childNames"] ) )
-		self.failUnless( ss[2][0].isSame( s["out"] ) )
+		self.failUnless( ss[2][0].isSame( s["out"]["set"] ) )
+		self.failUnless( ss[3][0].isSame( s["out"] ) )
 
 		del ss[:]
 
@@ -193,6 +194,20 @@ class SphereTest( GafferSceneTest.SceneTestCase ) :
 		s["s"] = GafferScene.Sphere()
 
 		ss = s.serialise()
+
+	def testChildNamesHash( self ) :
+
+		s1 = GafferScene.Sphere()
+		s1["name"].setValue( "sphere1" )
+
+		s2 = GafferScene.Sphere()
+		s2["name"].setValue( "sphere2" )
+
+		self.assertNotEqual( s1["out"].childNamesHash( "/" ), s2["out"].childNamesHash( "/" ) )
+		self.assertEqual( s1["out"].childNamesHash( "/sphere1" ), s2["out"].childNamesHash( "/sphere2" ) )
+
+		self.assertNotEqual( s1["out"].childNames( "/" ), s2["out"].childNames( "/" ) )
+		self.assertTrue( s1["out"].childNames( "/sphere1", _copy=False ).isSame( s2["out"].childNames( "sphere2", _copy=False ) ) )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2012, John Haddon. All rights reserved.
-//  Copyright (c) 2012-2014, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2012-2015, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -35,12 +35,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/tokenizer.hpp"
+#include "boost/bind.hpp"
+
+#include "OpenEXR/half.h"
 
 #include "OpenImageIO/imagecache.h"
 OIIO_NAMESPACE_USING
 
 #include "Gaffer/Context.h"
+#include "Gaffer/StringPlug.h"
 
 #include "GafferImage/ImageReader.h"
 
@@ -84,6 +87,185 @@ static ImageCache *imageCache()
 }
 
 //////////////////////////////////////////////////////////////////////////
+// Utility for converting OIIO::TypeDesc types to IECore::Data types.
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+void oiioParameterListToMetadata( const ImageIOParameterList &paramList, CompoundObject *metadata )
+{
+	CompoundObject::ObjectMap &members = metadata->members();
+	for ( ImageIOParameterList::const_iterator it = paramList.begin(); it != paramList.end(); ++it )
+	{
+		ObjectPtr value = NULL;
+		
+		const TypeDesc &type = it->type();
+		switch ( type.basetype )
+		{
+			case TypeDesc::CHAR :
+			{
+				if ( type.aggregate == TypeDesc::SCALAR )
+				{
+					value = new CharData( *static_cast<const char *>( it->data() ) );
+				}
+				break;
+			}
+			case TypeDesc::UCHAR :
+			{
+				if ( type.aggregate == TypeDesc::SCALAR )
+				{
+					value = new UCharData( *static_cast<const unsigned char *>( it->data() ) );
+				}
+				break;
+			}
+			case TypeDesc::STRING :
+			{
+				if ( type.aggregate == TypeDesc::SCALAR )
+				{
+					value = new StringData( *static_cast<const std::string *>( it->data() ) );
+				}
+				break;
+			}
+			case TypeDesc::USHORT :
+			{
+				if ( type.aggregate == TypeDesc::SCALAR )
+				{
+					value = new UShortData( *static_cast<const unsigned short *>( it->data() ) );
+				}
+				break;
+			}
+			case TypeDesc::SHORT :
+			{
+				if ( type.aggregate == TypeDesc::SCALAR )
+				{
+					value = new ShortData( *static_cast<const short *>( it->data() ) );
+				}
+				break;
+			}
+			case TypeDesc::UINT :
+			{
+				if ( type.aggregate == TypeDesc::SCALAR )
+				{
+					value = new UIntData( *static_cast<const unsigned *>( it->data() ) );
+				}
+				break;
+			}
+			case TypeDesc::INT :
+			{
+				const int *data = static_cast<const int *>( it->data() );
+				switch ( type.aggregate )
+				{
+					case TypeDesc::SCALAR :
+					{
+						value = new IntData( *data );
+						break;
+					}
+					case TypeDesc::VEC2 :
+					{
+						value = new V2iData( Imath::V2i( data[0], data[1] ) );
+						break;
+					}
+					case TypeDesc::VEC3 :
+					{
+						value = new V3iData( Imath::V3i( data[0], data[1], data[2] ) );
+						break;
+					}
+					default :
+					{
+						break;
+					}
+				}
+				break;
+			}
+			case TypeDesc::HALF :
+			{
+				if ( type.aggregate == TypeDesc::SCALAR )
+				{
+					value = new HalfData( *static_cast<const half *>( it->data() ) );
+				}
+				break;
+			}
+			case TypeDesc::FLOAT :
+			{
+				const float *data = static_cast<const float *>( it->data() );
+				switch ( type.aggregate )
+				{
+					case TypeDesc::SCALAR :
+					{
+						value = new FloatData( *data );
+						break;
+					}
+					case TypeDesc::VEC2 :
+					{
+						value = new V2fData( Imath::V2f( data[0], data[1] ) );
+						break;
+					}
+					case TypeDesc::VEC3 :
+					{
+						value = new V3fData( Imath::V3f( data[0], data[1], data[2] ) );
+						break;
+					}
+					case TypeDesc::MATRIX44 :
+					{
+						value = new M44fData( Imath::M44f( data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15] ) );
+						break;
+					}
+					default :
+					{
+						break;
+					}
+				}
+				break;
+			}
+			case TypeDesc::DOUBLE :
+			{
+				const double *data = static_cast<const double *>( it->data() );
+				switch ( type.aggregate )
+				{
+					case TypeDesc::SCALAR :
+					{
+						value = new DoubleData( *data );
+						break;
+					}
+					case TypeDesc::VEC2 :
+					{
+						value = new V2dData( Imath::V2d( data[0], data[1] ) );
+						break;
+					}
+					case TypeDesc::VEC3 :
+					{
+						value = new V3dData( Imath::V3d( data[0], data[1], data[2] ) );
+						break;
+					}
+					case TypeDesc::MATRIX44 :
+					{
+						value = new M44dData( Imath::M44d( data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15] ) );
+						break;
+					}
+					default :
+					{
+						break;
+					}
+				}
+				break;
+			}
+			default :
+			{
+				break;
+			}
+		}
+		
+		if ( value )
+		{
+			members[ it->name().string() ] = value;
+		}
+	}
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
 // ImageReader implementation
 //////////////////////////////////////////////////////////////////////////
 
@@ -96,12 +278,15 @@ ImageReader::ImageReader( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "fileName" ) );
+	addChild( new IntPlug( "refreshCount" ) );
 
 	// disable caching on our outputs, as OIIO is already doing caching for us.
 	for( OutputPlugIterator it( outPlug() ); it!=it.end(); it++ )
 	{
 		(*it)->setFlags( Plug::Cacheable, false );
 	}
+	
+	plugSetSignal().connect( boost::bind( &ImageReader::plugSet, this, ::_1 ) );
 }
 
 ImageReader::~ImageReader()
@@ -118,11 +303,36 @@ const Gaffer::StringPlug *ImageReader::fileNamePlug() const
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
+Gaffer::IntPlug *ImageReader::refreshCountPlug()
+{
+	return getChild<IntPlug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::IntPlug *ImageReader::refreshCountPlug() const
+{
+	return getChild<IntPlug>( g_firstPlugIndex + 1 );
+}
+
 bool ImageReader::enabled() const
 {
 	std::string fileName = fileNamePlug()->getValue();
+	
+	/// \todo We get the spec here, and then we go and get it again in the
+	/// hash()/compute() functions if we turn out to be enabled. This overhead
+	/// is a fundamental problem with the whole enabled() mechanism - we should
+	/// stop using it, and just deal with missing files in the various methods
+	/// that try to access them.
+	/// \todo This is swallowing errors when we should be reporting them via
+	/// exceptions. Fix it.
 	const ImageSpec *spec = imageCache()->imagespec( ustring( fileName.c_str() ) );
-	return (spec != 0) ? ImageNode::enabled() : false;
+	if( spec == 0 )
+	{
+		// clear error on failure to prevent error buffer overflow crash.
+		imageCache()->geterror();
+		return false;
+	}
+	
+	return ImageNode::enabled();
 }
 
 size_t ImageReader::supportedExtensions( std::vector<std::string> &extensions )
@@ -153,7 +363,7 @@ void ImageReader::affects( const Gaffer::Plug *input, AffectedPlugsContainer &ou
 {
 	ImageNode::affects( input, outputs );
 
-	if( input==fileNamePlug() )
+	if( input == fileNamePlug() || input == refreshCountPlug() )
 	{
 		for( ValuePlugIterator it( outPlug() ); it != it.end(); it++ )
 		{
@@ -166,26 +376,7 @@ void ImageReader::hashFormat( const GafferImage::ImagePlug *output, const Gaffer
 {
 	ImageNode::hashFormat( output, context, h );
 	fileNamePlug()->hash( h );
-}
-
-void ImageReader::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	ImageNode::hashChannelNames( output, context, h );
-	fileNamePlug()->hash( h );
-}
-
-void ImageReader::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	ImageNode::hashDataWindow( output, context, h );
-	fileNamePlug()->hash( h );
-}
-
-void ImageReader::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	ImageNode::hashChannelData( output, context, h );
-	h.append( context->get<V2i>( ImagePlug::tileOriginContextName ) );
-	h.append( context->get<std::string>( ImagePlug::channelNameContextName ) );
-	fileNamePlug()->hash( h );
+	refreshCountPlug()->hash( h );
 }
 
 GafferImage::Format ImageReader::computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -193,16 +384,20 @@ GafferImage::Format ImageReader::computeFormat( const Gaffer::Context *context, 
 	std::string fileName = fileNamePlug()->getValue();
 	const ImageSpec *spec = imageCache()->imagespec( ustring( fileName.c_str() ) );
 
-	GafferImage::Format format(
+	return GafferImage::Format(
 		Imath::Box2i(
 			Imath::V2i( spec->full_x, spec->full_y ),
 			Imath::V2i( spec->full_x + spec->full_width - 1, spec->full_y + spec->full_height - 1 )
 		),
-		1.
+		spec->get_float_attribute( "PixelAspectRatio", 1.0f )
 	);
-	/// \todo This shouldn't really be here. Compute methods shouldn't really have side effects and the
-	/// registerFormat() method is not only slow but it's also not threadsafe.
-	return GafferImage::Format::registerFormat( format );
+}
+
+void ImageReader::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ImageNode::hashDataWindow( output, context, h );
+	fileNamePlug()->hash( h );
+	refreshCountPlug()->hash( h );
 }
 
 Imath::Box2i ImageReader::computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -216,6 +411,31 @@ Imath::Box2i ImageReader::computeDataWindow( const Gaffer::Context *context, con
 	return format.yDownToFormatSpace( dataWindow );
 }
 
+void ImageReader::hashMetadata( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ImageNode::hashMetadata( output, context, h );
+	fileNamePlug()->hash( h );
+	refreshCountPlug()->hash( h );
+}
+
+IECore::ConstCompoundObjectPtr ImageReader::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	std::string fileName = fileNamePlug()->getValue();
+	const ImageSpec *spec = imageCache()->imagespec( ustring( fileName.c_str() ) );
+	
+	CompoundObjectPtr result = new CompoundObject;
+	oiioParameterListToMetadata( spec->extra_attribs, result.get() );
+	
+	return result;
+}
+
+void ImageReader::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ImageNode::hashChannelNames( output, context, h );
+	fileNamePlug()->hash( h );
+	refreshCountPlug()->hash( h );
+}
+
 IECore::ConstStringVectorDataPtr ImageReader::computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	std::string fileName = fileNamePlug()->getValue();
@@ -223,6 +443,15 @@ IECore::ConstStringVectorDataPtr ImageReader::computeChannelNames( const Gaffer:
 	StringVectorDataPtr result = new StringVectorData();
 	result->writable() = spec->channelnames;
 	return result;
+}
+
+void ImageReader::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ImageNode::hashChannelData( output, context, h );
+	h.append( context->get<V2i>( ImagePlug::tileOriginContextName ) );
+	h.append( context->get<std::string>( ImagePlug::channelNameContextName ) );
+	fileNamePlug()->hash( h );
+	refreshCountPlug()->hash( h );
 }
 
 IECore::ConstFloatVectorDataPtr ImageReader::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -269,3 +498,12 @@ IECore::ConstFloatVectorDataPtr ImageReader::computeChannelData( const std::stri
 	return resultData;
 }
 
+void ImageReader::plugSet( Gaffer::Plug *plug )
+{
+	// this clears the cache every time the refresh count is updated, so you don't get entries
+	// from old files hanging around.
+	if( plug == refreshCountPlug() )
+	{
+		imageCache()->invalidate_all( true );
+	}
+}

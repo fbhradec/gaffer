@@ -35,6 +35,7 @@
 ##########################################################################
 
 import Gaffer
+import GafferTest
 import GafferUI
 import GafferUITest
 
@@ -57,6 +58,103 @@ class PlugLayoutTest( GafferUITest.TestCase ) :
 		self.assertTrue( w2 is not None )
 		self.assertTrue( w2 is w )
 		self.assertTrue( w2.getPlug().isSame( n["b"] ) )
+
+	def testLayoutOrder( self ) :
+
+		n = Gaffer.Node()
+		n["user"]["a"] = Gaffer.IntPlug()
+		n["user"]["b"] = Gaffer.IntPlug()
+		n["user"]["c"] = Gaffer.IntPlug()
+
+		self.assertEqual(
+			GafferUI.PlugLayout.layoutOrder( n["user"] ),
+			[ n["user"]["a"], n["user"]["b"], n["user"]["c"] ],
+		)
+
+		Gaffer.Metadata.registerPlugValue( n["user"]["a"], "layout:index", 3 )
+		Gaffer.Metadata.registerPlugValue( n["user"]["b"], "layout:index", 2 )
+		Gaffer.Metadata.registerPlugValue( n["user"]["c"], "layout:index", 1 )
+
+		self.assertEqual(
+			GafferUI.PlugLayout.layoutOrder( n["user"] ),
+			[ n["user"]["c"], n["user"]["b"], n["user"]["a"] ],
+		)
+
+	class CustomWidget( GafferUI.Widget ) :
+
+		def __init__( self, node ) :
+
+			GafferUI.Widget.__init__( self, GafferUI.Label( "Custom Widget" ) )
+
+			self.node = node
+
+	def testCustomWidgets( self ) :
+
+		n = Gaffer.Node()
+		Gaffer.Metadata.registerNodeValue( n, "layout:customWidget:test:widgetType", "GafferUITest.PlugLayoutTest.CustomWidget" )
+
+		p = GafferUI.PlugLayout( n )
+
+		self.assertTrue( isinstance( p.customWidget( "test", lazy = False ), self.CustomWidget ) )
+		self.assertTrue( p.customWidget( "test" ).node.isSame( n ) )
+
+	def testLazyBuilding( self ) :
+
+		n = Gaffer.Node()
+		n["a"] = Gaffer.IntPlug()
+
+		with GafferUI.Window() as window :
+			plugLayout = GafferUI.PlugLayout( n )
+
+		self.assertTrue( plugLayout.plugValueWidget( n["a"], lazy = True ) is None )
+
+		window.setVisible( True )
+
+		self.assertTrue( plugLayout.plugValueWidget( n["a"], lazy = True ) is not None )
+
+	def testSectionQueries( self ) :
+
+		n = Gaffer.Node()
+		n["user"]["a"] = Gaffer.IntPlug()
+		n["user"]["b"] = Gaffer.IntPlug()
+		n["user"]["c"] = Gaffer.IntPlug()
+
+		self.assertEqual( GafferUI.PlugLayout.layoutSections( n["user"] ), [ "" ] )
+
+		Gaffer.Metadata.registerPlugValue( n["user"]["a"], "layout:section", "A" )
+		Gaffer.Metadata.registerPlugValue( n["user"]["b"], "layout:section", "B" )
+		Gaffer.Metadata.registerPlugValue( n["user"]["c"], "layout:section", "C" )
+
+		self.assertEqual( GafferUI.PlugLayout.layoutSections( n["user"] ), [ "A", "B", "C" ] )
+
+		Gaffer.Metadata.registerPlugValue( n["user"]["a"], "layout:index", 3 )
+		self.assertEqual( GafferUI.PlugLayout.layoutSections( n["user"] ), [ "B", "C", "A" ] )
+
+	def testLayoutOrderSectionArgument( self ) :
+
+		n = Gaffer.Node()
+		n["user"]["a"] = Gaffer.IntPlug()
+		n["user"]["b"] = Gaffer.IntPlug()
+		n["user"]["c"] = Gaffer.IntPlug()
+
+		self.assertEqual(
+			GafferUI.PlugLayout.layoutOrder( n["user"], section = "" ),
+			[ n["user"]["a"], n["user"]["b"], n["user"]["c"] ],
+		)
+
+		Gaffer.Metadata.registerPlugValue( n["user"]["a"], "layout:section", "AB" )
+		Gaffer.Metadata.registerPlugValue( n["user"]["b"], "layout:section", "AB" )
+		Gaffer.Metadata.registerPlugValue( n["user"]["c"], "layout:section", "C" )
+
+		self.assertEqual(
+			GafferUI.PlugLayout.layoutOrder( n["user"], section = "AB" ),
+			[ n["user"]["a"], n["user"]["b"] ],
+		)
+
+		self.assertEqual(
+			GafferUI.PlugLayout.layoutOrder( n["user"], section = "C" ),
+			[ n["user"]["c"] ],
+		)
 
 if __name__ == "__main__":
 	unittest.main()

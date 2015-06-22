@@ -36,15 +36,13 @@
 
 #include "boost/python.hpp"
 
-#include "IECore/SimpleTypedData.h"
-#include "IECore/DespatchTypedData.h"
-#include "IECore/TypeTraits.h"
 #include "IECorePython/RefCountedBinding.h"
 
 #include "Gaffer/Context.h"
 
 #include "GafferBindings/SignalBinding.h"
 #include "GafferBindings/ContextBinding.h"
+#include "GafferBindings/DataBinding.h"
 
 using namespace boost::python;
 using namespace GafferBindings;
@@ -53,17 +51,6 @@ using namespace IECore;
 
 namespace
 {
-
-struct SimpleTypedDataGetter
-{
-	typedef object ReturnType;
-
-	template<typename T>
-	object operator()( typename T::Ptr data )
-	{
-		return object( data->readable() );
-	}
-};
 
 // In the C++ API, get() returns "const Data *". Because python has no idea of constness,
 // by default we return a copy from the bindings because we don't want the unwitting Python
@@ -75,37 +62,23 @@ struct SimpleTypedDataGetter
 object get( Context &c, const IECore::InternedString &name, bool copy )
 {
 	ConstDataPtr d = c.get<Data>( name );
-	try
-	{
-		return despatchTypedData<SimpleTypedDataGetter, TypeTraits::IsSimpleTypedData>( const_cast<Data *>( d.get() ) );
-	}
-	catch( const InvalidArgumentException &e )
-	{
-		return object( copy ? d->copy() : boost::const_pointer_cast<Data>( d ) );
-	}
+	return dataToPython( d.get(), copy );
 }
 
 object getWithDefault( Context &c, const IECore::InternedString &name, object defaultValue, bool copy )
 {
 	ConstDataPtr d = c.get<Data>( name, NULL );
-	if( !d )
-	{
-		return defaultValue;
-	}
-
-	try
-	{
-		return despatchTypedData<SimpleTypedDataGetter, TypeTraits::IsSimpleTypedData>( const_cast<Data *>( d.get() ) );
-	}
-	catch( const InvalidArgumentException &e )
-	{
-		return object( copy ? d->copy() : boost::const_pointer_cast<Data>( d ) );
-	}
+	return dataToPython( d.get(), copy, defaultValue );
 }
 
 object getItem( Context &c, const IECore::InternedString &name )
 {
 	return get( c, name, /* copy = */ true );
+}
+
+bool contains( Context &c, const IECore::InternedString &name )
+{
+	return c.get<Data>( name, NULL );
 }
 
 void delItem( Context &context, const IECore::InternedString &name )
@@ -160,6 +133,15 @@ void GafferBindings::bindContext()
 		.value( "Borrowed", Context::Borrowed )
 	;
 
+	enum_<Context::Substitutions>( "Substitutions" )
+		.value( "NoSubstitutions", Context::NoSubstitutions )
+		.value( "FrameSubstitutions", Context::FrameSubstitutions )
+		.value( "VariableSubstitutions", Context::VariableSubstitutions )
+		.value( "EscapeSubstitutions", Context::EscapeSubstitutions )
+		.value( "TildeSubstitutions", Context::TildeSubstitutions )
+		.value( "AllSubstitutions", Context::AllSubstitutions )
+	;
+
 	contextClass
 		.def( init<>() )
 		.def( init<const Context &, Context::Ownership>( ( arg( "other" ), arg( "ownership" ) = Context::Copied ) ) )
@@ -177,6 +159,7 @@ void GafferBindings::bindContext()
 		.def( "get", &get, arg( "_copy" ) = true )
 		.def( "get", &getWithDefault, ( arg( "defaultValue" ), arg( "_copy" ) = true ) )
 		.def( "__getitem__", &getItem )
+		.def( "__contains__", &contains )
 		.def( "remove", &Context::remove )
 		.def( "__delitem__", &delItem )
 		.def( "changed", &Context::changed )
@@ -186,12 +169,13 @@ void GafferBindings::bindContext()
 		.def( "hash", &Context::hash )
 		.def( self == self )
 		.def( self != self )
-		.def( "substitute", &Context::substitute )
+		.def( "substitute", &Context::substitute, ( arg( "input" ), arg( "substitutions" ) = Context::AllSubstitutions ) )
+		.def( "substitutions", &Context::substitutions ).staticmethod( "substitutions" )
 		.def( "hasSubstitutions", &Context::hasSubstitutions ).staticmethod( "hasSubstitutions" )
 		.def( "current", &current ).staticmethod( "current" )
 		;
 
-	SignalBinder<Context::ChangedSignal, DefaultSignalCaller<Context::ChangedSignal>, ChangedSlotCaller>::bind( "ChangedSignal" );
+	SignalClass<Context::ChangedSignal, DefaultSignalCaller<Context::ChangedSignal>, ChangedSlotCaller>( "ChangedSignal" );
 
 	class_<Context::Scope, boost::noncopyable>( "_Scope", init<Context *>() )
 	;

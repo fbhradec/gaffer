@@ -45,6 +45,7 @@
 #include "Gaffer/Plug.h"
 #include "Gaffer/UndoContext.h"
 #include "Gaffer/ScriptNode.h"
+#include "Gaffer/Metadata.h"
 
 #include "GafferUI/StandardNodule.h"
 #include "GafferUI/Style.h"
@@ -52,13 +53,16 @@
 #include "GafferUI/NodeGadget.h"
 #include "GafferUI/Pointer.h"
 
-using namespace GafferUI;
-using namespace Imath;
 using namespace std;
+using namespace Imath;
+using namespace Gaffer;
+using namespace GafferUI;
 
 IE_CORE_DEFINERUNTIMETYPED( StandardNodule );
 
 Nodule::NoduleTypeDescription<StandardNodule> StandardNodule::g_noduleTypeDescription( Gaffer::Plug::staticTypeId() );
+
+static IECore::InternedString g_colorKey( "nodule:color" );
 
 StandardNodule::StandardNodule( Gaffer::PlugPtr plug )
 	:	Nodule( plug ), m_labelVisible( false ), m_draggingConnection( false )
@@ -73,6 +77,10 @@ StandardNodule::StandardNodule( Gaffer::PlugPtr plug )
 	dragEndSignal().connect( boost::bind( &StandardNodule::dragEnd, this, ::_1, ::_2 ) );
 
 	dropSignal().connect( boost::bind( &StandardNodule::drop, this, ::_1, ::_2 ) );
+
+	Metadata::plugValueChangedSignal().connect( boost::bind( &StandardNodule::plugMetadataChanged, this, ::_1, ::_2, ::_3, ::_4 ) );
+
+	updateUserColor();
 }
 
 StandardNodule::~StandardNodule()
@@ -86,7 +94,7 @@ void StandardNodule::setLabelVisible( bool labelVisible )
 		return;
 	}
 	m_labelVisible = labelVisible;
-	renderRequestSignal()( this );
+ 	requestRender();
 }
 
 bool StandardNodule::getLabelVisible() const
@@ -97,6 +105,14 @@ bool StandardNodule::getLabelVisible() const
 Imath::Box3f StandardNodule::bound() const
 {
 	return Box3f( V3f( -0.5, -0.5, 0 ), V3f( 0.5, 0.5, 0 ) );
+}
+
+void StandardNodule::updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent )
+{
+	m_dragPosition = position;
+	m_dragTangent = tangent;
+	m_draggingConnection = true;
+ 	requestRender();
 }
 
 void StandardNodule::doRender( const Style *style ) const
@@ -123,7 +139,7 @@ void StandardNodule::doRender( const Style *style ) const
 		radius = 1.0f;
 	}
 
-	style->renderNodule( radius, state );
+	style->renderNodule( radius, state, m_userColor.get_ptr() );
 
 	if( m_labelVisible && !IECoreGL::Selector::currentSelector() )
 	{
@@ -204,7 +220,7 @@ bool StandardNodule::buttonPress( GadgetPtr gadget, const ButtonEvent &event )
 
 IECore::RunTimeTypedPtr StandardNodule::dragBegin( GadgetPtr gadget, const ButtonEvent &event )
 {
-	renderRequestSignal()( this );
+ 	requestRender();
 	if( event.buttons == ButtonEvent::Middle )
 	{
 		GafferUI::Pointer::setCurrent( "plug" );
@@ -226,9 +242,7 @@ bool StandardNodule::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 
 	if( event.sourceGadget == this )
 	{
-		m_draggingConnection = true;
-		m_dragPosition = event.line.p0;
-		m_dragTangent = V3f( 0 );
+		updateDragEndPoint( event.line.p0, V3f( 0 ) );
 		return true;
 	}
 
@@ -249,11 +263,9 @@ bool StandardNodule::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 			tangent = nodeGadget->noduleTangent( this );
 		}
 
-		if( StandardNodule *sourceNodule = IECore::runTimeCast<StandardNodule>( event.sourceGadget.get() ) )
+		if( Nodule *sourceNodule = IECore::runTimeCast<Nodule>( event.sourceGadget.get() ) )
 		{
-			sourceNodule->m_dragPosition = centre;
-			sourceNodule->m_dragTangent = tangent;
-			sourceNodule->m_draggingConnection = true;
+			sourceNodule->updateDragEndPoint( centre, tangent );
 		}
 		else if( ConnectionGadget *sourceConnection = IECore::runTimeCast<ConnectionGadget>( event.sourceGadget.get() ) )
 		{
@@ -268,7 +280,7 @@ bool StandardNodule::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 			setCompatibleLabelsVisible( event, true );
 		}
 
-		renderRequestSignal()( this );
+ 		requestRender();
 		return true;
 	}
 
@@ -278,7 +290,7 @@ bool StandardNodule::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 bool StandardNodule::dragMove( GadgetPtr gadget, const DragDropEvent &event )
 {
 	m_dragPosition = event.line.p0;
-	renderRequestSignal()( this );
+ 	requestRender();
 	return true;
 }
 
@@ -308,12 +320,12 @@ bool StandardNodule::dragLeave( GadgetPtr gadget, const DragDropEvent &event )
 			setCompatibleLabelsVisible( event, false );
 		}
 	}
-	else if( !event.destinationGadget || !event.destinationGadget->isInstanceOf( Nodule::staticTypeId() ) )
+	else if( !event.destinationGadget )
 	{
 		m_draggingConnection = false;
 	}
 
-	renderRequestSignal()( this );
+ 	requestRender();
 	return true;
 }
 
@@ -406,4 +418,44 @@ void StandardNodule::setCompatibleLabelsVisible( const DragDropEvent &event, boo
 			(*it)->setLabelVisible( visible );
 		}
 	}
+}
+
+void StandardNodule::plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
+{
+	if( plug && plug != this->plug() )
+	{
+		return;
+	}
+
+	const Node *node = this->plug()->node();
+	if(
+		key != g_colorKey ||
+		!node->isInstanceOf( nodeTypeId ) ||
+		!match( this->plug()->relativeName( node ), plugPath )
+	)
+	{
+		return;
+	}
+
+	if( updateUserColor() )
+	{
+ 		requestRender();
+	}
+}
+
+bool StandardNodule::updateUserColor()
+{
+	boost::optional<Color3f> c;
+	if( IECore::ConstColor3fDataPtr d = Metadata::plugValue<IECore::Color3fData>( plug(), g_colorKey ) )
+	{
+		c = d->readable();
+	}
+
+	if( c == m_userColor )
+	{
+		return false;
+	}
+
+	m_userColor = c;
+	return true;
 }

@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2013-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -34,13 +34,15 @@
 #
 ##########################################################################
 
+import os
 import unittest
 
 import IECore
-import GafferImage
-import os
 
-class MergeTest( unittest.TestCase ) :
+import GafferTest
+import GafferImage
+
+class MergeTest( GafferTest.TestCase ) :
 
 	rPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/redWithDataWindow.100x100.exr" )
 	gPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/greenWithDataWindow.100x100.exr" )
@@ -62,7 +64,7 @@ class MergeTest( unittest.TestCase ) :
 		# Test to see if the hash changes.
 		##########################################
 		merge = GafferImage.Merge()
-		merge["operation"].setValue(8) # 8 is the Enum value of the over operation.
+		merge["operation"].setValue( GafferImage.Merge.Operation.Over )
 
 		merge["in"].setInput(r1["out"])
 		merge["in1"].setInput(r2["out"])
@@ -81,7 +83,7 @@ class MergeTest( unittest.TestCase ) :
 		# input plugs used are not.
 		##########################################
 		merge = GafferImage.Merge()
-		merge["operation"].setValue(8) # 8 is the Enum value of the over operation.
+		merge["operation"].setValue( GafferImage.Merge.Operation.Over )
 
 		expectedHash = h1
 
@@ -92,7 +94,7 @@ class MergeTest( unittest.TestCase ) :
 		merge["in3"].setInput(r2["out"])
 
 		# but then disconnect two so that the result should still be the same...
-		merge["in"].setInput( None )
+		merge["in1"].setInput( None )
 		merge["in2"].setInput( None )
 		h1 = merge["out"].image().hash()
 
@@ -108,7 +110,7 @@ class MergeTest( unittest.TestCase ) :
 		# through if only the first input is connected.
 		##########################################
 		merge = GafferImage.Merge()
-		merge["operation"].setValue(8) # 8 is the Enum value of the over operation.
+		merge["operation"].setValue( GafferImage.Merge.Operation.Over )
 
 		expectedHash = r1["out"].image().hash()
 		merge["in"].setInput(r1["out"])
@@ -137,7 +139,7 @@ class MergeTest( unittest.TestCase ) :
 		b["fileName"].setValue( self.bPath )
 
 		merge = GafferImage.Merge()
-		merge["operation"].setValue(8) # 8 is the Enum value of the over operation.
+		merge["operation"].setValue( GafferImage.Merge.Operation.Over )
 		merge["in"].setInput(r["out"])
 		merge["in1"].setInput(g["out"])
 		merge["in2"].setInput(b["out"])
@@ -149,6 +151,7 @@ class MergeTest( unittest.TestCase ) :
 
 	# Overlay a red, green and blue tile of different data window sizes and check the data window is expanded on the result and looks as we expect.
 	def testOverRGBAonRGB( self ) :
+
 		c = GafferImage.ImageReader()
 		c["fileName"].setValue( self.checkerPath )
 
@@ -162,7 +165,7 @@ class MergeTest( unittest.TestCase ) :
 		b["fileName"].setValue( self.bPath )
 
 		merge = GafferImage.Merge()
-		merge["operation"].setValue(8) # 8 is the Enum value of the over operation.
+		merge["operation"].setValue( GafferImage.Merge.Operation.Over )
 		merge["in"].setInput(c["out"])
 		merge["in1"].setInput(r["out"])
 		merge["in2"].setInput(g["out"])
@@ -173,6 +176,70 @@ class MergeTest( unittest.TestCase ) :
 
 		self.assertTrue( not IECore.ImageDiffOp()( imageA = expected, imageB = mergeResult, skipMissingChannels = False, maxError = 0.001 ).value )
 
+	def testAffects( self ) :
+
+		c1 = GafferImage.Constant()
+		c2 = GafferImage.Constant()
+
+		m = GafferImage.Merge()
+		m["in"].setInput( c1["out"] )
+		m["in1"].setInput( c2["out"] )
+
+		cs = GafferTest.CapturingSlot( m.plugDirtiedSignal() )
+
+		c1["color"]["r"].setValue( 0.1 )
+
+		self.assertEqual( len( cs ), 4 )
+		self.assertTrue( cs[0][0].isSame( m["in"]["channelData"] ) )
+		self.assertTrue( cs[1][0].isSame( m["in"] ) )
+		self.assertTrue( cs[2][0].isSame( m["out"]["channelData"] ) )
+		self.assertTrue( cs[3][0].isSame( m["out"] ) )
+
+		del cs[:]
+
+		c2["color"]["g"].setValue( 0.2 )
+
+		self.assertEqual( len( cs ), 4 )
+		self.assertTrue( cs[0][0].isSame( m["in1"]["channelData"] ) )
+		self.assertTrue( cs[1][0].isSame( m["in1"] ) )
+		self.assertTrue( cs[2][0].isSame( m["out"]["channelData"] ) )
+		self.assertTrue( cs[3][0].isSame( m["out"] ) )
+
+	def testEnabledAffects( self ) :
+
+		m = GafferImage.Merge()
+
+		affected = m.affects( m["enabled"] )
+		self.assertTrue( m["out"]["channelData"] in affected )
+
+	def testPassThrough( self ) :
+
+		c = GafferImage.Constant()
+		f = GafferImage.Reformat()
+		f["in"].setInput( c["out"] )
+		f["format"].setValue( GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 10 ) ), 1 ) )
+		d = GafferImage.ImageMetadata()
+		d["metadata"].addMember( "comment", IECore.StringData( "reformated and metadata updated" ) )
+		d["in"].setInput( f["out"] )
+		
+		m = GafferImage.Merge()
+		m["in"].setInput( c["out"] )
+		m["in1"].setInput( d["out"] )
+
+		self.assertEqual( m["out"]["format"].hash(), c["out"]["format"].hash() )
+		self.assertEqual( m["out"]["metadata"].hash(), c["out"]["metadata"].hash() )
+		
+		self.assertEqual( m["out"]["format"].getValue(), c["out"]["format"].getValue() )
+		self.assertEqual( m["out"]["metadata"].getValue(), c["out"]["metadata"].getValue() )
+		
+		m["in"].setInput( d["out"] )
+		m["in1"].setInput( c["out"] )
+		
+		self.assertEqual( m["out"]["format"].hash(), d["out"]["format"].hash() )
+		self.assertEqual( m["out"]["metadata"].hash(), d["out"]["metadata"].hash() )
+		
+		self.assertEqual( m["out"]["format"].getValue(), d["out"]["format"].getValue() )
+		self.assertEqual( m["out"]["metadata"].getValue(), d["out"]["metadata"].getValue() )
 
 if __name__ == "__main__":
 	unittest.main()

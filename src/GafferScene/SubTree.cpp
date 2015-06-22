@@ -35,11 +35,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <set>
+#include "boost/algorithm/string/predicate.hpp"
 
-#include "boost/tokenizer.hpp"
-
-#include "Gaffer/Context.h"
+#include "Gaffer/StringPlug.h"
 
 #include "GafferScene/SubTree.h"
 #include "GafferScene/PathMatcherData.h"
@@ -59,6 +57,10 @@ SubTree::SubTree( const std::string &name )
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "root", Plug::In, "" ) );
 	addChild( new BoolPlug( "includeRoot", Plug::In, false ) );
+
+	// Fast pass-throughs for things we don't modify.
+	outPlug()->globalsPlug()->setInput( inPlug()->globalsPlug() );
+	outPlug()->setNamesPlug()->setInput( inPlug()->setNamesPlug() );
 }
 
 SubTree::~SubTree()
@@ -95,10 +97,12 @@ void SubTree::affects( const Plug *input, AffectedPlugsContainer &outputs ) cons
 	}
 	else if( input == rootPlug() || input == includeRootPlug() )
 	{
-		for( ValuePlugIterator it( outPlug() ); it != it.end(); it++ )
-		{
-			outputs.push_back( it->get() );
-		}
+		outputs.push_back( outPlug()->boundPlug() );
+		outputs.push_back( outPlug()->transformPlug() );
+		outputs.push_back( outPlug()->attributesPlug() );
+		outputs.push_back( outPlug()->objectPlug() );
+		outputs.push_back( outPlug()->childNamesPlug() );
+		outputs.push_back( outPlug()->setPlug() );
 	}
 
 }
@@ -210,78 +214,60 @@ IECore::ConstInternedStringVectorDataPtr SubTree::computeChildNames( const Scene
 	}
 }
 
-void SubTree::hashGlobals( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
+void SubTree::hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	SceneProcessor::hashGlobals( context, parent, h );
-	inPlug()->globalsPlug()->hash( h );
+	SceneProcessor::hashSet( setName, context, parent, h );
+	inPlug()->setPlug()->hash( h );
 	rootPlug()->hash( h );
 	includeRootPlug()->hash( h );
 }
 
-IECore::ConstCompoundObjectPtr SubTree::computeGlobals( const Gaffer::Context *context, const ScenePlug *parent ) const
+GafferScene::ConstPathMatcherDataPtr SubTree::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	ConstCompoundObjectPtr inputGlobals = inPlug()->globalsPlug()->getValue();
-	const CompoundData *inputSets = inputGlobals->member<CompoundData>( "gaffer:sets" );
-	if( !inputSets )
+	ConstPathMatcherDataPtr inputSetData = inPlug()->setPlug()->getValue();
+	const PathMatcher &inputSet = inputSetData->readable();
+	if( inputSet.isEmpty() )
 	{
-		return inputGlobals;
+		return inputSetData;
 	}
 
-	CompoundObjectPtr outputGlobals = inputGlobals->copy();
-	CompoundDataPtr outputSets = new CompoundData;
-	outputGlobals->members()["gaffer:sets"] = outputSets;
+	const std::string rootString = rootPlug()->getValue();
+	ScenePlug::ScenePath root;
+	ScenePlug::stringToPath( rootString, root );
 
-	std::string root = rootPlug()->getValue();
-	if( !root.size() || root[root.size()-1] != '/' )
-	{
-		root += "/";
-	}
-
-	size_t prefixSize = root.size() - 1; // number of characters to remove from front of each declaration
+	size_t prefixSize = root.size(); // number of names to remove from front of each path
 	if( includeRootPlug()->getValue() && prefixSize )
 	{
-		size_t lastSlashButOne = root.rfind( "/", prefixSize-1 );
-		if( lastSlashButOne != string::npos )
-		{
-			prefixSize = lastSlashButOne;
-		}
+		prefixSize--;
 	}
 
-	for( CompoundDataMap::const_iterator it = inputSets->readable().begin(), eIt = inputSets->readable().end(); it != eIt; ++it )
+	/// \todo This could be more efficient if PathMatcher exposed the internal nodes,
+	/// and allowed sharing between matchers. Then we could just pick the subtree within
+	/// the matcher that we wanted.
+
+	PathMatcherDataPtr outputSetData = new PathMatcherData;
+	PathMatcher &outputSet = outputSetData->writable();
+
+	ScenePlug::ScenePath outputPath;
+	for( PathMatcher::Iterator pIt = inputSet.begin(), peIt = inputSet.end(); pIt != peIt; ++pIt )
 	{
-		/// \todo This could be more efficient if PathMatcher exposed the internal nodes,
-		/// and allowed sharing between matchers. Then we could just pick the subtree within
-		/// the matcher that we wanted.
-		const PathMatcher &inputSet = static_cast<const PathMatcherData *>( it->second.get() )->readable();
-		PathMatcher &outputSet = outputSets->member<PathMatcherData>( it->first, /* throwExceptions = */ false, /* createIfMissing = */ true )->writable();
-
-		vector<string> inputPaths;
-		inputSet.paths( inputPaths );
-		for( vector<string>::const_iterator pIt = inputPaths.begin(), peIt = inputPaths.end(); pIt != peIt; ++pIt )
+		const ScenePlug::ScenePath &inputPath = *pIt;
+		if( boost::starts_with( inputPath, root ) )
 		{
-			const string &inputPath = *pIt;
-			if( inputPath.compare( 0, root.size(), root ) == 0 )
-			{
-				std::string outputPath( inputPath, prefixSize );
-				outputSet.addPath( outputPath );
-			}
+			outputPath.assign( inputPath.begin() + prefixSize, inputPath.end() );
+			outputSet.addPath( outputPath );
 		}
 	}
 
-	return outputGlobals;
+	return outputSetData;
 }
 
 SceneNode::ScenePath SubTree::sourcePath( const ScenePath &outputPath, bool &createRoot ) const
 {
-	typedef boost::tokenizer<boost::char_separator<char> > Tokenizer;
 	/// \todo We should introduce a plug type which stores its values as a ScenePath directly.
 	string rootAsString = rootPlug()->getValue();
-	Tokenizer rootTokenizer( rootAsString, boost::char_separator<char>( "/" ) );
 	ScenePath result;
-	for( Tokenizer::const_iterator it = rootTokenizer.begin(), eIt = rootTokenizer.end(); it != eIt; it++ )
-	{
-		result.push_back( *it );
-	}
+	ScenePlug::stringToPath( rootAsString, result );
 
 	createRoot = false;
 	if( result.size() && includeRootPlug()->getValue() )

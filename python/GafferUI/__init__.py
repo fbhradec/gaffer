@@ -1,7 +1,7 @@
 ##########################################################################
 #
 #  Copyright (c) 2011-2012, John Haddon. All rights reserved.
-#  Copyright (c) 2011-2014, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2011-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -86,6 +86,38 @@ def _qtImport( name, lazy=False ) :
 		return getattr( qtModule, name )
 
 ##########################################################################
+# Function to return the C++ address of a wrapped Qt object. This can
+# be useful if needing to implement part of the UI in C++ and the rest
+# in Python.
+##########################################################################
+
+def _qtAddress( o ) :
+
+	global __qtModuleName
+	if "PyQt" in __qtModuleName :
+		import sip
+		return sip.unwrapinstance( o )
+	else :
+		import shiboken
+		return shiboken.getCppPointer( o )[0]
+
+##########################################################################
+# Function to return a wrapped Qt object from the given C++ address.
+# This can be useful if needing to implement part of the UI in C++ and
+# the rest in Python.
+##########################################################################
+
+def _qtObject( address, type ) :
+
+	global __qtModuleName
+	if "PyQt" in __qtModuleName :
+		import sip
+		return sip.wrapinstance( address, type )
+	else :
+		import shiboken
+		return shiboken.wrapInstance( address, type )
+
+##########################################################################
 # now import our actual functionality
 ##########################################################################
 
@@ -100,6 +132,7 @@ from _GafferUI import *
 
 from Enums import *
 from Widget import Widget
+from LazyMethod import LazyMethod
 from Menu import Menu
 from ContainerWidget import ContainerWidget
 from Window import Window
@@ -138,6 +171,7 @@ from SelectionMenu import SelectionMenu
 from PathFilterWidget import PathFilterWidget
 from CompoundPathFilterWidget import CompoundPathFilterWidget
 from InfoPathFilterWidget import InfoPathFilterWidget
+from MatchPatternPathFilterWidget import MatchPatternPathFilterWidget
 from BusyWidget import BusyWidget
 from NumericSlider import NumericSlider
 from ColorChooser import ColorChooser
@@ -162,11 +196,7 @@ from CompoundPathPreview import CompoundPathPreview
 from DeferredPathPreview import DeferredPathPreview
 from InfoPathPreview import InfoPathPreview
 from HeaderPathPreview import HeaderPathPreview
-from FileIndexedIOPathPreview import FileIndexedIOPathPreview
 from DataPathPreview import DataPathPreview
-from AttributeCachePathPreview import AttributeCachePathPreview
-from ImageReaderPathPreview import ImageReaderPathPreview
-from OpPathPreview import OpPathPreview
 
 # then stuff specific to graph uis
 
@@ -211,16 +241,18 @@ from Timeline import Timeline
 from MultiLineStringPlugValueWidget import MultiLineStringPlugValueWidget
 from CompoundPlugValueWidget import CompoundPlugValueWidget
 from EnumPlugValueWidget import EnumPlugValueWidget
+from PresetsPlugValueWidget import PresetsPlugValueWidget
 from GraphComponentBrowserMode import GraphComponentBrowserMode
 from ToolPlugValueWidget import ToolPlugValueWidget
 from LabelPlugValueWidget import LabelPlugValueWidget
 from CompoundDataPlugValueWidget import CompoundDataPlugValueWidget
 from SectionedCompoundDataPlugValueWidget import SectionedCompoundDataPlugValueWidget
+from LayoutPlugValueWidget import LayoutPlugValueWidget
 import ScriptNodeUI
 import DispatcherUI
+from DispatcherUI import DispatcherWindow
 import LocalDispatcherUI
 import ExecutableNodeUI
-from TransformPlugValueWidget import TransformPlugValueWidget
 from IncrementingPlugValueWidget import IncrementingPlugValueWidget
 from SectionedCompoundPlugValueWidget import SectionedCompoundPlugValueWidget
 from UserPlugValueWidget import UserPlugValueWidget
@@ -230,40 +262,27 @@ from RampPlugValueWidget import RampPlugValueWidget
 from NodeFinderDialogue import NodeFinderDialogue
 from ConnectionPlugValueWidget import ConnectionPlugValueWidget
 import View3DToolbar
+import ViewUI
 from Playback import Playback
 from UIEditor import UIEditor
+import GraphBookmarksUI
 
-# then stuff specific to parameterised objects
+# and then specific node uis
 
-from OpDialogue import OpDialogue
-from ParameterisedHolderNodeUI import ParameterisedHolderNodeUI
-from ParameterValueWidget import ParameterValueWidget
-from PresetsOnlyParameterValueWidget import PresetsOnlyParameterValueWidget
-from CompoundParameterValueWidget import CompoundParameterValueWidget
-from PathParameterValueWidget import PathParameterValueWidget
-from DirNameParameterValueWidget import DirNameParameterValueWidget
-from PathVectorParameterValueWidget import PathVectorParameterValueWidget
-from StringParameterValueWidget import StringParameterValueWidget
-from CompoundVectorParameterValueWidget import CompoundVectorParameterValueWidget
-from FileSequenceParameterValueWidget import FileSequenceParameterValueWidget
-from DateTimeParameterValueWidget import DateTimeParameterValueWidget
-from ClassParameterValueWidget import ClassParameterValueWidget
-from FileSequenceVectorParameterValueWidget import FileSequenceVectorParameterValueWidget
-from ClassVectorParameterValueWidget import ClassVectorParameterValueWidget
-from TimeCodeParameterValueWidget import TimeCodeParameterValueWidget
-from ToolParameterValueWidget import ToolParameterValueWidget
-import ParameterPresets
-
-# and specific node uis
-
-import ObjectReaderUI
-import ObjectWriterUI
+import DependencyNodeUI
+import ComputeNodeUI
 import RandomUI
 import ExpressionUI
 import BoxUI
 import ReferenceUI
 import BackdropUI
 import SystemCommandUI
+import DotUI
+import TaskListUI
+import SubGraphUI
+import SwitchUI
+import ContextVariablesUI
+import TimeWarpUI
 
 # backwards compatibility
 ## \todo Remove me

@@ -35,6 +35,7 @@
 #
 ##########################################################################
 
+import os
 import unittest
 
 import IECore
@@ -45,7 +46,7 @@ import GafferScene
 
 class SceneTestCase( GafferTest.TestCase ) :
 
-	def assertSceneValid( self, scenePlug ) :
+	def assertSceneValid( self, scenePlug, assertBuiltInSetsComplete=True ) :
 
 		def walkScene( scenePath ) :
 
@@ -87,6 +88,9 @@ class SceneTestCase( GafferTest.TestCase ) :
 
 		self.assertSetsValid( scenePlug )
 
+		if assertBuiltInSetsComplete :
+			self.assertBuiltInSetsComplete( scenePlug )
+
 	def assertPathExists( self, scenePlug, path ) :
 
 		if isinstance( path, str ) :
@@ -95,13 +99,47 @@ class SceneTestCase( GafferTest.TestCase ) :
 		for i in range( 0, len( path ) ) :
 			self.assertTrue( path[i] in scenePlug.childNames( "/" + "/".join( path[:i] ) ) )
 
+	## Checks that all paths referenced by sets do exist.
 	def assertSetsValid( self, scenePlug ) :
 
-		globals = scenePlug["globals"].getValue()
-		if "gaffer:sets" in globals :
-			for s in globals["gaffer:sets"].values() :
-				for path in s.value.paths() :
-					self.assertPathExists( scenePlug, path )
+		for setName in scenePlug["setNames"].getValue() :
+			s = scenePlug.set( setName )
+			for path in s.value.paths() :
+				self.assertPathExists( scenePlug, path )
+
+	## Checks that all lights, coordinate systems and cameras
+	# in the scene are in the appropriate built-in sets.
+	def assertBuiltInSetsComplete( self, scenePlug ) :
+
+		setNames = scenePlug["setNames"].getValue()
+		lightSet = scenePlug.set( "__lights" ) if "__lights" in setNames else GafferScene.PathMatcherData()
+		cameraSet = scenePlug.set( "__cameras" ) if "__cameras" in setNames else GafferScene.PathMatcherData()
+		coordinateSystemSet = scenePlug.set( "__coordinateSystems" ) if "__coordinateSystems" in setNames else GafferScene.PathMatcherData()
+
+		def walkScene( scenePath ) :
+
+			object = scenePlug.object( scenePath, _copy = False )
+			if isinstance( object, IECore.Light ) :
+				self.assertTrue(
+					lightSet.value.match( scenePath ) & GafferScene.Filter.Result.ExactMatch,
+					scenePath + " in __lights set"
+				)
+			elif isinstance( object, IECore.Camera ) :
+				self.assertTrue(
+					cameraSet.value.match( scenePath ) & GafferScene.Filter.Result.ExactMatch,
+					scenePath + " in __cameras set"
+				)
+			elif isinstance( object, IECore.CoordinateSystem ) :
+				self.assertTrue(
+					coordinateSystemSet.value.match( scenePath ) & GafferScene.Filter.Result.ExactMatch,
+					scenePath + " in __coordinateSystems set"
+				 )
+
+			childNames = scenePlug.childNames( scenePath, _copy = False )
+			for childName in childNames :
+				walkScene( os.path.join( scenePath, str( childName ) ) )
+
+		walkScene( "/" )
 
 	def __childPlugNames( self, childPlugNames, childPlugNamesToIgnore ) :
 

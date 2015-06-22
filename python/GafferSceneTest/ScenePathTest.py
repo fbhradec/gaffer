@@ -38,6 +38,7 @@ import os
 import unittest
 
 import Gaffer
+import GafferTest
 import GafferScene
 
 class ScenePathTest( unittest.TestCase ) :
@@ -91,6 +92,121 @@ class ScenePathTest( unittest.TestCase ) :
 
 		p.setFromString( "" )
 		self.assertFalse( p.isValid() )
+
+	def testContextSignals( self ) :
+
+		plane = GafferScene.Plane()
+
+		context = Gaffer.Context()
+		self.assertEqual( context.changedSignal().num_slots(), 0 )
+
+		p = GafferScene.ScenePath( plane["out"], context, "/" )
+
+		# The path shouldn't connect to the context changed signal
+		# until it really need to - when something is connected
+		# to the path's own changed signal.
+		self.assertEqual( context.changedSignal().num_slots(), 0 )
+		cs = GafferTest.CapturingSlot( p.pathChangedSignal() )
+		self.assertEqual( context.changedSignal().num_slots(), 1 )
+		self.assertEqual( len( cs ), 0 )
+
+		context["test"] = 10
+		self.assertTrue( len( cs ), 1 )
+
+		# Changing the context should disconnect from the old one
+		# and reconnect to the new one.
+		context2 = Gaffer.Context()
+		self.assertEqual( context2.changedSignal().num_slots(), 0 )
+
+		p.setContext( context2 )
+		self.assertEqual( context.changedSignal().num_slots(), 0 )
+		self.assertEqual( context2.changedSignal().num_slots(), 1 )
+
+		context["test"] = 20
+		self.assertTrue( len( cs ), 1 )
+
+		context["test"] = 10
+		self.assertTrue( len( cs ), 2 )
+
+	def testSignallingAfterDestruction( self ) :
+
+		plane = GafferScene.Plane()
+		context = Gaffer.Context()
+		path = GafferScene.ScenePath( plane["out"], context, "/" )
+
+		# force path to connect to signals
+		path.pathChangedSignal()
+
+		# destroy path
+		del path
+
+		# force emission of signals on scene and context
+		plane["name"].setValue( "dontCrashNow" )
+		context["dontCrashNow"] = 10
+
+	def testPlugRemovedFromNode( self ) :
+
+		box = Gaffer.Box()
+		box["p"] = Gaffer.IntPlug()
+		box["out"] = GafferScene.ScenePlug( direction = Gaffer.Plug.Direction.Out )
+		context = Gaffer.Context()
+		path = GafferScene.ScenePath( box["out"], context, "/" )
+
+		# force path to connect to signals
+		path.pathChangedSignal()
+
+		# mess things up
+		del box["out"]
+		del path
+
+		# trigger plug dirtied on the Box
+		box["p"].setValue( 10 )
+
+	def testSceneAccessors( self ) :
+
+		s1 = GafferScene.Plane()
+		s2 = GafferScene.Plane()
+
+		path = GafferScene.ScenePath( s1["out"], Gaffer.Context(), "/" )
+		self.assertTrue( path.getScene().isSame( s1["out"] ) )
+
+		cs = GafferTest.CapturingSlot( path.pathChangedSignal() )
+
+		s1["name"].setValue( "p" )
+		self.assertEqual( len( cs ), 1 )
+		del cs[:]
+
+		path.setScene( s1["out"] )
+		self.assertEqual( len( cs ), 0 )
+		self.assertTrue( path.getScene().isSame( s1["out"] ) )
+		s1["name"].setValue( "pp" )
+		self.assertEqual( len( cs ), 1 )
+		del cs[:]
+
+		path.setScene( s2["out"] )
+		self.assertEqual( len( cs ), 1 )
+		self.assertTrue( path.getScene().isSame( s2["out"] ) )
+		s2["name"].setValue( "a" )
+		self.assertEqual( len( cs ), 2 )
+		del cs[:]
+
+		s1["name"].setValue( "b" )
+		self.assertEqual( len( cs ), 0 )
+
+	def testStandardFilter( self ) :
+
+		camera = GafferScene.Camera()
+		plane = GafferScene.Plane()
+		parent = GafferScene.Parent()
+		parent["in"].setInput( camera["out"] )
+		parent["child"].setInput( plane["out"] )
+		parent["parent"].setValue( "/" )
+
+		path = GafferScene.ScenePath( parent["out"], Gaffer.Context(), "/" )
+		self.assertEqual( { str( c ) for c in path.children() }, { "/camera", "/plane" } )
+
+		path.setFilter( GafferScene.ScenePath.createStandardFilter( [ "__cameras" ] ) )
+		self.assertEqual( { str( c ) for c in path.children() }, { "/camera" } )
 
 if __name__ == "__main__":
 	unittest.main()

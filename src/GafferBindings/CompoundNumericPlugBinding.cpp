@@ -50,48 +50,11 @@ using namespace boost::python;
 using namespace GafferBindings;
 using namespace Gaffer;
 
-template<typename T>
-static std::string maskedCompoundNumericPlugRepr( const T *plug, unsigned flagsMask  )
+namespace
 {
-	std::string result = Serialisation::classPath( plug ) + "( \"" + plug->getName().string() + "\", ";
-
-	if( plug->direction()!=Plug::In )
-	{
-		result += "direction = " + PlugSerialiser::directionRepr( plug->direction() ) + ", ";
-	}
-
-	typename T::ValueType v;
-	if( plug->defaultValue()!=typename T::ValueType( 0 ) )
-	{
-		v = plug->defaultValue();
-		result += "defaultValue = " + IECorePython::repr( v ) + ", ";
-	}
-
-	if( plug->hasMinValue() )
-	{
-		v = plug->minValue();
-		result += "minValue = " + IECorePython::repr( v ) + ", ";
-	}
-
-	if( plug->hasMaxValue() )
-	{
-		v = plug->maxValue();
-		result += "maxValue = " + IECorePython::repr( v ) + ", ";
-	}
-
-	const unsigned flags = plug->getFlags() & flagsMask;
-	if( flags != Plug::Default )
-	{
-		result += "flags = " + PlugSerialiser::flagsRepr( flags ) + ", ";
-	}
-
-	result += ")";
-
-	return result;
-}
 
 template<typename T>
-static std::string compoundNumericPlugRepr( const T *plug )
+std::string compoundNumericPlugRepr( const T *plug )
 {
 	return maskedCompoundNumericPlugRepr( plug, Plug::All );
 }
@@ -99,13 +62,6 @@ static std::string compoundNumericPlugRepr( const T *plug )
 template<typename T>
 class CompoundNumericPlugSerialiser : public CompoundPlugSerialiser
 {
-
-	public :
-
-		virtual std::string constructor( const Gaffer::GraphComponent *graphComponent ) const
-		{
-			return maskedCompoundNumericPlugRepr( static_cast<const T *>( graphComponent ), Plug::All & ~Plug::ReadOnly );
-		}
 
 	protected :
 
@@ -131,7 +87,7 @@ class CompoundNumericPlugSerialiser : public CompoundPlugSerialiser
 };
 
 template<typename T>
-static void setValue( T *plug, const typename T::ValueType value )
+void setValue( T *plug, const typename T::ValueType value )
 {
 	// we use a GIL release here to prevent a lock in the case where this triggers a graph
 	// evaluation which decides to go back into python on another thread:
@@ -139,9 +95,35 @@ static void setValue( T *plug, const typename T::ValueType value )
 	plug->setValue( value );
 }
 
+template<typename T>
+typename T::ValueType getValue( const T *plug )
+{
+	// Must release GIL in case computation spawns threads which need
+	// to reenter Python.
+	IECorePython::ScopedGILRelease r;
+	return plug->getValue();
+}
 
 template<typename T>
-static void bind()
+void gang( T *plug )
+{
+	// Must release GIL in case this triggers a graph evaluation
+	// which wants to enter Python on another thread.
+	IECorePython::ScopedGILRelease r;
+	plug->gang();
+}
+
+template<typename T>
+void ungang( T *plug )
+{
+	// Must release GIL in case this triggers a graph evaluation
+	// which wants to enter Python on another thread.
+	IECorePython::ScopedGILRelease r;
+	plug->ungang();
+}
+
+template<typename T>
+void bind()
 {
 	typedef typename T::ValueType V;
 
@@ -163,17 +145,18 @@ static void bind()
 		.def( "minValue", &T::minValue )
 		.def( "maxValue", &T::maxValue )
 		.def( "setValue", &setValue<T> )
-		.def( "getValue", &T::getValue )
-		.def( "__repr__", &compoundNumericPlugRepr<T> )
+		.def( "getValue", &getValue<T> )
 		.def( "canGang", &T::canGang )
-		.def( "gang", &T::gang )
+		.def( "gang", &gang<T> )
 		.def( "isGanged", &T::isGanged )
-		.def( "ungang", &T::ungang )
+		.def( "ungang", &ungang<T> )
 	;
 
 	Serialisation::registerSerialiser( T::staticTypeId(), new CompoundNumericPlugSerialiser<T>() );
 
 }
+
+} // namespace
 
 void GafferBindings::bindCompoundNumericPlug()
 {

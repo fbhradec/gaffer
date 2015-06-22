@@ -44,17 +44,49 @@ import GafferScene
 # Metadata
 ##########################################################################
 
-Gaffer.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNode(
 
-GafferScene.SceneReader,
+	GafferScene.SceneReader,
 
-"""Reads scenes in any of the formats supported by Cortex's SceneInterface.""",
+	"description",
+	"""
+	Reads scenes in any of the formats supported by Cortex's SceneInterface.
+	""",
 
-"tags",
-"Limits the parts of the scene loaded to only those with a specific set of tags.",
+	plugs = {
 
-"sets",
-"Specifies a list of tags to be loaded and converted into gaffer sets.",
+		"fileName" : [
+
+			"description",
+			"""
+			The name of the file to be loaded. The file can be
+			in any of the formats supported by Cortex's SceneInterfaces.
+			""",
+
+		],
+
+		"refreshCount" : [
+
+			"description",
+			"""
+			May be incremented to force a reload if the file has
+			changed on disk - otherwise old contents may still
+			be loaded via Gaffer's cache.
+			""",
+
+		],
+
+		"tags" : [
+
+			"description",
+			"""
+			Limits the parts of the scene loaded to only those
+			with a specific set of tags.
+			""",
+
+		],
+
+	}
 
 )
 
@@ -73,6 +105,16 @@ GafferUI.PlugValueWidget.registerCreator(
 		},
 	)
 )
+
+GafferUI.PlugValueWidget.registerCreator(
+	GafferScene.SceneReader,
+	"refreshCount",
+	GafferUI.IncrementingPlugValueWidget,
+	label = "Refresh",
+	undoable = False
+)
+
+## \todo Once it's possible to register Widgets to go on the right of a PlugWidget, place the refresh button there.
 
 ##########################################################################
 # Right click menu for tags
@@ -96,7 +138,7 @@ def __tagsPopupMenu( menuDefinition, plugValueWidget ) :
 	if not isinstance( node, GafferScene.SceneReader ) :
 		return
 
-	if plug != node["tags"] and plug != node["sets"] :
+	if plug != node["tags"] :
 		return
 
 	fileName = plugValueWidget.getContext().substitute( node["fileName"].getValue() )

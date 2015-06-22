@@ -41,10 +41,12 @@
 #include "Gaffer/Context.h"
 #include "Gaffer/Dispatcher.h"
 #include "Gaffer/CompoundPlug.h"
+#include "Gaffer/ScriptNode.h"
 
 #include "GafferBindings/DispatcherBinding.h"
 #include "GafferBindings/NodeBinding.h"
 #include "GafferBindings/SignalBinding.h"
+#include "GafferBindings/ExceptionAlgo.h"
 
 using namespace boost::python;
 using namespace IECore;
@@ -88,7 +90,14 @@ class DispatcherWrapper : public NodeWrapper<Dispatcher>
 			boost::python::object f = this->methodOverride( "_doDispatch" );
 			if( f )
 			{
-				f( boost::const_pointer_cast<Dispatcher::TaskBatch>( ConstTaskBatchPtr( batch ) ) );
+				try
+				{
+					f( boost::const_pointer_cast<Dispatcher::TaskBatch>( ConstTaskBatchPtr( batch ) ) );
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					translatePythonException();
+				}
 			}
 			else
 			{
@@ -96,40 +105,31 @@ class DispatcherWrapper : public NodeWrapper<Dispatcher>
 			}
 		}
 
-		void doSetupPlugs( CompoundPlug *parentPlug ) const
+		FrameListPtr frameRange( const ScriptNode *script, const Context *context ) const
 		{
 			ScopedGILLock gilLock;
-			boost::python::object f = this->methodOverride( "_doSetupPlugs" );
+			
+			boost::python::object f = this->methodOverride( "frameRange" );
 			if( f )
 			{
-				CompoundPlugPtr tmpPointer = parentPlug;
-				f( tmpPointer );
+				try
+				{
+					object obj = f(
+						ScriptNodePtr( const_cast<ScriptNode *>( script ) ),
+						ContextPtr( const_cast<Context *>( context ) )
+					);
+					
+					return extract<FrameListPtr>( obj );
+				}
+				catch( const boost::python::error_already_set &e )
+				{
+					translatePythonException();
+				}
 			}
+			
+			return Dispatcher::frameRange( script, context );
 		}
-
-		static list dispatcherNames()
-		{
-			std::vector<std::string> names;
-			Dispatcher::dispatcherNames( names );
-			list result;
-			for ( std::vector<std::string>::const_iterator nIt = names.begin(); nIt != names.end(); nIt++ )
-			{
-				result.append( *nIt );
-			}
-			return result;
-		}
-
-		static void registerDispatcher( std::string name, Dispatcher *dispatcher )
-		{
-			Dispatcher::registerDispatcher( name, dispatcher );
-		}
-
-		static DispatcherPtr dispatcher( std::string name )
-		{
-			const Dispatcher *d = Dispatcher::dispatcher( name );
-			return const_cast< Dispatcher *>(d);
-		}
-
+		
 		static void taskBatchExecute( const Dispatcher::TaskBatch &batch )
 		{
 			ScopedGILRelease gilRelease;
@@ -188,6 +188,76 @@ class DispatcherWrapper : public NodeWrapper<Dispatcher>
 
 };
 
+struct DispatcherHelper
+{
+	DispatcherHelper( object fn, object setupPlugsFn )
+		:	m_fn( fn ), m_setupFn( setupPlugsFn )
+	{
+	}
+
+	DispatcherPtr operator()()
+	{
+		IECorePython::ScopedGILLock gilLock;
+		
+		try
+		{
+			DispatcherPtr result = extract<DispatcherPtr>( m_fn() );
+			return result;
+		}
+		catch( const boost::python::error_already_set &e )
+		{
+			translatePythonException();
+		}
+		
+		return 0;
+	}
+	
+	void operator()( Plug *parentPlug )
+	{
+		IECorePython::ScopedGILLock gilLock;
+		if ( m_setupFn )
+		{
+			try
+			{
+				m_setupFn( PlugPtr( parentPlug ) );
+			}
+			catch( const boost::python::error_already_set &e )
+			{
+				translatePythonException();
+			}
+		}
+	}
+
+	private :
+
+		object m_fn;
+		object m_setupFn;
+
+};
+
+IECore::FrameListPtr frameRange( Dispatcher &n, const ScriptNode *script, const Context *context )
+{
+	return n.Dispatcher::frameRange( script, context );
+}
+
+static void registerDispatcher( std::string type, object creator, object setupPlugsFn )
+{
+	DispatcherHelper helper( creator, setupPlugsFn );
+	Dispatcher::registerDispatcher( type, helper, helper );
+}
+
+static tuple registeredDispatchersWrapper()
+{
+	std::vector<std::string> types;
+	Dispatcher::registeredDispatchers( types );
+	list result;
+	for ( std::vector<std::string>::const_iterator it = types.begin(); it != types.end(); ++it )
+	{
+		result.append( *it );
+	}
+	return boost::python::tuple( result );
+}
+
 struct PreDispatchSlotCaller
 {
 	bool operator()( boost::python::object slot, const Dispatcher *d, const std::vector<ExecutableNodePtr> &nodes )
@@ -239,9 +309,12 @@ void GafferBindings::bindDispatcher()
 	scope s = NodeClass<Dispatcher, DispatcherWrapper>()
 		.def( "dispatch", &DispatcherWrapper::dispatch )
 		.def( "jobDirectory", &Dispatcher::jobDirectory )
-		.def( "dispatcher", &DispatcherWrapper::dispatcher ).staticmethod( "dispatcher" )
-		.def( "dispatcherNames", &DispatcherWrapper::dispatcherNames ).staticmethod( "dispatcherNames" )
-		.def( "registerDispatcher", &DispatcherWrapper::registerDispatcher ).staticmethod( "registerDispatcher" )
+		.def( "frameRange", &frameRange )
+		.def( "create", &Dispatcher::create ).staticmethod( "create" )
+		.def( "getDefaultDispatcherType", &Dispatcher::getDefaultDispatcherType, return_value_policy<copy_const_reference>() ).staticmethod( "getDefaultDispatcherType" )
+		.def( "setDefaultDispatcherType", &Dispatcher::setDefaultDispatcherType ).staticmethod( "setDefaultDispatcherType" )
+		.def( "registerDispatcher", &registerDispatcher, ( arg( "dispatcherType" ), arg( "creator" ), arg( "setupPlugsFn" ) = 0 ) ).staticmethod( "registerDispatcher" )
+		.def( "registeredDispatchers", &registeredDispatchersWrapper ).staticmethod( "registeredDispatchers" )
 		.def( "preDispatchSignal", &Dispatcher::preDispatchSignal, return_value_policy<reference_existing_object>() ).staticmethod( "preDispatchSignal" )
 		.def( "postDispatchSignal", &Dispatcher::postDispatchSignal, return_value_policy<reference_existing_object>() ).staticmethod( "postDispatchSignal" )
 	;
@@ -261,6 +334,6 @@ void GafferBindings::bindDispatcher()
 		.def( "blindData", &DispatcherWrapper::taskBatchGetBlindData )
 	;
 
-	SignalBinder<Dispatcher::PreDispatchSignal, DefaultSignalCaller<Dispatcher::PreDispatchSignal>, PreDispatchSlotCaller >::bind( "PreDispatchSignal" );
-	SignalBinder<Dispatcher::PostDispatchSignal, DefaultSignalCaller<Dispatcher::PostDispatchSignal>, PostDispatchSlotCaller >::bind( "PostDispatchSignal" );
+	SignalClass<Dispatcher::PreDispatchSignal, DefaultSignalCaller<Dispatcher::PreDispatchSignal>, PreDispatchSlotCaller >( "PreDispatchSignal" );
+	SignalClass<Dispatcher::PostDispatchSignal, DefaultSignalCaller<Dispatcher::PostDispatchSignal>, PostDispatchSlotCaller >( "PostDispatchSignal" );
 }

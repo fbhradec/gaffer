@@ -50,6 +50,97 @@ import GafferUI
 
 class SceneInspector( GafferUI.NodeSetEditor ) :
 
+	## Simple class to specify the target of an inspection,
+	# and provide cached queries for that target.
+	class Target( object ) :
+
+		def __init__( self, scene, path ) :
+
+			self.__scene = scene
+			self.__path = path
+			self.__bound = None
+			self.__transform = None
+			self.__fullTransform = None
+			self.__attributes = None
+			self.__fullAttributes = None
+			self.__object = None
+			self.__globals = None
+			self.__setNames = None
+			self.__sets = {}
+
+		@property
+		def scene( self ) :
+
+			return self.__scene
+
+		@property
+		def path( self ) :
+
+			return self.__path
+
+		def bound( self ) :
+
+			if self.__bound is None :
+				self.__bound = self.scene.bound( self.path )
+
+			return self.__bound
+
+		def transform( self ) :
+
+			if self.__transform is None :
+				self.__transform = self.scene.transform( self.path )
+
+			return self.__transform
+
+		def fullTransform( self ) :
+
+			if self.__fullTransform is None :
+				self.__fullTransform = self.scene.fullTransform( self.path )
+
+			return self.__fullTransform
+
+		def attributes( self ) :
+
+			if self.__attributes is None :
+				self.__attributes = self.scene.attributes( self.path )
+
+			return self.__attributes
+
+		def fullAttributes( self ) :
+
+			if self.__fullAttributes is None :
+				self.__fullAttributes = self.scene.fullAttributes( self.path )
+
+			return self.__fullAttributes
+
+		def object( self ) :
+
+			if self.__object is None :
+				self.__object = self.scene.object( self.path )
+
+			return self.__object
+
+		def globals( self ) :
+
+			if self.__globals is None :
+				self.__globals = self.scene["globals"].getValue()
+
+			return self.__globals
+
+		def setNames( self ) :
+
+			if self.__setNames is None :
+				self.__setNames = self.scene["setNames"].getValue()
+
+			return self.__setNames
+
+		def set( self, setName ) :
+
+			if setName not in self.__sets :
+				self.__sets[setName] = self.scene.set( setName )
+
+			return self.__sets[setName]
+
 	## A list of Section instances may be passed to create a custom inspector,
 	# otherwise all registered Sections will be used.
 	def __init__( self, scriptNode, sections = None, **kw ) :
@@ -90,18 +181,8 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 				if tab is not None :
 					column.append( GafferUI.Spacer( IECore.V2i( 0 ) ), expand = True )
 
-		self.__visibilityChangedConnection = self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ) )
-
-		self.__pendingUpdate = False
 		self.__targetPaths = None
-
-		self.__playback = None
-		self.__acquirePlayback()
-
 		self._updateFromSet()
-
-	## Simple struct to specify the target of an inspection.
-	Target = collections.namedtuple( "Target", [ "scene", "path" ] )
 
 	## May be used to "pin" target paths into the editor, rather than
 	# having it automatically follow the scene selection. A value of
@@ -114,7 +195,7 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 		assert( paths is None or len( paths ) == 1 or len( paths ) == 2 )
 
 		self.__targetPaths = paths
-		self.__scheduleUpdate()
+		self.__updateLazily()
 
 	## Returns the last value passed to setTargetPaths().
 	def getTargetPaths( self ) :
@@ -147,15 +228,13 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 				self.__plugDirtiedConnections.append( node.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__plugDirtied ) ) )
 				self.__parentChangedConnections.append( outputScenePlugs[0].parentChangedSignal().connect( Gaffer.WeakMethod( self.__plugParentChanged ) ) )
 
-		self.__scheduleUpdate()
+		self.__updateLazily()
 
 	def _updateFromContext( self, modifiedItems ) :
 
-		self.__acquirePlayback() # if context was set to different instance, we need a new playback instance
-
 		for item in modifiedItems :
 			if not item.startswith( "ui:" ) or ( item == "ui:scene:selectedPaths" and self.__targetPaths is None ) :
-				self.__scheduleUpdate()
+				self.__updateLazily()
 				break
 
 	def _titleFormat( self ) :
@@ -165,7 +244,7 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 	def __plugDirtied( self, plug ) :
 
 		if isinstance( plug, GafferScene.ScenePlug ) and plug.direction() == Gaffer.Plug.Direction.Out :
-			self.__scheduleUpdate()
+			self.__updateLazily()
 
 	def __plugParentChanged( self, plug, oldParent ) :
 
@@ -174,75 +253,47 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 		# next suitable plug from the current node set.
 		self._updateFromSet()
 
-	def __scheduleUpdate( self ) :
+	@GafferUI.LazyMethod( deferUntilPlaybackStops = True )
+	def __updateLazily( self ) :
 
-		if self.__pendingUpdate :
-			return
-
-		self.__pendingUpdate = True
-		if self.visible() and self.__playback.getState() == GafferUI.Playback.State.Stopped :
-			GafferUI.EventLoop.addIdleCallback( Gaffer.WeakMethod( self.__update, fallbackResult = False ) )
-		else :
-			# we'll do the update in self.__visibilityChanged when
-			# we next become visible, or in self.__playbackStateChanged
-			# when playback stops
-			pass
+		self.__update()
 
 	def __update( self ) :
 
-		self.__pendingUpdate = False
+		# The SceneInspector's internal context is not necessarily bound at this point, which can lead to errors
+		# if nodes in the graph are expecting special context variables, so we make sure it is:
+		with self.getContext():
 
-		assert( len( self.__scenePlugs ) <= 2 )
+			assert( len( self.__scenePlugs ) <= 2 )
 
-		if self.__targetPaths is not None :
-			paths = self.__targetPaths
-		else :
-			paths = self.getContext().get( "ui:scene:selectedPaths", [] )
-		paths = paths[:2] if len( self.__scenePlugs ) < 2 else paths[:1]
-		if not paths :
-			paths = [ "/" ]
+			if self.__targetPaths is not None :
+				paths = self.__targetPaths
+			else :
+				paths = self.getContext().get( "ui:scene:selectedPaths", [] )
+			paths = paths[:2] if len( self.__scenePlugs ) < 2 else paths[:1]
+			if not paths :
+				paths = [ "/" ]
 
-		targets = []
-		for scene in self.__scenePlugs :
-			for path in paths :
-				if not GafferScene.exists( scene, path ) :
-					# selection may not be valid for both scenes,
-					# and we can't inspect invalid paths.
-					path = None
-				targets.append( self.Target( scene, path ) )
+			targets = []
+			for scene in self.__scenePlugs :
+				for path in paths :
+					if not GafferScene.exists( scene, path ) :
+						# selection may not be valid for both scenes,
+						# and we can't inspect invalid paths.
+						path = None
+					targets.append( self.Target( scene, path ) )
 
-		if next( (target.path for target in targets if target.path is not None), None ) is None :
-			# all target paths have become invalid - if we're
-			# in a popup window then close it.
-			window = self.ancestor( _SectionWindow )
-			if window is not None :
-				window.parent().removeChild( window )
+			if next( (target.path for target in targets if target.path is not None), None ) is None :
+				# all target paths have become invalid - if we're
+				# in a popup window then close it.
+				window = self.ancestor( _SectionWindow )
+				if window is not None :
+					window.parent().removeChild( window )
 
-		with self.getContext() :
 			for section in self.__sections :
 				section.update( targets )
 
-		return False # remove idle callback
-
-	def __visibilityChanged( self, widget ) :
-
-		assert( widget is self )
-
-		if self.__pendingUpdate and self.visible() :
-			self.__update()
-
-	def __acquirePlayback( self ) :
-
-		if self.__playback is None or not self.__playback.context().isSame( self.getContext() ) :
-			self.__playback = GafferUI.Playback.acquire( self.getContext() )
-			self.__playbackStateChangedConnection = self.__playback.stateChangedSignal().connect( Gaffer.WeakMethod( self.__playbackStateChanged ) )
-
-	def __playbackStateChanged( self, playback ) :
-
-		assert( playback is self.__playback )
-
-		if self.__pendingUpdate and self.visible() and playback.getState() == playback.State.Stopped :
-			self.__update()
+			return False # remove idle callback
 
 GafferUI.EditorWidget.registerType( "SceneInspector", SceneInspector )
 
@@ -375,12 +426,14 @@ class TextDiff( SideBySideDiff ) :
 			return self.__formatMatrices( values )
 		elif isinstance( values[0], ( IECore.Box3f, IECore.Box3d, IECore.Box3i, IECore.Box2f, IECore.Box2d, IECore.Box2i ) ) :
 			return self.__formatBoxes( values )
-		elif isinstance( values[0], IECore.ObjectVector ) :
+		elif isinstance( values[0], ( IECore.Shader, IECore.ObjectVector ) ) :
 			return self.__formatShaders( values )
 		elif isinstance( values[0], ( float, int ) ) :
 			return self.__formatNumbers( values )
 		elif isinstance( values[0], basestring ) :
 			return self.__formatStrings( [ str( v ) for v in values ] )
+		elif isinstance( values[0], IECore.PrimitiveVariable ) :
+			return self.__formatPrimitiveVariables( values )
 		else :
 			return [ cgi.escape( str( v ) ) for v in values ]
 
@@ -453,14 +506,28 @@ class TextDiff( SideBySideDiff ) :
 
 		formattedValues = []
 		for value in values :
-			shaderName = value[-1].name
-			nodeName = value[-1].blindData().get( "gaffer:nodeName", None )
-			if nodeName is not None and nodeName.value != shaderName :
-				formattedValues.append( "%s (%s)" % ( nodeName.value, shaderName ) )
-			else :
-				formattedValues.append( shaderName )
 
-		return self.__formatStrings( formattedValues )
+			shader = value[-1] if isinstance( value, IECore.ObjectVector ) else value
+			shaderName = shader.name
+			nodeName = shader.blindData().get( "gaffer:nodeName", None )
+
+			formattedValue = "<table cellspacing=2><tr>"
+			if nodeName is not None :
+				nodeColor = shader.blindData().get( "gaffer:nodeColor", None )
+				if nodeColor is not None :
+					nodeColor = GafferUI.Widget._qtColor( nodeColor.value ).name()
+				else :
+					nodeColor = "#000000"
+				formattedValue += "<td bgcolor=%s>%s</td>" % ( nodeColor, cgi.escape( nodeName.value ) )
+				formattedValue += "<td>(" + cgi.escape( shaderName ) + ")</td>"
+			else :
+				formattedValue += "<td>" + cgi.escape( shaderName ) + "</td>"
+
+			formattedValue += "</tr></table>"
+
+			formattedValues.append( formattedValue )
+
+		return formattedValues
 
 	def __formatStrings( self, strings ) :
 
@@ -486,6 +553,18 @@ class TextDiff( SideBySideDiff ) :
 				bFormatted += '<span class="diffB">' + cgi.escape( b[b1:b2] ) + "</span>"
 
 		return [ aFormatted, bFormatted ]
+
+	def __formatPrimitiveVariables( self, values ) :
+
+		result = []
+		for value in values :
+			s = str( value.interpolation )
+			s += " " + value.data.typeName()
+			if hasattr( value.data, "getInterpretation" ) :
+				s += " (" + str( value.data.getInterpretation() ) + ")"
+			result.append( s )
+
+		return result
 
 	def __numbersToAlignedStrings( self, values ) :
 
@@ -644,8 +723,8 @@ class DiffRow( Row ) :
 
 			if inspector.inspectsAttributes() and isinstance( diff, SideBySideDiff ) :
 
-				diff.setCornerWidget( 0, GafferUI.Label( "<sup>Inherited</sup>") )
-				diff.setCornerWidget( 1, GafferUI.Label( "<sup>Inherited</sup>") )
+				diff.setCornerWidget( 0, GafferUI.Label( "" ) )
+				diff.setCornerWidget( 1, GafferUI.Label( "" ) )
 
 			self.__diffConnections = []
 			diffWidgets = [ diff.frame( 0 ), diff.frame( 1 ) ] if isinstance( diff, SideBySideDiff ) else [ diff ]
@@ -661,17 +740,20 @@ class DiffRow( Row ) :
 		self.__inspector = inspector
 		self.__diffCreator = diffCreator
 
+	def inspector( self ) :
+
+		return self.__inspector
+
 	def update( self, targets ) :
 
 		self.__targets = targets
 		self.__values = [ self.__inspector( target ) for target in targets ]
 		self.__diff().update( self.__values )
 
-		if self.__inspector.inspectsAttributes() :
+		if self.__inspector.inspectsAttributes() and isinstance( self.__diff(), SideBySideDiff ) :
 			localValues = [ self.__inspector( target, ignoreInheritance=True ) for target in targets ]
 			for i, value in enumerate( localValues ) :
-				if value is not None and isinstance( self.__diff(), SideBySideDiff ) :
-					self.__diff().getCornerWidget( i ).setVisible( False )
+				self.__diff().getCornerWidget( i ).setText( "<sup>Inherited</sup>" if value is None else "" )
 
 	def __label( self ) :
 
@@ -761,11 +843,12 @@ class DiffRow( Row ) :
 ##########################################################################
 
 ## Class for displaying a column of DiffRows.
-class DiffColumn( GafferUI.ListContainer ) :
+class DiffColumn( GafferUI.Widget ) :
 
-	def __init__( self, inspector, diffCreator = TextDiff, **kw ) :
+	def __init__( self, inspector, diffCreator = TextDiff, label = None, filterable = False, **kw ) :
 
-		GafferUI.ListContainer.__init__( self )
+		outerColumn = GafferUI.ListContainer()
+		GafferUI.Widget.__init__( self, outerColumn )
 
 		assert( isinstance( inspector, Inspector ) )
 
@@ -773,16 +856,39 @@ class DiffColumn( GafferUI.ListContainer ) :
 		self.__rows = {} # mapping from row name to row
 		self.__diffCreator = diffCreator
 
+		with outerColumn :
+			with GafferUI.Frame( borderWidth = 4, borderStyle = GafferUI.Frame.BorderStyle.None ) as self.__header :
+				with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal ) :
+					if label is not None :
+						l = GafferUI.Label(
+							"<b>" + label + "</b>",
+							horizontalAlignment = GafferUI.Label.HorizontalAlignment.Right,
+						)
+						l._qtWidget().setFixedWidth( 150 )
+					self.__filterWidget = None
+					if filterable :
+						self.__filterWidget = GafferUI.TextWidget()
+						self.__filterWidget._qtWidget().setPlaceholderText( "Filter..." )
+						self.__filterTextChangedConnection = self.__filterWidget.textChangedSignal().connect(
+							Gaffer.WeakMethod( self.__filterTextChanged )
+						)
+
+			self.__rowContainer = GafferUI.ListContainer()
+
+	@GafferUI.LazyMethod()
 	def update( self, targets ) :
 
 		inspectors = {}
 		for target in targets :
 			inspectors.update( { i.name() : i for i in self.__inspector.children( target ) } )
 
-		rowNames = sorted( inspectors.keys() )
+		# mark all rows as invalid
+		for row in self.__rowContainer :
+			row.__valid = False
 
-		rows = []
-		for rowName in rowNames :
+		# iterate over the fields we want to display,
+		# creating/updating the rows that are to be valid.
+		for rowName in inspectors.keys() :
 
 			row = self.__rows.get( rowName )
 			if row is None :
@@ -790,10 +896,48 @@ class DiffColumn( GafferUI.ListContainer ) :
 				self.__rows[rowName] = row
 
 			row.update( targets )
-			row.setAlternate( len( rows ) % 2 )
-			rows.append( row )
+			row.__valid = True
 
-		self[:] = rows
+		# update the rowContainer with _all_ rows (both
+		# valid and invalid) in the correct order. this
+		# is a no-op except when adding new rows. it is
+		# much quicker to hide invalid rows than it is
+		# to reparent widgets so that the container only
+		# contains the valid ones.
+		self.__rowContainer[:] = sorted( self.__rows.values(), key = lambda r : r.inspector().name() )
+
+		# show only the currently valid ones.
+		self.__updateRowVisibility()
+
+	def __updateRowVisibility( self ) :
+
+		patterns = self.__filterWidget.getText() if self.__filterWidget is not None else ""
+		if not patterns :
+			patterns = "*"
+		else :
+			patterns = [ p.lower() for p in patterns.split() ]
+			patterns = " ".join( "*" + p + "*" if "*" not in p else p for p in patterns )
+
+		numValidRows = 0
+		numVisibleRows = 0
+		for row in self.__rowContainer :
+
+			visible = False
+			if row.__valid :
+				numValidRows += 1
+				if Gaffer.matchMultiple( row.inspector().name().lower(), patterns ) :
+					visible = True
+
+			row.setVisible( visible )
+			if visible :
+				row.setAlternate( numVisibleRows % 2 )
+				numVisibleRows += 1
+
+		self.__header.setVisible( numValidRows )
+
+	def __filterTextChanged( self, filterWidget ) :
+
+		self.__updateRowVisibility()
 
 ##########################################################################
 # Section
@@ -814,9 +958,34 @@ class Section( GafferUI.Widget ) :
 
 		self.__numRows = 0
 
+	## Should be implemented by derived classes to update the
+	# UI to reflect the state of the targets. Implementations should
+	# first call the base class implementation.
 	def update( self, targets ) :
 
-		raise NotImplementedError
+		if self.__collapsible is None :
+			return
+
+		label = self.__collapsible.getCornerWidget()
+		summary = self._summary( targets )
+		if summary is None and label is None :
+			return
+
+		if label is None :
+			label = GafferUI.Label()
+			label._qtWidget().setSizePolicy( QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Fixed )
+			self.__collapsible.setCornerWidget( label, True )
+
+		if summary :
+			summary = "<small>" + "&nbsp;( " + summary + " ) </small>"
+
+		label.setText( summary )
+
+	## May be implemented by derived classes to provide
+	# a short summary of the contents.
+	def _summary( self, targets ) :
+
+		return None
 
 	def _mainColumn( self ) :
 
@@ -900,6 +1069,8 @@ class _InheritanceSection( Section ) :
 
 	def update( self, targets ) :
 
+		Section.update( self, targets )
+
 		self.__target = targets[0]
 		self.__connections = []
 
@@ -977,6 +1148,8 @@ class _HistorySection( Section ) :
 		self.__diffCreator = diffCreator
 
 	def update( self, targets ) :
+
+		Section.update( self, targets )
 
 		self.__target = targets[0]
 		self.__connections = []
@@ -1069,6 +1242,8 @@ class __NodeSection( Section ) :
 
 	def update( self, targets ) :
 
+		Section.update( self, targets )
+
 		self.__row.update( targets )
 
 	class __Inspector( Inspector ) :
@@ -1098,6 +1273,8 @@ class __PathSection( Section ) :
 			self.__row = DiffRow( self.__Inspector(), functools.partial( TextDiff, highlightDiffs = False ) )
 
 	def update( self, targets ) :
+
+		Section.update( self, targets )
 
 		self.__row.update( targets )
 
@@ -1144,6 +1321,8 @@ class __TransformSection( Section ) :
 					index += 1
 
 	def update( self, targets ) :
+
+		Section.update( self, targets )
 
 		for row in self._mainColumn() :
 			if isinstance( row, DiffRow ) :
@@ -1216,6 +1395,8 @@ class __BoundSection( Section ) :
 
 	def update( self, targets ) :
 
+		Section.update( self, targets )
+
 		self.__localBoundRow.update( targets )
 		self.__worldBoundRow.update( targets )
 
@@ -1234,9 +1415,9 @@ class __BoundSection( Section ) :
 			if target.path is None :
 				return None
 
-			bound = target.scene.bound( target.path )
+			bound = target.bound()
 			if self.__world :
-				transform = target.scene.fullTransform( target.path )
+				transform = target.fullTransform()
 				bound = bound.transform( transform )
 
 			return bound
@@ -1254,9 +1435,11 @@ class __AttributesSection( Section ) :
 		Section.__init__( self, collapsed = True, label = "Attributes" )
 
 		with self._mainColumn() :
-			self.__diffColumn = DiffColumn( self.__Inspector() )
+			self.__diffColumn = DiffColumn( self.__Inspector(), filterable=True )
 
 	def update( self, targets ) :
+
+		Section.update( self, targets )
 
 		self.__diffColumn.update( targets )
 
@@ -1279,19 +1462,16 @@ class __AttributesSection( Section ) :
 			if target.path is None :
 				return None
 
-			## \todo Investigate caching the results of these calls so that
-			# not every Inspector instance is making the same call - maybe the target
-			# could provide this service?
 			if ignoreInheritance :
-				attributes = target.scene.attributes( target.path )
+				attributes = target.attributes()
 			else :
-				attributes = target.scene.fullAttributes( target.path )
+				attributes = target.fullAttributes()
 
 			return attributes.get( self.__attributeName )
 
 		def children( self, target ) :
 
-			attributeNames = target.scene.fullAttributes( target.path ).keys() if target.path else []
+			attributeNames = target.fullAttributes().keys() if target.path else []
 			return [ self.__class__( attributeName ) for attributeName in attributeNames ]
 
 SceneInspector.registerSection( __AttributesSection, tab = "Selection" )
@@ -1307,66 +1487,169 @@ class __ObjectSection( Section ) :
 		Section.__init__( self, collapsed = True, label = "Object" )
 
 		with self._mainColumn() :
-			self.__typeRow = DiffRow( self.__TypeInspector() )
-			self.__uniformRow = DiffRow( self.__SizeInspector( IECore.PrimitiveVariable.Interpolation.Uniform ), alternate = True )
-			self.__vertexRow = DiffRow( self.__SizeInspector( IECore.PrimitiveVariable.Interpolation.Vertex )  )
-			self.__varyingRow = DiffRow( self.__SizeInspector( IECore.PrimitiveVariable.Interpolation.Varying ), alternate = True )
-			self.__faceVaryingRow = DiffRow( self.__SizeInspector( IECore.PrimitiveVariable.Interpolation.FaceVarying ) )
-			self.__variablesRow = DiffRow( self.__VariablesInspector(), alternate = True )
+
+			DiffColumn(
+				self.__TopologyInspector(),
+				label = "Topology"
+			)
+
+			DiffColumn(
+				self.__ParametersInspector(),
+				label = "Parameters"
+			)
+
+			DiffColumn(
+				self.__PrimitiveVariablesInspector(),
+				label = "Primitive Variables"
+			)
 
 	def update( self, targets ) :
 
-		## \todo Since most section update calls now seem to just be calling update
-		# on a bunch of rows, can we make that happen automatically?
-		for row in self._mainColumn() :
-			row.update( targets )
+		Section.update( self, targets )
 
-	class __TypeInspector( Inspector ) :
+		for diffColumn in self._mainColumn() :
+			diffColumn.update( targets )
 
-		def name( self ) :
+	def _summary( self, targets ) :
 
-			return "Type"
+		if not len( targets ) :
+			return ""
 
-		def __call__( self, target ) :
+		objects = [ target.object() for target in targets ]
+		typeNames = [ o.typeName().split( ":" )[-1] for o in objects ]
+		typeNames = [ "None" if t == "NullObject" else t for t in typeNames ]
 
-			if target.path is None :
-				return None
+		if len( typeNames ) == 1 or typeNames[0] == typeNames[1] :
+			return typeNames[0] if typeNames[0] != "None" else ""
+		else :
+			return " / ".join( typeNames )
 
-			## \todo Investigate caching the result of scene.object() on the target.
-			object = target.scene.object( target.path )
-			return object.typeName() if not isinstance( object, IECore.NullObject ) else None
+	class __TopologyInspector( Inspector ) :
 
-	class __SizeInspector( Inspector ) :
+		def __init__( self, interpolation = None, property = None ) :
 
-		def __init__( self, interpolation ) :
+			Inspector.__init__( self )
 
 			self.__interpolation = interpolation
+			self.__property = property
 
 		def name( self ) :
 
-			return str( self.__interpolation )
+			if self.__interpolation is not None :
+				return str( self.__interpolation )
+			else :
+				return IECore.CamelCase.toSpaced( self.__property )
 
 		def __call__( self, target ) :
 
 			if target.path is None :
 				return None
 
-			object = target.scene.object( target.path )
-			return object.variableSize( self.__interpolation ) if isinstance( object, IECore.Primitive ) else None
+			object = target.object()
+			if isinstance( object, IECore.NullObject ) :
+				return None
 
-	class __VariablesInspector( Inspector ) :
+			if self.__interpolation is not None :
+				return object.variableSize( self.__interpolation ) if isinstance( object, IECore.Primitive ) else None
+			else :
+				return getattr( object, self.__property, None )
+
+		def children( self, target ) :
+
+			object = target.object()
+			if object is None or not isinstance( object, IECore.Primitive ) :
+				return []
+
+			result = []
+
+			if isinstance( object, IECore.MeshPrimitive ) :
+				result.append( self.__class__( property = "interpolation" ) )
+
+			for i in [
+				IECore.PrimitiveVariable.Interpolation.Constant,
+				IECore.PrimitiveVariable.Interpolation.Uniform,
+				IECore.PrimitiveVariable.Interpolation.Vertex,
+				IECore.PrimitiveVariable.Interpolation.Varying,
+				IECore.PrimitiveVariable.Interpolation.FaceVarying,
+			] :
+				result.append( self.__class__( interpolation = i ) )
+
+			return result
+
+	class __ParametersInspector( Inspector ) :
+
+		def __init__( self, parameterName = None ) :
+
+			Inspector.__init__( self )
+
+			self.__parameterName = parameterName
 
 		def name( self ) :
 
-			return "Variables"
+			return self.__parameterName
+
+		def __call__( self, target ) :
+
+			parameters = self.__parameters( target )
+			if parameters is None :
+				return None
+
+			return parameters.get( self.__parameterName )
+
+		def children( self, target ) :
+
+			parameters = self.__parameters( target )
+			if parameters is None :
+				return []
+
+			return [ self.__class__( p ) for p in parameters.keys() ]
+
+		def __parameters( self, target ) :
+
+			if target.path is None :
+				return None
+
+			object = target.object()
+			if isinstance( object, ( IECore.Camera, IECore.ExternalProcedural ) ) :
+				return object.parameters()
+			elif isinstance( object, IECore.Light ) :
+				return object.parameters
+
+			return None
+
+	class __PrimitiveVariablesInspector( Inspector ) :
+
+		def __init__( self, primitiveVariableName = None ) :
+
+			Inspector.__init__( self )
+
+			self.__primitiveVariableName = primitiveVariableName
+
+		def name( self ) :
+
+			return self.__primitiveVariableName
 
 		def __call__( self, target ) :
 
 			if target.path is None :
 				return None
 
-			object = target.scene.object( target.path )
-			return " ".join( sorted( object.keys() ) ) if isinstance( object, IECore.Primitive ) else None
+			object = target.object()
+			if not isinstance( object, IECore.Primitive ) :
+				return None
+
+			if self.__primitiveVariableName not in object :
+				return None
+
+			return object[self.__primitiveVariableName]
+
+		def children( self, target ) :
+
+			object = target.object()
+			if not isinstance( object, IECore.Primitive ) :
+				return []
+
+			return [ self.__class__( k ) for k in object.keys() ]
 
 SceneInspector.registerSection( __ObjectSection, tab = "Selection" )
 
@@ -1394,6 +1677,8 @@ class __SetMembershipSection( Section ) :
 			self.__diffColumn = DiffColumn( self.__Inspector(), _SetMembershipDiff )
 
 	def update( self, targets ) :
+
+		Section.update( self, targets )
 
 		self.__diffColumn.update( targets )
 
@@ -1424,11 +1709,7 @@ class __SetMembershipSection( Section ) :
 			if target.path is None :
 				return None
 
-			globals = target.scene["globals"].getValue()
-			sets = globals.get( "gaffer:sets", {} )
-			set = sets.get( self.__setName )
-			if set is None :
-				return None
+			set = target.set( self.__setName )
 
 			m = set.value.match( target.path )
 			if m & GafferScene.Filter.Result.ExactMatch :
@@ -1444,8 +1725,8 @@ class __SetMembershipSection( Section ) :
 			if not target.path :
 				return []
 
-			sets = target.scene["globals"].getValue().get( "gaffer:sets", {} )
-			return [ self.__class__( setName ) for setName in sorted( sets.keys() ) ]
+			setNames = sorted( [ str( n ) for n in target.setNames() ] )
+			return [ self.__class__( setName ) for setName in setNames ]
 
 SceneInspector.registerSection( __SetMembershipSection, tab = "Selection" )
 
@@ -1460,9 +1741,11 @@ class __GlobalsSection( Section ) :
 		Section.__init__( self, collapsed = True, label = label )
 
 		with self._mainColumn() :
-			self.__diffColumn = DiffColumn( self.__Inspector( prefix ) )
+			self.__diffColumn = DiffColumn( self.__Inspector( prefix ), filterable=True )
 
 	def update( self, targets ) :
+
+		Section.update( self, targets )
 
 		self.__diffColumn.update( targets )
 
@@ -1479,13 +1762,12 @@ class __GlobalsSection( Section ) :
 
 		def __call__( self, target ) :
 
-			## \todo Investigate caching the globals on the target.
-			globals = target.scene["globals"].getValue()
+			globals = target.globals()
 			return globals.get( self.__key )
 
 		def children( self, target ) :
 
-			globals = target.scene["globals"].getValue()
+			globals = target.globals()
 			keys = [ k for k in globals.keys() if k.startswith( self.__prefix ) ]
 
 			return [ self.__class__( self.__prefix, key ) for key in keys ]
@@ -1519,7 +1801,7 @@ class _OutputRow( Row ) :
 
 	def update( self, targets ) :
 
-		outputs = [ target.scene["globals"].getValue().get( self.__name ) for target in targets ]
+		outputs = [ target.globals().get( self.__name ) for target in targets ]
 		self.__label.update( [ self.__name[7:] if output else None for output in outputs ] )
 		self.__diffColumn.update( targets )
 
@@ -1542,7 +1824,7 @@ class _OutputRow( Row ) :
 
 		def __call__( self, target ) :
 
-			output = target.scene["globals"].getValue().get( self.__outputName )
+			output = target.globals().get( self.__outputName )
 			if output is None :
 				return None
 
@@ -1557,7 +1839,7 @@ class _OutputRow( Row ) :
 
 		def children( self, target ) :
 
-			output = target.scene["globals"].getValue().get( self.__outputName )
+			output = target.globals().get( self.__outputName )
 			if output is None :
 				return []
 
@@ -1573,9 +1855,11 @@ class __OutputsSection( Section ) :
 
 	def update( self, targets ) :
 
+		Section.update( self, targets )
+
 		outputNames = set()
 		for target in targets :
-			g = target.scene["globals"].getValue()
+			g = target.globals()
 			outputNames.update( [ k for k in g.keys() if k.startswith( "output:" ) ] )
 
 		rows = []
@@ -1711,6 +1995,8 @@ class _SetsSection( Section ) :
 
 	def update( self, targets ) :
 
+		Section.update( self, targets )
+
 		self.__diffColumn.update( targets )
 
 	class __Inspector( Inspector ) :
@@ -1730,14 +2016,12 @@ class _SetsSection( Section ) :
 
 		def __call__( self, target ) :
 
-			globals = target.scene["globals"].getValue()
-			sets = globals.get( "gaffer:sets", {} )
-			return sets.get( self.__setName )
+			return target.set( self.__setName )
 
 		def children( self, target ) :
 
-			sets = target.scene["globals"].getValue().get( "gaffer:sets", {} )
-			return [ self.__class__( setName ) for setName in sorted( sets.keys() ) ]
+			setNames = sorted( [ str( n ) for n in target.setNames() ] )
+			return [ self.__class__( setName ) for setName in setNames ]
 
 SceneInspector.SetsSection = _SetsSection
 

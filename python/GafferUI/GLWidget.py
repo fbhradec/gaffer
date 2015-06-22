@@ -1,7 +1,7 @@
 ##########################################################################
 #
 #  Copyright (c) 2011, John Haddon. All rights reserved.
-#  Copyright (c) 2011-2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2011-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -188,6 +188,14 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 		self.setViewport( glWidget )
 		self.setViewportUpdateMode( self.FullViewportUpdate )
 
+	# QAbstractScrollArea (one of our base classes), implements
+	# minimumSizeHint() to include enough room for scrollbars.
+	# But we know we'll never show scrollbars, and don't want
+	# a minimum size, so we reimplement it.
+	def minimumSizeHint( self ) :
+
+		return QtCore.QSize()
+
 	def event( self, event ) :
 
 		if event.type() == event.PolishRequest :
@@ -347,7 +355,17 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 			return None
 
 		import IECoreHoudini
-		return cls.__createHostedQGLWidget( format, IECoreHoudini.makeMainGLContextCurrent )
+		
+		# Prior to Houdini 14 we are running embedded on the hou.ui idle loop,
+		# so we needed to force the Houdini GL context to be current, and share
+		# it, similar to how we do this in Maya.
+		if hou.applicationVersion()[0] < 14 :
+			return cls.__createHostedQGLWidget( format, IECoreHoudini.makeMainGLContextCurrent )
+		
+		# In Houdini 14 and beyond, Qt is the native UI, and we can access
+		# Houdini's shared QGLWidget directly, provided we are using a recent
+		# Cortex version.		
+		return QtOpenGL.QGLWidget( format, shareWidget = GafferUI._qtObject( IECoreHoudini.sharedGLWidget(), QtOpenGL.QGLWidget ) )
 
 class _GLGraphicsScene( QtGui.QGraphicsScene ) :
 

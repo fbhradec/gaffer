@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2013-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -56,10 +56,14 @@ class DisplayTest( unittest.TestCase ) :
 
 	def __dataReceived( self, plug ) :
 
+		# Emulate the DisplayUI code which increments a plug when data is received, to
+		# trigger correct recomputation.
+		plug.node()["__updateCount"].setValue( plug.node()["__updateCount"].getValue() + 1 )
 		self.__dataReceivedSemaphore.release()
 
 	def __imageReceived( self, plug ) :
 
+		plug.node()["__updateCount"].setValue( plug.node()["__updateCount"].getValue() + 1 )
 		self.__imageReceivedSemaphore.release()
 
 	def testDefaultFormat( self ) :
@@ -192,7 +196,11 @@ class DisplayTest( unittest.TestCase ) :
 
 		self.__imageReceivedSemaphore.acquire()
 
-		self.assertEqual( imageReader["out"].image(), node["out"].image() )
+		# Display doesn't handle image metadata, so we must erase it before comparing the images
+		inImage = imageReader["out"].image()
+		inImage.blindData().clear()
+
+		self.assertEqual( inImage, node["out"].image() )
 
 		return node
 

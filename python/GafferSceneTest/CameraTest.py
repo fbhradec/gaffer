@@ -40,6 +40,7 @@ import unittest
 import IECore
 
 import Gaffer
+import GafferTest
 import GafferScene
 import GafferSceneTest
 
@@ -77,13 +78,21 @@ class CameraTest( GafferSceneTest.SceneTestCase ) :
 		p["projection"].setValue( "perspective" )
 		p["fieldOfView"].setValue( 45 )
 
-		for path in [ "/", "/camera" ] :
-			c = Gaffer.Context()
-			c["scene:path"] = IECore.InternedStringVectorData( path[1:].split( "/" ) )
-			with c :
-				# we ignore the enabled plug because it isn't hashed (instead it's value
-				# is used to decide how the hash should be computed).
-				self.assertHashesValid( p, inputsToIgnore = [ p["enabled"] ] )
+		c = Gaffer.Context()
+		with c :
+
+			c["scene:setName"] = IECore.InternedStringData( "__cameras" )
+			c["scene:path"] = IECore.InternedStringVectorData()
+			# we ignore the enabled plug because it isn't hashed (instead its value
+			# is used to decide how the hash should be computed). we ignore the transform
+			# plug because it isn't affected by any inputs when the path is "/".
+			self.assertHashesValid( p, inputsToIgnore = [ p["enabled"] ], outputsToIgnore = [ p["out"]["transform"] ] )
+
+			c["scene:path"] = IECore.InternedStringVectorData( [ "camera" ] )
+			# we ignore the childNames because it doesn't use any inputs to compute when
+			# the path is not "/".
+			self.assertHashesValid( p, inputsToIgnore = [ p["enabled"] ], outputsToIgnore = [ p["out"]["childNames"] ] )
+
 
 	def testBound( self ) :
 
@@ -117,7 +126,7 @@ class CameraTest( GafferSceneTest.SceneTestCase ) :
 
 		c = GafferScene.Camera()
 
-		cameraSet = c["out"]["globals"].getValue()["gaffer:sets"]["__cameras"]
+		cameraSet = c["out"].set( "__cameras" )
 		self.assertEqual(
 			cameraSet,
 			GafferScene.PathMatcherData(
@@ -127,13 +136,41 @@ class CameraTest( GafferSceneTest.SceneTestCase ) :
 
 		c["name"].setValue( "renderCam" )
 
-		cameraSet = c["out"]["globals"].getValue()["gaffer:sets"]["__cameras"]
+		cameraSet = c["out"].set( "__cameras" )
 		self.assertEqual(
 			cameraSet,
 			GafferScene.PathMatcherData(
 				GafferScene.PathMatcher( [ "/renderCam" ] )
 			)
 		)
+
+	def testDirtyPropagation( self ) :
+
+		c = GafferScene.Camera()
+
+		dirtied = GafferTest.CapturingSlot( c.plugDirtiedSignal() )
+		c["transform"]["translate"]["x"].setValue( 10 )
+		self.failUnless( c["out"]["transform"] in [ p[0] for p in dirtied ] )
+
+		dirtied = GafferTest.CapturingSlot( c.plugDirtiedSignal() )
+		c["name"].setValue( "renderCam" )
+		self.failUnless( c["out"]["childNames"] in [ p[0] for p in dirtied ] )
+		self.failUnless( c["out"]["set"] in [ p[0] for p in dirtied ] )
+
+		dirtied = GafferTest.CapturingSlot( c.plugDirtiedSignal() )
+		c["projection"].setValue( "orthographic" )
+		self.failUnless( c["out"]["object"] in [ p[0] for p in dirtied ] )
+		self.failUnless( c["out"]["bound"] in [ p[0] for p in dirtied ] )
+
+		dirtied = GafferTest.CapturingSlot( c.plugDirtiedSignal() )
+		c["fieldOfView"].setValue( 100 )
+		self.failUnless( c["out"]["object"] in [ p[0] for p in dirtied ] )
+		self.failUnless( c["out"]["bound"] in [ p[0] for p in dirtied ] )
+
+		dirtied = GafferTest.CapturingSlot( c.plugDirtiedSignal() )
+		c["clippingPlanes"]["x"].setValue( 100 )
+		self.failUnless( c["out"]["object"] in [ p[0] for p in dirtied ] )
+		self.failUnless( c["out"]["bound"] in [ p[0] for p in dirtied ] )
 
 if __name__ == "__main__":
 	unittest.main()

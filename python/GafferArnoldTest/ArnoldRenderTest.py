@@ -37,7 +37,7 @@
 
 import os
 import unittest
-import subprocess
+import subprocess32 as subprocess
 
 import IECore
 
@@ -177,6 +177,11 @@ class ArnoldRenderTest( GafferTest.TestCase ) :
 
 		self.assertDefaultNamesAreCorrect( GafferArnold )
 		self.assertDefaultNamesAreCorrect( GafferArnoldTest )
+
+	def testNodesConstructWithDefaultValues( self ) :
+
+		self.assertNodesConstructWithDefaultValues( GafferArnold )
+		self.assertNodesConstructWithDefaultValues( GafferArnoldTest )
 
 	def testDirectoryCreation( self ) :
 

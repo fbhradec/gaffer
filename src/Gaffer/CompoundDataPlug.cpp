@@ -44,6 +44,7 @@
 #include "Gaffer/CompoundDataPlug.h"
 #include "Gaffer/SplinePlug.h"
 #include "Gaffer/BoxPlug.h"
+#include "Gaffer/StringPlug.h"
 
 using namespace Imath;
 using namespace IECore;
@@ -58,6 +59,26 @@ IE_CORE_DEFINERUNTIMETYPED( CompoundDataPlug::MemberPlug );
 CompoundDataPlug::MemberPlug::MemberPlug( const std::string &name, Direction direction, unsigned flags )
 	:	CompoundPlug( name, direction, flags )
 {
+}
+
+StringPlug *CompoundDataPlug::MemberPlug::namePlug()
+{
+	return getChild<StringPlug>( 0 );
+}
+
+const StringPlug *CompoundDataPlug::MemberPlug::namePlug() const
+{
+	return getChild<StringPlug>( 0 );
+}
+
+BoolPlug *CompoundDataPlug::MemberPlug::enabledPlug()
+{
+	return children().size() > 2 ? getChild<BoolPlug>( 2 ) : NULL;
+}
+
+const BoolPlug *CompoundDataPlug::MemberPlug::enabledPlug() const
+{
+	return children().size() > 2 ? getChild<BoolPlug>( 2 ) : NULL;
 }
 
 bool CompoundDataPlug::MemberPlug::acceptsChild( const Gaffer::GraphComponent *potentialChild ) const
@@ -149,8 +170,7 @@ CompoundDataPlug::MemberPlug *CompoundDataPlug::addMember( const std::string &na
 {
 	MemberPlugPtr plug = new MemberPlug( plugName, direction(), valuePlug->getFlags() );
 
-	StringPlugPtr namePlug = new StringPlug( "name", direction(), "", valuePlug->getFlags() );
-	namePlug->setValue( name );
+	StringPlugPtr namePlug = new StringPlug( "name", direction(), name, valuePlug->getFlags() );
 	plug->addChild( namePlug );
 
 	valuePlug->setName( "value" );
@@ -200,6 +220,31 @@ void CompoundDataPlug::fillCompoundData( IECore::CompoundDataMap &compoundDataMa
 			compoundDataMap[name] = data;
 		}
 	}
+}
+
+IECore::MurmurHash CompoundDataPlug::hash() const
+{
+	IECore::MurmurHash h;
+	for( MemberPlugIterator it( this ); it != it.end(); ++it )
+	{
+		const MemberPlug *plug = it->get();
+		bool active = true;
+		if( plug->children().size() == 3 )
+		{
+			active = plug->getChild<BoolPlug>( 2 )->getValue();
+		}
+		if( active )
+		{
+			plug->getChild<ValuePlug>( 0 )->hash( h );
+			plug->getChild<ValuePlug>( 1 )->hash( h );
+		}
+	}
+	return h;
+}
+
+void CompoundDataPlug::hash( IECore::MurmurHash &h ) const
+{
+	h.append( hash() );
 }
 
 void CompoundDataPlug::fillCompoundObject( IECore::CompoundObject::ObjectMap &compoundObjectMap ) const

@@ -37,6 +37,8 @@
 import RenderManRenderUI
 import RenderManAttributesUI
 import RenderManOptionsUI
+import InteractiveRenderManRenderUI
+import RenderManLightUI
 from RenderManShaderUI import RenderManShaderUI
 import ShaderMenu
 

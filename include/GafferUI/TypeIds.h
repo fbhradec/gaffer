@@ -73,8 +73,10 @@ enum TypeId
 	SpacerGadgetTypeId = 110278,
 	StandardConnectionGadgetTypeId = 110279,
 	HandleTypeId = 110280,
+	ToolTypeId = 110281,
+	DotNodeGadgetTypeId = 110282,
 
-	LastTypeId = 110500
+	LastTypeId = 110450
 };
 
 } // namespace GafferUI

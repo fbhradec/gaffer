@@ -47,19 +47,24 @@ import GafferTest
 class LocalDispatcherTest( GafferTest.TestCase ) :
 
 	def setUp( self ) :
-
-		localDispatcher = Gaffer.Dispatcher.dispatcher( "Local" )
-		localDispatcher["jobsDirectory"].setValue( "/tmp/dispatcherTest" )
-		localDispatcher["framesMode"].setValue( Gaffer.Dispatcher.FramesMode.CurrentFrame )
-
+		
+		if not "LocalTest" in Gaffer.Dispatcher.registeredDispatchers():
+			
+			def create() :
+				dispatcher = Gaffer.Dispatcher.create( "Local" )
+				dispatcher["jobsDirectory"].setValue( "/tmp/dispatcherTest" )
+				return dispatcher
+			
+			Gaffer.Dispatcher.registerDispatcher( "LocalTest", create )
+	
 	def testDispatcherRegistration( self ) :
 
-		self.failUnless( "Local" in Gaffer.Dispatcher.dispatcherNames() )
-		self.failUnless( Gaffer.Dispatcher.dispatcher( "Local" ).isInstanceOf( Gaffer.LocalDispatcher.staticTypeId() ) )
+		self.failUnless( "Local" in Gaffer.Dispatcher.registeredDispatchers() )
+		self.failUnless( Gaffer.Dispatcher.create( "Local" ).isInstanceOf( Gaffer.LocalDispatcher.staticTypeId() ) )
 
 	def testDispatch( self ) :
 
-		dispatcher = Gaffer.Dispatcher.dispatcher( "Local" )
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
 		fileName = "/tmp/dispatcherTest/result.txt"
 
 		def createWriter( text ) :
@@ -141,7 +146,7 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 		context.setFrame( s.context().getFrame() + 10 )
 
 		with context :
-			Gaffer.Dispatcher.dispatcher( "Local" ).dispatch( [ s["n1"] ] )
+			Gaffer.Dispatcher.create( "LocalTest" ).dispatch( [ s["n1"] ] )
 
 		fileName = context.substitute( s["n1"]["fileName"].getValue() )
 		self.assertTrue( os.path.isfile( fileName ) )
@@ -151,7 +156,7 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 
 	def testDispatchFullRange( self ) :
 
-		dispatcher = Gaffer.Dispatcher.dispatcher( "Local" )
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
 		dispatcher["framesMode"].setValue( Gaffer.Dispatcher.FramesMode.FullRange )
 		frameList = IECore.FrameList.parse( "5-7" )
 		fileName = "/tmp/dispatcherTest/result.txt"
@@ -209,7 +214,7 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 
 	def testDispatchCustomRange( self ) :
 
-		dispatcher = Gaffer.Dispatcher.dispatcher( "Local" )
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
 		dispatcher["framesMode"].setValue( Gaffer.Dispatcher.FramesMode.CustomRange )
 		frameList = IECore.FrameList.parse( "2-6x2" )
 		dispatcher["frameRange"].setValue( str(frameList) )
@@ -266,7 +271,7 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 
 	def testDispatchBadCustomRange( self ) :
 
-		dispatcher = Gaffer.Dispatcher.dispatcher( "Local" )
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
 		dispatcher["framesMode"].setValue( Gaffer.Dispatcher.FramesMode.CustomRange )
 		dispatcher["frameRange"].setValue( "notAFrameRange" )
 
@@ -293,7 +298,7 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 		self.assertFalse( os.path.isfile( fileName ) )
 
 		with context :
-			Gaffer.Dispatcher.dispatcher( "Local" ).dispatch( [ s["n1"] ] )
+			Gaffer.Dispatcher.create( "LocalTest" ).dispatch( [ s["n1"] ] )
 
 		self.assertTrue( os.path.isfile( fileName ) )
 		self.assertTrue( os.path.basename( fileName ).startswith( context["script:name"] ) )
@@ -326,7 +331,7 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 		s["n1"]["fileName"].setValue( "/tmp/dispatcherTest/n1_####.txt" )
 		s["n1"]["text"].setValue( "n1 on ${frame}" )
 
-		dispatcher = Gaffer.Dispatcher.dispatcher( "Local" )
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
 		dispatcher.dispatch( [ s["n1"] ] )
 
 		self.assertEqual( len( preCs ), 1 )
@@ -349,7 +354,7 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 		s["n1"]["fileName"].setValue( "/tmp/dispatcherTest/n1_####.txt" )
 		s["n1"]["text"].setValue( "n1 on ${frame}" )
 
-		dispatcher = Gaffer.Dispatcher.dispatcher( "Local" )
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
 		dispatcher["executeInBackground"].setValue( True )
 		dispatcher.dispatch( [ s["n1"] ] )
 
@@ -361,8 +366,10 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 		self.assertFalse( os.path.isfile( s.context().substitute( s["n1"]["fileName"].getValue() ) ) )
 
 		# wait long enough to finish execution
-		import time; time.sleep( 2 )
-
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 1 )
+		dispatcher.jobPool().waitForAll()
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 0 )
+		
 		self.assertTrue( os.path.isfile( s.context().substitute( s["n1"]["fileName"].getValue() ) ) )
 
 	def testMixedForegroundAndBackground( self ) :
@@ -401,7 +408,7 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 		s["n2"]['requirements'][0].setInput( s["n2a"]['requirement'] )
 		s["n2"]['requirements'][1].setInput( s["n2b"]['requirement'] )
 
-		dispatcher = Gaffer.Dispatcher.dispatcher( "Local" )
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
 		dispatcher["executeInBackground"].setValue( True )
 		dispatcher["framesMode"].setValue( Gaffer.Dispatcher.FramesMode.CustomRange )
 		frameList = IECore.FrameList.parse( "2-6x2" )
@@ -425,8 +432,10 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( text, expectedText )
 
 		# wait long enough for background execution to finish
-		import time; time.sleep( 12 )
-
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 1 )
+		dispatcher.jobPool().waitForAll()
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 0 )
+		
 		self.assertEqual( os.path.isfile( fileName ), True )
 		with file( fileName, "r" ) as f :
 			text = f.read()
@@ -436,6 +445,228 @@ class LocalDispatcherTest( GafferTest.TestCase ) :
 			context.setFrame( frame )
 			expectedText += context.substitute( "n3 on ${frame};n1 on ${frame};" )
 		self.assertEqual( text, expectedText )
+
+	def testMultipleDispatchers( self ) :
+		
+		s = Gaffer.ScriptNode()
+		s["n1"] = GafferTest.TextWriter()
+		s["n1"]["fileName"].setValue( "/tmp/dispatcherTest/n1_####.txt" )
+		s["n1"]["text"].setValue( "n1 on ${frame}" )
+
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
+		dispatcher["executeInBackground"].setValue( True )
+		dispatcher2 = Gaffer.Dispatcher.create( "LocalTest" )
+		dispatcher2["executeInBackground"].setValue( True )
+		dispatcher.dispatch( [ s["n1"] ] )
+		c = s.context()
+		c.setFrame( 2 )
+		with c :
+			dispatcher2.dispatch( [ s["n1"] ] )
+		
+		# wait long enough for background execution to finish
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 2 )
+		dispatcher.jobPool().waitForAll()
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 0 )
+		
+		self.assertTrue( os.path.isfile( s.context().substitute( s["n1"]["fileName"].getValue() ) ) )
+		self.assertTrue( os.path.isfile( c.substitute( s["n1"]["fileName"].getValue() ) ) )
+	
+	def testFailure( self ) :
+		
+		s = Gaffer.ScriptNode()
+		s["n1"] = GafferTest.TextWriter()
+		s["n1"]["fileName"].setValue( "/tmp/dispatcherTest/n1_####.txt" )
+		s["n1"]["text"].setValue( "n1 on ${frame}" )
+		s["n2"] = GafferTest.TextWriter()
+		s["n2"]["fileName"].setValue( "" )
+		s["n2"]["text"].setValue( "n2 on ${frame}" )
+		s["n3"] = GafferTest.TextWriter()
+		s["n3"]["fileName"].setValue( "/tmp/dispatcherTest/n3_####.txt" )
+		s["n3"]["text"].setValue( "n3 on ${frame}" )
+		s["n1"]['requirements'][0].setInput( s["n2"]['requirement'] )
+		s["n2"]['requirements'][0].setInput( s["n3"]['requirement'] )
+		
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
+		dispatcher.dispatch( [ s["n1"] ] )
+		
+		# it still cleans up the JobPool
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 0 )
+		
+		# n3 executed correctly
+		self.assertTrue( os.path.isfile( s.context().substitute( s["n3"]["fileName"].getValue() ) ) )
+		with file( s.context().substitute( s["n3"]["fileName"].getValue() ), "r" ) as f :
+			text = f.read()
+		self.assertEqual( text, "n3 on %d" % s.context().getFrame() )
+		
+		# n2 failed, so n1 never executed
+		self.assertFalse( os.path.isfile( s.context().substitute( s["n2"]["fileName"].getValue() ) ) )
+		self.assertFalse( os.path.isfile( s.context().substitute( s["n1"]["fileName"].getValue() ) ) )
+		
+		self.tearDown()
+		
+		dispatcher["executeInBackground"].setValue( True )
+		dispatcher.dispatch( [ s["n1"] ] )
+		
+		# wait long enough for background execution to finish
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 1 )
+		dispatcher.jobPool().waitForAll()
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 0 )
+		
+		# n3 executed correctly
+		self.assertTrue( os.path.isfile( s.context().substitute( s["n3"]["fileName"].getValue() ) ) )
+		with file( s.context().substitute( s["n3"]["fileName"].getValue() ), "r" ) as f :
+			text = f.read()
+		self.assertEqual( text, "n3 on %d" % s.context().getFrame() )
+		
+		# n2 failed, so n1 never executed
+		self.assertFalse( os.path.isfile( s.context().substitute( s["n2"]["fileName"].getValue() ) ) )
+		self.assertFalse( os.path.isfile( s.context().substitute( s["n1"]["fileName"].getValue() ) ) )
+	
+	def testKill( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n1"] = GafferTest.TextWriter()
+		s["n1"]["fileName"].setValue( "/tmp/dispatcherTest/n1_####.txt" )
+		s["n1"]["text"].setValue( "n1 on ${frame}" )
+		
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
+		dispatcher["executeInBackground"].setValue( True )
+		
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 0 )
+		dispatcher.dispatch( [ s["n1"] ] )
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 1 )
+
+		# the execution hasn't finished yet
+		self.assertFalse( os.path.isfile( s.context().substitute( s["n1"]["fileName"].getValue() ) ) )
+		
+		# kill the job
+		dispatcher.jobPool().jobs()[0].kill()
+		
+		# wait long enough for the process to die
+		dispatcher.jobPool().waitForAll()
+		self.assertEqual( len(dispatcher.jobPool().jobs()), 0 )
+		
+		# make sure it never wrote the file
+		self.assertFalse( os.path.isfile( s.context().substitute( s["n1"]["fileName"].getValue() ) ) )
+	
+	def testSpacesInContext( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = GafferTest.TextWriter()
+		s["n"]["fileName"].setValue( "/tmp/dispatcherTest/test.txt" )
+		s["n"]["text"].setValue( "${test}" )
+
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
+		dispatcher["executeInBackground"].setValue( True )
+
+		c = Gaffer.Context()
+		c["test"] = "i am a string with spaces"
+
+		with c :
+			dispatcher.dispatch( [ s["n"] ] )
+
+		dispatcher.jobPool().waitForAll()
+
+		text = "".join( open( "/tmp/dispatcherTest/test.txt" ).readlines() )
+		self.assertEqual( text, "i am a string with spaces" )
+
+	def testUIContextEntriesIgnored( self ) :
+	
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferTest.TextWriter()
+		s["n"]["fileName"].setValue( "/tmp/dispatcherTest/out.txt" )
+		s["n"]["text"].setValue( "${foo} ${ui:foo}" )
+		
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
+		dispatcher["executeInBackground"].setValue( True )
+		
+		c = Gaffer.Context()
+		c["ui:foo"] = "uiFoo"
+		c["foo"] = "foo"
+		
+		with c :
+			dispatcher.dispatch( [ s["n"] ] )	
+		
+		dispatcher.jobPool().waitForAll()
+		
+		text = "".join( open( "/tmp/dispatcherTest/out.txt" ).readlines() )
+		self.assertEqual( text, "foo " )
+	
+	def testContextLockedDuringBackgroundDispatch( self ) :
+		
+		s = Gaffer.ScriptNode()
+		s["n1"] = GafferTest.TextWriter()
+		s["n1"]["fileName"].setValue( "/tmp/dispatcherTest/out.txt" )
+		s["n1"]["text"].setValue( "n1 on ${frame} with ${foo}" )
+		
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
+		dispatcher["executeInBackground"].setValue( True )
+		
+		c = Gaffer.Context( s.context() )
+		c["foo"] = "foo"
+		
+		with c :
+			dispatcher.dispatch( [ s["n1"] ] )
+		
+		self.assertFalse( os.path.isfile( "/tmp/dispatcherTest/out.txt" ) )
+		
+		foo = s["variables"].addMember( "foo", IECore.StringData( "foo" ) )
+		
+		dispatcher.jobPool().waitForAll()
+		
+		self.assertTrue( os.path.isfile( "/tmp/dispatcherTest/out.txt" ) )
+		
+		text = "".join( open( "/tmp/dispatcherTest/out.txt" ).readlines() )
+		self.assertEqual( text, "n1 on 1 with foo" )
+	
+	def testNodeNamesLockedDuringBackgroundDispatch( self ) :
+		
+		s = Gaffer.ScriptNode()
+		s["n1"] = GafferTest.TextWriter()
+		s["n1"]["fileName"].setValue( "/tmp/dispatcherTest/out.txt" )
+		s["n1"]["text"].setValue( "n1 on ${frame}" )
+		
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
+		dispatcher["executeInBackground"].setValue( True )
+		dispatcher.dispatch( [ s["n1"] ] )
+		
+		self.assertFalse( os.path.isfile( "/tmp/dispatcherTest/out.txt" ) )
+		
+		s["n1"].setName( "n2" )
+		
+		dispatcher.jobPool().waitForAll()
+		
+		self.assertTrue( os.path.isfile( "/tmp/dispatcherTest/out.txt" ) )
+		
+		text = "".join( open( "/tmp/dispatcherTest/out.txt" ).readlines() )
+		self.assertEqual( text, "n1 on 1" )
+	
+	def testIgnoreScriptLoadErrors( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferTest.TextWriter()
+		s["n"]["fileName"].setValue( "/tmp/dispatcherTest/scriptLoadErrorTest.txt" )
+		s["n"]["text"].setValue( "test" )
+
+		# because this doesn't have the dynamic flag set,
+		# it won't serialise/load properly.
+		s["n"]["user"]["badPlug"] = Gaffer.IntPlug()
+		s["n"]["user"]["badPlug"].setValue( 10 )
+
+		dispatcher = Gaffer.Dispatcher.create( "LocalTest" )
+		dispatcher["executeInBackground"].setValue( True )
+
+		dispatcher.dispatch( [ s["n"] ] )
+		dispatcher.jobPool().waitForAll()
+
+		self.assertFalse( os.path.isfile( "/tmp/dispatcherTest/scriptLoadErrorTest.txt" ) )
+
+		dispatcher["ignoreScriptLoadErrors"].setValue( True )
+		dispatcher.dispatch( [ s["n"] ] )
+		dispatcher.jobPool().waitForAll()
+
+		self.assertTrue( os.path.isfile( "/tmp/dispatcherTest/scriptLoadErrorTest.txt" ) )
 
 	def tearDown( self ) :
 

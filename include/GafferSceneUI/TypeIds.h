@@ -43,6 +43,9 @@ namespace GafferSceneUI
 enum TypeId
 {
 	SceneViewTypeId = 110651,
+	SceneGadgetTypeId = 110652,
+	SelectionToolTypeId = 110653,
+	CropWindowToolTypeId = 110654,
 	LastTypeId = 110700
 };
 

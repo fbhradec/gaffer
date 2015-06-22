@@ -37,12 +37,14 @@
 #ifndef GAFFER_REFERENCE_H
 #define GAFFER_REFERENCE_H
 
-#include "Gaffer/Node.h"
+#include "Gaffer/SubGraph.h"
 
 namespace Gaffer
 {
 
-class Reference : public Node
+IE_CORE_FORWARDDECLARE( StringPlug )
+
+class Reference : public SubGraph
 {
 
 	public :
@@ -50,7 +52,7 @@ class Reference : public Node
 		Reference( const std::string &name=defaultName<Reference>() );
 		virtual ~Reference();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Reference, ReferenceTypeId, Node );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Reference, ReferenceTypeId, SubGraph );
 
 		/// The plugs that stores the name of the file being
 		/// referenced. This should be considered read-only, and the

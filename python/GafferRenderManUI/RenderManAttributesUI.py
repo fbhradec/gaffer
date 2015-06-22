@@ -89,108 +89,349 @@ def __raytracingSummary( plug ) :
 		info.append( "Specular Depth %d" % plug["maxSpecularDepth"]["value"].getValue() )
 	if plug["traceDisplacements"]["enabled"].getValue() :
 		info.append( "Displacements %s" % ( "On" if plug["traceDisplacements"]["value"].getValue() else "Off" ) )
+	if plug["traceBias"]["enabled"].getValue() :
+		info.append( "Trace Bias %s" % __floatToString( plug["traceBias"]["value"].getValue() ) )
 
 	return ", ".join( info )
 
-GafferUI.PlugValueWidget.registerCreator(
+Gaffer.Metadata.registerNode(
 
 	GafferRenderMan.RenderManAttributes,
-	"attributes",
-	GafferUI.SectionedCompoundDataPlugValueWidget,
-	sections = (
 
-		{
-			"label" : "Visibility",
-			"summary" : __visibilitySummary,
-			"namesAndLabels" : (
-				( "ri:visibility:camera", "Camera" ),
-				( "ri:shade:camerahitmode", "Camera Mode" ),
+	"description",
+	"""
+	Applies RenderMan specific attributes to the scene.
+	""",
 
-				( "ri:visibility:transmission", "Transmission" ),
-				( "ri:shade:transmissionhitmode", "Transmission Mode" ),
+	plugs = {
 
-				( "ri:visibility:diffuse", "Diffuse" ),
-				( "ri:shade:diffusehitmode", "Diffuse Mode" ),
+		# Summaries
 
-				( "ri:visibility:specular", "Specular" ),
-				( "ri:shade:specularhitmode", "Specular Mode" ),
+		"attributes" : [
 
-				( "ri:visibility:photon", "Photon" ),
-				( "ri:shade:photonhitmode", "Photon Mode" ),
-			),
-		},
+			"layout:section:Visibility:summary", __visibilitySummary,
+			"layout:section:Shading:summary", __shadingSummary,
+			"layout:section:Raytracing:summary", __raytracingSummary,
 
-		{
-			"label" : "Shading",
-			"summary" : __shadingSummary,
-			"namesAndLabels" : (
-				( "ri:shadingRate", "Shading Rate" ),
-				( "ri:shade:relativeshadingrate", "Relative Shading Rate" ),
-				( "ri:matte", "Matte" ),
-				( "ri:displacementbound:sphere", "Displacement Bound" ),
-			),
-		},
+		],
 
-		{
-			"label" : "Raytracing",
-			"summary" : __raytracingSummary,
-			"namesAndLabels" : (
-				( "ri:trace:maxdiffusedepth", "Max Diffuse Depth" ),
-				( "ri:trace:maxspeculardepth", "Max Specular Depth" ),
-				( "ri:trace:displacements", "Trace Displacements" ),
-			),
-		},
+		# Visibility section
 
-	),
+		"attributes.cameraVisibility" : [
+
+			"description",
+			"""
+			Whether or not objects are visible to the camera.
+			An object can be invisible to the camera but still
+			appear in reflections and shadows etc. To make an
+			object totally invisible, prefer the visibility
+			setting provided by the StandardAttributes node.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Camera",
+
+		],
+
+		"attributes.cameraHitMode" : [
+
+			"description",
+			"""
+			Specifies if shading is performed when the object
+			is hit by a camera ray, or if the primitive colour
+			is used as an approximation instead.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Camera Mode",
+
+		],
+
+		"attributes.cameraHitMode.value" : [
+
+			"preset:Shader", "shader",
+			"preset:Primitive", "primitive",
+
+		],
+
+		"attributes.transmissionVisibility" : [
+
+			"description",
+			"""
+			Whether or not objects are visible to
+			transmission rays. Objects that are
+			visible to transmission rays will cast
+			shadows, and those that aren't won't.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Transmission",
+
+		],
+
+		"attributes.transmissionHitMode" : [
+
+			"description",
+			"""
+			Specifies if shading is performed when the object
+			is hit by a tranmission ray, or if the primitive opacity
+			is used as an approximation instead.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Transmission Mode",
+
+		],
+
+		"attributes.transmissionHitMode.value" : [
+
+			"preset:Shader", "shader",
+			"preset:Primitive", "primitive",
+
+		],
+
+		"attributes.diffuseVisibility" : [
+
+			"description",
+			"""
+			Whether or not objects are visible to
+			diffuse rays - typically this means whether
+			or not they cast occlusion and bounce light.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Diffuse",
+
+		],
+
+		"attributes.diffuseHitMode" : [
+
+			"description",
+			"""
+			Specifies if shading is performed when the object
+			is hit by a diffuse ray, or if the primitive colour
+			is used as an approximation instead.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Diffuse Mode",
+
+		],
+
+		"attributes.diffuseHitMode.value" : [
+
+			"preset:Shader", "shader",
+			"preset:Primitive", "primitive",
+
+		],
+
+		"attributes.specularVisibility" : [
+
+			"description",
+			"""
+			Whether or not objects are visible to
+			specular rays - typically this means whether
+			or not they are visible in reflections and
+			refractions.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Specular",
+
+		],
+
+		"attributes.specularHitMode" : [
+
+			"description",
+			"""
+			Specifies if shading is performed when the object
+			is hit by a specular ray, or if the primitive colour
+			is used as an approximation instead.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Specular Mode",
+
+		],
+
+		"attributes.specularHitMode.value" : [
+
+			"preset:Shader", "shader",
+			"preset:Primitive", "primitive",
+
+		],
+
+		"attributes.photonVisibility" : [
+
+			"description",
+			"""
+			Whether or not objects are visible to
+			photons.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Photon",
+
+		],
+
+		"attributes.photonHitMode" : [
+
+			"description",
+			"""
+			Specifies if shading is performed when the object
+			is hit by a photon, or if the primitive colour
+			is used as an approximation instead.
+			""",
+
+			"layout:section", "Visibility",
+			"label", "Photon Mode",
+
+		],
+
+		"attributes.photonHitMode.value" : [
+
+			"preset:Shader", "shader",
+			"preset:Primitive", "primitive",
+
+		],
+
+		# Shading section
+
+		"attributes.shadingRate" : [
+
+			"description",
+			"""
+			Specifies how finely objects are diced before they
+			are shaded. Smaller values give higher quality but
+			slower rendering.
+			""",
+
+			"layout:section", "Shading",
+
+		],
+
+		"attributes.relativeShadingRate" : [
+
+			"description",
+			"""
+			Specifies a multiplier on the shading rate. Note that
+			if shading rate is specified at multiple locations above
+			an object in the hierarchy, they are multiplied together
+			to arrive at the final shading rate.
+			""",
+
+			"layout:section", "Shading",
+
+		],
+
+		"attributes.matte" : [
+
+			"description",
+			"""
+			Matte objects don't appear in the render, but cut holes
+			in the alpha of all objects behind them.
+			""",
+
+			"layout:section", "Shading",
+
+		],
+
+
+		"attributes.displacementBound" : [
+
+			"description",
+			"""
+			Specifies the maximum amount the displacement shader will
+			displace by.
+			""",
+
+			"layout:section", "Shading",
+
+		],
+
+		# Raytracing section
+
+		"attributes.maxDiffuseDepth" : [
+
+			"description",
+			"""
+			The maximum depth for diffuse ray bounces.
+			""",
+
+			"layout:section", "Raytracing",
+
+		],
+
+		"attributes.maxSpecularDepth" : [
+
+			"description",
+			"""
+			The maximum depth for specular (reflection) ray bounces.
+			""",
+
+			"layout:section", "Raytracing",
+
+		],
+
+		"attributes.traceDisplacements" : [
+
+			"description",
+			"""
+			Whether or not displacements are taken into account
+			when raytracing. This can be fairly expensive.
+			""",
+
+			"layout:section", "Raytracing",
+
+		],
+
+		"attributes.traceBias" : [
+
+			"description",
+			"""
+			This bias value affects rays. It is an offset applied to the ray origin, moving it slightly away from the surface launch point in the ray direction. This offset can prevent blotchy artifacts resulting from the ray immediately finding an intersection with the surface it just left. Usually, 0.01 is the default scene value.
+			""",
+
+			"layout:section", "Raytracing",
+
+		],
+
+	}
 
 )
 
 GafferUI.PlugValueWidget.registerCreator(
 	GafferRenderMan.RenderManAttributes,
 	"attributes.cameraHitMode.value",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Shader", "shader" ),
-		( "Primitive", "primitive" ),
-	),
+	GafferUI.PresetsPlugValueWidget
 )
 
 GafferUI.PlugValueWidget.registerCreator(
 	GafferRenderMan.RenderManAttributes,
 	"attributes.transmissionHitMode.value",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Shader", "shader" ),
-		( "Primitive", "primitive" ),
-	),
+	GafferUI.PresetsPlugValueWidget
+)
+
+GafferUI.PlugValueWidget.registerCreator(
+	GafferRenderMan.RenderManAttributes,
+	"attributes.transmissionHitMode.value",
+	GafferUI.PresetsPlugValueWidget
 )
 
 GafferUI.PlugValueWidget.registerCreator(
 	GafferRenderMan.RenderManAttributes,
 	"attributes.diffuseHitMode.value",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Shader", "shader" ),
-		( "Primitive", "primitive" ),
-	),
+	GafferUI.PresetsPlugValueWidget
 )
 
 GafferUI.PlugValueWidget.registerCreator(
 	GafferRenderMan.RenderManAttributes,
 	"attributes.specularHitMode.value",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Shader", "shader" ),
-		( "Primitive", "primitive" ),
-	),
+	GafferUI.PresetsPlugValueWidget
 )
 
 GafferUI.PlugValueWidget.registerCreator(
 	GafferRenderMan.RenderManAttributes,
 	"attributes.photonHitMode.value",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Shader", "shader" ),
-		( "Primitive", "primitive" ),
-	),
+	GafferUI.PresetsPlugValueWidget
 )

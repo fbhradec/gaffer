@@ -38,11 +38,50 @@ import threading
 
 import IECore
 
+import Gaffer
 import GafferUI
 
 import GafferImage
 
 __all__ = []
+
+Gaffer.Metadata.registerNode(
+
+	GafferImage.Display,
+
+	"description",
+	"""
+	Interactively displays images as they are rendered.
+
+	This node runs a server on a background thread,
+	allowing it to receive images from both local and
+	remote render processes. To set up a render to
+	output to the Display node, use an Outputs node with
+	an Interactive output configured to render to the
+	same port as is specified on the Display node.
+	""",
+
+	plugs = {
+
+		"port" : [
+
+			"description",
+			"""
+			The port number on which to run the display server.
+			Outputs which specify this port number will appear
+			in this node - use multiple nodes with different
+			port numbers to receive multiple images at once.
+			""",
+
+		],
+
+	}
+
+)
+
+##########################################################################
+# Code for triggering updates when data is received on a Display node
+##########################################################################
 
 ## Here we're taking signals the Display node emits when it has new data, and using them
 # to trigger a plugDirtiedSignal on the main ui thread. This is necessary because the Display
@@ -66,9 +105,14 @@ def __scheduleUpdate( plug, force = False ) :
 	GafferUI.EventLoop.executeOnUIThread( lambda : __update( plug ) )
 
 def __update( plug ) :
-
-	updateCountPlug = plug.node()["__updateCount"]
-	updateCountPlug.setValue( updateCountPlug.getValue() + 1 )
+	
+	# it's possible that this function can get called on a plug whose node has
+	# been deleted, so we always check if the node exists:
+	
+	node = plug.node()
+	if node:
+		updateCountPlug = node["__updateCount"]
+		updateCountPlug.setValue( updateCountPlug.getValue() + 1 )
 
 	global __plugsPendingUpdate
 	global __plugsPendingUpdateLock

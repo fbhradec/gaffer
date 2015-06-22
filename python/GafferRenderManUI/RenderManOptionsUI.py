@@ -95,92 +95,302 @@ def __searchPathsSummary( plug ) :
 
 	return ", ".join( info )
 
-GafferUI.PlugValueWidget.registerCreator(
+Gaffer.Metadata.registerNode(
 
 	GafferRenderMan.RenderManOptions,
-	"options",
-	GafferUI.SectionedCompoundDataPlugValueWidget,
-	sections = (
 
-		{
-			"label" : "Quality",
-			"summary" : __qualitySummary,
-			"namesAndLabels" : (
-				( "ri:pixelSamples", "Pixel Samples" ),
-			),
-		},
+	"description",
+	"""
+	Sets global scene options applicable to RenderMan
+	renderers. Use the StandardOptions node to set
+	global options applicable to all renderers.
+	""",
 
-		{
-			"label" : "Hider",
-			"summary" : __hiderSummary,
-			"namesAndLabels" : (
-				( "ri:hider", "Hider" ),
-				( "ri:hider:depthfilter", "Depth Filter" ),
-				( "ri:hider:jitter", "Jitter" ),
-				( "ri:hider:samplemotion", "Sample Motion" ),
-				( "ri:hider:extrememotiondof", "Extreme Motion DOF" ),
-				( "ri:hider:progressive", "Progressive" ),
-			),
-		},
+	plugs = {
 
-		{
-			"label" : "Statistics",
-			"summary" : __statisticsSummary,
-			"namesAndLabels" : (
-				( "ri:statistics:endofframe", "Level" ),
-				( "ri:statistics:filename", "File Name" ),
-				( "ri:statistics:progress", "Progress" ),
-			),
-		},
+		# Summaries
 
-		{
-			"label" : "Search Paths",
-			"summary" : __searchPathsSummary,
-			"namesAndLabels" : (
-				( "ri:searchpath:shader", "Shaders" ),
-				( "ri:searchpath:texture", "Textures" ),
-				( "ri:searchpath:display", "Displays" ),
-				( "ri:searchpath:archive", "Archives" ),
-				( "ri:searchpath:procedural", "Procedurals" ),
-			),
-		},
+		"options" : [
 
-	),
+			"layout:section:Quality:summary", __qualitySummary,
+			"layout:section:Hider:summary", __hiderSummary,
+			"layout:section:Statistics:summary", __statisticsSummary,
+			"layout:section:Search Paths:summary", __searchPathsSummary,
+
+		],
+
+		# Quality
+
+		"options.pixelSamples" : [
+
+			"description",
+			"""
+			The number of primary samples to divide each pixel into
+			in the X and Y directions. For example, 3x3 gives a total of
+			9 samples per pixel. This is the primary quality control for
+			geometric antialiasing and motion blur.
+			""",
+
+			"layout:section", "Quality",
+
+		],
+
+		# Hider
+
+		"options.hider" : [
+
+			"description",
+			"""
+			The "Hidden" hider means the classic REYES algorithm
+			is used, and the "Raytrace" hider means a more modern
+			raytraced algorithm is used.
+			""",
+
+			"layout:section", "Hider",
+
+		],
+
+		"options.hider.value" : [
+
+			"preset:Hidden", "hidden",
+			"preset:Raytrace", "raytrace",
+
+		],
+
+		"options.hiderDepthFilter" : [
+
+			"description",
+			"""
+			The filter used to compute a single depth
+			value per pixel from the depths in each
+			pixel sample.
+			""",
+
+			"layout:section", "Hider",
+			"label", "Depth Filter",
+
+		],
+
+		"options.hiderDepthFilter.value" : [
+
+			"preset:Min", "min",
+			"preset:Max", "max",
+			"preset:Average", "average",
+			"preset:Midpoint", "midpoint",
+
+		],
+
+		"options.hiderJitter" : [
+
+			"description",
+			"""
+			Whether or not each pixel sample is
+			jittered about the centre of its subpixel
+			position, or if they're aligned in a
+			regular grid. If in doubt, leave this on.
+			""",
+
+			"layout:section", "Hider",
+			"label", "Jitter",
+
+		],
+
+		"options.hiderSampleMotion" : [
+
+			"description",
+			"""
+			May be turned off to disable the sampling of
+			motion blur, but keep motion vectors available
+			for use in shaders. This is useful for
+			rendering a motion vector pass to allow
+			2D motion blur to be applied as a post process.
+			If you simply wish to turn off motion blur
+			entirely, then use the motion blur settings
+			in the StandardOptions node.
+			""",
+
+
+			"layout:section", "Hider",
+			"label", "Sample Motion",
+
+		],
+
+		"options.hiderExtremeMotionDOF" : [
+
+			"description",
+			"""
+			An alternative sampling algorithm which
+			is more expensive, but gives higher quality
+			results when objects are both moving quickly
+			and are out of focus.
+			""",
+
+			"layout:section", "Hider",
+			"label", "Extreme Motion DOF",
+
+		],
+
+		"options.hiderProgressive" : [
+
+			"description",
+			"""
+			Renders at progressively increasing levels
+			of quality, to give quick low quality feedback
+			at the start of an interactive render. Only
+			applies when the raytrace hider is used.
+			""",
+
+			"layout:section", "Hider",
+			"label", "Progressive",
+
+		],
+
+		# Statistics
+
+		"options.statisticsLevel" : [
+
+			"description",
+			"""
+			Determines the verbosity of statistics
+			output.
+			""",
+
+			"layout:section", "Statistics",
+			"label", "Level",
+
+		],
+
+		"options.statisticsLevel.value" : [
+
+			"preset:0 (Off)", 0,
+			"preset:1", 1,
+			"preset:2", 2,
+			"preset:3 (Most Verbose)", 3,
+
+		],
+
+		"options.statisticsFileName" : [
+
+			"description",
+			"""
+			The name of a file where the statistics
+			will be written.
+			""",
+
+			"layout:section", "Statistics",
+			"label", "File Name",
+
+		],
+
+		"options.statisticsProgress" : [
+
+			"description",
+			"""
+			Turning this on causes a render progress
+			percentage to be printed out continuously
+			during rendering.
+			""",
+
+			"layout:section", "Statistics",
+			"label", "Progress",
+
+		],
+
+		# Search Paths
+
+		"options.shaderSearchPath" : [
+
+			"description",
+			"""
+			The filesystem paths where shaders are
+			searched for. Paths should be separated
+			by ':'.
+			""",
+
+			"layout:section", "Search Paths",
+			"label", "Shaders",
+
+		],
+
+		"options.textureSearchPath" : [
+
+			"description",
+			"""
+			The filesystem paths where shaders are
+			located. Paths should be separated
+			by ':'.
+			""",
+
+			"layout:section", "Search Paths",
+			"label", "Textures",
+
+		],
+
+		"options.displaySearchPath" : [
+
+			"description",
+			"""
+			The filesystem paths where display driver
+			plugins are located. These will be used when searching
+			for drivers specified using the Outputs
+			node. Paths should be separated by ':'.
+			""",
+
+			"layout:section", "Search Paths",
+			"label", "Displays",
+
+		],
+
+		"options.archiveSearchPath" : [
+
+			"description",
+			"""
+			The filesystem paths where RIB archives
+			are located. These will be used when searching
+			for archives specified using the ExternalProcedural
+			node. Paths should be separated by ':'.
+			""",
+
+			"layout:section", "Search Paths",
+			"label", "Archives",
+
+		],
+
+		"options.proceduralSearchPath" : [
+
+			"description",
+			"""
+			The filesystem paths where DSO procedurals
+			are located. These will be used when searching
+			for procedurals specified using the ExternalProcedural
+			node. Paths should be separated by ':'.
+			""",
+
+			"layout:section", "Search Paths",
+			"label", "Procedurals",
+
+		],
+
+	}
 
 )
 
 GafferUI.PlugValueWidget.registerCreator(
 	GafferRenderMan.RenderManOptions,
 	"options.hider.value",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Hidden", "hidden" ),
-		( "Raytrace", "raytrace" ),
-	),
+	GafferUI.PresetsPlugValueWidget,
 )
 
 GafferUI.PlugValueWidget.registerCreator(
 	GafferRenderMan.RenderManOptions,
 	"options.hiderDepthFilter.value",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Min", "min" ),
-		( "Max", "max" ),
-		( "Average", "average" ),
-		( "Midpoint", "midpoint" ),
-	),
+	GafferUI.PresetsPlugValueWidget,
 )
 
 GafferUI.PlugValueWidget.registerCreator(
 	GafferRenderMan.RenderManOptions,
 	"options.statisticsLevel.value",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "0 (Off)", 0 ),
-		( "1", 1 ),
-		( "2", 2 ),
-		( "3 (Most Verbose)", 3 ),
-	),
+	GafferUI.PresetsPlugValueWidget,
 )
 
 GafferUI.PlugValueWidget.registerCreator(

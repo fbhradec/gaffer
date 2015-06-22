@@ -36,11 +36,34 @@
 
 import re
 import os
+import functools
 
 import IECore
 
 import Gaffer
 import GafferUI
+
+Gaffer.Metadata.registerNode(
+
+	Gaffer.Box,
+
+	"description",
+	"""
+	A container for "subgraphs" - node networks which exist inside the
+	Box and can be exposed by promoting selected internal plugs onto the
+	outside of the Box.
+
+	Boxes can be used as an organisational tool for simplifying large
+	graphs by collapsing them into sections which perform distinct tasks.
+	They are also used for authoring files to be used with the Reference
+	node.
+	""",
+
+)
+
+##########################################################################
+# Public functions
+##########################################################################
 
 ## A command suitable for use with NodeMenu.append(), to add a menu
 # item for the creation of a Box from the current selection. We don't
@@ -68,61 +91,40 @@ def appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition ) :
 	menuDefinition.append( "/BoxDivider", { "divider" : True } )
 	menuDefinition.append( "/Show Contents...", { "command" : IECore.curry( __showContents, nodeGraph, node ) } )
 
+## A callback suitable for use with NodeEditor.toolMenuSignal() - it provides
+# menu options specific to Boxes. We don't actually register it automatically,
+# but instead let the startup files for particular applications register
+# it if it suits their purposes.
+def appendNodeEditorToolMenuDefinitions( nodeEditor, node, menuDefinition ) :
+
+	if not isinstance( node, Gaffer.Box ) :
+		return
+
+	menuDefinition.append( "/BoxDivider", { "divider" : True } )
+	menuDefinition.append( "/Export for referencing...", { "command" : functools.partial( __exportForReferencing, node = node ) } )
+
 def __showContents( nodeGraph, box ) :
 
 	GafferUI.NodeGraph.acquire( box )
 
-# NodeUI
-##########################################################################
+def __exportForReferencing( menu, node ) :
 
-class BoxNodeUI( GafferUI.StandardNodeUI ) :
+	bookmarks = GafferUI.Bookmarks.acquire( node, category="reference" )
 
-	def __init__( self, node, displayMode = None, **kw ) :
+	path = Gaffer.FileSystemPath( bookmarks.getDefault( menu ) )
+	path.setFilter( Gaffer.FileSystemPath.createStandardFilter( [ "grf" ] ) )
 
-		GafferUI.StandardNodeUI.__init__( self, node, displayMode, **kw )
+	dialogue = GafferUI.PathChooserDialogue( path, title="Export for referencing", confirmLabel="Export", leaf=True, bookmarks=bookmarks )
+	path = dialogue.waitForPath( parentWindow = menu.ancestor( GafferUI.Window ) )
 
-		## \todo Maybe this should become a customisable part of the StandardNodeUI - if so then
-		# perhaps we need to integrate it with the existing presets menu in ParameterisedHolderNodeUI.
-		toolButton = GafferUI.MenuButton( image = "gear.png", hasFrame=False )
-		toolButton.setMenu( GafferUI.Menu( Gaffer.WeakMethod( self._toolMenuDefinition ) ) )
+	if not path :
+		return
 
-		self._tabbedContainer().setCornerWidget( toolButton )
+	path = str( path )
+	if not path.endswith( ".grf" ) :
+		path += ".grf"
 
-		self.__uiEditor = None
-
-	def _toolMenuDefinition( self ) :
-
-		result = IECore.MenuDefinition()
-		result.append( "/Edit UI...", { "command" : Gaffer.WeakMethod( self.__showUIEditor ) } )
-		result.append( "/Export Divider", { "divider" : True } )
-		result.append( "/Export for referencing...", { "command" : Gaffer.WeakMethod( self.__exportForReferencing ) } )
-
-		return result
-
-	def __exportForReferencing( self ) :
-
-		bookmarks = GafferUI.Bookmarks.acquire( self.node(), category="reference" )
-
-		path = Gaffer.FileSystemPath( bookmarks.getDefault( self ) )
-		path.setFilter( Gaffer.FileSystemPath.createStandardFilter( [ "grf" ] ) )
-
-		dialogue = GafferUI.PathChooserDialogue( path, title="Export for referencing", confirmLabel="Export", leaf=True, bookmarks=bookmarks )
-		path = dialogue.waitForPath( parentWindow = self.ancestor( GafferUI.Window ) )
-
-		if not path :
-			return
-
-		path = str( path )
-		if not path.endswith( ".grf" ) :
-			path += ".grf"
-
-		self.node().exportForReference( path )
-
-	def __showUIEditor( self ) :
-
-		GafferUI.UIEditor.acquire( self.node() )
-
-GafferUI.NodeUI.registerNodeUI( Gaffer.Box, BoxNodeUI )
+	node.exportForReference( path )
 
 # PlugValueWidget registrations
 ##########################################################################
@@ -130,26 +132,75 @@ GafferUI.NodeUI.registerNodeUI( Gaffer.Box, BoxNodeUI )
 GafferUI.PlugValueWidget.registerCreator( Gaffer.Box, re.compile( "in[0-9]*" ), None )
 GafferUI.PlugValueWidget.registerCreator( Gaffer.Box, re.compile( "out[0-9]*" ), None )
 
+def __correspondingInternalPlug( plug ) :
+
+	node = plug.node()
+	if plug.direction() == plug.Direction.In :
+		for output in plug.outputs() :
+			if node.isAncestorOf( output.node() ) :
+				return output
+	elif plug.direction() == plug.Direction.Out :
+		input = plug.getInput()
+		if input is not None and node.isAncestorOf( input.node() ) :
+			return input
+
+	return None
+
 def __plugValueWidgetCreator( plug ) :
 
-	# when a plug has been promoted, we get the widget that would
+	# When a plug has been promoted, we get the widget that would
 	# have been used to represent the internal plug, and then
-	# call setPlug() with the external plug. this allows us to
-	# transfer custom uis from inside the box to outside the box.
-	box = plug.node()
-	for output in plug.outputs() :
-		if box.plugIsPromoted( output ) :
-			widget = GafferUI.PlugValueWidget.create( output )
-			if widget is not None :
-				widget.setPlug( plug )
-			return widget
+	# call setPlug() with the external plug. This allows us to
+	# transfer custom uis from inside the node to outside the node.
+	#
+	# But If the types don't match, we can't expect the
+	# UI for the internal plug to work with the external
+	# plug. Typically the types will match, because the
+	# external plug was created by Box::promotePlug(), but
+	# it's possible to use scripting to connect different
+	# types, for instance to drive an internal IntPlug with
+	# an external BoolPlug. In this case we make no attempt
+	# to transfer the internal UI.
+	#
+	# \todo A better solution may be to mandate the use of Metadata to
+	# choose a widget type for each plug, and then just make sure we
+	# pass on the internal Metadata.
+	internalPlug = __correspondingInternalPlug( plug )
+	if type( internalPlug ) is type( plug ) :
+		widget = GafferUI.PlugValueWidget.create( internalPlug )
+		if widget is not None :
+			widget.setPlug( plug )
+		return widget
 
 	return GafferUI.PlugValueWidget.create( plug, useTypeOnly=True )
 
-GafferUI.PlugValueWidget.registerCreator( Gaffer.Box, "user.*" , __plugValueWidgetCreator )
+## \todo We're registering the Box PlugValueWidget creator for the Reference node too, because
+# we want the two to have the same appearance. We perhaps should just have one registration for
+# the SubGraph (the base class for Box and Reference) instead, but it's not yet totally clear
+# whether or not we'll have future SubGraph subclasses that will want a different behaviour.
+for nodeType in ( Gaffer.Box, Gaffer.Reference ) :
 
-# PlugValueWidget menu
+	GafferUI.PlugValueWidget.registerCreator( nodeType, "*" , __plugValueWidgetCreator )
+	GafferUI.PlugValueWidget.registerCreator( nodeType, "user", GafferUI.UserPlugValueWidget, editable = nodeType is Gaffer.Reference )
+
+# Shared menu code
 ##########################################################################
+
+def __deletePlug( plug ) :
+
+	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+		plug.parent().removeChild( plug )
+
+def __appendPlugDeletionMenuItems( menuDefinition, plug, readOnly = False ) :
+
+	if not isinstance( plug.node(), Gaffer.Box ) :
+		return
+
+	menuDefinition.append( "/DeleteDivider", { "divider" : True } )
+	menuDefinition.append( "/Delete", {
+		"command" : functools.partial( __deletePlug, plug ),
+		"active" : not readOnly,
+	} )
 
 def __promoteToBox( box, plug ) :
 
@@ -170,9 +221,8 @@ def __promoteToBoxEnabledPlug( box, plug ) :
 		box["enabled"] = enabledPlug
 		plug.setInput( enabledPlug )
 
-def __plugPopupMenu( menuDefinition, plugValueWidget ) :
+def __appendPlugPromotionMenuItems( menuDefinition, plug, readOnly = False ) :
 
-	plug = plugValueWidget.getPlug()
 	node = plug.node()
 	if node is None :
 		return
@@ -183,17 +233,19 @@ def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 
 	if box.canPromotePlug( plug ) :
 
-		menuDefinition.append( "/BoxDivider", { "divider" : True } )
+		if len( menuDefinition.items() ) :
+			menuDefinition.append( "/BoxDivider", { "divider" : True } )
+
 		menuDefinition.append( "/Promote to %s" % box.getName(), {
 			"command" : IECore.curry( __promoteToBox, box, plug ),
-			"active" : not plugValueWidget.getReadOnly(),
+			"active" : not readOnly,
 		} )
 
 		if isinstance( node, Gaffer.DependencyNode ) :
 			if plug.isSame( node.enabledPlug() ) :
 				menuDefinition.append( "/Promote to %s.enabled" % box.getName(), {
 					"command" : IECore.curry( __promoteToBoxEnabledPlug, box, plug ),
-					"active" : not plugValueWidget.getReadOnly(),
+					"active" : not readOnly,
 				} )
 
 	elif box.plugIsPromoted( plug ) :
@@ -203,21 +255,31 @@ def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 		with IECore.IgnoredExceptions( Exception ) :
 			menuDefinition.remove( "/Remove input" )
 
-		menuDefinition.append( "/BoxDivider", { "divider" : True } )
+		if len( menuDefinition.items() ) :
+			menuDefinition.append( "/BoxDivider", { "divider" : True } )
+
 		menuDefinition.append( "/Unpromote from %s" % box.getName(), {
 			"command" : IECore.curry( __unpromoteFromBox, box, plug ),
-			"active" : not plugValueWidget.getReadOnly(),
+			"active" : not readOnly,
 		} )
+
+# PlugValueWidget menu
+##########################################################################
+
+def __plugPopupMenu( menuDefinition, plugValueWidget ) :
+
+	__appendPlugDeletionMenuItems( menuDefinition, plugValueWidget.getPlug(), readOnly = plugValueWidget.getReadOnly() )
+	__appendPlugPromotionMenuItems( menuDefinition, plugValueWidget.getPlug(), readOnly = plugValueWidget.getReadOnly() )
 
 __plugPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu )
 
 # NodeGraph plug context menu
 ##########################################################################
 
-def __renamePlug( nodeGraph, plug ) :
+def __renamePlug( menu, plug ) :
 
 	d = GafferUI.TextInputDialogue( initialText = plug.getName(), title = "Enter name", confirmLabel = "Rename" )
-	name = d.waitForText( parentWindow = nodeGraph.ancestor( GafferUI.Window ) )
+	name = d.waitForText( parentWindow = menu.ancestor( GafferUI.Window ) )
 
 	if not name :
 		return
@@ -225,18 +287,33 @@ def __renamePlug( nodeGraph, plug ) :
 	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
 		plug.setName( name )
 
-def __deletePlug( plug ) :
+def __setPlugMetadata( plug, key, value ) :
 
 	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
-		plug.parent().removeChild( plug )
+		Gaffer.Metadata.registerPlugValue( plug, key, value )
 
 def __nodeGraphPlugContextMenu( nodeGraph, plug, menuDefinition ) :
 
-	if not isinstance( plug.node(), Gaffer.Box ) :
-		return
+	if isinstance( plug.node(), Gaffer.Box ) :
 
-	menuDefinition.append( "/Rename...", { "command" : IECore.curry( __renamePlug, nodeGraph, plug ) } )
-	menuDefinition.append( "/DeleteDivider", { "divider" : True } )
-	menuDefinition.append( "/Delete", { "command" : IECore.curry( __deletePlug, plug ) } )
+		menuDefinition.append( "/Rename...", { "command" : functools.partial( __renamePlug, plug = plug ) } )
+
+		menuDefinition.append( "/MoveDivider", { "divider" : True } )
+
+		currentEdge = Gaffer.Metadata.plugValue( plug, "nodeGadget:nodulePosition" )
+		if not currentEdge :
+			currentEdge = "top" if plug.direction() == plug.Direction.In else "bottom"
+
+		for edge in ( "top", "bottom", "left", "right" ) :
+			menuDefinition.append(
+				"/Move To/" + edge.capitalize(),
+				{
+					"command" : functools.partial( __setPlugMetadata, plug, "nodeGadget:nodulePosition", edge ),
+					"active" : edge != currentEdge,
+				}
+			)
+
+	__appendPlugDeletionMenuItems( menuDefinition, plug )
+	__appendPlugPromotionMenuItems( menuDefinition, plug )
 
 __nodeGraphPlugContextMenuConnection = GafferUI.NodeGraph.plugContextMenuSignal().connect( __nodeGraphPlugContextMenu )

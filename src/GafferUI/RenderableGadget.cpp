@@ -155,7 +155,7 @@ void RenderableGadget::setRenderable( IECore::ConstVisibleRenderablePtr renderab
 			m_scene->setCamera( 0 );
 			applySelection();
 		}
-		renderRequestSignal()( this );
+ 		requestRender();
 	}
 }
 
@@ -181,7 +181,7 @@ std::string RenderableGadget::objectAt( const IECore::LineSegment3f &lineInGadge
 	{
 		return "";
 	}
-	return selection[0].name.value();
+	return NameStateComponent::nameFromGLName( selection[0].name );
 }
 
 size_t RenderableGadget::objectsAt( const Imath::V3f &corner0InGadgetSpace, const Imath::V3f &corner1InGadgetSpace, std::vector<std::string> &objectNames ) const
@@ -195,7 +195,7 @@ size_t RenderableGadget::objectsAt( const Imath::V3f &corner0InGadgetSpace, cons
 	objectNames.reserve( selection.size() );
 	for( size_t i = 0, e = selection.size(); i < e; i++ )
 	{
-		objectNames.push_back( selection[i].name.value() );
+		objectNames.push_back( NameStateComponent::nameFromGLName( selection[i].name ) );
 	}
 
 	return objectNames.size();
@@ -221,7 +221,7 @@ void RenderableGadget::setSelection( const std::set<std::string> &selection )
 	m_selection = selection;
 	applySelection();
 	m_selectionChangedSignal( this );
-	renderRequestSignal()( this );
+ 	requestRender();
 }
 
 RenderableGadget::SelectionChangedSignal &RenderableGadget::selectionChangedSignal()
@@ -322,7 +322,7 @@ bool RenderableGadget::buttonPress( GadgetPtr gadget, const ButtonEvent &event )
 	{
 		applySelection();
 		m_selectionChangedSignal( this );
-		renderRequestSignal()( this );
+ 		requestRender();
 	}
 	return true;
 }
@@ -340,7 +340,7 @@ IECore::RunTimeTypedPtr RenderableGadget::dragBegin( GadgetPtr gadget, const Dra
 		// drag to select
 		m_dragStartPosition = m_lastDragPosition = event.line.p0;
 		m_dragSelecting = true;
-		renderRequestSignal()( this );
+ 		requestRender();
 		return this;
 	}
 	else
@@ -365,7 +365,7 @@ bool RenderableGadget::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 bool RenderableGadget::dragMove( GadgetPtr gadget, const DragDropEvent &event )
 {
 	m_lastDragPosition = event.line.p1;
-	renderRequestSignal()( this );
+ 	requestRender();
 	return true;
 }
 
@@ -398,7 +398,7 @@ bool RenderableGadget::dragEnd( GadgetPtr gadget, const DragDropEvent &event )
 		m_selectionChangedSignal( this );
 	}
 
-	renderRequestSignal()( this );
+ 	requestRender();
 	return true;
 }
 

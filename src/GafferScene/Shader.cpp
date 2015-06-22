@@ -42,12 +42,16 @@
 #include "Gaffer/TypedPlug.h"
 #include "Gaffer/NumericPlug.h"
 #include "Gaffer/CompoundDataPlug.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/Metadata.h"
 
 #include "GafferScene/Shader.h"
 
 using namespace Imath;
 using namespace GafferScene;
 using namespace Gaffer;
+
+static IECore::InternedString g_nodeColorMetadataName( "nodeGadget:color" );
 
 IE_CORE_DEFINERUNTIMETYPED( Shader );
 
@@ -61,9 +65,12 @@ Shader::Shader( const std::string &name )
 	addChild( new StringPlug( "type" ) );
 	addChild( new CompoundPlug( "parameters", Plug::In, Plug::Default & ~Plug::AcceptsInputs ) );
 	addChild( new BoolPlug( "enabled", Gaffer::Plug::In, true ) );
-	addChild( new StringPlug( "__nodeName", Gaffer::Plug::In, name, Plug::Default & ~(Plug::Serialisable | Plug::AcceptsInputs | Plug::PerformsSubstitutions ) ) );
+	addChild( new StringPlug( "__nodeName", Gaffer::Plug::In, name, Plug::Default & ~(Plug::Serialisable | Plug::AcceptsInputs), Context::NoSubstitutions ) );
+	addChild( new Color3fPlug( "__nodeColor", Gaffer::Plug::In, Color3f( 0.0f ) ) );
+	nodeColorPlug()->setFlags( Plug::Serialisable | Plug::AcceptsInputs, false );
 
 	nameChangedSignal().connect( boost::bind( &Shader::nameChanged, this ) );
+	Metadata::nodeValueChangedSignal().connect( boost::bind( &Shader::nodeMetadataChanged, this, ::_1, ::_2, ::_3 ) );
 }
 
 Shader::~Shader()
@@ -90,14 +97,14 @@ const Gaffer::StringPlug *Shader::typePlug() const
 	return getChild<StringPlug>( g_firstPlugIndex + 1 );
 }
 
-Gaffer::CompoundPlug *Shader::parametersPlug()
+Gaffer::Plug *Shader::parametersPlug()
 {
-	return getChild<CompoundPlug>( g_firstPlugIndex + 2 );
+	return getChild<Plug>( g_firstPlugIndex + 2 );
 }
 
-const Gaffer::CompoundPlug *Shader::parametersPlug() const
+const Gaffer::Plug *Shader::parametersPlug() const
 {
-	return getChild<CompoundPlug>( g_firstPlugIndex + 2 );
+	return getChild<Plug>( g_firstPlugIndex + 2 );
 }
 
 Gaffer::Plug *Shader::outPlug()
@@ -132,6 +139,16 @@ const Gaffer::StringPlug *Shader::nodeNamePlug() const
 	return getChild<StringPlug>( g_firstPlugIndex + 4 );
 }
 
+Gaffer::Color3fPlug *Shader::nodeColorPlug()
+{
+	return getChild<Color3fPlug>( g_firstPlugIndex + 5 );
+}
+
+const Gaffer::Color3fPlug *Shader::nodeColorPlug() const
+{
+	return getChild<Color3fPlug>( g_firstPlugIndex + 5 );
+}
+
 IECore::MurmurHash Shader::stateHash() const
 {
 	NetworkBuilder networkBuilder( this );
@@ -158,7 +175,8 @@ void Shader::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs
 		input == enabledPlug() ||
 		input == nodeNamePlug() ||
 		input == namePlug() ||
-		input == typePlug()
+		input == typePlug() ||
+		input->parent<Plug>() == nodeColorPlug()
 	)
 	{
 		const Plug *out = outPlug();
@@ -249,6 +267,20 @@ void Shader::nameChanged()
 	nodeNamePlug()->setValue( getName() );
 }
 
+void Shader::nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore::InternedString key, const Gaffer::Node *node )
+{
+	if( node && node != this )
+	{
+		return;
+	}
+
+	if( key == g_nodeColorMetadataName && this->isInstanceOf( nodeTypeId ) )
+	{
+		IECore::ConstColor3fDataPtr d = Metadata::nodeValue<const IECore::Color3fData>( this, g_nodeColorMetadataName );
+		nodeColorPlug()->setValue( d ? d->readable() : Color3f( 0.0f ) );
+	}
+}
+
 //////////////////////////////////////////////////////////////////////////
 // NetworkBuilder implementation
 //////////////////////////////////////////////////////////////////////////
@@ -296,6 +328,7 @@ IECore::MurmurHash Shader::NetworkBuilder::shaderHash( const Shader *shaderNode 
 	parameterHashWalk( shaderNode, shaderNode->parametersPlug(), shaderAndHash.hash );
 
 	shaderNode->nodeNamePlug()->hash( shaderAndHash.hash );
+	shaderNode->nodeColorPlug()->hash( shaderAndHash.hash );
 
 	return shaderAndHash.hash;
 }
@@ -334,6 +367,7 @@ IECore::Shader *Shader::NetworkBuilder::shader( const Shader *shaderNode )
 	parameterValueWalk( shaderNode, shaderNode->parametersPlug(), IECore::InternedString(), shaderAndHash.shader->parameters() );
 
 	shaderAndHash.shader->blindData()->writable()["gaffer:nodeName"] = new IECore::StringData( shaderNode->nodeNamePlug()->getValue() );
+	shaderAndHash.shader->blindData()->writable()["gaffer:nodeColor"] = new IECore::Color3fData( shaderNode->nodeColorPlug()->getValue() );
 
 	m_state->members().push_back( shaderAndHash.shader );
 	return shaderAndHash.shader.get();

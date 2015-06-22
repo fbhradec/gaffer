@@ -208,13 +208,13 @@ class _Camera( Gaffer.Node ) :
 		self["parentConstraint"]["in"].setInput( self["parent"]["out"] )
 		self["parentConstraint"]["target"].setInput( self["lookAt"] )
 		self["parentConstraint"]["targetMode"].setValue( self["parentConstraint"].TargetMode.BoundCenter )
-		self["parentConstraint"]["filter"].setInput( self["cameraFilter"]["match"] )
+		self["parentConstraint"]["filter"].setInput( self["cameraFilter"]["out"] )
 
 		self["cameraRotate"] = GafferScene.Transform()
 		self["cameraRotate"]["in"].setInput( self["parentConstraint"]["out"] )
 		self["cameraRotate"]["transform"]["rotate"]["y"].setInput( self["angle"] )
 		self["cameraRotate"]["space"].setValue( self["cameraRotate"].Space.Object )
-		self["cameraRotate"]["filter"].setInput( self["cameraFilter"]["match"] )
+		self["cameraRotate"]["filter"].setInput( self["cameraFilter"]["out"] )
 
 		self["elevationExpression"] = Gaffer.Expression()
 		self["elevationExpression"]["engine"].setValue( "python" )
@@ -224,7 +224,7 @@ class _Camera( Gaffer.Node ) :
 		self["cameraTranslate"]["in"].setInput( self["cameraRotate"]["out"] )
 		self["cameraTranslate"]["transform"]["translate"]["z"].setInput( self["depth"] )
 		self["cameraTranslate"]["space"].setValue( self["cameraRotate"].Space.Object )
-		self["cameraTranslate"]["filter"].setInput( self["cameraFilter"]["match"] )
+		self["cameraTranslate"]["filter"].setInput( self["cameraFilter"]["out"] )
 
 		self["options"] = GafferScene.StandardOptions()
 		self["options"]["options"]["renderCamera"]["enabled"].setValue( True )
@@ -274,8 +274,7 @@ class _ObjectPreview( Gaffer.Node ) :
 
 		Gaffer.Node.__init__( self, name )
 
-		self["fileName"] = Gaffer.StringPlug( defaultValue = "" )
-		self["fileName"].setFlags( Gaffer.Plug.Flags.PerformsSubstitutions, False )
+		self["fileName"] = Gaffer.StringPlug( defaultValue = "", substitutions = Gaffer.Context.Substitutions.NoSubstitutions )
 		self["frameRate"] = Gaffer.FloatPlug( defaultValue = 24.0 )
 		self["samplesPerFrame"] = Gaffer.IntPlug( defaultValue = 1, minValue = 1 )
 

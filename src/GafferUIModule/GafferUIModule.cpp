@@ -72,6 +72,9 @@
 #include "GafferUIBindings/SpacerGadgetBinding.h"
 #include "GafferUIBindings/StandardConnectionGadgetBinding.h"
 #include "GafferUIBindings/HandleBinding.h"
+#include "GafferUIBindings/ToolBinding.h"
+#include "GafferUIBindings/DotNodeGadgetBinding.h"
+#include "GafferUIBindings/PathListingWidgetBinding.h"
 
 using namespace GafferUIBindings;
 
@@ -113,5 +116,8 @@ BOOST_PYTHON_MODULE( _GafferUI )
 	bindSpacerGadget();
 	bindStandardConnectionGadget();
 	bindHandle();
+	bindTool();
+	bindDotNodeGadget();
+	bindPathListingWidget();
 
 }

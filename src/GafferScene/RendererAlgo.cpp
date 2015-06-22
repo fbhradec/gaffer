@@ -39,12 +39,13 @@
 
 #include "IECore/PreWorldRenderable.h"
 #include "IECore/Camera.h"
-#include "IECore/MatrixMotionTransform.h"
 #include "IECore/WorldBlock.h"
 #include "IECore/Light.h"
 #include "IECore/AttributeBlock.h"
 #include "IECore/Display.h"
 #include "IECore/TransformBlock.h"
+#include "IECore/CoordinateSystem.h"
+#include "IECore/ClippingPlane.h"
 
 #include "Gaffer/Context.h"
 
@@ -119,170 +120,43 @@ void outputOptions( const IECore::CompoundObject *globals, IECore::Renderer *ren
 	}
 }
 
+void outputCameras( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
+{
+	ConstPathMatcherDataPtr cameraSetData =  scene->set( "__cameras" );
+	const PathMatcher &cameraSet = cameraSetData->readable();
+
+	// Output all the cameras, skipping the primary one - we need to output this
+	// last, as that's how cortex determines the primary camera.
+	ScenePlug::ScenePath primaryCameraPath;
+	if( const StringData *primaryCameraPathData = globals->member<StringData>( "option:render:camera" ) )
+	{
+		ScenePlug::stringToPath( primaryCameraPathData->readable(), primaryCameraPath );
+	}
+
+	for( PathMatcher::Iterator it = cameraSet.begin(), eIt = cameraSet.end(); it != eIt; ++it )
+	{
+		if( *it != primaryCameraPath )
+		{
+			outputCamera( scene, *it, globals, renderer );
+		}
+	}
+
+	// Output the primary camera, or a default if it doesn't exist.
+
+	outputCamera( scene, globals, renderer );
+
+}
+
 void outputCamera( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
 {
-	// get the camera from the scene
-
-	const StringData *cameraPathData = globals->member<StringData>( "option:render:camera" );
-	IECore::CameraPtr camera = 0;
-	if( cameraPathData )
-	{
-		ScenePlug::ScenePath cameraPath;
-		ScenePlug::stringToPath( cameraPathData->readable(), cameraPath );
-		if( !exists( scene, cameraPath ) )
-		{
-			throw IECore::Exception( "Camera \"" + cameraPathData->readable() + "\" does not exist" );
-		}
-
-		IECore::ConstCameraPtr constCamera = runTimeCast<const IECore::Camera>( scene->object( cameraPath ) );
-		if( !constCamera )
-		{
-			throw IECore::Exception( "Location \"" + cameraPathData->readable() + "\" is not a camera" );
-		}
-
-		camera = constCamera->copy();
-		const BoolData *cameraBlurData = globals->member<BoolData>( "option:render:cameraBlur" );
-		const bool cameraBlur = cameraBlurData ? cameraBlurData->readable() : false;
-		camera->setTransform( transform( scene, cameraPath, shutter( globals ), cameraBlur ) );
-	}
-
-	if( !camera )
-	{
-		camera = new IECore::Camera();
-	}
-
-	// apply the resolution, aspect ratio and crop window
-
-	V2i resolution( 640, 480 );
-	if( const V2iData *resolutionData = globals->member<V2iData>( "option:render:resolution" ) )
-	{
-		resolution = resolutionData->readable();
-	}
-
-	if( const FloatData *resolutionMultiplierData = globals->member<FloatData>( "option:render:resolutionMultiplier" ) )
-	{
-		resolution.x = int((float)resolution.x * resolutionMultiplierData->readable());
-		resolution.y = int((float)resolution.y * resolutionMultiplierData->readable());
-	}
-
-	camera->parameters()["resolution"] = new V2iData( resolution );
-
-	const FloatData *pixelAspectRatioData = globals->member<FloatData>( "option:render:pixelAspectRatio" );
-	if( pixelAspectRatioData )
-	{
-		camera->parameters()["pixelAspectRatio"] = pixelAspectRatioData->copy();
-	}
-
-	const Box2fData *cropWindowData = globals->member<Box2fData>( "option:render:cropWindow" );
-	if( cropWindowData )
-	{
-		camera->parameters()["cropWindow"] = cropWindowData->copy();
-	}
-
-	// calculate an appropriate screen window
-
-	camera->addStandardParameters();
-
-	// apply overscan
-	
-	const BoolData *overscanData = globals->member<BoolData>( "option:render:overscan" );
-	if( overscanData && overscanData->readable() )
-	{
-		
-		// get offsets for each corner of image (as a multiplier of the image width)
-		V2f minOffset( 0.1 ), maxOffset( 0.1 );
-		if( const FloatData *overscanValueData = globals->member<FloatData>( "option:render:overscanLeft" ) )
-		{
-			minOffset.x = overscanValueData->readable();
-		}
-		if( const FloatData *overscanValueData = globals->member<FloatData>( "option:render:overscanRight" ) )
-		{
-			maxOffset.x = overscanValueData->readable();
-		}
-		if( const FloatData *overscanValueData = globals->member<FloatData>( "option:render:overscanBottom" ) )
-		{
-			minOffset.y = overscanValueData->readable();
-		}
-		if( const FloatData *overscanValueData = globals->member<FloatData>( "option:render:overscanTop" ) )
-		{
-			maxOffset.y = overscanValueData->readable();
-		}
-				
-		// convert those offsets into pixel values
-		
-		V2i minPixelOffset(
-			int(minOffset.x * (float)resolution.x),
-			int(minOffset.y * (float)resolution.y)
-		);
-		
-		V2i maxPixelOffset(
-			int(maxOffset.x * (float)resolution.x),
-			int(maxOffset.y * (float)resolution.y)
-		);
-
-		// recalculate original offsets to account for the rounding when
-		// converting to integer pixel space
-		
-		minOffset = V2f(
-			(float)minPixelOffset.x / (float)resolution.x,
-			(float)minPixelOffset.y / (float)resolution.y
-		);
-		
-		maxOffset = V2f(
-			(float)maxPixelOffset.x / (float)resolution.x,
-			(float)maxPixelOffset.y / (float)resolution.y
-		);
-		
-		// adjust camera resolution and screen window appropriately
-
-		V2i &cameraResolution = camera->parametersData()->member<V2iData>( "resolution" )->writable();
-		Box2f &cameraScreenWindow = camera->parametersData()->member<Box2fData>( "screenWindow" )->writable();
-		
-		cameraResolution += minPixelOffset + maxPixelOffset;
-		
-		const Box2f originalScreenWindow = cameraScreenWindow;
-		cameraScreenWindow.min -= originalScreenWindow.size() * minOffset;
-		cameraScreenWindow.max += originalScreenWindow.size() * maxOffset;
-		
-		// adjust crop window too, if it was specified by the user
-		
-		if( cropWindowData )
-		{
-			Box2f &cameraCropWindow = camera->parametersData()->member<Box2fData>( "cropWindow" )->writable();
-			// convert into original screen space
-			Box2f cropWindowScreen(
-				V2f(
-					Imath::lerp( originalScreenWindow.min.x, originalScreenWindow.max.x, cameraCropWindow.min.x ),
-					Imath::lerp( originalScreenWindow.max.y, originalScreenWindow.min.y, cameraCropWindow.max.y )
-				),
-				V2f(
-					Imath::lerp( originalScreenWindow.min.x, originalScreenWindow.max.x, cameraCropWindow.max.x ),
-					Imath::lerp( originalScreenWindow.max.y, originalScreenWindow.min.y, cameraCropWindow.min.y )
-				)
-			);
-			// convert out of new screen space
-			cameraCropWindow = Box2f(
-				V2f(
-					lerpfactor( cropWindowScreen.min.x, cameraScreenWindow.min.x, cameraScreenWindow.max.x ),
-					lerpfactor( cropWindowScreen.max.y, cameraScreenWindow.max.y, cameraScreenWindow.min.y )
-				),
-				V2f(
-					lerpfactor( cropWindowScreen.max.x, cameraScreenWindow.min.x, cameraScreenWindow.max.x ),
-					lerpfactor( cropWindowScreen.min.y, cameraScreenWindow.max.y, cameraScreenWindow.min.y )
-				)
-			);
-		}
-		
-	}
-
-	// apply the shutter
-
-	camera->parameters()["shutter"] = new V2fData( shutter( globals ) );
-
-	// and output
-
+	IECore::CameraPtr camera = GafferScene::camera( scene, globals );
 	camera->render( renderer );
+}
 
+void outputCamera( const ScenePlug *scene, const ScenePlug::ScenePath &cameraPath, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
+{
+	IECore::CameraPtr camera = GafferScene::camera( scene, cameraPath, globals );
+	camera->render( renderer );
 }
 
 void outputGlobalAttributes( const IECore::CompoundObject *globals, IECore::Renderer *renderer )
@@ -307,27 +181,12 @@ void outputGlobalAttributes( const IECore::CompoundObject *globals, IECore::Rend
 
 void outputLights( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
 {
-	const CompoundData *sets = globals->member<CompoundData>( "gaffer:sets" );
-	if( !sets )
-	{
-		return;
-	}
+	ConstPathMatcherDataPtr lightSetData = scene->set( "__lights" );
+	const PathMatcher &lightSet = lightSetData->readable();
 
-	const PathMatcherData *lightSet = sets->member<PathMatcherData>( "__lights" );
-	if( !lightSet )
+	for( PathMatcher::Iterator it = lightSet.begin(), eIt = lightSet.end(); it != eIt; ++it )
 	{
-		return;
-	}
-
-	vector<string> paths;
-	lightSet->readable().paths( paths );
-	for( vector<string>::const_iterator it = paths.begin(), eIt = paths.end(); it != eIt; ++it )
-	{
-		/// \todo We should be able to get paths out of the PathMatcher in
-		/// the first place, rather than have to convert from strings.
-		ScenePlug::ScenePath path;
-		ScenePlug::stringToPath( *it, path );
-		outputLight( scene, path, renderer );
+		outputLight( scene, *it, renderer );
 	}
 }
 
@@ -339,14 +198,19 @@ bool outputLight( const ScenePlug *scene, const ScenePlug::ScenePath &path, IECo
 		return false;
 	}
 
-	ConstCompoundObjectPtr attributes = scene->fullAttributes( path );
-	const BoolData *visibilityData = attributes->member<BoolData>( "scene:visible" );
-	if( visibilityData && !visibilityData->readable() )
+	if( !visible( scene, path ) )
 	{
+		/// \todo Since both visible() and fullAttributes() perform similar work,
+		/// we may want to combine them into one query if we see this function
+		/// being a significant fraction of render time. Maybe something like
+		/// `fullAttributes( returnNullIfInvisible = true )`? It probably also
+		/// makes sense to migrate all the convenience functions from ScenePlug
+		/// into SceneAlgo.
 		return false;
 	}
 
-	M44f transform = scene->fullTransform( path );
+	ConstCompoundObjectPtr attributes = scene->fullAttributes( path );
+	const M44f transform = scene->fullTransform( path );
 
 	std::string lightHandle;
 	ScenePlug::pathToString( path, lightHandle );
@@ -358,17 +222,10 @@ bool outputLight( const ScenePlug *scene, const ScenePlug::ScenePath &path, IECo
 		AttributeBlock attributeBlock( renderer );
 
 		renderer->setAttribute( "name", new StringData( lightHandle ) );
-
-		CompoundObject::ObjectMap::const_iterator aIt, aeIt;
-		for( aIt = attributes->members().begin(), aeIt = attributes->members().end(); aIt != aeIt; aIt++ )
-		{
-			if( const Data *attribute = runTimeCast<const Data>( aIt->second.get() ) )
-			{
-				renderer->setAttribute( aIt->first.string(), attribute );
-			}
-		}
+		outputAttributes( attributes.get(), renderer );
 
 		renderer->concatTransform( transform );
+
 		light->render( renderer );
 	}
 
@@ -379,27 +236,12 @@ bool outputLight( const ScenePlug *scene, const ScenePlug::ScenePath &path, IECo
 
 void outputCoordinateSystems( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
 {
-	const CompoundData *sets = globals->member<CompoundData>( "gaffer:sets" );
-	if( !sets )
-	{
-		return;
-	}
+	ConstPathMatcherDataPtr coordinateSystemSetData = scene->set( "__coordinateSystems" );
+	const PathMatcher &coordinateSystemSet = coordinateSystemSetData->readable();
 
-	const PathMatcherData *coordinateSystemSet = sets->member<PathMatcherData>( "__coordinateSystems" );
-	if( !coordinateSystemSet )
+	for( PathMatcher::Iterator it = coordinateSystemSet.begin(), eIt = coordinateSystemSet.end(); it != eIt; ++it )
 	{
-		return;
-	}
-
-	vector<string> paths;
-	coordinateSystemSet->readable().paths( paths );
-	for( vector<string>::const_iterator it = paths.begin(), eIt = paths.end(); it != eIt; ++it )
-	{
-		/// \todo We should be able to get paths out of the PathMatcher in
-		/// the first place, rather than have to convert from strings.
-		ScenePlug::ScenePath path;
-		ScenePlug::stringToPath( *it, path );
-		outputCoordinateSystem( scene, path, renderer );
+		outputCoordinateSystem( scene, *it, renderer );
 	}
 }
 
@@ -411,9 +253,7 @@ bool outputCoordinateSystem( const ScenePlug *scene, const ScenePlug::ScenePath 
 		return false;
 	}
 
-	ConstCompoundObjectPtr attributes = scene->fullAttributes( path );
-	const BoolData *visibilityData = attributes->member<BoolData>( "scene:visible" );
-	if( visibilityData && !visibilityData->readable() )
+	if( !visible( scene, path ) )
 	{
 		return false;
 	}
@@ -435,6 +275,39 @@ bool outputCoordinateSystem( const ScenePlug *scene, const ScenePlug::ScenePath 
 	return true;
 }
 
+void outputClippingPlanes( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
+{
+	ConstPathMatcherDataPtr clippingPlanesSetData = scene->set( "__clippingPlanes" );
+	const PathMatcher &clippingPlanesSet = clippingPlanesSetData->readable();
+
+	for( PathMatcher::Iterator it = clippingPlanesSet.begin(), eIt = clippingPlanesSet.end(); it != eIt; ++it )
+	{
+		outputClippingPlane( scene, *it, renderer );
+	}
+}
+
+bool outputClippingPlane( const ScenePlug *scene, const ScenePlug::ScenePath &path, IECore::Renderer *renderer )
+{
+	IECore::ConstClippingPlanePtr clippingPlane = runTimeCast<const IECore::ClippingPlane>( scene->object( path ) );
+	if( !clippingPlane )
+	{
+		return false;
+	}
+
+	if( !visible( scene, path ) )
+	{
+		return false;
+	}
+
+	const M44f transform = scene->fullTransform( path );
+
+	TransformBlock transformBlock( renderer );
+	renderer->concatTransform( transform );
+	clippingPlane->render( renderer );
+
+	return true;
+}
+
 void createDisplayDirectories( const IECore::CompoundObject *globals )
 {
 	CompoundObject::ObjectMap::const_iterator it, eIt;
@@ -452,55 +325,30 @@ void createDisplayDirectories( const IECore::CompoundObject *globals )
 	}
 }
 
-Imath::V2f shutter( const IECore::CompoundObject *globals )
+void outputAttributes( const IECore::CompoundObject *attributes, IECore::Renderer *renderer )
 {
-	const BoolData *cameraBlurData = globals->member<BoolData>( "option:render:cameraBlur" );
-	const bool cameraBlur = cameraBlurData ? cameraBlurData->readable() : false;
-
-	const BoolData *transformBlurData = globals->member<BoolData>( "option:render:transformBlur" );
-	const bool transformBlur = transformBlurData ? transformBlurData->readable() : false;
-
-	const BoolData *deformationBlurData = globals->member<BoolData>( "option:render:deformationBlur" );
-	const bool deformationBlur = deformationBlurData ? deformationBlurData->readable() : false;
-
-	V2f shutter( Context::current()->getFrame() );
-	if( cameraBlur || transformBlur || deformationBlur )
+	for( CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; it++ )
 	{
-		const V2fData *shutterData = globals->member<V2fData>( "option:render:shutter" );
-		const V2f relativeShutter = shutterData ? shutterData->readable() : V2f( -0.25, 0.25 );
-		shutter += relativeShutter;
-	}
-
-	return shutter;
-}
-
-IECore::TransformPtr transform( const ScenePlug *scene, const ScenePlug::ScenePath &path, const Imath::V2f &shutter, bool motionBlur )
-{
-	int numSamples = 1;
-	if( motionBlur )
-	{
-		ConstCompoundObjectPtr attributes = scene->fullAttributes( path );
-		const IntData *transformBlurSegmentsData = attributes->member<IntData>( "gaffer:transformBlurSegments" );
-		numSamples = transformBlurSegmentsData ? transformBlurSegmentsData->readable() + 1 : 2;
-
-		const BoolData *transformBlurData = attributes->member<BoolData>( "gaffer:transformBlur" );
-		if( transformBlurData && !transformBlurData->readable() )
+		if( const StateRenderable *s = runTimeCast<const StateRenderable>( it->second.get() ) )
 		{
-			numSamples = 1;
+			s->render( renderer );
+		}
+		else if( const ObjectVector *o = runTimeCast<const ObjectVector>( it->second.get() ) )
+		{
+			for( ObjectVector::MemberContainer::const_iterator it = o->members().begin(), eIt = o->members().end(); it != eIt; it++ )
+			{
+				const StateRenderable *s = runTimeCast<const StateRenderable>( it->get() );
+				if( s )
+				{
+					s->render( renderer );
+				}
+			}
+		}
+		else if( const Data *d = runTimeCast<const Data>( it->second.get() ) )
+		{
+			renderer->setAttribute( it->first, d );
 		}
 	}
-
-	MatrixMotionTransformPtr result = new MatrixMotionTransform();
-	ContextPtr transformContext = new Context( *Context::current(), Context::Borrowed );
-	Context::Scope scopedContext( transformContext.get() );
-	for( int i = 0; i < numSamples; i++ )
-	{
-		float frame = lerp( shutter[0], shutter[1], (float)i / std::max( 1, numSamples - 1 ) );
-		transformContext->setFrame( frame );
-		result->snapshots()[frame] = scene->fullTransform( path );
-	}
-
-	return result;
 }
 
 } // namespace GafferScene

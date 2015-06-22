@@ -36,7 +36,7 @@
 ##########################################################################
 
 import os
-import subprocess
+import subprocess32 as subprocess
 import unittest
 
 import IECore
@@ -47,6 +47,8 @@ import GafferTest
 class ExecuteApplicationTest( GafferTest.TestCase ) :
 
 	__scriptFileName = "/tmp/executeScript.gfr"
+	__scriptFileNameWithSpecialCharacters = "/tmp/executeScript-10.tmp.gfr"
+	__outputTextFile = "/tmp/executeOutput.txt"
 	__outputFileSeq = IECore.FileSequence( "/tmp/sphere.####.cob" )
 
 	def testErrorReturnStatusForMissingScript( self ) :
@@ -140,7 +142,7 @@ class ExecuteApplicationTest( GafferTest.TestCase ) :
 		p.wait()
 
 		error = "".join( p.stderr.readlines() )
-		self.failUnless( error == "" )
+		self.assertEqual( error, "" )
 		self.failIf( p.returncode )
 		self.failUnless( os.path.exists( self.__outputFileSeq.fileNameForFrame( 1 ) ) )
 
@@ -168,9 +170,86 @@ class ExecuteApplicationTest( GafferTest.TestCase ) :
 		self.failUnless( "Context parameter" in error )
 		self.failUnless( p.returncode )
 
+	def testIgnoreScriptLoadErrors( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["node"] = Gaffer.SystemCommand()
+		s["node"]["command"].setValue( "sleep .1" )
+
+		# because this doesn't have the dynamic flag set,
+		# it won't serialise/load properly.
+		s["node"]["user"]["badPlug"] = Gaffer.IntPlug()
+		s["node"]["user"]["badPlug"].setValue( 10 )
+
+		s["fileName"].setValue( self.__scriptFileName )
+		s.save()
+
+		p = subprocess.Popen(
+			"gaffer execute -script " + self.__scriptFileName,
+			shell = True,
+			stderr = subprocess.PIPE,
+		)
+		p.wait()
+
+		error = "".join( p.stderr.readlines() )
+		self.assertTrue( self.__scriptFileName in error )
+		self.assertTrue( "KeyError: 'badPlug'" in error )
+		self.assertFalse( "Traceback" in error )
+		self.assertNotEqual( p.returncode, 0 )
+
+		p = subprocess.Popen(
+			"gaffer execute -ignoreScriptLoadErrors -script " + self.__scriptFileName,
+			shell = True,
+			stderr = subprocess.PIPE,
+		)
+		p.wait()
+
+		error = "".join( p.stderr.readlines() )
+		self.assertTrue( "KeyError: 'badPlug'" in error )
+		self.assertFalse( "Traceback" in error )
+		self.assertEqual( p.returncode, 0 )
+
+	def testErrorReturnStatusForExceptionDuringExecution( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( self.__scriptFileName )
+		s["t"] = GafferTest.TextWriter()
+		s["t"]["fileName"].setValue( "" ) # will cause an error
+		s.save()
+
+		p = subprocess.Popen(
+			"gaffer execute -script " + self.__scriptFileName,
+			shell=True,
+			stderr = subprocess.PIPE,
+		)
+		p.wait()
+
+		error = "".join( p.stderr.readlines() )
+		self.failUnless( "ERROR" in error )
+		self.failUnless( "executing t" in error )
+		self.failUnless( p.returncode )
+
+	def testSpecialCharactersInScriptFileName( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( self.__scriptFileNameWithSpecialCharacters )
+		s["t"] = GafferTest.TextWriter()
+		s["t"]["fileName"].setValue( self.__outputTextFile )
+		s.save()
+
+		p = subprocess.Popen(
+			"gaffer execute -script '%s'" % self.__scriptFileNameWithSpecialCharacters,
+			shell=True,
+			stderr = subprocess.PIPE,
+		)
+		p.wait()
+
+		self.assertEqual( p.returncode, 0 )
+		self.assertTrue( os.path.exists( self.__outputTextFile ) )
+
 	def tearDown( self ) :
 
-		files = [ self.__scriptFileName ]
+		files = [ self.__scriptFileName, self.__scriptFileNameWithSpecialCharacters, self.__outputTextFile ]
 		seq = IECore.ls( self.__outputFileSeq.fileName, minSequenceSize = 1 )
 		if seq :
 			files.extend( seq.fileNames() )

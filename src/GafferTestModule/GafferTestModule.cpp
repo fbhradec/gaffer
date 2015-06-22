@@ -44,6 +44,7 @@
 #include "GafferTest/FilteredRecursiveChildIteratorTest.h"
 #include "GafferTest/MetadataTest.h"
 #include "GafferTest/ContextTest.h"
+#include "GafferTest/ComputeNodeTest.h"
 
 using namespace boost::python;
 using namespace GafferTest;
@@ -64,4 +65,7 @@ BOOST_PYTHON_MODULE( _GafferTest )
 	def( "testMetadataThreading", &testMetadataThreadingWrapper );
 	def( "testManyContexts", &testManyContexts );
 	def( "testManySubstitutions", &testManySubstitutions );
+	def( "testManyEnvironmentSubstitutions", &testManyEnvironmentSubstitutions );
+	def( "testComputeNodeThreading", &testComputeNodeThreading );
+
 }

@@ -37,23 +37,53 @@
 import Gaffer
 import GafferUI
 
-Gaffer.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNode(
 
-Gaffer.SystemCommand,
+	Gaffer.SystemCommand,
 
-"""Runs system commands via a shell""",
+	"description",
+	"""
+	Runs system commands via a shell.
+	""",
 
-"command",
-"The command to be run. This may reference values from substitutions with '{substitutionName}' syntax."
+	plugs = {
 
-"substitutions",
-"An arbitrary set of name/value pairs which can be referenced in command with '{substitutionsName}' syntax."
+		"command" : (
 
-"environmentVariables",
-"An arbitrary set of name/value pairs which will be set as environment variables when running the command."
+			"description",
+			"""
+			The command to be run. This may reference values
+			from substitutions with '{substitutionName}' syntax.
+			""",
+
+			"nodule:type", "",
+
+		),
+
+		"substitutions" : (
+
+			"description",
+			"""
+			An arbitrary set of name/value pairs which can be
+			referenced in command with '{substitutionsName}' syntax.
+			""",
+
+			"nodule:type", "",
+
+		),
+
+		"environmentVariables" : (
+
+			"description",
+			"""
+			An arbitrary set of name/value pairs which will be set as
+			environment variables when running the command.
+			""",
+
+			"nodule:type", "",
+
+		)
+
+	}
 
 )
-
-GafferUI.Nodule.registerNodule( Gaffer.SystemCommand, "command", lambda plug : None )
-GafferUI.Nodule.registerNodule( Gaffer.SystemCommand, "substitutions", lambda plug : None )
-GafferUI.Nodule.registerNodule( Gaffer.SystemCommand, "environmentVariables", lambda plug : None )

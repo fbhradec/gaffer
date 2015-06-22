@@ -285,7 +285,7 @@ size_t GraphGadget::connectionGadgets( const Gaffer::Node *node, std::vector<con
 	return connections.size();
 }
 
-size_t GraphGadget::upstreamNodeGadgets( const Gaffer::Node *node, std::vector<NodeGadget *> &upstreamNodeGadgets )
+size_t GraphGadget::upstreamNodeGadgets( const Gaffer::Node *node, std::vector<NodeGadget *> &upstreamNodeGadgets, size_t degreesOfSeparation )
 {
 	NodeGadget *g = nodeGadget( node );
 	if( !g )
@@ -294,31 +294,106 @@ size_t GraphGadget::upstreamNodeGadgets( const Gaffer::Node *node, std::vector<N
 	}
 
 	std::set<NodeGadget *> n;
-	upstreamNodeGadgetsWalk( g, n );
+	connectedNodeGadgetsWalk( g, n, Gaffer::Plug::In, degreesOfSeparation );
 	std::copy( n.begin(), n.end(), back_inserter( upstreamNodeGadgets ) );
 	return 0;
 }
 
-size_t GraphGadget::upstreamNodeGadgets( const Gaffer::Node *node, std::vector<const NodeGadget *> &upstreamNodeGadgets ) const
+size_t GraphGadget::upstreamNodeGadgets( const Gaffer::Node *node, std::vector<const NodeGadget *> &upstreamNodeGadgets, size_t degreesOfSeparation ) const
 {
 	// preferring naughty casts over maintaining two identical implementations
-	return const_cast<GraphGadget *>( this )->upstreamNodeGadgets( node, reinterpret_cast<std::vector<NodeGadget *> &>( upstreamNodeGadgets ) );
+	return const_cast<GraphGadget *>( this )->upstreamNodeGadgets( node, reinterpret_cast<std::vector<NodeGadget *> &>( upstreamNodeGadgets ), degreesOfSeparation );
 }
 
-void GraphGadget::upstreamNodeGadgetsWalk( NodeGadget *gadget, std::set<NodeGadget *> &upstreamNodeGadgets )
+size_t GraphGadget::downstreamNodeGadgets( const Gaffer::Node *node, std::vector<NodeGadget *> &downstreamNodeGadgets, size_t degreesOfSeparation )
 {
-	for( Gaffer::RecursiveInputPlugIterator it( gadget->node() ); it != it.end(); ++it )
+	NodeGadget *g = nodeGadget( node );
+	if( !g )
 	{
-		if( ConnectionGadget *connection = connectionGadget( it->get() ) )
+		return 0;
+	}
+
+	std::set<NodeGadget *> n;
+	connectedNodeGadgetsWalk( g, n, Gaffer::Plug::Out, degreesOfSeparation );
+	std::copy( n.begin(), n.end(), back_inserter( downstreamNodeGadgets ) );
+	return 0;
+}
+
+size_t GraphGadget::downstreamNodeGadgets( const Gaffer::Node *node, std::vector<const NodeGadget *> &downstreamNodeGadgets, size_t degreesOfSeparation ) const
+{
+	// preferring naughty casts over maintaining two identical implementations
+	return const_cast<GraphGadget *>( this )->downstreamNodeGadgets( node, reinterpret_cast<std::vector<NodeGadget *> &>( downstreamNodeGadgets ), degreesOfSeparation );
+}
+
+size_t GraphGadget::connectedNodeGadgets( const Gaffer::Node *node, std::vector<NodeGadget *> &connectedNodeGadgets, Gaffer::Plug::Direction direction, size_t degreesOfSeparation )
+{
+	NodeGadget *g = nodeGadget( node );
+	if( !g )
+	{
+		return 0;
+	}
+
+	std::set<NodeGadget *> n;
+	connectedNodeGadgetsWalk( g, n, direction, degreesOfSeparation );
+	if( direction == Gaffer::Plug::Invalid )
+	{
+		// if we were traversing in both directions, we will have accidentally
+		// traversed back to the start point, which we don't want.
+		n.erase( nodeGadget( node ) );
+	}
+	std::copy( n.begin(), n.end(), back_inserter( connectedNodeGadgets ) );
+	return 0;
+}
+
+size_t GraphGadget::connectedNodeGadgets( const Gaffer::Node *node, std::vector<const NodeGadget *> &connectedNodeGadgets, Gaffer::Plug::Direction direction, size_t degreesOfSeparation ) const
+{
+	// preferring naughty casts over maintaining two identical implementations
+	return const_cast<GraphGadget *>( this )->connectedNodeGadgets( node, reinterpret_cast<std::vector<NodeGadget *> &>( connectedNodeGadgets ), direction, degreesOfSeparation );
+}
+
+void GraphGadget::connectedNodeGadgetsWalk( NodeGadget *gadget, std::set<NodeGadget *> &connectedNodeGadgets, Gaffer::Plug::Direction direction, size_t degreesOfSeparation )
+{
+	if( !degreesOfSeparation )
+	{
+		return;
+	}
+
+	for( Gaffer::RecursivePlugIterator it( gadget->node() ); it != it.end(); ++it )
+	{
+		Gaffer::Plug *plug = it->get();
+		if( ( direction != Gaffer::Plug::Invalid ) && ( plug->direction() != direction ) )
 		{
-			if( Nodule *nodule = connection->srcNodule() )
+			continue;
+		}
+
+		if( plug->direction() == Gaffer::Plug::In )
+		{
+			ConnectionGadget *connection = connectionGadget( plug );
+			Nodule *nodule = connection ? connection->srcNodule() : NULL;
+			NodeGadget *inputNodeGadget = nodule ? nodeGadget( nodule->plug()->node() ) : NULL;
+			if( inputNodeGadget )
 			{
-				if( NodeGadget *inputNodeGadget = nodeGadget( nodule->plug()->node() ) )
+				if( connectedNodeGadgets.insert( inputNodeGadget ).second )
 				{
-					if( upstreamNodeGadgets.insert( inputNodeGadget ).second )
+					// inserted the node for the first time
+					connectedNodeGadgetsWalk( inputNodeGadget, connectedNodeGadgets, direction, degreesOfSeparation - 1 );
+				}
+			}
+		}
+		else
+		{
+			// output plug
+			for( Gaffer::Plug::OutputContainer::const_iterator oIt = plug->outputs().begin(), eOIt = plug->outputs().end(); oIt != eOIt; oIt++ )
+			{
+				ConnectionGadget *connection = connectionGadget( *oIt );
+				Nodule *nodule = connection ? connection->dstNodule() : NULL;
+				NodeGadget *outputNodeGadget = nodule ? nodeGadget( nodule->plug()->node() ) : NULL;
+				if( outputNodeGadget )
+				{
+					if( connectedNodeGadgets.insert( outputNodeGadget ).second )
 					{
 						// inserted the node for the first time
-						upstreamNodeGadgetsWalk( inputNodeGadget, upstreamNodeGadgets );
+						connectedNodeGadgetsWalk( outputNodeGadget, connectedNodeGadgets, direction, degreesOfSeparation - 1 );
 					}
 				}
 			}
@@ -479,7 +554,7 @@ ConnectionGadget *GraphGadget::reconnectionGadgetAt( NodeGadget *gadget, const I
 
 	for ( std::vector<IECoreGL::HitRecord>::const_iterator it = selection.begin(); it != selection.end(); ++it )
 	{
-		GadgetPtr gadget = Gadget::select( it->name.value() );
+		GadgetPtr gadget = Gadget::select( it->name );
 		if ( gadget )
 		{
 			return runTimeCast<ConnectionGadget>( gadget.get() );
@@ -758,11 +833,11 @@ bool GraphGadget::buttonPress( GadgetPtr gadget, const ButtonEvent &event )
 				backdrop->framed( affectedNodes );
 			}
 
-			if( event.modifiers & ButtonEvent::Alt )
+			if( ( event.modifiers & ButtonEvent::Alt ) || ( event.modifiers & ButtonEvent::Control ) )
 			{
-				std::vector<NodeGadget *> upstream;
-				upstreamNodeGadgets( node, upstream );
-				for( std::vector<NodeGadget *>::const_iterator it = upstream.begin(), eIt = upstream.end(); it != eIt; ++it )
+				std::vector<NodeGadget *> connected;
+				connectedNodeGadgets( node, connected, event.modifiers & ButtonEvent::Alt ? Gaffer::Plug::In : Gaffer::Plug::Out );
+				for( std::vector<NodeGadget *>::const_iterator it = connected.begin(), eIt = connected.end(); it != eIt; ++it )
 				{
 					affectedNodes.push_back( (*it)->node() );
 				}
@@ -871,13 +946,13 @@ bool GraphGadget::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 		V2f pos = V2f( i.x, i.y );
 		offsetNodes( m_scriptNode->selection(), pos - m_lastDragPosition );
 		m_lastDragPosition = pos;
-		renderRequestSignal()( this );
+ 		requestRender();
 		return true;
 	}
 	else if( m_dragMode == Selecting )
 	{
 		m_lastDragPosition = V2f( i.x, i.y );
-		renderRequestSignal()( this );
+ 		requestRender();
 		return true;
 	}
 
@@ -934,7 +1009,7 @@ bool GraphGadget::dragMove( GadgetPtr gadget, const DragDropEvent &event )
 		offsetNodes( m_scriptNode->selection(), pos - m_lastDragPosition );
 		m_lastDragPosition = pos;
 		updateDragReconnectCandidate( event );
-		renderRequestSignal()( this );
+ 		requestRender();
 		return true;
 	}
 	else
@@ -942,7 +1017,7 @@ bool GraphGadget::dragMove( GadgetPtr gadget, const DragDropEvent &event )
 		// we're drag selecting
 		m_lastDragPosition = V2f( i.x, i.y );
 		updateDragSelection( false );
-		renderRequestSignal()( this );
+ 		requestRender();
 		return true;
 	}
 
@@ -1105,12 +1180,12 @@ bool GraphGadget::dragEnd( GadgetPtr gadget, const DragDropEvent &event )
 		}
 
 		m_dragReconnectCandidate = 0;
-		renderRequestSignal()( this );
+ 		requestRender();
 	}
 	else if( dragMode == Selecting )
 	{
 		updateDragSelection( true );
-		renderRequestSignal()( this );
+ 		requestRender();
 	}
 
 	return true;

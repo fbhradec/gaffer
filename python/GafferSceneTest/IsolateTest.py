@@ -98,7 +98,7 @@ class IsolateTest( GafferSceneTest.SceneTestCase ) :
 
 		filter = GafferScene.PathFilter()
 		filter["paths"].setValue( IECore.StringVectorData( [ "/*" ] ) )
-		isolate["filter"].setInput( filter["match"] )
+		isolate["filter"].setInput( filter["out"] )
 
 		isolate["enabled"].setValue( False )
 
@@ -149,7 +149,7 @@ class IsolateTest( GafferSceneTest.SceneTestCase ) :
 
 		filter = GafferScene.PathFilter()
 		filter["paths"].setValue( IECore.StringVectorData( [ "/groupA/sphereAB" ] ) )
-		isolate["filter"].setInput( filter["match"] )
+		isolate["filter"].setInput( filter["out"] )
 
 		self.assertNotEqual( isolate["out"].childNamesHash( "/groupA" ), input["out"].childNamesHash( "/groupA" ) )
 		self.assertEqual( isolate["out"].childNames( "/groupA" ), IECore.InternedStringVectorData( [ "sphereAB" ] ) )
@@ -191,7 +191,7 @@ class IsolateTest( GafferSceneTest.SceneTestCase ) :
 
 		filter = GafferScene.PathFilter()
 		filter["paths"].setValue( IECore.StringVectorData( [ "/group/sphere1" ] ) )
-		isolate["filter"].setInput( filter["match"] )
+		isolate["filter"].setInput( filter["out"] )
 
 		self.assertEqual( isolate["out"].bound( "/" ), sphere2.bound() )
 		self.assertEqual( isolate["out"].bound( "/group" ), sphere2.bound() )
@@ -212,28 +212,115 @@ class IsolateTest( GafferSceneTest.SceneTestCase ) :
 		group["in"].setInput( light1["out"] )
 		group["in1"].setInput( light2["out"] )
 
-		lightSet = group["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = group["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/light", "/group/light1" ] ) )
 
 		isolate = GafferScene.Isolate()
 		isolate["in"].setInput( group["out"] )
 
-		lightSet = isolate["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = isolate["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/light", "/group/light1" ] ) )
 
 		filter = GafferScene.PathFilter()
-		isolate["filter"].setInput( filter["match"] )
+		isolate["filter"].setInput( filter["out"] )
 
-		lightSet = isolate["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = isolate["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [] ) )
 
 		filter["paths"].setValue( IECore.StringVectorData( [ "/group/light" ] ) )
-		lightSet = isolate["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = isolate["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/light" ] ) )
 
 		filter["paths"].setValue( IECore.StringVectorData( [ "/group/light*" ] ) )
-		lightSet = isolate["out"]["globals"].getValue()["gaffer:sets"]["__lights"]
+		lightSet = isolate["out"].set( "__lights" )
 		self.assertEqual( set( lightSet.value.paths() ), set( [ "/group/light", "/group/light1" ] ) )
+
+	def testGlobalsDoNotDependOnScenePath( self ) :
+
+		pathFilter = GafferScene.PathFilter()
+		pathFilter["paths"].setValue( IECore.StringVectorData( [ "/grid/borderLines" ] ) )
+
+		grid = GafferScene.Grid()
+
+		isolate = GafferScene.Isolate()
+		isolate["in"].setInput( grid["out"] )
+		isolate["filter"].setInput( pathFilter["out"] )
+
+		c = Gaffer.Context()
+		with c :
+			h1 = isolate["out"]["globals"].hash()
+			c["scene:path"] = IECore.InternedStringVectorData( [ "grid" ] )
+			h2 = isolate["out"]["globals"].hash()
+			c["scene:path"] = IECore.InternedStringVectorData( [ "grid", "centerLines" ] )
+			h3 = isolate["out"]["globals"].hash()
+
+		self.assertEqual( h1, h2 )
+		self.assertEqual( h2, h3 )
+
+	def testFrom( self ) :
+
+		# - group1
+		#	- group2
+		#		- light1
+		#		- light2
+		#	- light3
+		# - plane
+
+		light1 = GafferSceneTest.TestLight()
+		light1["name"].setValue( "light1" )
+		light2 = GafferSceneTest.TestLight()
+		light2["name"].setValue( "light2" )
+		light3 = GafferSceneTest.TestLight()
+		light3["name"].setValue( "light3" )
+
+		group1 = GafferScene.Group()
+		group1["name"].setValue( "group1" )
+		group2 = GafferScene.Group()
+		group2["name"].setValue( "group2" )
+
+		group1["in"].setInput( group2["out"] )
+		group1["in1"].setInput( light3["out"] )
+		group2["in"].setInput( light1["out"] )
+		group2["in1"].setInput( light2["out"] )
+
+		plane = GafferScene.Plane()
+
+		parent = GafferScene.Parent()
+		parent["parent"].setValue( "/" )
+		parent["in"].setInput( group1["out"] )
+		parent["child"].setInput( plane["out"] )
+
+		isolate = GafferScene.Isolate()
+		isolate["in"].setInput( parent["out"] )
+
+		self.assertSceneValid( isolate["out"] )
+		self.assertEqual( isolate["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "group1", "plane" ] ) )
+		self.assertEqual( isolate["out"].childNames( "/group1" ), IECore.InternedStringVectorData( [ "group2", "light3" ] ) )
+		self.assertEqual( isolate["out"].childNames( "/group1/group2" ), IECore.InternedStringVectorData( [ "light1", "light2" ] ) )
+
+		filter = GafferScene.PathFilter()
+		filter["paths"].setValue( IECore.StringVectorData( [ "/group1/group2/light1" ] ) )
+
+		isolate["filter"].setInput( filter["out"] )
+
+		self.assertSceneValid( isolate["out"] )
+		self.assertEqual( isolate["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "group1" ] ) )
+		self.assertEqual( isolate["out"].childNames( "/group1" ), IECore.InternedStringVectorData( [ "group2" ] ) )
+		self.assertEqual( isolate["out"].childNames( "/group1/group2" ), IECore.InternedStringVectorData( [ "light1" ] ) )
+
+		isolate["from"].setValue( "/group1" )
+
+		self.assertSceneValid( isolate["out"] )
+		self.assertEqual( isolate["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "group1", "plane" ] ) )
+		self.assertEqual( isolate["out"].childNames( "/group1" ), IECore.InternedStringVectorData( [ "group2" ] ) )
+		self.assertEqual( isolate["out"].childNames( "/group1/group2" ), IECore.InternedStringVectorData( [ "light1" ] ) )
+
+		isolate["from"].setValue( "/group1/group2" )
+
+		self.assertSceneValid( isolate["out"] )
+		self.assertEqual( isolate["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "group1", "plane" ] ) )
+		self.assertEqual( isolate["out"].childNames( "/group1" ), IECore.InternedStringVectorData( [ "group2", "light3" ] ) )
+		self.assertEqual( isolate["out"].childNames( "/group1/group2" ), IECore.InternedStringVectorData( [ "light1" ] ) )
 
 if __name__ == "__main__":
 	unittest.main()

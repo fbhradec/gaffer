@@ -67,7 +67,6 @@ from ProgressBarTest import ProgressBarTest
 from ContainerWidgetTest import ContainerWidgetTest
 from SelectionMenuTest import SelectionMenuTest
 from StandardStyleTest import StandardStyleTest
-from CompoundParameterValueWidgetTest import CompoundParameterValueWidgetTest
 from EditorWidgetTest import EditorWidgetTest
 from NumericSliderTest import NumericSliderTest
 from RenderableGadgetTest import RenderableGadgetTest
@@ -76,7 +75,6 @@ from PathListingWidgetTest import PathListingWidgetTest
 from MultiLineTextWidgetTest import MultiLineTextWidgetTest
 from LabelTest import LabelTest
 from ScrolledContainerTest import ScrolledContainerTest
-from ParameterValueWidgetTest import ParameterValueWidgetTest
 from NodeEditorTest import NodeEditorTest
 from ScriptWindowTest import ScriptWindowTest
 from CompoundPlugValueWidgetTest import CompoundPlugValueWidgetTest
@@ -102,6 +100,10 @@ from ModuleTest import ModuleTest
 from PlugLayoutTest import PlugLayoutTest
 from ViewportGadgetTest import ViewportGadgetTest
 from VectorDataWidgetTest import VectorDataWidgetTest
+from DotNodeGadgetTest import DotNodeGadgetTest
+from DocumentationTest import DocumentationTest
+from LazyMethodTest import LazyMethodTest
+from ReferenceUITest import ReferenceUITest
 
 if __name__ == "__main__":
 	unittest.main()

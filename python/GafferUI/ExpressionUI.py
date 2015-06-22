@@ -41,10 +41,47 @@ import IECore
 import Gaffer
 import GafferUI
 
-# NodeUI registration
-##########################################################################
+Gaffer.Metadata.registerNode(
 
-GafferUI.NodeUI.registerNodeUI( Gaffer.Expression, lambda node : GafferUI.StandardNodeUI( node, displayMode = GafferUI.StandardNodeUI.DisplayMode.Simplified ) )
+	Gaffer.Expression,
+
+	"description",
+	"""
+	Utility node for computing values via
+	scripted expressions.
+	""",
+
+	plugs = {
+
+		"engine" : (
+
+			"description",
+			"""
+			The expression language to use.
+			""",
+
+			"layout:section", "",
+			"nodule:type", "",
+
+		),
+
+		"expression" : (
+
+			## \todo We need better help here, specific to the
+			# different engines themselves.
+			"description",
+			"""
+			The expression to evaluate."
+			""",
+
+			"layout:section", "",
+			"nodule:type", "",
+
+		),
+
+	}
+
+)
 
 # PlugValueWidget popup menu for creating expressions
 ##########################################################################
@@ -63,12 +100,7 @@ def __createExpression( plug ) :
 		expression += plug.relativeName( parentNode ).replace( ".", "']['" )
 		expression += "'] = "
 
-		if isinstance( plug, Gaffer.StringPlug ) :
-			expression += "''"
-		elif isinstance( plug, Gaffer.IntPlug ) :
-			expression += "1"
-		elif isinstance( plug, Gaffer.FloatPlug ) :
-			expression += "1.0"
+		expression += repr( plug.getValue() )
 
 		expressionNode["expression"].setValue( expression )
 
@@ -83,7 +115,15 @@ def __editExpression( plug ) :
 def __popupMenu( menuDefinition, plugValueWidget ) :
 
 	plug = plugValueWidget.getPlug()
-	if not isinstance( plug, ( Gaffer.FloatPlug, Gaffer.IntPlug, Gaffer.StringPlug, Gaffer.BoolPlug ) ) :
+	if not isinstance( plug, (
+		Gaffer.FloatPlug, Gaffer.IntPlug,
+		Gaffer.StringPlug, Gaffer.BoolPlug,
+		Gaffer.V3fPlug, Gaffer.V3iPlug,
+		Gaffer.V2fPlug, Gaffer.V2iPlug,
+		Gaffer.Color3fPlug, Gaffer.Color4fPlug,
+		Gaffer.Box2fPlug, Gaffer.Box2iPlug,
+		Gaffer.Box3fPlug, Gaffer.Box3iPlug,
+	) ) :
 		return
 
 	node = plug.node()
@@ -162,7 +202,8 @@ GafferUI.PlugValueWidget.registerCreator(
 	None
 )
 
-# Nodule deregistrations
-##########################################################################
-
-GafferUI.Nodule.registerNodule( Gaffer.Expression, fnmatch.translate( "*" ), lambda plug : None )
+GafferUI.PlugValueWidget.registerCreator(
+	Gaffer.Expression,
+	"user",
+	None
+)

@@ -140,5 +140,46 @@ class CustomOptionsTest( GafferSceneTest.SceneTestCase ) :
 		self.assertTrue( "out.object" in dirtiedPlugs )
 		self.assertTrue( "out" in dirtiedPlugs )
 
+	def testSubstitution( self ) :
+
+		o = GafferScene.CustomOptions()
+		o["options"].addMember( "test", "${foo}" )
+
+		self.assertEqual( o["out"]["globals"].getValue()["option:test"], IECore.StringData( "" ) )
+		h = o["out"]["globals"].hash()
+
+		c = Gaffer.Context()
+		c["foo"] = "foo"
+
+		with c :
+			self.assertNotEqual( o["out"]["globals"].hash(), h )
+			self.assertEqual( o["out"]["globals"].getValue()["option:test"], IECore.StringData( "foo" ) )
+
+	def testDirtyPropagationOnMemberAdditionAndRemoval( self ) :
+
+		o = GafferScene.CustomOptions()
+		cs = GafferTest.CapturingSlot( o.plugDirtiedSignal() )
+
+		p = o["options"].addMember( "test", IECore.IntData( 10 ) )
+		self.assertTrue( o["out"]["globals"] in [ c[0] for c in cs ] )
+
+		del cs[:]
+		o["options"].removeChild( p )
+		self.assertTrue( o["out"]["globals"] in [ c[0] for c in cs ] )
+
+	def testSetsPassThrough( self ) :
+
+		p = GafferScene.Plane()
+		p["sets"].setValue( "a b" )
+
+		o = GafferScene.CustomOptions()
+		o["in"].setInput( p["out"] )
+
+		self.assertEqual( p["out"]["setNames"].hash(), o["out"]["setNames"].hash() )
+		self.assertTrue( p["out"]["setNames"].getValue( _copy = False ).isSame( o["out"]["setNames"].getValue( _copy = False ) ) )
+
+		self.assertEqual( p["out"].setHash( "a" ), o["out"].setHash( "b" ) )
+		self.assertTrue( p["out"].set( "a", _copy = False ).isSame( o["out"].set( "b", _copy = False ) ) )
+
 if __name__ == "__main__":
 	unittest.main()

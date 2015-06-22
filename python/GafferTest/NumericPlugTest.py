@@ -442,6 +442,55 @@ class NumericPlugTest( GafferTest.TestCase ) :
 		f1.setValue( 100.8 )
 		self.assertEqual( f2.getValue(), 100 )
 
+	def testNoChildrenAccepted( self ) :
+
+		p1 = Gaffer.IntPlug()
+		p2 = Gaffer.IntPlug()
+
+		self.assertFalse( p1.acceptsChild( p2 ) )
+		self.assertRaises( RuntimeError, p1.addChild, p2 )
+
+	def testPrecomputedHash( self ) :
+
+		n = GafferTest.AddNode()
+		n["op1"].setValue( 10 )
+		n["op2"].setValue( 20 )
+
+		self.assertEqual( n["sum"].getValue(), 30 )
+		self.assertEqual( n.numHashCalls, 1 )
+		self.assertEqual( n.numComputeCalls, 1 )
+
+		h = n["sum"].hash()
+		numHashCalls = n.numHashCalls
+		# Accept either 1 or 2 - it would be reasonable for the ValuePlug
+		# to have either cached the hash or not, but that's not what we're
+		# testing here.
+		self.assertTrue( numHashCalls == 1 or numHashCalls == 2 )
+		self.assertEqual( n.numComputeCalls, 1 )
+
+		# What we care about is that calling getValue() with a precomputed hash
+		# definitely doesn't recompute the hash again.
+		self.assertEqual( n["sum"].getValue( _precomputedHash = h ), 30 )
+		self.assertEqual( n.numHashCalls, numHashCalls )
+		self.assertEqual( n.numComputeCalls, 1 )
+
+	def testIsSetToDefault( self ) :
+
+		n = GafferTest.AddNode()
+		self.assertTrue( n["op1"].isSetToDefault() )
+
+		n["op1"].setValue( 1000 )
+		self.assertFalse( n["op1"].isSetToDefault() )
+
+		n["op1"].setToDefault()
+		self.assertTrue( n["op1"].isSetToDefault() )
+
+		n["op1"].setValue( 1000 )
+		self.assertFalse( n["op1"].isSetToDefault() )
+
+		n["op1"].setValue( n["op1"].defaultValue() )
+		self.assertTrue( n["op1"].isSetToDefault() )
+
 if __name__ == "__main__":
 	unittest.main()
 

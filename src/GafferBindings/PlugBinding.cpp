@@ -37,9 +37,6 @@
 
 #include "boost/python.hpp"
 
-#include "IECorePython/RunTimeTypedBinding.h"
-#include "IECorePython/Wrapper.h"
-
 #include "Gaffer/Plug.h"
 #include "Gaffer/Node.h"
 #include "Gaffer/Reference.h"
@@ -98,7 +95,7 @@ void PlugSerialiser::moduleDependencies( const Gaffer::GraphComponent *graphComp
 	modules.insert( "IECore" ); // for the metadata calls
 }
 
-std::string PlugSerialiser::constructor( const Gaffer::GraphComponent *graphComponent ) const
+std::string PlugSerialiser::constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const
 {
 	return maskedRepr( static_cast<const Plug *>( graphComponent ), Plug::All & ~Plug::ReadOnly );
 }
@@ -130,6 +127,13 @@ std::string PlugSerialiser::postHierarchy( const Gaffer::GraphComponent *graphCo
 		return result;
 	}
 	return "";
+}
+
+bool PlugSerialiser::childNeedsConstruction( const Gaffer::GraphComponent *child ) const
+{
+	// cast is safe because of constraints maintained by Plug::acceptsChild().
+	const Plug *childPlug = static_cast<const Plug *>( child );
+	return childPlug->getFlags( Plug::Dynamic | Plug::Serialisable );
 }
 
 std::string PlugSerialiser::directionRepr( Plug::Direction direction )

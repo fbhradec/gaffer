@@ -44,6 +44,7 @@
 
 #include "Gaffer/NumericPlug.h"
 #include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/StringPlug.h"
 
 #include "GafferOSL/OSLShader.h"
 #include "GafferOSL/OSLRenderer.h"
@@ -249,7 +250,7 @@ static void transferConnectionOrValue( Plug *sourcePlug, Plug *destinationPlug )
 	}
 }
 
-static Plug *loadStringParameter( const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent )
+static Plug *loadStringParameter( const OSLQuery::Parameter *parameter, Gaffer::Plug *parent )
 {
 	string defaultValue;
 	if( parameter->sdefault.size() )
@@ -274,7 +275,7 @@ static Plug *loadStringParameter( const OSLQuery::Parameter *parameter, Gaffer::
 }
 
 template<typename PlugType>
-static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent )
+static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::Plug *parent )
 {
 	typedef typename PlugType::ValueType ValueType;
 
@@ -314,7 +315,7 @@ static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer:
 }
 
 template <typename PlugType>
-static Plug *loadCompoundNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent )
+static Plug *loadCompoundNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::Plug *parent )
 {
 	typedef typename PlugType::ValueType ValueType;
 	typedef typename ValueType::BaseType BaseType;
@@ -368,7 +369,7 @@ static Plug *loadCompoundNumericParameter( const OSLQuery::Parameter *parameter,
 	return plug.get();
 }
 
-static Plug *loadClosureParameter( const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent )
+static Plug *loadClosureParameter( const OSLQuery::Parameter *parameter, Gaffer::Plug *parent )
 {
 	const string name = plugName( parameter );
 	Plug *existingPlug = parent->getChild<Plug>( name );
@@ -387,9 +388,9 @@ static Plug *loadClosureParameter( const OSLQuery::Parameter *parameter, Gaffer:
 }
 
 // forward declaration so loadStructParameter() can call it.
-static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent, bool keepExistingValues );
+static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::Plug *parent, bool keepExistingValues );
 
-static Plug *loadStructParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent, bool keepExistingValues )
+static Plug *loadStructParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::Plug *parent, bool keepExistingValues )
 {
 	CompoundPlug *result = NULL;
 
@@ -439,7 +440,7 @@ static Plug *loadStructParameter( const OSLQuery &query, const OSLQuery::Paramet
 	return result;
 }
 
-static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::CompoundPlug *parent, bool keepExistingValues )
+static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::Plug *parent, bool keepExistingValues )
 {
 	Plug *result = NULL;
 
@@ -504,7 +505,7 @@ static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Paramet
 	return result;
 }
 
-static void loadShaderParameters( const OSLQuery &query, Gaffer::CompoundPlug *parametersPlug, bool keepExistingValues )
+static void loadShaderParameters( const OSLQuery &query, Gaffer::Plug *parametersPlug, bool keepExistingValues )
 {
 
 	// if we're not preserving existing values then remove all existing parameter plugs - the various
@@ -613,7 +614,32 @@ static IECore::DataPtr convertMetadata( const OSLQuery::Parameter &metadata )
 	{
 		return new IECore::StringData( metadata.sdefault[0].c_str() );
 	}
+	else if( metadata.type.arraylen > 0 )
+	{
+		if( metadata.type.elementtype() == TypeDesc::FLOAT )
+		{
+			return new FloatVectorData( metadata.fdefault );
+		}
+		else if( metadata.type.elementtype() == TypeDesc::INT )
+		{
+			return new IntVectorData( metadata.idefault );
+		}
+		else if( metadata.type.elementtype() == TypeDesc::STRING )
+		{
+#if OSL_LIBRARY_VERSION_CODE < 10600
+			return new StringVectorData( metadata.sdefault );
+# else
+			StringVectorDataPtr result = new StringVectorData;
+			for( vector<ustring>::const_iterator it = metadata.sdefault.begin(), eIt = metadata.sdefault.end(); it != eIt; ++it )
+			{
+				result->writable().push_back( it->string() );
+			}
+			return result;
+#endif
+		}
+	}
 
+	IECore::msg( IECore::Msg::Warning, "OSLShader", string( "Metadata \"" ) + metadata.name.c_str() + "\" has unsupported type" );
 	return NULL;
 }
 

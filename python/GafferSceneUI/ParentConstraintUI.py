@@ -43,23 +43,29 @@ import GafferScene
 # Metadata
 ##########################################################################
 
-Gaffer.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNode(
 
-GafferScene.ParentConstraint,
+	GafferScene.ParentConstraint,
 
-"""Constrains objects from one part of the scene hierarchy as if they were children of another part of the hierarchy.""",
+	"description",
+	"""
+	Constrains objects from one part of the scene hierarchy as if they were
+	children of another part of the hierarchy.
+	""",
 
-"relativeTransform",
-{
-	"description" : "Transforms the constrained object relative to the target location.",
-	"nodeUI:section" : "Transform",
-}
+	plugs = {
+
+		"relativeTransform" : [
+
+			"description",
+			"""
+			Transforms the constrained object relative to the target location.
+			""",
+
+			"layout:section", "Transform",
+
+		],
+
+	}
 
 )
-
-##########################################################################
-# Widgets and nodules
-##########################################################################
-
-GafferUI.PlugValueWidget.registerCreator( GafferScene.ParentConstraint, "relativeTransform", GafferUI.TransformPlugValueWidget, collapsed=None )
-

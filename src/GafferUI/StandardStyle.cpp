@@ -77,7 +77,7 @@ StandardStyle::StandardStyle()
 	setColor( RaisedColor, Color3f( 0.4 ) );
 	setColor( ForegroundColor, Color3f( 0.9 ) );
 	setColor( HighlightColor, Color3f( 0.466, 0.612, 0.741 ) );
-	setColor( ConnectionColor, Color3f( 0.1, 0.1, 0.1 ) );
+	setColor( ConnectionColor, Color3f( 0.125, 0.125, 0.125 ) );
 }
 
 StandardStyle::~StandardStyle()
@@ -212,8 +212,13 @@ void StandardStyle::renderWrappedText( TextType textType, const std::string &tex
 
 void StandardStyle::renderFrame( const Imath::Box2f &frame, float borderWidth, State state ) const
 {
+	renderNodeFrame( frame, borderWidth, state );
+}
 
-	Box2f b = frame;
+void StandardStyle::renderNodeFrame( const Imath::Box2f &contents, float borderWidth, State state, const Imath::Color3f *userColor ) const
+{
+
+	Box2f b = contents;
 	V2f bw( borderWidth );
 	b.min -= bw;
 	b.max += bw;
@@ -222,10 +227,11 @@ void StandardStyle::renderFrame( const Imath::Box2f &frame, float borderWidth, S
 	glUniform1i( g_bezierParameter, 0 );
 	glUniform1i( g_borderParameter, 1 );
 	glUniform2f( g_borderRadiusParameter, cornerSizes.x, cornerSizes.y );
+	glUniform1f( g_borderWidthParameter, 0.15f / borderWidth );
 	glUniform1i( g_edgeAntiAliasingParameter, 0 );
 	glUniform1i( g_textureTypeParameter, 0 );
 
-	glColor( colorForState( RaisedColor, state ) );
+	glColor( colorForState( RaisedColor, state, userColor ) );
 
 	glBegin( GL_QUADS );
 
@@ -242,15 +248,16 @@ void StandardStyle::renderFrame( const Imath::Box2f &frame, float borderWidth, S
 
 }
 
-void StandardStyle::renderNodule( float radius, State state ) const
+void StandardStyle::renderNodule( float radius, State state, const Imath::Color3f *userColor ) const
 {
 	glUniform1i( g_bezierParameter, 0 );
 	glUniform1i( g_borderParameter, 1 );
 	glUniform2f( g_borderRadiusParameter, 0.5f, 0.5f );
+	glUniform1f( g_borderWidthParameter, 0.2f );
 	glUniform1i( g_edgeAntiAliasingParameter, 0 );
 	glUniform1i( g_textureTypeParameter, 0 );
 
-	glColor( colorForState( RaisedColor, state ) );
+	glColor( colorForState( RaisedColor, state, userColor ) );
 
 	glBegin( GL_QUADS );
 
@@ -266,14 +273,14 @@ void StandardStyle::renderNodule( float radius, State state ) const
 	glEnd();
 }
 
-void StandardStyle::renderConnection( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent, State state ) const
+void StandardStyle::renderConnection( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent, State state, const Imath::Color3f *userColor ) const
 {
 	glUniform1i( g_bezierParameter, 1 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 1 );
 	glUniform1i( g_textureTypeParameter, 0 );
 
-	glColor( colorForState( ConnectionColor, state ) );
+	glColor( colorForState( ConnectionColor, state, userColor ) );
 
 	V3f d = dstPosition - srcPosition;
 
@@ -320,9 +327,10 @@ void StandardStyle::renderRectangle( const Imath::Box2f &box ) const
 	glEnd();
 }
 
-void StandardStyle::renderBackdrop( const Imath::Box2f &box, State state ) const
+void StandardStyle::renderBackdrop( const Imath::Box2f &box, State state, const Imath::Color3f *userColor ) const
 {
-	glColor( m_colors[RaisedColor] );
+	glColor( userColor ? *userColor : m_colors[RaisedColor] );
+
 	renderSolidRectangle( box );
 	if( state == HighlightedState )
 	{
@@ -447,6 +455,13 @@ void StandardStyle::renderImage( const Imath::Box2f &box, const IECoreGL::Textur
 	glActiveTexture( GL_TEXTURE0 );
 	texture->bind();
 
+	/// \todo It feels like it might be better to do this at texture creation time.
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -1.0 );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER );
+
 	glUniform1i( g_bezierParameter, 0 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 0 );
@@ -567,9 +582,9 @@ unsigned int StandardStyle::connectionDisplayList()
 	return g_list;
 }
 
-Imath::Color3f StandardStyle::colorForState( Color c, State s ) const
+Imath::Color3f StandardStyle::colorForState( Color c, State s, const Imath::Color3f *userColor ) const
 {
-	Color3f result = m_colors[c];
+	Color3f result = userColor ? *userColor : m_colors[c];
 	if( s == Style::HighlightedState )
 	{
 		result = m_colors[HighlightColor];
@@ -651,6 +666,7 @@ static const std::string &fragmentSource()
 
 		"uniform bool border;"
 		"uniform vec2 borderRadius;"
+		"uniform float borderWidth;"
 
 		"uniform bool edgeAntiAliasing;"
 
@@ -680,7 +696,7 @@ static const std::string &fragmentSource()
 		"		v /= borderRadius;"
 		"		float r = length( v );"
 
-		"		OUTCOLOR = mix( OUTCOLOR, vec4( 0.05, 0.05, 0.05, OUTCOLOR.a ), ieFilteredStep( 0.8, r ) );"
+		"		OUTCOLOR = mix( OUTCOLOR, vec4( 0.15, 0.15, 0.15, OUTCOLOR.a ), ieFilteredStep( 1.0 - borderWidth, r ) );"
 		"		OUTCOLOR.a *= ( 1.0 - ieFilteredStep( 1.0, r ) );"
 		"	}"
 
@@ -720,6 +736,7 @@ static const std::string &fragmentSource()
 
 int StandardStyle::g_borderParameter;
 int StandardStyle::g_borderRadiusParameter;
+int StandardStyle::g_borderWidthParameter;
 int StandardStyle::g_edgeAntiAliasingParameter;
 int StandardStyle::g_textureParameter;
 int StandardStyle::g_textureTypeParameter;
@@ -739,6 +756,7 @@ IECoreGL::Shader *StandardStyle::shader()
 		g_shader = ShaderLoader::defaultShaderLoader()->create( vertexSource(), "", fragmentSource() );
 		g_borderParameter = g_shader->uniformParameter( "border" )->location;
 		g_borderRadiusParameter = g_shader->uniformParameter( "borderRadius" )->location;
+		g_borderWidthParameter = g_shader->uniformParameter( "borderWidth" )->location;
 		g_edgeAntiAliasingParameter = g_shader->uniformParameter( "edgeAntiAliasing" )->location;
 		g_textureParameter = g_shader->uniformParameter( "texture" )->location;
 		g_textureTypeParameter = g_shader->uniformParameter( "textureType" )->location;

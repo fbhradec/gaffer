@@ -36,6 +36,7 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/Box.h"
+#include "Gaffer/Dot.h"
 
 #include "GafferScene/ShaderAssignment.h"
 #include "GafferScene/Shader.h"
@@ -110,7 +111,7 @@ bool ShaderAssignment::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plu
 		// we only really want to accept connections from
 		// shaders, because we can't assign anything else.
 		// but we also accept the unconnected inputs and outputs
-		// of boxes, so you can wrap shader assignments in boxes
+		// of subgraphs, so you can wrap shader assignments in boxes
 		// prior to connecting the other side. the same goes for
 		// shader switches - if a connection source is a switch,
 		// then that means the switch hasn't had a shader connected
@@ -118,8 +119,9 @@ bool ShaderAssignment::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plu
 		// in anticipation of a shader being connected later.
 		if(
 			runTimeCast<const Shader>( sourceNode ) ||
-			runTimeCast<const Box>( sourceNode ) ||
-			runTimeCast<const ShaderSwitch>( sourceNode )
+			runTimeCast<const SubGraph>( sourceNode ) ||
+			runTimeCast<const ShaderSwitch>( sourceNode ) ||
+			runTimeCast<const Dot>( sourceNode )
 		)
 		{
 			return true;

@@ -70,7 +70,16 @@ _styleSheet = string.Template(
 
 	QLabel[gafferHighlighted=\"true\"] {
 
-		color: $brightColor;
+		color: #b0d8fb;
+
+	}
+
+	QLabel#gafferPlugLabel[gafferValueChanged=\"true\"] {
+
+		background-image: url($GAFFER_ROOT/graphics/valueChanged.png);
+		background-repeat: no-repeat;
+		background-position: left;
+		padding-left: 20px;
 
 	}
 
@@ -191,6 +200,12 @@ _styleSheet = string.Template(
 	QLineEdit[readOnly="false"], QPlainTextEdit[readOnly="false"] {
 
 		background-color: $backgroundLighter;
+
+	}
+
+	QLineEdit[gafferError="true"] {
+
+		background-color: $errorColor;
 
 	}
 
@@ -988,8 +1003,9 @@ _styleSheet = string.Template(
 	"backgroundLighter" : "#6c6c6c",
 	"backgroundLight" : "#7d7d7d",
 	"brightColor" : "#779cbd",
-	"foreground" : "#f0f0f0",
+	"foreground" : "#e0e0e0",
 	"foregroundFaded" : "#999999",
 	"alternateColor" : "#454545",
+	"errorColor" : "#ff5555",
 
 } )

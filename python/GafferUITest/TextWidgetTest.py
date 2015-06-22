@@ -126,5 +126,38 @@ class TextWidgetTest( GafferUITest.TestCase ) :
 		self.assertEqual( w.getPreferredCharacterWidth(), 10 )
 		self.assertEqual( w.getFixedCharacterWidth(), None )
 
+	def testErrored( self ) :
+
+		w = GafferUI.TextWidget()
+		self.assertEqual( w.getErrored(), False )
+
+		w.setErrored( True )
+		self.assertEqual( w.getErrored(), True )
+
+		w.setErrored( False )
+		self.assertEqual( w.getErrored(), False )
+
+	def testFixedCharacterWidth( self ) :
+
+		window = GafferUI.Window()
+		textWidget = GafferUI.TextWidget()
+		window.addChild( textWidget )
+		window.setVisible( True )
+		
+		# initial value
+		textWidget.setFixedCharacterWidth( 5 )
+
+		oldWidth = textWidget.size().x
+		
+		# changing the initial value
+		textWidget.setFixedCharacterWidth( 2 )
+		
+		self.waitForIdle()
+		
+		newWidth = textWidget.size().x
+		
+		# checking if the geometry has been updated for the new character width
+		self.assertEqual( newWidth == oldWidth, False )
+
 if __name__ == "__main__":
 	unittest.main()

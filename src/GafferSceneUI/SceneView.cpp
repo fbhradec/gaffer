@@ -37,6 +37,7 @@
 
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
+#include "boost/algorithm/string/predicate.hpp"
 
 #include "IECore/ParameterisedProcedural.h"
 #include "IECore/VectorTypedData.h"
@@ -48,15 +49,18 @@
 
 #include "Gaffer/Context.h"
 #include "Gaffer/BlockedConnection.h"
+#include "Gaffer/StringPlug.h"
 
 #include "GafferUI/Style.h"
+#include "GafferUI/Pointer.h"
 
 #include "GafferScene/SceneProcedural.h"
 #include "GafferScene/PathMatcherData.h"
-#include "GafferScene/StandardOptions.h"
 #include "GafferScene/StandardAttributes.h"
 #include "GafferScene/PathFilter.h"
 #include "GafferScene/Grid.h"
+#include "GafferScene/SceneAlgo.h"
+#include "GafferScene/StandardOptions.h"
 
 #include "GafferSceneUI/SceneView.h"
 
@@ -69,41 +73,117 @@ using namespace GafferScene;
 using namespace GafferSceneUI;
 
 //////////////////////////////////////////////////////////////////////////
-// Implementation of a ParameterisedProcedural wrapping a SceneProcedural.
-// We need this to allow us to use the RenderableGadget for doing our
-// display.
-/// \todo Build our own scene representation.
+// SceneView::ShadingMode implementation
 //////////////////////////////////////////////////////////////////////////
 
-class WrappingProcedural : public IECore::ParameterisedProcedural
+class SceneView::ShadingMode
 {
 
 	public :
 
-		WrappingProcedural( SceneProceduralPtr sceneProcedural )
-			:	ParameterisedProcedural( "" ), m_sceneProcedural( sceneProcedural )
+		ShadingMode( SceneView *view )
+			:	m_view( view )
 		{
+			view->addChild( new StringPlug( "shadingMode" ) );
+
+			m_preprocessor = new SceneProcessor();
+			m_preprocessor->outPlug()->setInput( m_preprocessor->inPlug() );
+
+			view->plugSetSignal().connect( boost::bind( &ShadingMode::plugSet, this, ::_1 ) );
 		}
 
-	protected :
-
-		virtual Imath::Box3f doBound( ConstCompoundObjectPtr args ) const
+		/// \todo This is exposed so that the SceneView can insert it into
+		/// the main preprocessor. We should modify the View base class so
+		/// that instead anyone can insert a preprocessor into a chain of preprocessors,
+		/// and then individual components like this one can be more self
+		/// sufficient.
+		SceneProcessor *preprocessor()
 		{
-			return m_sceneProcedural->bound();
+			return m_preprocessor.get();
 		}
 
-		virtual void doRender( RendererPtr renderer, ConstCompoundObjectPtr args ) const
+		static void registerShadingMode( const std::string &name, ShadingModeCreator creator )
 		{
-			m_sceneProcedural->render( renderer.get() );
+			shadingModeCreators()[name] = creator;
+		}
+
+		static void registeredShadingModes( std::vector<std::string> &names )
+		{
+			const ShadingModeCreatorMap &m = shadingModeCreators();
+			names.clear();
+			for( ShadingModeCreatorMap::const_iterator it = m.begin(), eIt = m.end(); it != eIt; ++it )
+			{
+				names.push_back( it->first );
+			}
 		}
 
 	private :
 
-		SceneProceduralPtr m_sceneProcedural;
+		Gaffer::StringPlug *shadingModePlug()
+		{
+			return m_view->getChild<StringPlug>( "shadingMode" );
+		}
+
+		const Gaffer::StringPlug *shadingModePlug() const
+		{
+			return m_view->getChild<StringPlug>( "shadingMode" );
+		}
+
+		void plugSet( const Plug *plug )
+		{
+			if( plug != shadingModePlug() )
+			{
+				return;
+			}
+
+			const std::string name = shadingModePlug()->getValue();
+
+			SceneProcessorPtr shadingMode = NULL;
+			ShadingModes::const_iterator it = m_shadingModes.find( name );
+			if( it != m_shadingModes.end() )
+			{
+				shadingMode = it->second;
+			}
+			else
+			{
+				ShadingModeCreatorMap &m = shadingModeCreators();
+				ShadingModeCreatorMap::const_iterator it = m.find( name );
+				if( it != m.end() )
+				{
+					shadingMode = it->second();
+				}
+				if( shadingMode )
+				{
+					m_shadingModes[name] = shadingMode;
+					m_preprocessor->addChild( shadingMode );
+				}
+			}
+
+			if( shadingMode )
+			{
+				shadingMode->inPlug()->setInput( m_preprocessor->inPlug() );
+				m_preprocessor->outPlug()->setInput( shadingMode->outPlug() );
+			}
+			else
+			{
+				m_preprocessor->outPlug()->setInput( m_preprocessor->inPlug() );
+			}
+		}
+
+		typedef std::map<std::string, SceneView::ShadingModeCreator> ShadingModeCreatorMap;
+		typedef std::map<std::string, SceneProcessorPtr> ShadingModes;
+
+		static ShadingModeCreatorMap &shadingModeCreators()
+		{
+			static ShadingModeCreatorMap g_creators;
+			return g_creators;
+		}
+
+		SceneView *m_view;
+		ShadingModes m_shadingModes;
+		SceneProcessorPtr m_preprocessor;
 
 };
-
-IE_CORE_DECLAREPTR( WrappingProcedural );
 
 //////////////////////////////////////////////////////////////////////////
 // SceneView::Grid implementation
@@ -115,7 +195,7 @@ class SceneView::Grid
 	public :
 
 		Grid( SceneView *view )
-			:	m_view( view ), m_node( new GafferScene::Grid ), m_gadget( new RenderableGadget )
+			:	m_view( view ), m_node( new GafferScene::Grid ), m_gadget( new SceneGadget )
 		{
 			m_node->transformPlug()->rotatePlug()->setValue( V3f( 90, 0, 0 ) );
 
@@ -134,6 +214,8 @@ class SceneView::Grid
 
 			m_node->dimensionsPlug()->setInput( dimensionsPlug );
 
+			m_gadget->setMinimumExpansionDepth( 1 );
+			m_gadget->setScene( m_node->outPlug() );
 			view->viewportGadget()->setChild( "__grid", m_gadget );
 
 			view->plugDirtiedSignal().connect( boost::bind( &Grid::plugDirtied, this, ::_1 ) );
@@ -173,17 +255,12 @@ class SceneView::Grid
 
 		void update()
 		{
-			m_gadget->setRenderable(
-				new WrappingProcedural(
-					new SceneProcedural( m_node->outPlug(), m_view->getContext() )
-				)
-			);
 			m_gadget->setVisible( plug()->getChild<BoolPlug>( "visible" )->getValue() );
 		}
 
 		SceneView *m_view;
 		GafferScene::GridPtr m_node;
-		GafferUI::RenderableGadgetPtr m_gadget;
+		SceneGadgetPtr m_gadget;
 
 };
 
@@ -228,13 +305,13 @@ class GnomonPlane : public GafferUI::Gadget
 		void enter()
 		{
 			m_hovering = true;
-			renderRequestSignal()( this );
+			requestRender();
 		}
 
 		void leave()
 		{
 			m_hovering = false;
-			renderRequestSignal()( this );
+			requestRender();
 		}
 
 		bool m_hovering;
@@ -429,6 +506,426 @@ class SceneView::Gnomon
 };
 
 //////////////////////////////////////////////////////////////////////////
+// SceneView::LookThrough implementation
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+/// \todo If we made CropWindowTool::Rectangle public, we
+/// could ditch this class.
+class CameraOverlay : public GafferUI::Gadget
+{
+
+	public :
+
+		CameraOverlay()
+			:	Gadget()
+		{
+		}
+
+		virtual Imath::Box3f bound() const
+		{
+			// we draw in raster space so don't have a sensible bound
+			return Box3f();
+		}
+
+		// Specified in raster space.
+		void setResolutionGate( const Box2f &resolutionGate )
+		{
+			if( resolutionGate == m_resolutionGate )
+			{
+				return;
+			}
+			m_resolutionGate = resolutionGate;
+			requestRender();
+		}
+
+		const Box2f &getResolutionGate() const
+		{
+			return m_resolutionGate;
+		}
+
+		// Specified in 0-1 space relative to resolution gate
+		void setCropWindow( const Box2f &cropWindow )
+		{
+			if( cropWindow == m_cropWindow )
+			{
+				return;
+			}
+			m_cropWindow = cropWindow;
+			requestRender();
+		}
+
+		const Box2f &getCropWindow() const
+		{
+			return m_cropWindow;
+		}
+
+		void setCaption( const std::string &caption )
+		{
+			if( caption == m_caption )
+			{
+				return;
+			}
+			m_caption = caption;
+			requestRender();
+		}
+
+		const std::string &getCaption() const
+		{
+			return m_caption;
+		}
+
+	protected :
+
+		virtual void doRender( const Style *style ) const
+		{
+			if( IECoreGL::Selector::currentSelector() || m_resolutionGate.isEmpty() )
+			{
+				return;
+			}
+
+			const ViewportGadget *viewportGadget = ancestor<ViewportGadget>();
+			ViewportGadget::RasterScope rasterScope( viewportGadget );
+
+			glPushAttrib( GL_CURRENT_BIT | GL_LINE_BIT | GL_ENABLE_BIT );
+
+				glEnable( GL_LINE_SMOOTH );
+				glLineWidth( 1.5f );
+
+				glColor4f( 0.5, 0.5, 0.5, 0.5 );
+				style->renderRectangle( Box2f(
+					V2f(
+						lerp( m_resolutionGate.min.x, m_resolutionGate.max.x, m_cropWindow.min.x ),
+						lerp( m_resolutionGate.min.y, m_resolutionGate.max.y, m_cropWindow.min.y )
+					),
+					V2f(
+						lerp( m_resolutionGate.min.x, m_resolutionGate.max.x, m_cropWindow.max.x ),
+						lerp( m_resolutionGate.min.y, m_resolutionGate.max.y, m_cropWindow.max.y )
+					)
+				) );
+
+				glColor4f( 0, 0.25, 0, 1.0f );
+				style->renderRectangle( m_resolutionGate );
+
+				glPushMatrix();
+
+					glTranslatef( m_resolutionGate.min.x + 5, m_resolutionGate.max.y + 10, 0.0f );
+					glScalef( 10.0f, -10.0f, 10.0f );
+					style->renderText( Style::LabelText, m_caption );
+
+				glPopMatrix();
+
+			glPopAttrib();
+		}
+
+	private :
+
+		Box2f m_resolutionGate;
+		Box2f m_cropWindow;
+		std::string m_caption;
+
+};
+
+IE_CORE_DECLAREPTR( CameraOverlay )
+
+} // namespace
+
+class SceneView::LookThrough
+{
+
+	public :
+
+		LookThrough( SceneView *view )
+			:	m_view( view ),
+				m_framed( false ),
+				m_standardOptions( new StandardOptions ),
+				m_originalCamera( m_view->viewportGadget()->getCamera() ),
+				m_lookThroughCameraDirty( true ),
+				m_lookThroughCamera( NULL ),
+				m_viewportCameraDirty( true ),
+				m_overlay( new CameraOverlay )
+		{
+
+			// Set up our plugs
+
+			CompoundPlugPtr lookThrough = new CompoundPlug( "lookThrough", Plug::In, Plug::Default & ~Plug::AcceptsInputs );
+			lookThrough->addChild( new BoolPlug( "enabled", Plug::In, false, Plug::Default & ~Plug::AcceptsInputs ) );
+			lookThrough->addChild( new StringPlug( "camera", Plug::In, "", Plug::Default & ~Plug::AcceptsInputs ) );
+			view->addChild( lookThrough );
+
+			// Set up our nodes. We use a standard options node to disable camera motion blur
+			// and overscan because we don't want them applied to the cameras we retrieve with SceneAlgo.
+			// We also must disable transform blur and deformation blur, because if either of those is
+			// on, the shutter range becomes non-zero and the SceneAlgo transform() method will evaluate the
+			// camera at the shutter start rather than the current time, even though its only evaluating a
+			// single time sample.
+
+			m_standardOptions->inPlug()->setInput( view->inPlug<ScenePlug>() );
+			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "cameraBlur" )->enabledPlug()->setValue( true );
+			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "cameraBlur" )->valuePlug<BoolPlug>()->setValue( false );
+			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "transformBlur" )->enabledPlug()->setValue( true );
+			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "transformBlur" )->valuePlug<BoolPlug>()->setValue( false );
+			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "deformationBlur" )->enabledPlug()->setValue( true );
+			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "deformationBlur" )->valuePlug<BoolPlug>()->setValue( false );
+			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "overscan" )->enabledPlug()->setValue( true );
+			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "overscan" )->valuePlug<BoolPlug>()->setValue( false );
+
+			// Set up our gadgets
+
+			view->viewportGadget()->setChild( "__cameraOverlay", m_overlay );
+			m_overlay->setVisible( false );
+
+			// Connect to the signals we need
+
+			m_standardOptions->plugDirtiedSignal().connect( boost::bind( &LookThrough::plugDirtied, this, ::_1 ) );
+			view->plugDirtiedSignal().connect( boost::bind( &LookThrough::plugDirtied, this, ::_1 ) );
+			view->viewportGadget()->preRenderSignal().connect( boost::bind( &LookThrough::preRender, this ) );
+			view->viewportGadget()->viewportChangedSignal().connect( boost::bind( &LookThrough::viewportChanged, this ) );
+
+			connectToViewContext();
+			view->contextChangedSignal().connect( boost::bind( &LookThrough::connectToViewContext, this ) );
+
+		}
+
+		Gaffer::CompoundPlug *plug()
+		{
+			return m_view->getChild<Gaffer::CompoundPlug>( "lookThrough" );
+		}
+
+		const Gaffer::CompoundPlug *plug() const
+		{
+			return m_view->getChild<Gaffer::CompoundPlug>( "lookThrough" );
+		}
+
+		const Imath::Box2f &resolutionGate() const
+		{
+			const_cast<LookThrough *>( this )->updateLookThroughCamera();
+			const_cast<LookThrough *>( this )->updateViewportCameraAndOverlay();
+			return m_overlay->getResolutionGate();
+		}
+
+	private :
+
+		const GafferScene::ScenePlug *scenePlug() const
+		{
+			return m_standardOptions->outPlug();
+		}
+
+		const Gaffer::BoolPlug *enabledPlug() const
+		{
+			return plug()->getChild<BoolPlug>( 0 );
+		}
+
+		const Gaffer::StringPlug *cameraPlug() const
+		{
+			return plug()->getChild<StringPlug>( 1 );
+		}
+
+		void connectToViewContext()
+		{
+			m_contextChangedConnection = m_view->getContext()->changedSignal().connect( boost::bind( &LookThrough::contextChanged, this, ::_2 ) );
+		}
+
+		void contextChanged( const IECore::InternedString &name )
+		{
+			if( !boost::starts_with( name.value(), "ui:" ) )
+			{
+				m_lookThroughCameraDirty = m_viewportCameraDirty = true;
+			}
+		}
+
+		void plugDirtied( Gaffer::Plug *plug )
+		{
+			if(
+				plug == scenePlug()->childNamesPlug() ||
+				plug == scenePlug()->globalsPlug() ||
+				plug == scenePlug()->objectPlug() ||
+				plug == scenePlug()->transformPlug() ||
+				plug == enabledPlug() ||
+				plug == cameraPlug()
+			)
+			{
+				m_lookThroughCameraDirty = m_viewportCameraDirty = true;
+				if( plug == enabledPlug() && enabledPlug()->getValue() )
+				{
+					m_originalCamera = m_view->viewportGadget()->getCamera();
+				}
+				m_view->viewportGadget()->renderRequestSignal()( m_view->viewportGadget() );
+			}
+		}
+
+		void viewportChanged()
+		{
+			m_viewportCameraDirty = true;
+			m_view->viewportGadget()->renderRequestSignal()( m_view->viewportGadget() );
+		}
+
+		void preRender()
+		{
+			if( !m_framed )
+			{
+				m_view->viewportGadget()->frame( m_view->framingBound() );
+				m_framed = true;
+			}
+			else
+			{
+				updateLookThroughCamera();
+				updateViewportCameraAndOverlay();
+			}
+		}
+
+		void updateLookThroughCamera()
+		{
+			if( !m_lookThroughCameraDirty )
+			{
+				return;
+			}
+
+			m_lookThroughCameraDirty = false;
+			m_lookThroughCamera = NULL;
+			if( !enabledPlug()->getValue() )
+			{
+				m_view->viewportGadget()->setCamera( m_originalCamera.get() );
+				m_view->viewportGadget()->setCameraEditable( true );
+				m_view->hideFilter()->pathsPlug()->setToDefault();
+				return;
+			}
+
+			// We want to look through a specific camera.
+			// Retrieve it.
+
+			Context::Scope scopedContext( m_view->getContext() );
+
+			try
+			{
+				const string cameraPathString = cameraPlug()->getValue();
+				if( cameraPathString.empty() )
+				{
+					m_lookThroughCamera = GafferScene::camera( scenePlug() ); // primary render camera
+				}
+				else
+				{
+					ScenePlug::ScenePath cameraPath;
+					ScenePlug::stringToPath( cameraPathString, cameraPath );
+					m_lookThroughCamera = GafferScene::camera( scenePlug(), cameraPath );
+				}
+			}
+			catch( ... )
+			{
+				// If an invalid path has been entered for the camera, computation will fail.
+				// We just ignore that and lock to the current camera instead.
+				m_lookThroughCamera = NULL;
+			}
+
+			m_view->viewportGadget()->setCameraEditable( false );
+			if( m_lookThroughCamera )
+			{
+				StringVectorDataPtr invisiblePaths = new StringVectorData();
+				invisiblePaths->writable().push_back( m_lookThroughCamera->getName() );
+				m_view->hideFilter()->pathsPlug()->setValue( invisiblePaths );
+			}
+			else
+			{
+				m_view->hideFilter()->pathsPlug()->setToDefault();
+			}
+		}
+
+		void updateViewportCameraAndOverlay()
+		{
+			if( !m_viewportCameraDirty )
+			{
+				return;
+			}
+
+			if( !m_lookThroughCamera )
+			{
+				m_overlay->setResolutionGate( Box2f() );
+				m_overlay->setVisible( false );
+				return;
+			}
+
+			// The camera will have a resolution and screen window set from the scene
+			// globals. We need to adjust them to fit the viewport appropriately, placing
+			// the resolution gate centrally with a border around it. Start by figuring
+			// out where we'll draw the resolution gate in raster space.
+
+			IECore::CameraPtr camera = m_lookThroughCamera->copy();
+
+			const float borderPixels = 40;
+			const V2f viewport = m_view->viewportGadget()->getViewport();
+			const V2f insetViewport(
+				max( viewport.x - borderPixels * 2.0f, min( viewport.x, 50.0f ) ),
+				max( viewport.y - borderPixels * 2.0f, min( viewport.y, 50.0f ) )
+			);
+			const float insetViewportAspectRatio = insetViewport.x / insetViewport.y;
+
+			const V2f resolution = camera->parametersData()->member<V2iData>( "resolution" )->readable();
+			const float pixelAspectRatio = camera->parametersData()->member<FloatData>( "pixelAspectRatio" )->readable();
+
+			V2f resolutionGateSize = resolution;
+			resolutionGateSize.x *= pixelAspectRatio;
+			const float resolutionGateAspectRatio = resolutionGateSize.x / resolutionGateSize.y;
+			if( resolutionGateAspectRatio > insetViewportAspectRatio )
+			{
+				// fit horizontally
+				resolutionGateSize *= insetViewport.x / resolutionGateSize.x;
+			}
+			else
+			{
+				// fit vertically
+				resolutionGateSize *= insetViewport.y / resolutionGateSize.y;
+			}
+
+			const V2f offset = ( viewport - resolutionGateSize ) / 2.0f;
+
+			m_overlay->setResolutionGate( Box2f( V2f( offset ), V2f( resolutionGateSize + offset ) ) );
+			m_overlay->setCropWindow( camera->parametersData()->member<Box2fData>( "cropWindow" )->readable() );
+			m_overlay->setCaption( boost::str( boost::format( "%dx%d, %.3f, %s" ) % resolution.x % resolution.y % pixelAspectRatio % camera->getName() ) );
+			m_overlay->setVisible( true );
+
+			// Now modify the camera, so that the view through the resolution gate we've calculated
+			// represents the rendered image - this means extending the resolution and screen
+			// window to account for the border area outside the resolution gate.
+
+			Box2f &screenWindow = camera->parametersData()->member<Box2fData>( "screenWindow" )->writable();
+			const V2f newScreenWindowSize = screenWindow.size() * viewport / resolutionGateSize;
+			const V2f screenWindowCenter = screenWindow.center();
+			screenWindow.min = screenWindowCenter - newScreenWindowSize / 2.0f;
+			screenWindow.max = screenWindowCenter + newScreenWindowSize / 2.0f;
+
+			camera->parameters()["resolution"] = new V2iData( m_view->viewportGadget()->getViewport() );
+			m_view->viewportGadget()->setCamera( camera.get() );
+			m_view->viewportGadget()->setCameraEditable( false );
+
+		}
+
+		SceneView *m_view;
+		bool m_framed;
+
+		StandardOptionsPtr m_standardOptions;
+
+		boost::signals::scoped_connection m_contextChangedConnection;
+
+		/// The default viewport camera - we store this so we can
+		/// return to it after looking through a scene camera.
+		IECore::ConstCameraPtr m_originalCamera;
+		// Camera we want to look through - retrieved from scene
+		// and dirtied on plug and context changes.
+		bool m_lookThroughCameraDirty;
+		IECore::ConstCameraPtr m_lookThroughCamera;
+		// We transfer the look through camera onto the viewport,
+		// adjusting it to fit when we do. This needs repeating when
+		// the viewport changes, which is tracked by this flag.
+		bool m_viewportCameraDirty;
+		// Overlay for displaying resolution gate etc. Needs updating
+		// when the viewport camera is dirty.
+		CameraOverlayPtr m_overlay;
+
+};
+
+//////////////////////////////////////////////////////////////////////////
 // SceneView implementation
 //////////////////////////////////////////////////////////////////////////
 
@@ -439,7 +936,7 @@ SceneView::ViewDescription<SceneView> SceneView::g_viewDescription( GafferScene:
 
 SceneView::SceneView( const std::string &name )
 	:	View3D( name, new GafferScene::ScenePlug() ),
-		m_renderableGadget( new RenderableGadget )
+		m_sceneGadget( new SceneGadget )
 {
 
 	// add plugs and signal handling for them
@@ -448,25 +945,22 @@ SceneView::SceneView( const std::string &name )
 
 	addChild( new IntPlug( "minimumExpansionDepth", Plug::In, 0, 0, Imath::limits<int>::max(), Plug::Default & ~Plug::AcceptsInputs ) );
 
-	CompoundPlugPtr lookThrough = new CompoundPlug( "lookThrough", Plug::In, Plug::Default & ~Plug::AcceptsInputs );
-	lookThrough->addChild( new BoolPlug( "enabled", Plug::In, false, Plug::Default & ~Plug::AcceptsInputs ) );
-	lookThrough->addChild( new StringPlug( "camera", Plug::In, "", Plug::Default & ~Plug::AcceptsInputs ) );
-	addChild( lookThrough );
-
 	plugSetSignal().connect( boost::bind( &SceneView::plugSet, this, ::_1 ) );
 
 	// set up our gadgets
 
-	viewportGadget()->setPrimaryChild( m_renderableGadget );
+	viewportGadget()->setPrimaryChild( m_sceneGadget );
 
-	m_selectionChangedConnection = m_renderableGadget->selectionChangedSignal().connect( boost::bind( &SceneView::selectionChanged, this, ::_1 ) );
 	viewportGadget()->keyPressSignal().connect( boost::bind( &SceneView::keyPress, this, ::_1, ::_2 ) );
 
-	m_renderableGadget->baseState()->add( const_cast<IECoreGL::State *>( baseState() ) );
+	m_sceneGadget->baseState()->add( const_cast<IECoreGL::State *>( baseState() ) );
+	m_sceneGadget->setContext( getContext() );
 	baseStateChangedSignal().connect( boost::bind( &SceneView::baseStateChanged, this ) );
 
+	m_lookThrough = boost::shared_ptr<LookThrough>( new LookThrough( this ) );
 	m_grid = boost::shared_ptr<Grid>( new Grid( this ) );
 	m_gnomon = boost::shared_ptr<Gnomon>( new Gnomon( this ) );
+	m_shadingMode = boost::shared_ptr<ShadingMode>( new ShadingMode( this ) );
 
 	//////////////////////////////////////////////////////////////////////////
 	// add a preprocessor which monkeys with the scene before it is displayed.
@@ -476,17 +970,6 @@ SceneView::SceneView( const std::string &name )
 	ScenePlugPtr preprocessorInput = new ScenePlug( "in" );
 	preprocessor->addChild( preprocessorInput );
 
-	// remove motion blur, because the opengl renderer doesn't support it.
-
-	StandardOptionsPtr standardOptions = new StandardOptions( "disableBlur" );
-	standardOptions->optionsPlug()->getChild<CompoundPlug>( "transformBlur" )->getChild<BoolPlug>( "enabled" )->setValue( true );
-	standardOptions->optionsPlug()->getChild<CompoundPlug>( "transformBlur" )->getChild<BoolPlug>( "value" )->setValue( false );
-	standardOptions->optionsPlug()->getChild<CompoundPlug>( "deformationBlur" )->getChild<BoolPlug>( "enabled" )->setValue( true );
-	standardOptions->optionsPlug()->getChild<CompoundPlug>( "deformationBlur" )->getChild<BoolPlug>( "value" )->setValue( false );
-
-	preprocessor->addChild( standardOptions );
-	standardOptions->inPlug()->setInput( preprocessorInput );
-
 	// add a node for hiding things
 
 	StandardAttributesPtr hide = new StandardAttributes( "hide" );
@@ -494,19 +977,29 @@ SceneView::SceneView( const std::string &name )
 	hide->attributesPlug()->getChild<CompoundPlug>( "visibility" )->getChild<BoolPlug>( "value" )->setValue( false );
 
 	preprocessor->addChild( hide );
-	hide->inPlug()->setInput( standardOptions->outPlug() );
+	hide->inPlug()->setInput( preprocessorInput );
 
 	PathFilterPtr hideFilter = new PathFilter( "hideFilter" );
 	preprocessor->addChild( hideFilter );
-	hide->filterPlug()->setInput( hideFilter->matchPlug() );
+	hide->filterPlug()->setInput( hideFilter->outPlug() );
+
+	// add in the node from the ShadingMode
+
+	preprocessor->addChild( m_shadingMode->preprocessor() );
+	m_shadingMode->preprocessor()->inPlug()->setInput( hide->outPlug() );
 
 	// make the output for the preprocessor
 
 	ScenePlugPtr preprocessorOutput = new ScenePlug( "out", Plug::Out );
 	preprocessor->addChild( preprocessorOutput );
-	preprocessorOutput->setInput( hide->outPlug() );
+	preprocessorOutput->setInput( m_shadingMode->preprocessor()->outPlug() );
 
 	setPreprocessor( preprocessor );
+
+	// connect up our scene gadget
+
+	m_sceneGadget->setScene( preprocessedInPlug<ScenePlug>() );
+
 }
 
 SceneView::~SceneView()
@@ -525,32 +1018,12 @@ const Gaffer::IntPlug *SceneView::minimumExpansionDepthPlug() const
 
 Gaffer::CompoundPlug *SceneView::lookThroughPlug()
 {
-	return getChild<CompoundPlug>( g_firstPlugIndex + 1 );
+	return m_lookThrough->plug();
 }
 
 const Gaffer::CompoundPlug *SceneView::lookThroughPlug() const
 {
-	return getChild<CompoundPlug>( g_firstPlugIndex + 1 );
-}
-
-Gaffer::BoolPlug *SceneView::lookThroughEnabledPlug()
-{
-	return lookThroughPlug()->getChild<BoolPlug>( 0 );
-}
-
-const Gaffer::BoolPlug *SceneView::lookThroughEnabledPlug() const
-{
-	return lookThroughPlug()->getChild<BoolPlug>( 0 );
-}
-
-Gaffer::StringPlug *SceneView::lookThroughCameraPlug()
-{
-	return lookThroughPlug()->getChild<StringPlug>( 1 );
-}
-
-const Gaffer::StringPlug *SceneView::lookThroughCameraPlug() const
-{
-	return lookThroughPlug()->getChild<StringPlug>( 1 );
+	return m_lookThrough->plug();
 }
 
 Gaffer::CompoundPlug *SceneView::gridPlug()
@@ -583,57 +1056,57 @@ const GafferScene::PathFilter *SceneView::hideFilter() const
 	return getPreprocessor<Node>()->getChild<PathFilter>( "hideFilter" );
 }
 
+void SceneView::setContext( Gaffer::ContextPtr context )
+{
+	View3D::setContext( context );
+	m_sceneGadget->setContext( context );
+}
+
+const Box2f &SceneView::resolutionGate() const
+{
+	return m_lookThrough->resolutionGate();
+}
+
+void SceneView::registerShadingMode( const std::string &name, ShadingModeCreator creator )
+{
+	ShadingMode::registerShadingMode( name, creator );
+}
+
+void SceneView::registeredShadingModes( std::vector<std::string> &names )
+{
+	ShadingMode::registeredShadingModes( names );
+}
+
 void SceneView::contextChanged( const IECore::InternedString &name )
 {
 	if( name.value() == "ui:scene:selectedPaths" )
 	{
-		// if only the selection has changed then we can just update the selection
+		// If only the selection has changed then we can just update the selection
 		// on our existing scene representation.
 		const StringVectorData *sc = getContext()->get<StringVectorData>( "ui:scene:selectedPaths" );
-		RenderableGadget::Selection sr;
-		sr.insert( sc->readable().begin(), sc->readable().end() );
-
-		BlockedConnection blockedConnection( m_selectionChangedConnection );
-		m_renderableGadget->setSelection( sr );
+		/// \todo Store selection as PathMatcherData within the context, so we don't need
+		/// this conversion.
+		GafferScene::PathMatcherDataPtr sg = new GafferScene::PathMatcherData;
+		sg->writable().init( sc->readable().begin(), sc->readable().end() );
+		m_sceneGadget->setSelection( sg );
 		return;
 	}
-
-	if(
-		name.value().compare( 0, 3, "ui:" ) == 0 &&
-		name.value() != "ui:scene:expandedPaths"
-	)
+	else if( name.value() == "ui:scene:expandedPaths" )
 	{
-		// if it's just a ui context entry that has changed, and it doesn't
-		// affect our expansion, then early out.
+		const GafferScene::PathMatcherData *expandedPaths = getContext()->get<GafferScene::PathMatcherData>( "ui:scene:expandedPaths" );
+		m_sceneGadget->setExpandedPaths( expandedPaths );
 		return;
 	}
-
-	// the context change might affect the scene itself, so we must
-	// schedule an update.
-	updateRequestSignal()( this );
-}
-
-void SceneView::update()
-{
-	SceneProceduralPtr p = new SceneProcedural(
-		preprocessedInPlug<ScenePlug>(), getContext(), ScenePlug::ScenePath(),
-		expandedPaths(), minimumExpansionDepthPlug()->getValue()
-	);
-	WrappingProceduralPtr wp = new WrappingProcedural( p );
-
-	bool hadRenderable = m_renderableGadget->getRenderable();
-	m_renderableGadget->setRenderable( wp );
-	if( !hadRenderable )
+	else if( boost::starts_with( name.value(), "ui:" ) )
 	{
-		viewportGadget()->frame( framingBound() );
+		// ui context entries shouldn't affect computation.
+		return;
 	}
-
-	updateLookThrough();
 }
 
 Imath::Box3f SceneView::framingBound() const
 {
-	Imath::Box3f b = m_renderableGadget->selectionBound();
+	Imath::Box3f b = m_sceneGadget->selectionBound();
 	if( !b.isEmpty() )
 	{
 		return b;
@@ -646,12 +1119,6 @@ Imath::Box3f SceneView::framingBound() const
 	}
 
 	return b;
-}
-
-void SceneView::selectionChanged( GafferUI::RenderableGadgetPtr renderableGadget )
-{
-	BlockedConnection blockedConnection( contextChangedConnection() );
-	transferSelectionToContext();
 }
 
 bool SceneView::keyPress( GafferUI::GadgetPtr gadget, const GafferUI::KeyEvent &event )
@@ -674,38 +1141,40 @@ void SceneView::expandSelection( size_t depth )
 {
 	Context::Scope scopedContext( getContext() );
 
-	RenderableGadget::Selection &selection = m_renderableGadget->getSelection();
+	PathMatcher &selection = const_cast<GafferScene::PathMatcherData *>( m_sceneGadget->getSelection() )->writable();
 	PathMatcher &expanded = expandedPaths()->writable();
 
-	// must take a copy of the selection to iterate over, because we'll modify the
-	// selection inside expandWalk().
-	const std::vector<string> toExpand( selection.begin(), selection.end() );
+	std::vector<string> toExpand;
+	selection.paths( toExpand );
 
 	bool needUpdate = false;
 	for( std::vector<string>::const_iterator it = toExpand.begin(), eIt = toExpand.end(); it != eIt; ++it )
 	{
-		needUpdate |= expandWalk( *it, depth, expanded, selection );
+		/// \todo It would be nice to be able to get ScenePaths out of
+		/// PathMatcher::paths() directly.
+		ScenePlug::ScenePath path;
+		ScenePlug::stringToPath( *it, path );
+		needUpdate |= expandWalk( path, depth, expanded, selection );
 	}
 
 	if( needUpdate )
 	{
-		// we were naughty and modified the expanded paths in place (to avoid
-		// unecessary copying), so the context doesn't know they've changed.
-		// so we emit the changed signal ourselves. this will then trigger update()
-		// via contextChanged().
+		// We modified the expanded paths in place to avoid unecessary copying,
+		// so the context doesn't know they've changed. So we emit the changed
+		// signal ourselves - this will then update the SceneGadget via contextChanged().
 		getContext()->changedSignal()( getContext(), "ui:scene:expandedPaths" );
-		// and this will trigger a selection update also via contextChanged().
+		// Transfer the new selection to the context - we'd like to use the same
+		// trick as above for that, but can't yet because the context selection isn't
+		// stored as PathMatcherData.
 		transferSelectionToContext();
 	}
 }
 
-bool SceneView::expandWalk( const std::string &path, size_t depth, PathMatcher &expanded, RenderableGadget::Selection &selected )
+bool SceneView::expandWalk( const GafferScene::ScenePlug::ScenePath &path, size_t depth, PathMatcher &expanded, PathMatcher &selected )
 {
 	bool result = false;
 
-	ScenePlug::ScenePath scenePath;
-	ScenePlug::stringToPath( path, scenePath );
-	ConstInternedStringVectorDataPtr childNamesData = preprocessedInPlug<ScenePlug>()->childNames( scenePath );
+	ConstInternedStringVectorDataPtr childNamesData = preprocessedInPlug<ScenePlug>()->childNames( path );
 	const vector<InternedString> &childNames = childNamesData->readable();
 
 	if( childNames.size() )
@@ -714,19 +1183,17 @@ bool SceneView::expandWalk( const std::string &path, size_t depth, PathMatcher &
 		// not selected - we only want selection at the leaf levels of
 		// our expansion.
 		result |= expanded.addPath( path );
-		result |= selected.erase( path );
+		result |= selected.removePath( path );
+
+		ScenePlug::ScenePath childPath = path;
+		childPath.push_back( InternedString() ); // room for the child name
 		for( vector<InternedString>::const_iterator cIt = childNames.begin(), ceIt = childNames.end(); cIt != ceIt; cIt++ )
 		{
-			std::string childPath( path );
-			if( *childPath.rbegin() != '/' )
-			{
-				childPath += '/';
-			}
-			childPath += cIt->string();
+			childPath.back() = *cIt;
 			if( depth == 1 )
 			{
 				// at the bottom of the expansion - just select the child
-				result |= selected.insert( childPath ).second;
+				result |= selected.addPath( childPath );
 			}
 			else
 			{
@@ -739,7 +1206,7 @@ bool SceneView::expandWalk( const std::string &path, size_t depth, PathMatcher &
 	{
 		// we have no children, just make sure we're selected to mark the
 		// leaf of the expansion.
-		result |= selected.insert( path ).second;
+		result |= selected.addPath( path );
 	}
 
 	return result;
@@ -747,58 +1214,52 @@ bool SceneView::expandWalk( const std::string &path, size_t depth, PathMatcher &
 
 void SceneView::collapseSelection()
 {
-	RenderableGadget::Selection &selection = m_renderableGadget->getSelection();
-	if( !selection.size() )
+	PathMatcher &selection = const_cast<GafferScene::PathMatcherData *>( m_sceneGadget->getSelection() )->writable();
+
+	std::vector<string> toCollapse;
+	selection.paths( toCollapse );
+
+	if( !toCollapse.size() )
 	{
 		return;
 	}
 
-	set<string> pathsToSelect;
-	vector<const string *> pathsToDeselect;
 	GafferScene::PathMatcherData *expandedData = expandedPaths();
 	PathMatcher &expanded = expandedData->writable();
 
-	for( RenderableGadget::Selection::const_iterator it = selection.begin(), eIt = selection.end(); it != eIt; it++ )
+	for( vector<string>::const_iterator it = toCollapse.begin(), eIt = toCollapse.end(); it != eIt; ++it )
 	{
-		if( !expanded.removePath( *it ) )
+		/// \todo It would be nice to be able to get ScenePaths out of
+		/// PathMatcher::paths() directly.
+		ScenePlug::ScenePath path;
+		ScenePlug::stringToPath( *it, path );
+
+		if( !expanded.removePath( path ) )
 		{
-			if( *it == "/" )
+			if( path.size() <= 1 )
 			{
 				continue;
 			}
-			pathsToDeselect.push_back( &(*it) );
-			std::string parentPath( *it, 0, it->rfind( '/' ) );
-			if( parentPath == "" )
-			{
-				parentPath = "/";
-			}
-			expanded.removePath( parentPath );
-			pathsToSelect.insert( parentPath );
+			selection.removePath( path );
+			path.pop_back(); // now the parent path
+			expanded.removePath( path );
+			selection.addPath( path );
 		}
 	}
 
-	for( set<string>::const_iterator it = pathsToSelect.begin(), eIt = pathsToSelect.end(); it != eIt; it++ )
-	{
-		selection.insert( *it );
-	}
-	for( vector<const string *>::const_iterator it = pathsToDeselect.begin(), eIt = pathsToDeselect.end(); it != eIt; it++ )
-	{
-		selection.erase( **it );
-	}
-
-	// see comment in expandSelection().
+	// See comment in expandSelection().
 	getContext()->changedSignal()( getContext(), "ui:scene:expandedPaths" );
-	// and this will trigger a selection update also via contextChanged().
+	// See comment in expandSelection().
 	transferSelectionToContext();
 }
 
 void SceneView::transferSelectionToContext()
 {
-	/// \todo If RenderableGadget used PathMatcherData, then we might not need
-	/// to copy data here.
-	const RenderableGadget::Selection &selection = m_renderableGadget->getSelection();
+	/// \todo Use PathMatcherData for the context variable so we don't need
+	/// to do this copying into StringVectorData. See related comments
+	/// in SceneHierarchy.__transferSelectionFromContext
 	StringVectorDataPtr s = new StringVectorData();
-	s->writable().insert( s->writable().end(), selection.begin(), selection.end() );
+	m_sceneGadget->getSelection()->readable().paths( s->writable() );
 	getContext()->set( "ui:scene:selectedPaths", s.get() );
 }
 
@@ -819,94 +1280,14 @@ GafferScene::PathMatcherData *SceneView::expandedPaths()
 void SceneView::baseStateChanged()
 {
 	/// \todo This isn't transferring the override state properly. Probably an IECoreGL problem.
-	m_renderableGadget->baseState()->add( const_cast<IECoreGL::State *>( baseState() ) );
-	m_renderableGadget->renderRequestSignal()( m_renderableGadget.get() );
+	m_sceneGadget->baseState()->add( const_cast<IECoreGL::State *>( baseState() ) );
+	viewportGadget()->renderRequestSignal()( viewportGadget() );
 }
 
 void SceneView::plugSet( Gaffer::Plug *plug )
 {
 	if( plug == minimumExpansionDepthPlug() )
 	{
-		updateRequestSignal()( this );
-	}
-	else if( plug == lookThroughPlug() )
-	{
-		updateLookThrough();
-	}
-}
-
-void SceneView::updateLookThrough()
-{
-	Context::Scope scopedContext( getContext() );
-
-	const ScenePlug *scene = preprocessedInPlug<ScenePlug>();
-	ConstCompoundObjectPtr globals = scene->globalsPlug()->getValue();
-
-	string cameraPathString;
-	IECore::CameraPtr camera;
-	if( lookThroughEnabledPlug()->getValue() )
-	{
-		cameraPathString = lookThroughCameraPlug()->getValue();
-		if( cameraPathString.empty() )
-		{
-			if( const StringData *cameraPathData = globals->member<StringData>( "option:render:camera" ) )
-			{
-				cameraPathString = cameraPathData->readable();
-			}
-		}
-
-		if( !cameraPathString.empty() )
-		{
-			ScenePlug::ScenePath cameraPath;
-			ScenePlug::stringToPath( cameraPathString, cameraPath );
-
-			try
-			{
-				ConstCameraPtr constCamera = runTimeCast<const IECore::Camera>( scene->object( cameraPath ) );
-				if( constCamera )
-				{
-					camera = constCamera->copy();
-					camera->setTransform( new MatrixTransform( scene->fullTransform( cameraPath ) ) );
-
-					// if the camera has an existing screen window, remove it.
-					// if we didn't, it would conflict with the resolution we set
-					// below, yielding squashed/stretched images.
-					/// \todo Properly specify how cameras are represented in Gaffer
-					/// (the Cortex representation is very renderer-centric, with no
-					/// real world parameters like film back) so that this isn't necessary,
-					/// and add nice overlays for resolution gate etc.
-					camera->parameters().erase( "screenWindow" );
-				}
-			}
-			catch( ... )
-			{
-				// if an invalid path has been entered for the camera, computation will fail.
-				// we can just ignore that and fall through to lock to the current camera instead.
-				cameraPathString = "";
-			}
-		}
-
-		if( !camera )
-		{
-			// we couldn't find a render camera to lock to, but we can lock to the current
-			// camera instead.
-			camera = viewportGadget()->getCamera()->copy();
-		}
-	}
-
-	if( camera )
-	{
-		camera->parameters()["resolution"] = new V2iData( viewportGadget()->getViewport() );
-		viewportGadget()->setCamera( camera.get() );
-		viewportGadget()->setCameraEditable( false );
-
-		StringVectorDataPtr invisiblePaths = new StringVectorData();
-		invisiblePaths->writable().push_back( cameraPathString );
-		hideFilter()->pathsPlug()->setValue( invisiblePaths );
-	}
-	else
-	{
-		viewportGadget()->setCameraEditable( true );
-		hideFilter()->pathsPlug()->setToDefault();
+		m_sceneGadget->setMinimumExpansionDepth( minimumExpansionDepthPlug()->getValue() );
 	}
 }

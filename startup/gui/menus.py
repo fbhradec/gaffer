@@ -1,7 +1,7 @@
 ##########################################################################
 #
 #  Copyright (c) 2011-2012, John Haddon. All rights reserved.
-#  Copyright (c) 2012-2014, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2012-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -41,8 +41,10 @@ import traceback
 import IECore
 
 import Gaffer
+import GafferCortex
 import GafferScene
 import GafferUI
+import GafferCortexUI
 import GafferSceneUI
 
 # ScriptWindow menu
@@ -55,6 +57,7 @@ GafferUI.FileMenu.appendDefinitions( scriptWindowMenu, prefix="/File" )
 GafferUI.EditMenu.appendDefinitions( scriptWindowMenu, prefix="/Edit" )
 GafferUI.LayoutMenu.appendDefinitions( scriptWindowMenu, name="/Layout" )
 GafferUI.DispatcherUI.appendMenuDefinitions( scriptWindowMenu, prefix="/Execute" )
+GafferUI.LocalDispatcherUI.appendMenuDefinitions( scriptWindowMenu, prefix="/Execute" )
 
 # Add help menu
 def launchGoogleGroup( menu ):
@@ -155,6 +158,56 @@ if "DELIGHT" in os.environ :
 		stacktrace = traceback.format_exc()
 		IECore.msg( IECore.Msg.Level.Error, "startup/gui/menus.py", "Error loading RenderMan module - \"%s\".\n %s" % ( m, stacktrace ) )
 
+# appleseed nodes
+
+if "APPLESEED" in os.environ :
+
+	try :
+
+		import GafferAppleseed
+		import GafferAppleseedUI
+		import GafferOSL
+		import GafferOSLUI
+
+		def __shaderNodeCreator( nodeName, shaderName ) :
+
+			node = GafferOSL.OSLShader( nodeName )
+			node.loadShader( shaderName )
+
+			return node
+
+		GafferSceneUI.ShaderUI.appendShaders(
+			nodeMenu.definition(), "/Appleseed/Shader",
+			os.environ["APPLESEED_SEARCHPATH"].split( ":" ),
+			[ "oso" ],
+			__shaderNodeCreator
+		)
+
+		GafferAppleseedUI.LightMenu.appendLights( nodeMenu.definition() )
+
+		nodeMenu.append( "/Appleseed/Attributes", GafferAppleseed.AppleseedAttributes, searchText = "AppleseedAttributes" )
+		nodeMenu.append( "/Appleseed/Options", GafferAppleseed.AppleseedOptions, searchText = "AppleseedOptions" )
+		nodeMenu.append(
+			"/Appleseed/Render", GafferAppleseed.AppleseedRender,
+			plugValues = {
+				"fileName" : "${project:rootDirectory}/appleseeds/${script:name}/${script:name}.####.appleseed",
+			},
+			searchText = "AppleseedRender"
+		)
+		nodeMenu.append( "/Appleseed/InteractiveRender", GafferAppleseed.InteractiveAppleseedRender, searchText = "InteractiveRender" )
+
+		scriptWindowMenu.append(
+			"/Help/Appleseed/User Docs",
+			{
+				"command" : IECore.curry( GafferUI.showURL, "https://github.com/appleseedhq/appleseed/wiki" ),
+			}
+		)
+
+	except Exception, m :
+
+		stacktrace = traceback.format_exc()
+		IECore.msg( IECore.Msg.Level.Error, "startup/gui/menus.py", "Error loading Appleseed module - \"%s\".\n %s" % ( m, stacktrace ) )
+
 # Scene nodes
 
 nodeMenu.append( "/Scene/File/Reader", GafferScene.SceneReader, searchText = "SceneReader" )
@@ -163,6 +216,7 @@ nodeMenu.append( "/Scene/File/Alembic", GafferScene.AlembicSource, searchText = 
 nodeMenu.append( "/Scene/Source/Object To Scene", GafferScene.ObjectToScene, searchText = "ObjectToScene" )
 nodeMenu.append( "/Scene/Source/Camera", GafferScene.Camera )
 nodeMenu.append( "/Scene/Source/Coordinate System", GafferScene.CoordinateSystem, searchText = "CoordinateSystem" )
+nodeMenu.append( "/Scene/Source/Clipping Plane", GafferScene.ClippingPlane, searchText = "ClippingPlane" )
 nodeMenu.append( "/Scene/Source/External Procedural", GafferScene.ExternalProcedural, searchText = "ExternalProcedural" )
 nodeMenu.append( "/Scene/Source/Grid", GafferScene.Grid )
 nodeMenu.append( "/Scene/Source/Primitive/Cube", GafferScene.Cube )
@@ -171,20 +225,23 @@ nodeMenu.append( "/Scene/Source/Primitive/Sphere", GafferScene.Sphere )
 nodeMenu.append( "/Scene/Source/Primitive/Text", GafferScene.Text )
 nodeMenu.append( "/Scene/Source/Seeds", GafferScene.Seeds )
 nodeMenu.append( "/Scene/Source/Instancer", GafferScene.Instancer )
-nodeMenu.append( "/Scene/Object/Attribute Cache", GafferScene.AttributeCache, searchText = "AttributeCache" )
 nodeMenu.append( "/Scene/Object/Primitive Variables", GafferScene.PrimitiveVariables, searchText = "PrimitiveVariables" )
 nodeMenu.append( "/Scene/Object/Delete Primitive Variables", GafferScene.DeletePrimitiveVariables, searchText = "DeletePrimitiveVariables" )
-nodeMenu.append( "/Scene/Object/Mesh Type", GafferScene.MeshType, searchText = "MeshType"  )
-nodeMenu.append( "/Scene/Object/Map Projection", GafferScene.MapProjection, searchText = "MapProjection"  )
+nodeMenu.append( "/Scene/Object/Mesh Type", GafferScene.MeshType, searchText = "MeshType" )
+nodeMenu.append( "/Scene/Object/Points Type", GafferScene.PointsType, searchText = "PointsType" )
+nodeMenu.append( "/Scene/Object/Map Projection", GafferScene.MapProjection, searchText = "MapProjection" )
 nodeMenu.append( "/Scene/Object/Map Offset", GafferScene.MapOffset, searchText = "MapOffset"  )
+nodeMenu.append( "/Scene/Object/Parameters", GafferScene.Parameters )
 nodeMenu.append( "/Scene/Attributes/Shader Assignment", GafferScene.ShaderAssignment, searchText = "ShaderAssignment" )
 nodeMenu.append( "/Scene/Attributes/Shader Switch", GafferScene.ShaderSwitch, searchText = "ShaderSwitch" )
 nodeMenu.append( "/Scene/Attributes/Standard Attributes", GafferScene.StandardAttributes, searchText = "StandardAttributes" )
 nodeMenu.append( "/Scene/Attributes/Custom Attributes", GafferScene.CustomAttributes, searchText = "CustomAttributes" )
 nodeMenu.append( "/Scene/Attributes/Delete Attributes", GafferScene.DeleteAttributes, searchText = "DeleteAttributes" )
+nodeMenu.append( "/Scene/Attributes/Attribute Visualiser", GafferScene.AttributeVisualiser, searchText = "AttributeVisualiser" )
 nodeMenu.append( "/Scene/Filters/Set Filter", GafferScene.SetFilter, searchText = "SetFilter" )
 nodeMenu.append( "/Scene/Filters/Path Filter", GafferScene.PathFilter, searchText = "PathFilter" )
 nodeMenu.append( "/Scene/Filters/Union Filter", GafferScene.UnionFilter, searchText = "UnionFilter" )
+nodeMenu.append( "/Scene/Filters/FilterSwitch", GafferScene.FilterSwitch, searchText = "FilterSwitch" )
 nodeMenu.append( "/Scene/Hierarchy/Group", GafferScene.Group )
 nodeMenu.append( "/Scene/Hierarchy/Parent", GafferScene.Parent )
 nodeMenu.append( "/Scene/Hierarchy/Duplicate", GafferScene.Duplicate )
@@ -201,6 +258,7 @@ nodeMenu.append( "/Scene/Context/Time Warp", GafferScene.SceneTimeWarp, searchTe
 nodeMenu.append( "/Scene/Context/Variables", GafferScene.SceneContextVariables, searchText = "SceneContextVariables" )
 nodeMenu.append( "/Scene/Globals/Outputs", GafferScene.Outputs )
 nodeMenu.append( "/Scene/Globals/Delete Outputs", GafferScene.DeleteOutputs, searchText = "DeleteOutputs" )
+nodeMenu.append( "/Scene/Globals/Delete Sets", GafferScene.DeleteSets, searchText = "DeleteSets" )
 nodeMenu.append( "/Scene/Globals/Standard Options", GafferScene.StandardOptions, searchText = "StandardOptions" )
 nodeMenu.append( "/Scene/Globals/Custom Options", GafferScene.CustomOptions, searchText = "CustomOptions" )
 nodeMenu.append( "/Scene/Globals/Delete Options", GafferScene.DeleteOptions, searchText = "DeleteOptions" )
@@ -225,9 +283,12 @@ nodeMenu.append( "/Image/Merge/Merge", GafferImage.Merge )
 nodeMenu.append( "/Image/Merge/Switch", GafferImage.ImageSwitch, searchText = "ImageSwitch" )
 nodeMenu.append( "/Image/Transform/Reformat", GafferImage.Reformat )
 nodeMenu.append( "/Image/Transform/Transform", GafferImage.ImageTransform, searchText = "ImageTransform" )
-nodeMenu.append( "/Image/Channels/RemoveChannels", GafferImage.RemoveChannels )
+nodeMenu.append( "/Image/Channels/Delete", GafferImage.DeleteChannels, searchText = "DeleteChannels" )
 nodeMenu.append( "/Image/Context/Time Warp", GafferImage.ImageTimeWarp, searchText = "ImageTimeWarp" )
 nodeMenu.append( "/Image/Context/Variables", GafferImage.ImageContextVariables, searchText = "ImageContextVariables"  )
+nodeMenu.append( "/Image/Utility/Metadata", GafferImage.ImageMetadata, searchText = "ImageMetadata" )
+nodeMenu.append( "/Image/Utility/Delete Metadata", GafferImage.DeleteImageMetadata, searchText = "DeleteImageMetadata" )
+nodeMenu.append( "/Image/Utility/Copy Metadata", GafferImage.CopyImageMetadata, searchText = "CopyImageMetadata" )
 nodeMenu.append( "/Image/Utility/Stats", GafferImage.ImageStats, searchText = "ImageStats" )
 nodeMenu.append( "/Image/Utility/Sampler", GafferImage.ImageSampler, searchText = "ImageSampler" )
 
@@ -264,12 +325,17 @@ if moduleSearchPath.find( "GafferOSL" ) :
 
 # Cortex nodes
 
-nodeMenu.append( "/Cortex/File/Reader", Gaffer.ObjectReader, searchText = "ObjectReader" )
-nodeMenu.append( "/Cortex/File/Writer", Gaffer.ObjectWriter, searchText = "ObjectWriter" )
+nodeMenu.append( "/Cortex/File/Reader", GafferCortex.ObjectReader, searchText = "ObjectReader" )
+nodeMenu.append( "/Cortex/File/Writer", GafferCortex.ObjectWriter, searchText = "ObjectWriter" )
 
 # \todo have a method for dynamically choosing between Gaffer.OpHolder and Gaffer.ExecutableOpHolder
-nodeMenu.appendParameterisedHolders( "/Cortex/Ops", Gaffer.OpHolder, "IECORE_OP_PATHS" )
-nodeMenu.appendParameterisedHolders( "/Cortex/Procedurals", Gaffer.ProceduralHolder, "IECORE_PROCEDURAL_PATHS" )
+GafferCortexUI.ParameterisedHolderUI.appendParameterisedHolders(
+	nodeMenu.definition(), "/Cortex/Ops", "IECORE_OP_PATHS", GafferCortex.OpHolder
+)
+
+GafferCortexUI.ParameterisedHolderUI.appendParameterisedHolders(
+	nodeMenu.definition(), "/Cortex/Procedurals", "IECORE_PROCEDURAL_PATHS", GafferCortex.ProceduralHolder
+)
 
 # Utility nodes
 
@@ -279,5 +345,19 @@ nodeMenu.append( "/Utility/Random", Gaffer.Random )
 nodeMenu.append( "/Utility/Box", GafferUI.BoxUI.nodeMenuCreateCommand )
 nodeMenu.append( "/Utility/Reference", GafferUI.ReferenceUI.nodeMenuCreateCommand )
 nodeMenu.definition().append( "/Utility/Backdrop", { "command" : GafferUI.BackdropUI.nodeMenuCreateCommand } )
+nodeMenu.append( "/Utility/Dot", Gaffer.Dot )
 nodeMenu.append( "/Utility/System Command", Gaffer.SystemCommand, searchText = "SystemCommand" )
 nodeMenu.append( "/Utility/Task List", Gaffer.TaskList, searchText = "TaskList" )
+
+# appleseed uses GafferOSL shaders so  we need to 
+# add the paths to them to OSL_SHADER_PATHS environment var.
+# this has to happen after GafferOSL is initialized otherwise 
+# appleseed shaders also show on the OSL menu.
+if "APPLESEED" in os.environ :
+
+	os.environ["OSL_SHADER_PATHS"] = os.environ["APPLESEED_SEARCHPATH"] + ":" + os.environ["OSL_SHADER_PATHS"]
+
+## Miscellaneous UI
+###########################################################################
+
+GafferUI.DotUI.connect( application.root() )

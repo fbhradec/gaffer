@@ -35,6 +35,7 @@
 #
 ##########################################################################
 
+import os
 import unittest
 
 import IECore
@@ -75,7 +76,7 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 
 		f = GafferScene.PathFilter()
 		f["paths"].setValue( IECore.StringVectorData( [ "/ball1" ] ) )
-		a["filter"].setInput( f["match"] )
+		a["filter"].setInput( f["out"] )
 
 		self.assertEqual( a["out"].attributes( "/" ), IECore.CompoundObject() )
 		self.assertNotEqual( a["out"].attributes( "/ball1" ), IECore.CompoundObject() )
@@ -86,13 +87,13 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 		a = GafferScene.ShaderAssignment()
 
 		f = GafferScene.PathFilter()
-		self.assertTrue( a["filter"].acceptsInput( f["match"] ) )
+		self.assertTrue( a["filter"].acceptsInput( f["out"] ) )
 
 		n = GafferTest.AddNode()
 		self.assertFalse( a["filter"].acceptsInput( n["sum"] ) )
 
 		p = Gaffer.IntPlug()
-		p.setInput( f["match"] )
+		p.setInput( f["out"] )
 
 		self.assertTrue( a["filter"].acceptsInput( p ) )
 
@@ -244,6 +245,72 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 
 		a = GafferScene.ShaderAssignment()
 		self.assertTrue( a["shader"].acceptsInput( None ) )
+
+	def testInputAcceptanceFromDots( self ) :
+
+		a = GafferScene.ShaderAssignment()
+
+		s = GafferSceneTest.TestShader()
+		d = Gaffer.Dot()
+		d.setup( s["out"] )
+
+		self.assertTrue( a["shader"].acceptsInput( d["out"] ) )
+
+	def testFilterInputAcceptanceFromReferences( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+		s["b"]["a"] = GafferScene.ShaderAssignment()
+		p = s["b"].promotePlug( s["b"]["a"]["filter"] )
+		s["b"].exportForReference( "/tmp/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( "/tmp/test.grf" )
+
+		self.assertTrue( s["r"]["a"]["filter"].getInput().isSame( s["r"][p.getName()] ) )
+
+		s["f"] = GafferScene.PathFilter()
+		s["r"][p.getName()].setInput( s["f"]["out"] )
+
+	def testFilterInputAcceptanceFromReferencesViaDot( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["b"] = Gaffer.Box()
+		s["b"]["a"] = GafferScene.ShaderAssignment()
+		s["b"]["d"] = Gaffer.Dot()
+		s["b"]["d"].setup( s["b"]["a"]["filter"] )
+		s["b"]["a"]["filter"].setInput( s["b"]["d"]["out"] )
+
+		p = s["b"].promotePlug( s["b"]["d"]["in"] )
+		s["b"].exportForReference( "/tmp/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( "/tmp/test.grf" )
+
+		self.assertTrue( s["r"]["a"]["filter"].source().isSame( s["r"][p.getName()] ) )
+
+		s["f"] = GafferScene.PathFilter()
+		s["r"][p.getName()].setInput( s["f"]["out"] )
+
+	def testShaderInputAcceptanceFromReferences( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["b"] = Gaffer.Box()
+		s["b"]["a"] = GafferScene.ShaderAssignment()
+		p = s["b"].promotePlug( s["b"]["a"]["shader"] )
+
+		s["b"].exportForReference( "/tmp/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( "/tmp/test.grf" )
+
+		self.assertTrue( s["r"]["a"]["shader"].getInput().node().isSame( s["r"] ) )
+
+	def tearDown( self ) :
+
+		if os.path.exists( "/tmp/test.grf" ) :
+			os.remove( "/tmp/test.grf" )
 
 if __name__ == "__main__":
 	unittest.main()

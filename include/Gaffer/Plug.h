@@ -48,8 +48,22 @@ namespace Gaffer
 IE_CORE_FORWARDDECLARE( Plug )
 IE_CORE_FORWARDDECLARE( Node )
 
-/// The Plug class defines a means of making point to point connections.
-/// A Plug may have many outputs but only one input.
+/// The Plug class defines a means of making point to point connections
+/// between Nodes. A plug may receive a single input connection from
+/// another plug, and may have an arbitrary number of output connections
+/// to other plugs.
+///
+/// Plugs may also have child plugs. When this is the case, they may only
+/// receive connections from other plugs with equivalent children. When
+/// two such parent plugs are connected, the corresponding children are
+/// connected automatically too. The reverse also applies - manually connecting
+/// all the children will cause the parent connection to be made automatically.
+/// Likewise, disconnecting one or more children will cause the parent connection
+/// to be broken.
+///
+/// When two parent plugs are connected, and children are added to or removed
+/// from the source plug, the equivalent operation will be automatically
+/// performed on the destination plug so as to maintain the parent connection.
 class Plug : public GraphComponent
 {
 
@@ -79,6 +93,8 @@ class Plug : public GraphComponent
 			/// If the PerformsSubstitutions flag is set then tokens from the plug value
 			/// will automatically be substituted with values from the context during
 			/// computation. Note that currently this only applies to the StringPlug.
+			/// \deprecated. Use the substitutions argument to the StringPlug constructor
+			/// instead - this provides finer grained control.
 			PerformsSubstitutions = 0x00000008,
 			/// If the Cacheable flag is set then values computed during getValue()
 			/// calls will be stored in a cache and reused if equivalent computations
@@ -103,7 +119,7 @@ class Plug : public GraphComponent
 		/// @name Parent-child relationships
 		//////////////////////////////////////////////////////////////////////
 		//@{
-		/// Accepts no children.
+		/// Accepts only Plugs with the same direction.
 		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
 		/// Accepts only Nodes or Plugs as a parent.
 		virtual bool acceptsParent( const GraphComponent *potentialParent ) const;
@@ -135,10 +151,12 @@ class Plug : public GraphComponent
 		/// acceptance and false for rejection. Implementations
 		/// should call their base class and only accept an
 		/// input if their base class does too. The default
-		/// implementation accepts any input, provided that
-		/// direction()==In and the AcceptsInputs flag is set,
-		/// the ReadOnly flag is not set, and that node()->acceptsInput()
-		/// also accepts the input.
+		/// implementation accepts inputs provided that :
+		///
+		///  - direction()==In and the AcceptsInputs flag is set
+		///  - the ReadOnly flag is not set
+		///  - node()->acceptsInput() also accepts the input
+		///  - corresponding child plugs also accept the input
 		virtual bool acceptsInput( const Plug *input ) const;
 		/// Sets the input to this plug if acceptsInput( input )
 		/// returns true, otherwise throws an IECore::Exception.
@@ -178,16 +196,44 @@ class Plug : public GraphComponent
 
 		virtual void parentChanging( Gaffer::GraphComponent *newParent );
 
+		/// Initiates the propagation of dirtiness from the specified
+		/// plug to its outputs and affected plugs (as defined by
+		/// DependencyNode::affects()).
+		static void propagateDirtiness( Plug *plugToDirty );
+
+		/// Called by propagateDirtiness() to inform a plug that it has
+		/// been dirtied. For plugs that implement caching of results, this
+		/// provides an opportunity for the plug to invalidate its cache.
+		/// This is called _before_ Node::plugDirtiedSignal() is emitted,
+		/// so that the plug can be ready for any queries from slots
+		/// connected to the signal.
+		virtual void dirty();
+
 	private :
 
+		void parentChanged();
+		static void propagateDirtinessForParentChange( Plug *plugToDirty );
+
+		void setInput( PlugPtr input, bool setChildInputs, bool updateParentInput );
 		void setInputInternal( PlugPtr input, bool emit );
 
-		static void parentChanged( GraphComponent *child, GraphComponent *previousParent );
+		void updateInputFromChildInputs( Plug *checkFirst );
+
+		static void pushDirtyPropagationScope();
+		static void popDirtyPropagationScope();
+		// DirtyPropagationScope allowed friendship, as we use
+		// it to declare an exception-safe public interface to
+		// the two private methods above.
+		friend class DirtyPropagationScope;
+
+		class DirtyPlugs;
 
 		Direction m_direction;
 		Plug *m_input;
 		OutputContainer m_outputs;
 		unsigned m_flags;
+
+		bool m_skipNextUpdateInputFromChildInputs;
 
 };
 

@@ -48,6 +48,7 @@
 #include "Gaffer/PlugIterator.h"
 #include "Gaffer/DependencyNode.h"
 #include "Gaffer/StandardSet.h"
+#include "Gaffer/Dot.h"
 
 #include "GafferUI/StandardGraphLayout.h"
 #include "GafferUI/GraphGadget.h"
@@ -1036,6 +1037,15 @@ bool StandardGraphLayout::connectNodeInternal( GraphGadget *graph, Gaffer::Node 
 		return false;
 	}
 
+	// if we're trying to connect a dot, then we may need to give it plugs first
+	if( Dot *dot = runTimeCast<Dot>( node ) )
+	{
+		if( !dot->inPlug<Plug>() )
+		{
+			dot->setup( outputPlugs.front() );
+		}
+	}
+
 	// iterate over the output plugs, connecting them in to the node if we can
 
 	size_t numConnectionsMade = 0;
@@ -1072,51 +1082,40 @@ bool StandardGraphLayout::connectNodeInternal( GraphGadget *graph, Gaffer::Node 
 		Plug *correspondingOutput = this->correspondingOutput( firstConnectionDst );
 		if( correspondingOutput )
 		{
-			bool allCompatible = true;
-
-			// This is a copy of (*it)->outputs() rather than a reference, as reconnection can modify (*it)->outputs()...
-			Plug::OutputContainer outputs = firstConnectionSrc->outputs();
+			// Find the destination plugs at the end of the existing
+			// connections we want to insert into.
+			vector<Plug *> insertionDsts;
+			const Plug::OutputContainer &outputs = firstConnectionSrc->outputs();
 			for( Plug::OutputContainer::const_iterator it = outputs.begin(); it != outputs.end(); ++it )
 			{
 				// ignore outputs that aren't visible:
 				NodeGadget *nodeGadget = graph->nodeGadget( (*it)->node() );
-				if( !nodeGadget )
+				if( !nodeGadget || !nodeGadget->nodule( *it ) )
 				{
 					continue;
 				}
-				if( !nodeGadget->nodule( *it ) )
+				// Ignore the output which we made when connecting the node above
+				if( *it == firstConnectionDst )
 				{
 					continue;
 				}
-
-				if( !(*it)->acceptsInput( correspondingOutput ) )
+				if( (*it)->acceptsInput( correspondingOutput ) )
 				{
-					allCompatible = false;
+					// Insertion accepted - store for reconnection
+					insertionDsts.push_back( *it );
+				}
+				else
+				{
+					// Insertion rejected - clear insertionDsts to
+					// abort insertion entirely.
+					insertionDsts.clear();
 					break;
 				}
 			}
-
-			if( allCompatible )
+			// Reconnect the destination plugs such that we've inserted our node
+			for( vector<Plug *>::const_iterator it = insertionDsts.begin(), eIt = insertionDsts.end(); it != eIt; ++it )
 			{
-				for( Plug::OutputContainer::const_iterator it = outputs.begin(); it != outputs.end(); ++it )
-				{
-					// ignore outputs that aren't visible:
-					NodeGadget *nodeGadget = graph->nodeGadget( (*it)->node() );
-					if( !nodeGadget )
-					{
-						continue;
-					}
-					if( !nodeGadget->nodule( *it ) )
-					{
-						continue;
-					}
-
-					Plug *p = *it;
-					if( p != firstConnectionDst )
-					{
-						p->setInput( correspondingOutput );
-					}
-				}
+				(*it)->setInput( correspondingOutput );
 			}
 		}
 	}

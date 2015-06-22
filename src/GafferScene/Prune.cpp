@@ -58,6 +58,8 @@ Prune::Prune( const std::string &name )
 	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
 	outPlug()->attributesPlug()->setInput( inPlug()->attributesPlug() );
 	outPlug()->objectPlug()->setInput( inPlug()->objectPlug() );
+	outPlug()->globalsPlug()->setInput( inPlug()->globalsPlug() );
+	outPlug()->setNamesPlug()->setInput( inPlug()->setNamesPlug() );
 }
 
 Prune::~Prune()
@@ -86,7 +88,7 @@ void Prune::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs 
 	else if( input == filterPlug() )
 	{
 		outputs.push_back( outPlug()->childNamesPlug() );
-		outputs.push_back( outPlug()->globalsPlug() );
+		outputs.push_back( outPlug()->setPlug() );
 	}
 	else if( input == adjustBoundsPlug() )
 	{
@@ -109,6 +111,19 @@ void Prune::hashBound( const ScenePath &path, const Gaffer::Context *context, co
 	h = inPlug()->boundPlug()->hash();
 }
 
+Imath::Box3f Prune::computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
+{
+	if( adjustBoundsPlug()->getValue() )
+	{
+		if( filterValue( context ) & Filter::DescendantMatch )
+		{
+			return unionOfTransformedChildBounds( path, outPlug() );
+		}
+	}
+
+	return inPlug()->boundPlug()->getValue();
+}
+
 void Prune::hashChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
 	ContextPtr tmpContext = filterContext( context );
@@ -126,26 +141,6 @@ void Prune::hashChildNames( const ScenePath &path, const Gaffer::Context *contex
 		// pass through
 		h = inPlug()->childNamesPlug()->hash();
 	}
-}
-
-void Prune::hashGlobals( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
-{
-	FilteredSceneProcessor::hashGlobals( context, parent, h );
-	inPlug()->globalsPlug()->hash( h );
-	filterHash( context, h );
-}
-
-Imath::Box3f Prune::computeBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
-{
-	if( adjustBoundsPlug()->getValue() )
-	{
-		if( filterValue( context ) & Filter::DescendantMatch )
-		{
-			return unionOfTransformedChildBounds( path, outPlug() );
-		}
-	}
-
-	return inPlug()->boundPlug()->getValue();
 }
 
 IECore::ConstInternedStringVectorDataPtr Prune::computeChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
@@ -183,45 +178,87 @@ IECore::ConstInternedStringVectorDataPtr Prune::computeChildNames( const ScenePa
 	}
 }
 
-IECore::ConstCompoundObjectPtr Prune::computeGlobals( const Gaffer::Context *context, const ScenePlug *parent ) const
+void Prune::hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	ConstCompoundObjectPtr inputGlobals = inPlug()->globalsPlug()->getValue();
-	const CompoundData *inputSets = inputGlobals->member<CompoundData>( "gaffer:sets" );
-	if( !inputSets )
+	FilteredSceneProcessor::hashGlobals( context, parent, h );
+	inPlug()->setPlug()->hash( h );
+
+	// The sets themselves do not depend on the "scene:path"
+	// context entry - the whole point is that they're global.
+	// However, the PathFilter is dependent on scene:path, so
+	// we must remove the path before hashing in the filter in
+	// case we're computed from multiple contexts with different
+	// paths (from a SetFilter for instance). If we didn't do this,
+	// our different hashes would lead to huge numbers of redundant
+	// calls to computeSet() and a huge overhead in recomputing
+	// the same sets repeatedly.
+	//
+	// See further comments in FilteredSceneProcessor::affects().
+	ContextPtr c = filterContext( context );
+	c->remove( ScenePlug::scenePathContextName );
+	Context::Scope s( c.get() );
+	filterPlug()->hash( h );
+}
+
+GafferScene::ConstPathMatcherDataPtr Prune::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
+{
+	ConstPathMatcherDataPtr inputSetData = inPlug()->setPlug()->getValue();
+	const PathMatcher &inputSet = inputSetData->readable();
+	if( inputSet.isEmpty() )
 	{
-		return inputGlobals;
+		return inputSetData;
 	}
 
-	CompoundObjectPtr outputGlobals = inputGlobals->copy();
-	CompoundDataPtr outputSets = new CompoundData;
-	outputGlobals->members()["gaffer:sets"] = outputSets;
+	PathMatcherDataPtr outputSetData = new PathMatcherData;
+	PathMatcher &outputSet = outputSetData->writable();
 
 	ContextPtr tmpContext = filterContext( context );
 	Context::Scope scopedContext( tmpContext.get() );
-	ScenePath path;
 
-	for( CompoundDataMap::const_iterator it = inputSets->readable().begin(), eIt = inputSets->readable().end(); it != eIt; ++it )
+	for( PathMatcher::RawIterator pIt = inputSet.begin(), peIt = inputSet.end(); pIt != peIt; )
 	{
-		/// \todo This could be more efficient if PathMatcher exposed the internal nodes,
-		/// and allowed sharing between matchers. Then we could do a really lightweight copy
-		/// and just trim out the nodes we didn't want.
-		const PathMatcher &inputSet = static_cast<const PathMatcherData *>( it->second.get() )->readable();
-		PathMatcher &outputSet = outputSets->member<PathMatcherData>( it->first, /* throwExceptions = */ false, /* createIfMissing = */ true )->writable();
-
-		vector<string> inputPaths;
-		inputSet.paths( inputPaths );
-		for( vector<string>::const_iterator pIt = inputPaths.begin(), peIt = inputPaths.end(); pIt != peIt; ++pIt )
+		tmpContext->set( ScenePlug::scenePathContextName, *pIt );
+		const int m = filterPlug()->getValue();
+		if( m & ( Filter::ExactMatch | Filter::AncestorMatch ) )
 		{
-			path.clear();
-			ScenePlug::stringToPath( *pIt, path );
-
-			tmpContext->set( ScenePlug::scenePathContextName, path );
-			if( !(filterPlug()->getValue() & ( Filter::ExactMatch | Filter::AncestorMatch ) ) )
+			// This path and all below it are pruned, so we can
+			// ignore it and prune the traversal to the descendant
+			// paths.
+			pIt.prune();
+			++pIt;
+		}
+		else if( m & Filter::DescendantMatch )
+		{
+			// This path isn't pruned, so we add it, and then
+			// continue our traversal as normal to find out
+			// which descendants _are_ pruned.
+			if( pIt.exactMatch() )
 			{
 				outputSet.addPath( *pIt );
+			}
+			++pIt;
+		}
+		else
+		{
+			// This path isn't pruned, and neither is anything
+			// below it. We can avoid retesting the filter for
+			// all descendant paths, since we know they're not
+			// pruned.
+			/// \todo If PathMatcher could share nodes internally,
+			/// it could provide us with a method to just reference
+			/// the whole subtree here.
+			assert( m == Filter::NoMatch );
+			PathMatcher::RawIterator next = pIt; next.prune(); ++next;
+			while( pIt != next )
+			{
+				if( pIt.exactMatch() )
+				{
+					outputSet.addPath( *pIt );
+				}
+				++pIt;
 			}
 		}
 	}
 
-	return outputGlobals;
+	return outputSetData;
 }

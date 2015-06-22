@@ -42,6 +42,38 @@ import IECore
 import Gaffer
 import GafferUI
 
+Gaffer.Metadata.registerNode(
+
+	Gaffer.Reference,
+
+	"description",
+	"""
+	References a node network stored in another file. This can be used
+	to share resources among scripts, build powerful non-linear workflows,
+	and as the basis for custom asset management.
+
+	To generate a file to be referenced, build a network inside a Box
+	node and then export it for referencing.
+	""",
+
+	plugs = {
+
+		"fileName" : (
+
+			"description",
+			"""
+			The external script referenced by this node.
+			""",
+
+			"layout:section", "",
+			"nodule:type", "",
+
+		),
+
+	}
+
+)
+
 ##########################################################################
 # Public functions
 ##########################################################################
@@ -124,11 +156,9 @@ class __FileNamePlugValueWidget( GafferUI.PlugValueWidget ) :
 			self.getPlug().node().load( self.getPlug().getValue() )
 
 GafferUI.PlugValueWidget.registerCreator( Gaffer.Reference, "fileName", __FileNamePlugValueWidget )
-Gaffer.Metadata.registerPlugValue( Gaffer.Reference, "fileName", "nodeUI:section", "header" )
 
 GafferUI.PlugValueWidget.registerCreator( Gaffer.Reference, re.compile( "in[0-9]*" ), None )
 GafferUI.PlugValueWidget.registerCreator( Gaffer.Reference, re.compile( "out[0-9]*" ), None )
-GafferUI.PlugValueWidget.registerCreator( Gaffer.Reference, "user", GafferUI.UserPlugValueWidget, editable=False )
 
 ##########################################################################
 # Utilities
@@ -154,15 +184,3 @@ def _waitForFileName( initialFileName="", parentWindow=None ) :
 		return ""
 
 	return str( path )
-
-##########################################################################
-# Nodules
-##########################################################################
-
-GafferUI.Nodule.registerNodule( Gaffer.Reference, "fileName", lambda plug : None )
-
-##########################################################################
-# Metadata
-##########################################################################
-
-Gaffer.Metadata.registerPlugValue( Gaffer.Reference, "user", "nodeUI:section", "Settings" )

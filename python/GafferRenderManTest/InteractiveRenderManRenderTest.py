@@ -195,7 +195,7 @@ class InteractiveRenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		)
 		self.assertEqual( c / c[2], IECore.Color3f( 0.25, 0.5, 1 ) )
 
-	def testShaders( self ) :
+	def testAttributes( self ) :
 
 		s = Gaffer.ScriptNode()
 
@@ -271,7 +271,7 @@ class InteractiveRenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		# turn off shader updates, do the same, and check that it hasn't changed
 
-		s["r"]["updateShaders"].setValue( False )
+		s["r"]["updateAttributes"].setValue( False )
 		s["s"]["parameters"]["blackcolor"].setValue( IECore.Color3f( 0.5 ) )
 		time.sleep( 1 )
 		c = self.__colorAtUV(
@@ -282,7 +282,7 @@ class InteractiveRenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		# turn shader updates back on, and check that it updates
 
-		s["r"]["updateShaders"].setValue( True )
+		s["r"]["updateAttributes"].setValue( True )
 		time.sleep( 1 )
 		c = self.__colorAtUV(
 			IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
@@ -324,7 +324,7 @@ class InteractiveRenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["a"] = GafferScene.ShaderAssignment()
 		s["a"]["in"].setInput( s["g"]["out"] )
 		s["a"]["shader"].setInput( s["s"]["out"] )
-		s["a"]["filter"].setInput( s["f"]["match"] )
+		s["a"]["filter"].setInput( s["f"]["out"] )
 
 		s["d"] = GafferScene.Outputs()
 		s["d"].addOutput(
@@ -885,8 +885,8 @@ class InteractiveRenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		for p in [
 			IECore.V2f( 0.5 ),
-			IECore.V2f( 0.1 ),
-			IECore.V2f( 0.9 ),
+			IECore.V2f( 0.15 ),
+			IECore.V2f( 0.85 ),
 		] :
 			c = self.__colorAtUV(
 				IECore.ImageDisplayDriver.storedImage( "myLovelyPlane" ),
@@ -894,5 +894,133 @@ class InteractiveRenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 			)
 			self.assertAlmostEqual( c[0], 1, delta = 0.001 )
 
+	def testDeleteWhilePaused( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["p"] = GafferScene.Plane()
+
+		s["c"] = GafferScene.Camera()
+		s["c"]["transform"]["translate"]["z"].setValue( 1 )
+
+		s["g"] = GafferScene.Group()
+		s["g"]["in"].setInput( s["p"]["out"] )
+		s["g"]["in1"].setInput( s["c"]["out"] )
+
+		s["d"] = GafferScene.Outputs()
+		s["d"].addOutput(
+			"beauty",
+			IECore.Display(
+				"test",
+				"ieDisplay",
+				"rgba",
+				{
+					"quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ),
+					"driverType" : "ImageDisplayDriver",
+					"handle" : "myLovelyPlane",
+				}
+			)
+		)
+		s["d"]["in"].setInput( s["g"]["out"] )
+
+		s["o"] = GafferScene.StandardOptions()
+		s["o"]["options"]["renderCamera"]["value"].setValue( "/group/camera" )
+		s["o"]["options"]["renderCamera"]["enabled"].setValue( True )
+		s["o"]["in"].setInput( s["d"]["out"] )
+
+		s["r"] = GafferRenderMan.InteractiveRenderManRender()
+		s["r"]["in"].setInput( s["o"]["out"] )
+
+		# start a render, give it time to get going, then pause it
+		s["r"]["state"].setValue( s["r"].State.Running )
+		time.sleep( 2 )
+		s["r"]["state"].setValue( s["r"].State.Paused )
+
+		# delete everything, and check that we don't hang
+		del s
+
+	def testChangeInputWhilePaused( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["p"] = GafferScene.Plane()
+
+		s["c"] = GafferScene.Camera()
+		s["c"]["transform"]["translate"]["z"].setValue( 1 )
+
+		s["g"] = GafferScene.Group()
+		s["g"]["in"].setInput( s["p"]["out"] )
+		s["g"]["in1"].setInput( s["c"]["out"] )
+
+		s["d"] = GafferScene.Outputs()
+		s["d"].addOutput(
+			"beauty",
+			IECore.Display(
+				"test",
+				"ieDisplay",
+				"rgba",
+				{
+					"quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ),
+					"driverType" : "ImageDisplayDriver",
+					"handle" : "myLovelyPlane",
+				}
+			)
+		)
+		s["d"]["in"].setInput( s["g"]["out"] )
+
+		s["o"] = GafferScene.StandardOptions()
+		s["o"]["options"]["renderCamera"]["value"].setValue( "/group/camera" )
+		s["o"]["options"]["renderCamera"]["enabled"].setValue( True )
+		s["o"]["in"].setInput( s["d"]["out"] )
+
+		s["r"] = GafferRenderMan.InteractiveRenderManRender()
+		s["r"]["in"].setInput( s["o"]["out"] )
+
+		# start a render, give it time to get going, then pause it
+
+		s["r"]["state"].setValue( s["r"].State.Running )
+		time.sleep( 2 )
+		s["r"]["state"].setValue( s["r"].State.Paused )
+
+		# change the input to the render node, and check that we don't hang
+
+		s["o2"] = GafferScene.StandardOptions()
+		s["o2"]["in"].setInput( s["o"]["out"] )
+
+		s["r"]["in"].setInput( s["o2"]["out"] )
+
+		# start the render again, so we know we're not just testing
+		# the same thing as testDeleteWhilePaused().
+		s["r"]["state"].setValue( s["r"].State.Running )
+
+	def testChildNamesUpdateCrash( self ) :
+		
+		# build a scene with a reasonably large hierarchy:
+		plane = GafferScene.Plane()
+		plane["dimensions"].setValue( IECore.V2f( 1000,1000 ) )
+		seeds = GafferScene.Seeds()
+		seeds["in"].setInput( plane["out"] )
+		seeds["parent"].setValue("/plane")
+		seeds["density"].setValue(0.01)
+		sphere = GafferScene.Sphere()
+		
+		instancer = GafferScene.Instancer()
+		instancer["parent"].setValue("/plane/seeds")
+		instancer["in"].setInput( seeds["out"] )
+		instancer["instance"].setInput( sphere["out"] )
+		
+		r = GafferRenderMan.InteractiveRenderManRender()
+		r["in"].setInput( instancer["out"] )
+		r["state"].setValue( r.State.Running )
+		
+		# change the child names a couple of times. There was a problem
+		# where a childnames check was happening asynchronously, leading
+		# to a crash, so we're gonna check this has been fixed:
+		
+		seeds["density"].setValue(0)
+		seeds["density"].setValue(0.01)
+		
+		r["state"].setValue( r.State.Stopped )
+		
 if __name__ == "__main__":
 	unittest.main()

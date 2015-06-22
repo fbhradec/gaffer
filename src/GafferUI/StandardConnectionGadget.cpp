@@ -41,19 +41,23 @@
 #include "Gaffer/UndoContext.h"
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/StandardSet.h"
+#include "Gaffer/Metadata.h"
 
 #include "GafferUI/StandardConnectionGadget.h"
 #include "GafferUI/Style.h"
 #include "GafferUI/Nodule.h"
 #include "GafferUI/NodeGadget.h"
 
-using namespace GafferUI;
-using namespace Imath;
 using namespace std;
+using namespace Imath;
+using namespace Gaffer;
+using namespace GafferUI;
 
 IE_CORE_DEFINERUNTIMETYPED( StandardConnectionGadget );
 
 ConnectionGadget::ConnectionGadgetTypeDescription<StandardConnectionGadget> StandardConnectionGadget::g_connectionGadgetTypeDescription( Gaffer::Plug::staticTypeId() );
+
+static IECore::InternedString g_colorKey( "connectionGadget:color" );
 
 StandardConnectionGadget::StandardConnectionGadget( GafferUI::NodulePtr srcNodule, GafferUI::NodulePtr dstNodule )
 	:	ConnectionGadget( srcNodule, dstNodule ), m_dragEnd( Gaffer::Plug::Invalid ), m_hovering( false )
@@ -65,6 +69,10 @@ StandardConnectionGadget::StandardConnectionGadget( GafferUI::NodulePtr srcNodul
 	dragEnterSignal().connect( boost::bind( &StandardConnectionGadget::dragEnter, this, ::_1, ::_2 ) );
 	dragMoveSignal().connect( boost::bind( &StandardConnectionGadget::dragMove, this, ::_1, ::_2 ) );
 	dragEndSignal().connect( boost::bind( &StandardConnectionGadget::dragEnd, this, ::_1, ::_2 ) );
+
+	Metadata::plugValueChangedSignal().connect( boost::bind( &StandardConnectionGadget::plugMetadataChanged, this, ::_1, ::_2, ::_3, ::_4 ) );
+
+	updateUserColor();
 }
 
 StandardConnectionGadget::~StandardConnectionGadget()
@@ -159,7 +167,7 @@ void StandardConnectionGadget::updateDragEndPoint( const Imath::V3f position, co
 	{
 		throw IECore::Exception( "Not dragging" );
 	}
-	renderRequestSignal()( this );
+ 	requestRender();
 }
 
 void StandardConnectionGadget::doRender( const Style *style ) const
@@ -183,7 +191,7 @@ void StandardConnectionGadget::doRender( const Style *style ) const
 		adjustedSrcTangent = -m_dstTangent;
 	}
 
-	style->renderConnection( adjustedSrcPos, adjustedSrcTangent, m_dstPos, m_dstTangent, state );
+	style->renderConnection( adjustedSrcPos, adjustedSrcTangent, m_dstPos, m_dstTangent, state, m_userColor.get_ptr() );
 }
 
 
@@ -253,7 +261,7 @@ bool StandardConnectionGadget::dragEnd( GadgetPtr gadget, const DragDropEvent &e
 	}
 
 	m_dragEnd = Gaffer::Plug::Invalid;
-	renderRequestSignal()( this );
+ 	requestRender();
 	return true;
 }
 
@@ -293,13 +301,13 @@ std::string StandardConnectionGadget::getToolTip( const IECore::LineSegment3f &l
 void StandardConnectionGadget::enter( GadgetPtr gadget, const ButtonEvent &event )
 {
 	m_hovering = true;
-	renderRequestSignal()( this );
+ 	requestRender();
 }
 
 void StandardConnectionGadget::leave( GadgetPtr gadget, const ButtonEvent &event )
 {
 	m_hovering = false;
-	renderRequestSignal()( this );
+ 	requestRender();
 }
 
 bool StandardConnectionGadget::nodeSelected( const Nodule *nodule ) const
@@ -317,4 +325,45 @@ bool StandardConnectionGadget::nodeSelected( const Nodule *nodule ) const
 
 	const Gaffer::ScriptNode *script = node->scriptNode();
 	return script && script->selection()->contains( node );
+}
+
+void StandardConnectionGadget::plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
+{
+	const Plug *dstPlug = dstNodule()->plug();
+	if( plug && plug != dstPlug )
+	{
+		return;
+	}
+
+	const Node *node = dstPlug->node();
+	if(
+		key != g_colorKey ||
+		!node->isInstanceOf( nodeTypeId ) ||
+		!match( dstPlug->relativeName( node ), plugPath )
+	)
+	{
+		return;
+	}
+
+	if( updateUserColor() )
+	{
+ 		requestRender();
+	}
+}
+
+bool StandardConnectionGadget::updateUserColor()
+{
+	boost::optional<Color3f> c;
+	if( IECore::ConstColor3fDataPtr d = Metadata::plugValue<IECore::Color3fData>( dstNodule()->plug(), g_colorKey ) )
+	{
+		c = d->readable();
+	}
+
+	if( c == m_userColor )
+	{
+		return false;
+	}
+
+	m_userColor = c;
+	return true;
 }

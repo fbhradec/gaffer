@@ -45,11 +45,11 @@ enum TypeId
 {
 	ScenePlugTypeId = 110501,
 	SceneNodeTypeId = 110502,
-	FileSourceTypeId = 110503,
+	FileSourceTypeId = 110503, // obsolete, available for reuse
 	SetFilterTypeId = 110504,
 	SceneProcessorTypeId = 110505,
 	SceneElementProcessorTypeId = 110506,
-	AttributeCacheTypeId = 110507,
+	PointsTypeTypeId = 110507,
 	PrimitiveVariableProcessorTypeId = 110508,
 	DeletePrimitiveVariablesTypeId = 110509,
 	GroupTypeId = 110510,
@@ -72,7 +72,7 @@ enum TypeId
 	PathFilterTypeId = 110527,
 	AttributesTypeId = 110528,
 	AlembicSourceTypeId = 110529,
-	SourceTypeId = 110530,
+	ClippingPlaneTypeId = 110530,
 	SceneContextVariablesTypeId = 110531,
 	StandardOptionsTypeId = 110532,
 	SubTreeTypeId = 110533,
@@ -118,6 +118,14 @@ enum TypeId
 	DeleteOptionsTypeId = 110573,
 	DeleteOutputsTypeId = 110574,
 	ExternalProceduralTypeId = 110575,
+	ScenePathTypeId = 110576,
+	FilterMixinBaseTypeId = 110577,
+	FilterSwitchTypeId = 110578,
+	DeleteSetsTypeId = 110579,
+	ParametersTypeId = 110580,
+	SceneFilterPathFilterTypeId = 110581,
+	PathMatcherDataPlugTypeId = 110582,
+	AttributeVisualiserTypeId = 110583,
 
 	LastTypeId = 110650
 };

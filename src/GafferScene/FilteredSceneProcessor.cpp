@@ -35,7 +35,8 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Box.h"
+#include "Gaffer/SubGraph.h"
+#include "Gaffer/Dot.h"
 
 #include "Gaffer/Context.h"
 
@@ -80,7 +81,11 @@ void FilteredSceneProcessor::affects( const Gaffer::Plug *input, AffectedPlugsCo
 		const Filter *filter = runTimeCast<const Filter>( filterPlug()->source<Plug>()->node() );
 		if( filter && filter->sceneAffectsMatch( scenePlug, static_cast<const ValuePlug *>( input ) ) )
 		{
-			if( input != scenePlug->globalsPlug() )
+			if(
+				input != scenePlug->globalsPlug() &&
+				input != scenePlug->setNamesPlug() &&
+				input != scenePlug->setPlug()
+			)
 			{
 				/// \todo Obviously it would be great to remove this restriction and implement AttributeFilters and
 				/// BoundFilters and suchlike. There are currently two issues :
@@ -91,12 +96,12 @@ void FilteredSceneProcessor::affects( const Gaffer::Plug *input, AffectedPlugsCo
 				///   when descendant and ancestor matches are relevant. If we had a hierarchy hash we might be able
 				///   to do even better.
 				///
-				/// - The Isolate and Prune nodes make a single call to filterHash() in hashGlobals(), to account for
+				/// - The Isolate and Prune nodes make a single call to filterHash() in hashSet(), to account for
 				///   the fact that the filter is used in remapping sets. This wouldn't work for filter types which
 				///   actually vary based on data within the scene hierarchy, because then multiple calls would be
 				///   necessary. We could make more calls here, but that would be expensive. In an ideal world we'd
 				///   be able to compute a hash for the filter across a whole hierarchy.
-				throw Exception( "Filters may not currently depend on parts of the scene other than the globals." );
+				throw Exception( "Filters may not currently depend on parts of the scene other than the globals and sets." );
 			}
 			outputs.push_back( filterPlug() );
 		}
@@ -117,11 +122,12 @@ bool FilteredSceneProcessor::acceptsInput( const Gaffer::Plug *plug, const Gaffe
 
 	if( plug == filterPlug() )
 	{
-		// we only want to accept inputs from Filter nodes, but we accept
-		// them from Boxes too, because the intermediate plugs there can
-		// be used to later connect a filter in from the outside.
+		// We only want to accept inputs from Filter nodes, but we accept
+		// them from SubGraphs too, because the intermediate plugs there can
+		// be used to later connect a filter in from the outside. Likewise
+		// with Dots.
 		const Node *n = inputPlug->source<Plug>()->node();
-		return runTimeCast<const Filter>( n ) || runTimeCast<const Box>( n );
+		return runTimeCast<const Filter>( n ) || runTimeCast<const SubGraph>( n ) || runTimeCast<const Dot>( n );
 	}
 	return true;
 }

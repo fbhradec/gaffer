@@ -37,9 +37,6 @@
 
 #include "boost/python.hpp"
 
-#include "IECorePython/RunTimeTypedBinding.h"
-#include "IECorePython/Wrapper.h"
-
 #include "Gaffer/CompoundPlug.h"
 #include "GafferBindings/CompoundPlugBinding.h"
 #include "GafferBindings/ValuePlugBinding.h"
@@ -59,13 +56,6 @@ class CompoundPlugWrapper : public PlugWrapper<CompoundPlug>
 		}
 
 };
-
-bool CompoundPlugSerialiser::childNeedsConstruction( const Gaffer::GraphComponent *child ) const
-{
-	// cast is safe because of constraints maintained by CompoundPlug.
-	const Plug *childPlug = static_cast<const Plug *>( child );
-	return childPlug->getFlags( Plug::Dynamic | Plug::Serialisable );
-}
 
 bool CompoundPlugSerialiser::valueNeedsSerialisation( const Gaffer::ValuePlug *plug, const Serialisation &serialisation ) const
 {

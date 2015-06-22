@@ -45,13 +45,14 @@
 #include "Gaffer/CompoundPlug.h"
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/Metadata.h"
+#include "Gaffer/Context.h"
 
 using namespace Gaffer;
 
 IE_CORE_DEFINERUNTIMETYPED( Box );
 
 Box::Box( const std::string &name )
-	:	DependencyNode( name )
+	:	SubGraph( name )
 {
 }
 
@@ -59,14 +60,14 @@ Box::~Box()
 {
 }
 
-bool Box::canPromotePlug( const Plug *descendantPlug, bool asUserPlug ) const
+bool Box::canPromotePlug( const Plug *descendantPlug ) const
 {
-	return validatePromotability( descendantPlug, asUserPlug, false );
+	return validatePromotability( descendantPlug, /* throwExceptions = */ false );
 }
 
-Plug *Box::promotePlug( Plug *descendantPlug, bool asUserPlug )
+Plug *Box::promotePlug( Plug *descendantPlug )
 {
-	validatePromotability( descendantPlug, asUserPlug, true );
+	validatePromotability( descendantPlug, /* throwExceptions = */ true );
 
 	std::string externalPlugName = descendantPlug->relativeName( this );
 	boost::replace_all( externalPlugName, ".", "_" );
@@ -95,14 +96,11 @@ Plug *Box::promotePlug( Plug *descendantPlug, bool asUserPlug )
 		}
 	}
 
-	if( asUserPlug )
-	{
-		userPlug()->addChild( externalPlug );
-	}
-	else
-	{
-		addChild( externalPlug );
-	}
+	// Copy over the metadata for nodule position, so the nodule appears in the expected spot.
+	// This must be done before parenting the new plug, as the nodule is created from childAddedSignal().
+	copyMetadata( descendantPlug, externalPlug.get() );
+
+	addChild( externalPlug );
 
 	if( externalPlug->direction() == Plug::In )
 	{
@@ -204,7 +202,7 @@ void Box::unpromotePlug( Plug *promotedDescendantPlug )
 	}
 }
 
-bool Box::validatePromotability( const Plug *descendantPlug, bool asUserPlug, bool throwExceptions, bool childPlug ) const
+bool Box::validatePromotability( const Plug *descendantPlug, bool throwExceptions, bool childPlug ) const
 {
 	if( !descendantPlug )
 	{
@@ -304,26 +302,6 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool asUserPlug, bo
 			}
 		}
 	}
-	else
-	{
-		// descendantPlug->direction() == Plug::Out
-		if( asUserPlug )
-		{
-			if( !throwExceptions )
-			{
-				return false;
-			}
-			else
-			{
-				throw IECore::Exception(
-					boost::str(
-						boost::format( "Cannot promote plug \"%s\" to a user plug as it is an output." ) % descendantPlug->fullName()
-					)
-				);
-			}
-		}
-	}
-
 
 	if( !childPlug )
 	{
@@ -351,7 +329,7 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool asUserPlug, bo
 	// check all the children of this plug too
 	for( RecursivePlugIterator it( descendantPlug ); it != it.end(); ++it )
 	{
-		if( !validatePromotability( it->get(), asUserPlug, throwExceptions, /* childPlug = */ true ) )
+		if( !validatePromotability( it->get(), throwExceptions, /* childPlug = */ true ) )
 		{
 			return false;
 		}
@@ -388,8 +366,13 @@ void Box::exportForReference( const std::string &fileName ) const
 		}
 	}
 
-	script->serialiseToFile( fileName, this, toExport.get() );
+	ContextPtr context = new Context;
+	context->set( "valuePlugSerialiser:resetParentPlugDefaults", true );
+	context->set( "serialiser:includeParentMetadata", true );
+	context->set( "serialiser:includeVersionMetadata", true );
+	Context::Scope scopedContext( context.get() );
 
+	script->serialiseToFile( fileName, this, toExport.get() );
 }
 
 BoxPtr Box::create( Node *parent, const Set *childNodes )
@@ -437,7 +420,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 						PlugPtr intermediateInput = plug->createCounterpart( "in", Plug::In );
 						// we want intermediate inputs to appear on the same side of the node as the
 						// equivalent internal plug, so we copy the relevant metadata over.
-						Metadata::registerPlugValue( intermediateInput.get(), "nodeGadget:nodulePosition", Metadata::plugValue<IECore::Data>( plug, "nodeGadget:nodulePosition" ) );
+						copyMetadata( plug, intermediateInput.get() );
 						intermediateInput->setFlags( Plug::Dynamic, true );
 						result->addChild( intermediateInput );
 						intermediateInput->setInput( input );
@@ -465,7 +448,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 							if( mapIt == plugMap.end() )
 							{
 								PlugPtr intermediateOutput = plug->createCounterpart( "out", Plug::Out );
-								Metadata::registerPlugValue( intermediateOutput.get(), "nodeGadget:nodulePosition", Metadata::plugValue<IECore::Data>( plug, "nodeGadget:nodulePosition" ) );
+								copyMetadata( plug, intermediateOutput.get() );
 								intermediateOutput->setFlags( Plug::Dynamic, true );
 								result->addChild( intermediateOutput );
 								intermediateOutput->setInput( plug );
@@ -488,68 +471,16 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 	return result;
 }
 
-void Box::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
+void Box::copyMetadata( const Plug *from, Plug *to )
 {
-	DependencyNode::affects( input, outputs );
-}
-
-BoolPlug *Box::enabledPlug()
-{
-	return getChild<BoolPlug>( "enabled" );
-}
-
-const BoolPlug *Box::enabledPlug() const
-{
-	return getChild<BoolPlug>( "enabled" );
-}
-
-Plug *Box::correspondingInput( const Plug *output )
-{
-	return const_cast<Plug *>( const_cast<const Box *>( this )->Box::correspondingInput( output ) );
-}
-
-const Plug *Box::correspondingInput( const Plug *output ) const
-{
-	const Plug *internalOutput = output->getInput<Plug>();
-	if( !internalOutput )
-	{
-		return NULL;
-	}
-
-	const DependencyNode *node = IECore::runTimeCast<const DependencyNode>( internalOutput->node() );
-	if( !node )
-	{
-		return NULL;
-	}
-
-	const BoolPlug *externalEnabledPlug = enabledPlug();
-	if( !externalEnabledPlug )
-	{
-		return NULL;
-	}
-
-	const BoolPlug *internalEnabledPlug = node->enabledPlug();
-	if( !internalEnabledPlug )
-	{
-		return NULL;
-	}
-
-	if( internalEnabledPlug->getInput<Plug>() != externalEnabledPlug )
-	{
-		return NULL;
-	}
-
-	const Plug *internalInput = node->correspondingInput( internalOutput );
-	if( !internalInput )
-	{
-		return NULL;
-	}
-
-	const Plug *input = internalInput->getInput<Plug>();
-	if( !input || input->node() != this )
-	{
-		return NULL;
-	}
-
-	return input;
+	/// \todo Perhaps we should have a more general mechanism for mirroring all metadata?
+	/// If we could register a dynamic metadata value for "*", then we could just answer
+	/// all metadata queries on the fly - would that be a good idea? We'd need to figure
+	/// out how to make it compatible with Metadata::registeredPlugValues(), which needs to
+	/// know all valid names.
+	Metadata::registerPlugValue( to, "nodeGadget:nodulePosition", Metadata::plugValue<IECore::Data>( from, "nodeGadget:nodulePosition" ) );
+	Metadata::registerPlugValue( to, "nodule:type", Metadata::plugValue<IECore::Data>( from, "nodule:type" ) );
+	Metadata::registerPlugValue( to, "compoundNodule:orientation", Metadata::plugValue<IECore::Data>( from, "compoundNodule:orientation" ) );
+	Metadata::registerPlugValue( to, "compoundNodule:spacing", Metadata::plugValue<IECore::Data>( from, "compoundNodule:spacing" ) );
+	Metadata::registerPlugValue( to, "compoundNodule:direction", Metadata::plugValue<IECore::Data>( from, "compoundNodule:direction" ) );
 }

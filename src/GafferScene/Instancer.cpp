@@ -43,6 +43,7 @@
 #include "IECore/VectorTypedData.h"
 
 #include "Gaffer/Context.h"
+#include "Gaffer/StringPlug.h"
 
 #include "GafferScene/Instancer.h"
 
@@ -100,6 +101,12 @@ void Instancer::affects( const Plug *input, AffectedPlugsContainer &outputs ) co
 	else if( input == namePlug() )
 	{
 		outputs.push_back( outPlug()->childNamesPlug() );
+	}
+	else if( input == inPlug()->objectPlug() )
+	{
+		outputs.push_back( outPlug()->childNamesPlug() );
+		outputs.push_back( outPlug()->boundPlug() );
+		outputs.push_back( outPlug()->transformPlug() );
 	}
 }
 

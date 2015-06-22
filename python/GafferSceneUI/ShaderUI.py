@@ -49,21 +49,85 @@ import GafferScene
 # Metadata
 ##########################################################################
 
-Gaffer.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNode(
 
-GafferScene.Shader,
+	GafferScene.Shader,
 
-"""The base type for all nodes which create shaders. Use the ShaderAssignment node to assign them to objects in the scene.""",
+	"description",
+	"""
+	The base type for all nodes which create shaders. Use the
+	ShaderAssignment node to assign them to objects in the scene.
+	""",
 
-"name",
-{
-	"description" :
-	"""The name of the shader being represented. This should be considered read-only. Use the Shader.loadShader() method to load a shader.""",
-	"nodeUI:section" : "header",
-},
+	"nodeGadget:minWidth", 0.0,
 
-"parameters",
-"""Where the parameters for the shader are represented.""",
+	plugs = {
+
+		"name" : [
+
+			"description",
+			"""
+			The name of the shader being represented. This should
+			be considered read-only. Use the Shader.loadShader()
+			method to load a shader.
+			""",
+
+			"layout:section", "",
+			"nodule:type", "",
+
+		],
+
+		"type" : [
+
+			"description",
+			"""
+			The type of the shader being represented. This should
+			be considered read-only. Use the Shader.loadShader()
+			method to load a shader.
+			""",
+
+			"layout:section", "",
+			"nodule:type", "",
+
+		],
+
+		"parameters" : [
+
+			"description",
+			"""
+			Where the parameters for the shader are represented.
+			""",
+
+			"nodeGadget:nodulePosition", "left",
+			"nodule:type", "GafferUI::CompoundNodule",
+			"compoundNodule:orientation", "y",
+			"compoundNodule:spacing", 0.2,
+
+		],
+
+		"parameters.*" : [
+
+			# Although the parameters plug is positioned
+			# as we want above, we must also register
+			# appropriate values for each individual parameter,
+			# for the case where they get promoted to a box
+			# individually.
+			"nodeGadget:nodulePosition", "left",
+
+		],
+
+		"out" : [
+
+			"description",
+			"""
+			The output from the shader.
+			""",
+
+			"nodeGadget:nodulePosition", "right",
+
+		],
+
+	}
 
 )
 
@@ -112,34 +176,9 @@ class __ShaderNamePlugValueWidget( GafferUI.PlugValueWidget ) :
 			node.loadShader( node["name"].getValue(), keepExistingValues = True )
 
 GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader, "name", __ShaderNamePlugValueWidget )
-
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader, "parameters", GafferUI.CompoundPlugValueWidget, collapsed=None )
+GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader, "parameters", GafferUI.LayoutPlugValueWidget )
 GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader, "out", None )
 GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader, "type", None )
-
-GafferUI.Metadata.registerPlugValue( GafferScene.Shader, "enabled", "nodeUI:section", "Node" )
-
-##########################################################################
-# NodeGadgets and Nodules
-##########################################################################
-
-def __nodeGadgetCreator( node ) :
-
-	return GafferUI.StandardNodeGadget( node, GafferUI.LinearContainer.Orientation.Y )
-
-GafferUI.NodeGadget.registerNodeGadget( GafferScene.Shader, __nodeGadgetCreator )
-
-def __parametersNoduleCreator( plug ) :
-
-	return GafferUI.CompoundNodule( plug, GafferUI.LinearContainer.Orientation.Y, spacing = 0.2 )
-
-GafferUI.Nodule.registerNodule( GafferScene.Shader, "parameters", __parametersNoduleCreator )
-GafferUI.Nodule.registerNodule( GafferScene.Shader, "name", lambda plug : None )
-GafferUI.Nodule.registerNodule( GafferScene.Shader, "type", lambda plug : None )
-GafferUI.Nodule.registerNodule( GafferScene.Shader, "enabled", lambda plug : None )
-
-# we leave it to the derived class uis to register creators for the parameters.* plugs, because only the derived classes know whether
-# or not networkability makes sense in each case.
 
 ##########################################################################
 # NodeFinderDialogue mode

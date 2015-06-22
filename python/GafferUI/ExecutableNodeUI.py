@@ -37,10 +37,64 @@
 import Gaffer
 import GafferUI
 
+Gaffer.Metadata.registerNode(
+
+	Gaffer.ExecutableNode,
+
+	"description",
+	"""
+	Base class for nodes which have external side effects - generating
+	files on disk for instance. Can be connected with other executable
+	nodes to define an order of execution based on dependencies between
+	nodes. A Dispatcher can then be used to actually perform the execution
+	of such a network.
+	""",
+
+	plugs = {
+
+		"requirements" : (
+
+			"description",
+			"""
+			Input connections to upstream nodes which must be
+			executed before this node.
+			""",
+
+			"nodule:type", "GafferUI::CompoundNodule",
+			"compoundNodule:spacing", 0.4,
+
+		),
+
+		"requirement" : (
+
+			"description",
+			"""
+			Output connections to downstream nodes which must
+			not be executed until after this node.
+			""",
+
+		),
+
+		"dispatcher" : (
+
+			"description",
+			"""
+			Container for custom plugs which dispatchers use to
+			control their behaviour.
+			""",
+
+			"layout:section", "Dispatcher",
+			"layout:index", -3, # Just before the node section,
+			"nodule:type", "",
+
+		),
+
+	}
+
+)
+
 ##########################################################################
 # Metadata, PlugValueWidgets and Nodules
 ##########################################################################
 
 GafferUI.PlugValueWidget.registerCreator( Gaffer.ExecutableNode, "requirements", None )
-
-GafferUI.Nodule.registerNodule( Gaffer.ExecutableNode, "requirements", lambda plug : GafferUI.CompoundNodule( plug, spacing = 0.4 ) )

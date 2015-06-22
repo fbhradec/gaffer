@@ -36,7 +36,7 @@
 
 import os
 import unittest
-import subprocess
+import subprocess32 as subprocess
 
 import IECore
 
@@ -261,6 +261,11 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		self.assertDefaultNamesAreCorrect( GafferRenderMan )
 		self.assertDefaultNamesAreCorrect( GafferRenderManTest )
+
+	def testNodesConstructWithDefaultValues( self ) :
+
+		self.assertNodesConstructWithDefaultValues( GafferRenderMan )
+		self.assertNodesConstructWithDefaultValues( GafferRenderManTest )
 
 	def testCropWindow( self ) :
 
@@ -493,6 +498,160 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 				s["r"].execute()
 				rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
 				self.assertTrue( "FrameBegin %d" % i in rib )
+
+	def testMultipleCameras( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["camera1"] = GafferScene.Camera()
+		s["camera1"]["name"].setValue( "camera1" )
+
+		s["camera2"] = GafferScene.Camera()
+		s["camera2"]["name"].setValue( "camera2" )
+
+		s["camera3"] = GafferScene.Camera()
+		s["camera3"]["name"].setValue( "camera3" )
+
+		s["group"] = GafferScene.Group()
+		s["group"]["in"].setInput( s["camera1"]["out"] )
+		s["group"]["in1"].setInput( s["camera2"]["out"] )
+		s["group"]["in2"].setInput( s["camera3"]["out"] )
+
+		s["options"] = GafferScene.StandardOptions()
+		s["options"]["in"].setInput( s["group"]["out"] )
+		s["options"]["options"]["renderCamera"]["enabled"].setValue( True )
+		s["options"]["options"]["renderCamera"]["value"].setValue( "/group/camera2" )
+
+		s["render"] = GafferRenderMan.RenderManRender()
+		s["render"]["in"].setInput( s["options"]["out"] )
+		s["render"]["mode"].setValue( "generate" )
+
+		s["render"]["ribFileName"].setValue( "/tmp/test.rib" )
+
+		s["fileName"].setValue( "/tmp/test.gfr" )
+		s.save()
+
+		s["render"].execute()
+
+		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+
+		self.assertTrue( "Camera \"/group/camera1\"" in rib )
+		self.assertTrue( "Camera \"/group/camera2\"" in rib )
+		self.assertTrue( "Camera \"/group/camera3\"" in rib )
+		# camera3 must come last, because it is the primary render camera
+		self.assertTrue( rib.index( "Camera \"/group/camera2\"" ) > rib.index( "Camera \"/group/camera1\"" ) )
+		self.assertTrue( rib.index( "Camera \"/group/camera2\"" ) > rib.index( "Camera \"/group/camera3\"" ) )
+
+	def testHiddenCoordinateSystem( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( "/tmp/test.gfr" )
+
+		s["c"] = GafferScene.CoordinateSystem()
+		s["c"]["name"].setValue( "myCoordSys" )
+
+		s["g"] = GafferScene.Group()
+		s["g"]["in"].setInput( s["c"]["out"] )
+
+		s["f1"] = GafferScene.PathFilter()
+		s["f2"] = GafferScene.PathFilter()
+
+		s["a1"] = GafferScene.StandardAttributes()
+		s["a1"]["attributes"]["visibility"]["enabled"].setValue( True )
+		s["a1"]["attributes"]["visibility"]["value"].setValue( False )
+		s["a1"]["in"].setInput( s["g"]["out"] )
+		s["a1"]["filter"].setInput( s["f1"]["out"] )
+
+		s["a2"] = GafferScene.StandardAttributes()
+		s["a2"]["attributes"]["visibility"]["enabled"].setValue( True )
+		s["a2"]["attributes"]["visibility"]["value"].setValue( True )
+		s["a2"]["in"].setInput( s["a1"]["out"] )
+		s["a2"]["filter"].setInput( s["f2"]["out"] )
+
+		s["r"] = GafferRenderMan.RenderManRender()
+		s["r"]["mode"].setValue( "generate" )
+		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["in"].setInput( s["a2"]["out"] )
+
+		s["r"].execute()
+		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		self.assertTrue( "CoordinateSystem \"/group/myCoordSys\"" in rib )
+
+		s["f1"]["paths"].setValue( IECore.StringVectorData( [ "/group" ] ) ) # hide group
+
+		s["r"].execute()
+		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		self.assertTrue( "CoordinateSystem" not in rib )
+
+		s["f2"]["paths"].setValue( IECore.StringVectorData( [ "/group/myCoordSys" ] ) ) # show coordsys (but parent still hidden)
+
+		s["r"].execute()
+		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		self.assertTrue( "CoordinateSystem" not in rib )
+
+	def testHiddenLight( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( "/tmp/test.gfr" )
+
+		s["l"] = GafferRenderMan.RenderManLight()
+		s["l"]["name"].setValue( "myLight" )
+		s["l"].loadShader( "pointlight" )
+
+		s["g"] = GafferScene.Group()
+		s["g"]["in"].setInput( s["l"]["out"] )
+
+		s["f1"] = GafferScene.PathFilter()
+		s["f2"] = GafferScene.PathFilter()
+
+		s["a1"] = GafferScene.StandardAttributes()
+		s["a1"]["attributes"]["visibility"]["enabled"].setValue( True )
+		s["a1"]["attributes"]["visibility"]["value"].setValue( False )
+		s["a1"]["in"].setInput( s["g"]["out"] )
+		s["a1"]["filter"].setInput( s["f1"]["out"] )
+
+		s["a2"] = GafferScene.StandardAttributes()
+		s["a2"]["attributes"]["visibility"]["enabled"].setValue( True )
+		s["a2"]["attributes"]["visibility"]["value"].setValue( True )
+		s["a2"]["in"].setInput( s["a1"]["out"] )
+		s["a2"]["filter"].setInput( s["f2"]["out"] )
+
+		s["r"] = GafferRenderMan.RenderManRender()
+		s["r"]["mode"].setValue( "generate" )
+		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["in"].setInput( s["a2"]["out"] )
+
+		s["r"].execute()
+		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		self.assertTrue( "LightSource \"pointlight\"" in rib )
+
+		s["f1"]["paths"].setValue( IECore.StringVectorData( [ "/group" ] ) ) # hide group
+
+		s["r"].execute()
+		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		self.assertTrue( "LightSource \"pointlight\"" not in rib )
+
+		s["f2"]["paths"].setValue( IECore.StringVectorData( [ "/group/myLight" ] ) ) # show coordsys (but parent still hidden)
+
+		s["r"].execute()
+		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		self.assertTrue( "LightSource \"pointlight\"" not in rib )
+
+	def testClippingPlane( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["c"] = GafferScene.ClippingPlane()
+
+		s["r"] = GafferRenderMan.RenderManRender()
+		s["r"]["mode"].setValue( "generate" )
+		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["in"].setInput( s["c"]["out"] )
+
+		s["r"].execute()
+
+		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		self.assertTrue( "ClippingPlane" in rib )
 
 	def setUp( self ) :
 

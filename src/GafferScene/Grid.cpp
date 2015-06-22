@@ -37,6 +37,8 @@
 #include "IECore/CurvesPrimitive.h"
 #include "IECore/Shader.h"
 
+#include "Gaffer/StringPlug.h"
+
 #include "GafferScene/Grid.h"
 
 using namespace std;
@@ -53,7 +55,7 @@ static InternedString g_centerLinesName( "centerLines" );
 static InternedString g_borderLinesName( "borderLines" );
 
 Grid::Grid( const std::string &name )
-	:	Source( name )
+	:	SceneNode( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -179,7 +181,7 @@ const Gaffer::FloatPlug *Grid::borderPixelWidthPlug() const
 
 void Grid::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	Source::affects( input, outputs );
+	SceneNode::affects( input, outputs );
 
 	if( input == namePlug() )
 	{
@@ -221,7 +223,7 @@ void Grid::hashBound( const SceneNode::ScenePath &path, const Gaffer::Context *c
 	}
 	else
 	{
-		Source::hashBound( path, context, parent, h );
+		SceneNode::hashBound( path, context, parent, h );
 		dimensionsPlug()->hash( h );
 	}
 }
@@ -242,7 +244,7 @@ Imath::Box3f Grid::computeBound( const SceneNode::ScenePath &path, const Gaffer:
 
 void Grid::hashTransform( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Source::hashTransform( path, context, parent, h );
+	SceneNode::hashTransform( path, context, parent, h );
 
 	if( path.size() == 1 )
 	{
@@ -261,13 +263,14 @@ Imath::M44f Grid::computeTransform( const SceneNode::ScenePath &path, const Gaff
 
 void Grid::hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Source::hashAttributes( path, context, parent, h );
 	if( path.size() == 1 )
 	{
-		h.append( 1 );
+		SceneNode::hashAttributes( path, context, parent, h );
+		return;
 	}
 	else if( path.size() == 2 )
 	{
+		SceneNode::hashAttributes( path, context, parent, h );
 		if( path.back() == g_gridLinesName )
 		{
 			gridPixelWidthPlug()->hash( h );
@@ -280,7 +283,9 @@ void Grid::hashAttributes( const ScenePath &path, const Gaffer::Context *context
 		{
 			borderPixelWidthPlug()->hash( h );
 		}
+		return;
 	}
+	h = outPlug()->attributesPlug()->defaultValue()->Object::hash();
 }
 
 IECore::ConstCompoundObjectPtr Grid::computeAttributes( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
@@ -294,7 +299,7 @@ IECore::ConstCompoundObjectPtr Grid::computeAttributes( const SceneNode::ScenePa
 
 		ShaderPtr shader = new Shader( "Constant", "gl:surface" );
 		shader->parameters()["Cs"] = new Color3fData( Color3f( 1 ) );
-		result->members()["shader"] = shader;
+		result->members()["gl:surface"] = shader;
 
 		return result;
 	}
@@ -419,7 +424,8 @@ IECore::ConstObjectPtr Grid::computeObject( const SceneNode::ScenePath &path, co
 
 void Grid::hashChildNames( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Source::hashChildNames( path, context, parent, h );
+	SceneNode::hashChildNames( path, context, parent, h );
+	h.append( (uint64_t)path.size() );
 
 	if( path.size() == 0 )
 	{
@@ -451,10 +457,31 @@ IECore::ConstInternedStringVectorDataPtr Grid::computeChildNames( const SceneNod
 
 void Grid::hashGlobals( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Source::hashGlobals( context, parent, h );
+	h = outPlug()->globalsPlug()->defaultValue()->Object::hash();
 }
 
 IECore::ConstCompoundObjectPtr Grid::computeGlobals( const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	return outPlug()->globalsPlug()->defaultValue();
+}
+
+void Grid::hashSetNames( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
+{
+	h = outPlug()->setNamesPlug()->defaultValue()->Object::hash();
+
+}
+
+IECore::ConstInternedStringVectorDataPtr Grid::computeSetNames( const Gaffer::Context *context, const ScenePlug *parent ) const
+{
+	return outPlug()->setNamesPlug()->defaultValue();
+}
+
+void Grid::hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
+{
+	h = outPlug()->setPlug()->defaultValue()->Object::hash();
+}
+
+GafferScene::ConstPathMatcherDataPtr Grid::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
+{
+	return outPlug()->setPlug()->defaultValue();
 }

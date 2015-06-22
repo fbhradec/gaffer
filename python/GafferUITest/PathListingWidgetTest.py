@@ -41,8 +41,9 @@ import Gaffer
 import GafferTest
 
 import GafferUI
+import GafferUITest
 
-class PathListingWidgetTest( unittest.TestCase ) :
+class PathListingWidgetTest( GafferUITest.TestCase ) :
 
 	def testExpandedPaths( self ) :
 
@@ -158,15 +159,44 @@ class PathListingWidgetTest( unittest.TestCase ) :
 
 		# because the PathListingWidget only updates on idle events, we have
 		# to run the event loop to get it to process the path changed signal.
-		def stop() :
-			GafferUI.EventLoop.mainEventLoop().stop()
-			return False
-
-		GafferUI.EventLoop.addIdleCallback( stop )
-		GafferUI.EventLoop.mainEventLoop().start()
+		self.waitForIdle( 100 )
 
 		# once it has processed things, the expansion should be exactly as it was.
 		self.assertEqual( w.getPathExpanded( p1 ), True )
+
+	def testExpandedPathsWhenPathChangesWithSelection( self ) :
+
+		d = {
+			"a" : {
+				"e" : 10,
+			},
+			"b" : {
+				"f" : "g",
+			},
+		}
+
+		p = Gaffer.DictPath( d, "/" )
+		pa = Gaffer.DictPath( d, "/a" )
+		pae = Gaffer.DictPath( d, "/a/e" )
+		w = GafferUI.PathListingWidget( p, displayMode = GafferUI.PathListingWidget.DisplayMode.Tree )
+
+		self.assertEqual( w.getPathExpanded( pa ), False )
+		self.assertEqual( w.getPathExpanded( pae ), False )
+
+		w.setSelectedPaths( [ pa ], expandNonLeaf = False )
+		self.assertEqual( w.getPathExpanded( pa ), False )
+		self.assertEqual( w.getPathExpanded( pae ), False )
+
+		# fake a change to the path
+		p.pathChangedSignal()( p )
+
+		# because the PathListingWidget only updates on idle events, we have
+		# to run the event loop to get it to process the path changed signal.
+		self.waitForIdle( 100 )
+
+		# once it has processed things, the expansion should be exactly as it was.
+		self.assertEqual( w.getPathExpanded( pa ), False )
+		self.assertEqual( w.getPathExpanded( pae ), False )
 
 	def testHeaderVisibility( self ) :
 
@@ -186,6 +216,56 @@ class PathListingWidgetTest( unittest.TestCase ) :
 
 		w.setHeaderVisible( False )
 		self.assertFalse( w.getHeaderVisible() )
+
+	def testDeeperExpandedPaths( self ) :
+
+		p = Gaffer.DictPath( { "a" : { "b" : { "c" : { "d" : 10 } } } }, "/" )
+
+		w = GafferUI.PathListingWidget( p )
+		w.setPathExpanded( p.copy().setFromString( "/a/b/c" ), True )
+
+		self.assertTrue( w.getPathExpanded( p.copy().setFromString( "/a/b/c" ) ) )
+
+	def testColumns( self ) :
+
+		w = GafferUI.PathListingWidget( Gaffer.DictPath( {}, "/" ) )
+
+		self.assertEqual( w.getColumns(), list( w.defaultFileSystemColumns ) )
+
+		c1 = [ w.defaultNameColumn, w.defaultFileSystemIconColumn ]
+		c2 = [ w.defaultNameColumn, w.StandardColumn( "h", "a" ) ]
+
+		w.setColumns( c1 )
+		self.assertEqual( w.getColumns(), c1 )
+
+		w.setColumns( c2 )
+		self.assertEqual( w.getColumns(), c2 )
+
+	def testSortable( self ) :
+
+		w = GafferUI.PathListingWidget( Gaffer.DictPath( {}, "/" ) )
+		self.assertTrue( w.getSortable() )
+
+		w.setSortable( False )
+		self.assertFalse( w.getSortable() )
+
+		w.setSortable( True )
+		self.assertTrue( w.getSortable() )
+
+	def testSetSelectedPathsAfterPathChange( self ) :
+
+		d = {}
+		p = Gaffer.DictPath( d, "/" )
+
+		w = GafferUI.PathListingWidget( p )
+
+		d["a"] = 10
+		p.pathChangedSignal()( p )
+		w.setSelectedPaths( [ p.copy().setFromString( "/a" ) ] )
+
+		s = w.getSelectedPaths()
+		self.assertEqual( len( s ), 1 )
+		self.assertEqual( str( s[0] ), "/a" )
 
 if __name__ == "__main__":
 	unittest.main()

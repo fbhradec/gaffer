@@ -246,14 +246,20 @@ class CompoundDataPlugTest( GafferTest.TestCase ) :
 		m = p.addMember( "a", IECore.IntData( 10 ) )
 		self.assertTrue( m["value"].defaultValue(), 10 )
 		self.assertTrue( m["value"].getValue(), 10 )
+		self.assertTrue( m["name"].defaultValue(), "a" )
+		self.assertTrue( m["name"].getValue(), "a" )
 
 		m = p.addMember( "b", IECore.FloatData( 20 ) )
 		self.assertTrue( m["value"].defaultValue(), 20 )
 		self.assertTrue( m["value"].getValue(), 20 )
+		self.assertTrue( m["name"].defaultValue(), "b" )
+		self.assertTrue( m["name"].getValue(), "b" )
 
 		m = p.addMember( "c", IECore.StringData( "abc" ) )
 		self.assertTrue( m["value"].defaultValue(), "abc" )
 		self.assertTrue( m["value"].getValue(), "abc" )
+		self.assertTrue( m["name"].defaultValue(), "c" )
+		self.assertTrue( m["name"].getValue(), "c" )
 
 	def testAddMembers( self ) :
 
@@ -292,6 +298,94 @@ class CompoundDataPlugTest( GafferTest.TestCase ) :
 		] :
 			m = p.addMember( name, value )
 			self.assertEqual( p.memberDataAndName( m ), ( value, name ) )
+
+	def testBoxPromotion( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["b"] = Gaffer.Box()
+		s["b"]["n"] = Gaffer.Node()
+		s["b"]["n"]["p"] = Gaffer.CompoundDataPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		p = s["b"].promotePlug( s["b"]["n"]["p"] )
+		p.setName( "p" )
+
+		def assertPreconditions( script ) :
+
+			self.assertEqual( script["b"]["n"]["p"].keys(), [] )
+			self.assertEqual( script["b"]["p"].keys(), [] )
+			self.assertTrue( script["b"]["n"]["p"].getInput().isSame( script["b"]["p"] ) )
+
+		def assertPostconditions( script ) :
+
+			self.assertEqual( script["b"]["p"].keys(), [ "test" ] )
+			self.assertEqual( script["b"]["n"]["p"].keys(), [ "test" ] )
+
+			self.assertEqual( script["b"]["p"]["test"].keys(), [ "name", "value" ]  )
+			self.assertEqual( script["b"]["n"]["p"]["test"].keys(), [ "name", "value" ]  )
+
+			self.assertTrue( script["b"]["n"]["p"].getInput().isSame( script["b"]["p"] ) )
+			self.assertTrue( script["b"]["n"]["p"]["test"].getInput().isSame( script["b"]["p"]["test"] ) )
+			self.assertTrue( script["b"]["n"]["p"]["test"]["name"].getInput().isSame( script["b"]["p"]["test"]["name"] ) )
+			self.assertTrue( script["b"]["n"]["p"]["test"]["value"].getInput().isSame( script["b"]["p"]["test"]["value"] ) )
+
+		assertPreconditions( s )
+
+		with Gaffer.UndoContext( s ) :
+
+			p.addMember( "test", 10, "test" )
+
+		assertPostconditions( s )
+
+		s.undo()
+		assertPreconditions( s )
+
+		s.redo()
+		assertPostconditions( s )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		assertPostconditions( s2 )
+
+	def testHashOmitsDisabledMembers( self ) :
+
+		p = Gaffer.CompoundDataPlug()
+		h1 = p.hash()
+
+		m1 = p.addOptionalMember( "test1", 10, enabled = False )
+		m2 = p.addOptionalMember( "test2", 10, enabled = False )
+
+		# even though we've added members, they're both
+		# disabled, so as far as the hash is concerned, they're
+		# not there.
+		h2 = p.hash()
+		self.assertEqual( h1, h2 )
+
+		# when we enable one, the hash should change.
+		m1["enabled"].setValue( True )
+		h3 = p.hash()
+		self.assertNotEqual( h2, h3 )
+
+		# and it should continue to change as we change the
+		# name and value for the enabled member.
+
+		m1["value"].setValue( 20 )
+		h4 = p.hash()
+		self.assertNotEqual( h3, h4 )
+
+		m1["name"].setValue( "test3" )
+		h5 = p.hash()
+		self.assertNotEqual( h4, h5 )
+
+		# but changing the name and value for the disabled
+		# member should have no effect at all.
+		
+		m2["value"].setValue( 40 )
+		self.assertEqual( h5, p.hash() )
+
+		m2["name"].setValue( "test4" )
+		self.assertEqual( h5, p.hash() )
 
 if __name__ == "__main__":
 	unittest.main()

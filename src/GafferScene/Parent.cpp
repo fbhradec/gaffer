@@ -67,7 +67,7 @@ void Parent::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs
 {
 	BranchCreator::affects( input, outputs );
 
-	if( input->parent<Gaffer::Plug>() == childPlug() )
+	if( input->parent<Gaffer::Plug>() == childPlug() && input != childPlug()->globalsPlug() )
 	{
 		outputs.push_back( outPlug()->getChild<Gaffer::Plug>( input->getName() ) );
 	}
@@ -123,3 +123,22 @@ IECore::ConstInternedStringVectorDataPtr Parent::computeBranchChildNames( const 
 	return childPlug()->childNames( branchPath );
 }
 
+void Parent::hashBranchSetNames( const ScenePath &parentPath, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	h = childPlug()->setNamesPlug()->hash();
+}
+
+IECore::ConstInternedStringVectorDataPtr Parent::computeBranchSetNames( const ScenePath &parentPath, const Gaffer::Context *context ) const
+{
+	return childPlug()->setNamesPlug()->getValue();
+}
+
+void Parent::hashBranchSet( const ScenePath &parentPath, const IECore::InternedString &setName, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	h = childPlug()->setHash( setName );
+}
+
+GafferScene::ConstPathMatcherDataPtr Parent::computeBranchSet( const ScenePath &parentPath, const IECore::InternedString &setName, const Gaffer::Context *context ) const
+{
+	return childPlug()->set( setName );
+}

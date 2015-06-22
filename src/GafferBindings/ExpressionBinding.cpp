@@ -39,9 +39,10 @@
 #include "IECore/MessageHandler.h"
 #include "IECorePython/RefCountedBinding.h"
 #include "IECorePython/ScopedGILLock.h"
-#include "IECorePython/Wrapper.h"
 
 #include "Gaffer/Expression.h"
+#include "Gaffer/StringPlug.h"
+
 #include "GafferBindings/DependencyNodeBinding.h"
 #include "GafferBindings/ExpressionBinding.h"
 #include "GafferBindings/ExceptionAlgo.h"
@@ -50,106 +51,140 @@ using namespace boost::python;
 using namespace GafferBindings;
 using namespace Gaffer;
 
-class EngineWrapper : public Expression::Engine, public IECorePython::Wrapper<Expression::Engine>
+namespace
+{
+
+class EngineWrapper : public IECorePython::RefCountedWrapper<Expression::Engine>
 {
 	public :
 
 		EngineWrapper( PyObject *self )
-				:	Engine(), IECorePython::Wrapper<Expression::Engine>( self, this )
+				:	IECorePython::RefCountedWrapper<Expression::Engine>( self )
 		{
 		}
 
-		virtual std::string outPlug()
+		virtual void outPlugs( std::vector<std::string> &plugs )
 		{
-			IECorePython::ScopedGILLock gilLock;
-			try
+			if( isSubclassed() )
 			{
-				boost::python::override f = this->get_override( "outPlug" );
-				if( f )
+				IECorePython::ScopedGILLock gilLock;
+				try
 				{
-					return f();
+					object f = this->methodOverride( "outPlugs" );
+					if( f )
+					{
+						list pythonPlugs = extract<list>( f() );
+						container_utils::extend_container( plugs, pythonPlugs );
+						return;
+					}
 				}
-				else
+				catch( const error_already_set &e )
 				{
-					msg( IECore::Msg::Error, "EngineWrapper::outPlug", "outPlug method not defined in python." );
+					translatePythonException();
 				}
 			}
-			catch( const error_already_set &e )
-			{
-				translatePythonException();
-			}
-			return "";
+
+			throw IECore::Exception( "Engine::outPlugs() python method not defined" );
 		}
 
 		virtual void inPlugs( std::vector<std::string> &plugs )
 		{
-			IECorePython::ScopedGILLock gilLock;
-			try
+			if( isSubclassed() )
 			{
-				override f = this->get_override( "inPlugs" );
-				if( f )
+				IECorePython::ScopedGILLock gilLock;
+				try
 				{
-					list pythonPlugs = f();
-					container_utils::extend_container( plugs, pythonPlugs );
-				}
-				else
-				{
-					msg( IECore::Msg::Error, "EngineWrapper::inPlugs", "inPlugs method not defined in python." );
-				}
-			}
-			catch( const error_already_set &e )
-			{
-				translatePythonException();
-			}
-		}
-
-		virtual void contextNames( std::vector<std::string> &names )
-		{
-			IECorePython::ScopedGILLock gilLock;
-			try
-			{
-				override f = this->get_override( "contextNames" );
-				if( f )
-				{
-					list pythonNames = f();
-					container_utils::extend_container( names, pythonNames );
-				}
-				else
-				{
-					msg( IECore::Msg::Error, "EngineWrapper::contextNames", "contextNames method not defined in python." );
-				}
-			}
-			catch( const error_already_set &e )
-			{
-				translatePythonException();
-			}
-		}
-
-		virtual void execute( const Context *context, const std::vector<const ValuePlug *> &proxyInputs, ValuePlug *proxyOutput )
-		{
-			IECorePython::ScopedGILLock gilLock;
-			try
-			{
-				override f = this->get_override( "execute" );
-				if( f )
-				{
-					list pythonProxyInputs;
-					for( std::vector<const ValuePlug *>::const_iterator it = proxyInputs.begin(); it!=proxyInputs.end(); it++ )
+					object f = this->methodOverride( "inPlugs" );
+					if( f )
 					{
-						pythonProxyInputs.append( PlugPtr( const_cast<ValuePlug *>( *it ) ) );
+						list pythonPlugs = extract<list>( f() );
+						container_utils::extend_container( plugs, pythonPlugs );
+						return;
 					}
-
-					f( ContextPtr( const_cast<Context *>( context ) ), pythonProxyInputs, ValuePlugPtr( proxyOutput ) );
 				}
-				else
+				catch( const error_already_set &e )
 				{
-					msg( IECore::Msg::Error, "EngineWrapper::execute", "execute method not defined in python." );
+					translatePythonException();
 				}
 			}
-			catch( const error_already_set &e )
+
+			throw IECore::Exception( "Engine::inPlugs() python method not defined" );
+		}
+
+		virtual void contextNames( std::vector<IECore::InternedString> &names )
+		{
+			if( isSubclassed() )
 			{
-				translatePythonException();
+				IECorePython::ScopedGILLock gilLock;
+				try
+				{
+					object f = this->methodOverride( "contextNames" );
+					if( f )
+					{
+						list pythonNames = extract<list>( f() );
+						container_utils::extend_container( names, pythonNames );
+						return;
+					}
+				}
+				catch( const error_already_set &e )
+				{
+					translatePythonException();
+				}
 			}
+
+			throw IECore::Exception( "Engine::contextNames() python method not defined" );
+		}
+
+		virtual IECore::ConstObjectVectorPtr execute( const Context *context, const std::vector<const ValuePlug *> &proxyInputs )
+		{
+			if( isSubclassed() )
+			{
+				IECorePython::ScopedGILLock gilLock;
+				try
+				{
+					object f = this->methodOverride( "execute" );
+					if( f )
+					{
+						list pythonProxyInputs;
+						for( std::vector<const ValuePlug *>::const_iterator it = proxyInputs.begin(); it!=proxyInputs.end(); it++ )
+						{
+							pythonProxyInputs.append( PlugPtr( const_cast<ValuePlug *>( *it ) ) );
+						}
+
+						object result = f( ContextPtr( const_cast<Context *>( context ) ), pythonProxyInputs );
+						return extract<IECore::ConstObjectVectorPtr>( result );
+					}
+				}
+				catch( const error_already_set &e )
+				{
+					translatePythonException();
+				}
+			}
+
+			throw IECore::Exception( "Engine::execute() python method not defined" );
+		}
+
+		virtual void setPlugValue( ValuePlug *plug, const IECore::Object *value )
+		{
+			if( isSubclassed() )
+			{
+				IECorePython::ScopedGILLock gilLock;
+				try
+				{
+					object f = this->methodOverride( "setPlugValue" );
+					if( f )
+					{
+						f( ValuePlugPtr( plug ), IECore::ObjectPtr( const_cast<IECore::Object *>( value ) ) );
+						return;
+					}
+				}
+				catch( const error_already_set &e )
+				{
+					translatePythonException();
+				}
+			}
+			
+			throw IECore::Exception( "Engine::setPlugValue() python method not defined" );
 		}
 
 };
@@ -174,12 +209,12 @@ struct ExpressionEngineCreator
 
 };
 
-static void registerEngine( const std::string &engineType, object creator )
+void registerEngine( const std::string &engineType, object creator )
 {
 	Expression::Engine::registerEngine( engineType, ExpressionEngineCreator( creator ) );
 }
 
-static tuple registeredEnginesWrapper()
+tuple registeredEnginesWrapper()
 {
 	std::vector<std::string> engineTypes;
 	Expression::Engine::registeredEngines( engineTypes );
@@ -191,6 +226,49 @@ static tuple registeredEnginesWrapper()
 	return boost::python::tuple( l );
 }
 
+class ExpressionSerialiser : public NodeSerialiser
+{
+
+	virtual bool childNeedsSerialisation( const Gaffer::GraphComponent *child ) const
+	{
+		const Expression *expression = child->parent<Expression>();
+		if( child == expression->expressionPlug() )
+		{
+			// We'll serialise this manually ourselves in
+			// postScript() - see comments there.
+			return false;
+		}
+		return NodeSerialiser::childNeedsSerialisation( child );
+	}
+
+	virtual std::string postScript( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
+	{
+		std::string result = NodeSerialiser::postScript( graphComponent, identifier, serialisation );
+
+		// When the expression plug is set, the Expression node creates an engine,
+		// parses the expression, and connects itself up in the graph. We must therefore
+		// delay the setting of the expression until the whole graph has been created,
+		// otherwise we'll be hunting for plugs referenced in the expression which have
+		// not yet been created. The sad thing about all this is that the serialisation
+		// has already reproduced the network we need anyway - the Expression node doesn't
+		// even need to do anything.
+		//
+		/// \todo We could consider not using plugSetSignal() to trigger expression
+		/// parsing, instead using an explicit method on the Expression class. In that
+		/// case we wouldn't need any custom serialisation at all, but the UI code and
+		/// scripts creating expressions would need to be updated to use the method
+		/// rather than to just set the plug.
+		const Expression *expression = static_cast<const Expression *>( graphComponent );
+		const Serialiser *s = Serialisation::acquireSerialiser( expression->expressionPlug() );
+		result += s->postConstructor( expression->expressionPlug(), serialisation.identifier( expression->expressionPlug() ), serialisation );
+
+		return result;
+	}
+
+};
+
+} // namespace
+
 void GafferBindings::bindExpression()
 {
 
@@ -201,5 +279,7 @@ void GafferBindings::bindExpression()
 		.def( "registerEngine", &registerEngine ).staticmethod( "registerEngine" )
 		.def( "registeredEngines", &registeredEnginesWrapper ).staticmethod( "registeredEngines" )
 	;
+
+	Serialisation::registerSerialiser( Expression::staticTypeId(), new ExpressionSerialiser );
 
 }

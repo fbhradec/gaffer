@@ -1,3 +1,1168 @@
+# 0.14.0.0
+==========
+
+UI
+-----------------------------------------------------------------------
+
+- NodeGraph
+  - Improved "Select Affected Objects" menu item. This is now available
+    on filters as well as on scene processors.
+  - Added support for dragging objects from the Viewer and SceneHierarchy
+    and dropping them onto scene processors and PathFilters, to specify
+    the affected objects.
+      - Dragging onto a node replaces the current paths.
+      - Shift+Drag adds to the current paths.
+      - Control+Drag removes from the current paths.
+  - Added plug context menu for moving promoted plugs on Boxes.
+- NodeEditor
+  - Added "Select Affected Objects" menu item in the tool menu for
+    filters and scene processors.
+- UIEditor
+  - Added + button for adding plugs, and - button for deleting them.
+  - Added the ability to create nested sections and drag+drop plugs
+    between them.
+- Viewer
+  - Fixed grid and gnomon menus.
+
+Core
+-----------------------------------------------------------------------
+
+- Expression
+  - Added support for setting multiple plugs from one
+    expression (#1315).
+  - Added support for vector, color and box outputs (#1315).
+  - Added support for assigning to plugs within conditional
+    branches (#1349).
+
+Scene
+-----------------------------------------------------------------------
+
+- Improved ParentConstraint so it is acts more like the equivalent
+  parenting operation, and maintains the local transforms of the
+  objects being constrained. Note that this is a change of behaviour,
+  but one that we feel is much for the better.
+- Fixed ShaderAssignment to allow referencing of promoted shader input
+  plugs.
+
+API
+-----------------------------------------------------------------------
+
+- Added `parallelTraverse()` and `filteredParallelTraverse()` methods
+  to SceneAlgo. These make it trivial to traverse all locations in a
+  scene using multiple threads.
+- Added inputTransform argument to `Constraint::computeConstraint()`.
+- Removed TransformPlugValueWidget.
+- Used Plug rather than CompoundPlug in several places. CompoundPlug
+  is being phased out because the Plug base class is now perfectly
+  capable of having child plugs.
+    - `ExecutableNode::dispatcherPlug()`
+    - LocalDispatcher dispatcher plug
+    - `Shader::parametersPlug()`
+- Fixed support for boost python object methods as menu commands.
+- Pointer
+  - Fixed `registerPointer()` method.
+  - Added binding for `registerPointer()`.
+- Added `scoped` argument to `Signal.connect()` python bindings.
+- Added `SignalClass` for binding signals, and deprecated the old
+  `SignalBinder`.
+- Added support for binding signals with 4 arguments.
+- Added `LazyMethod.flush()` method.
+- Fixed update bug in `PathListingWidget.setSelectedPaths()`.
+- Added support for "nodule:type" metadata to control the type
+  of nodule created for a plug. This should be used in preference
+  to `Nodule::registerNodule()`, which has been deprecated.
+- Added support for modifying CompoundNodule orientation, spacing
+  and direction using plug metadata.
+- Improved signalling of instance metadata changes.
+- Added default arguments for ValuePlug constructor arguments.
+
+ Incompatibilities
+-----------------------------------------------------------------------
+
+- Changed Constraint::computeConstraint() function signature.
+- Changed ParentConstraint behaviour to include the local transform of the constrained object.
+- Removed TransformPlugValueWidget.
+- Changed plug type returned by ExecutableNode::dispatcherPlug().
+- Changed Dispatcher::SetupPlugsFn signature.
+- Changed ExecutableNode::dispatcherPlug() signature.
+- Changed Shader::parametersPlug() to Plug rather than CompoundPlug.
+- Removed asUserPlug arguments from Box promotion methods. Plugs are
+  now always promoted directly under a box, and never as user plugs.
+- Changed signature of `Nodule::registerNodule()` when registering a subclass.
+- Changed signature of CompoundNodule constructor, which now accepts a Plug
+  rather than CompoundPlug.
+- Replaced UIEditor setSelectedPlug()/getSelectedPlug() methods with
+  setSelection()/getSelection().
+- Added arguments to Metadata signals.
+
+# 0.13.1.0
+==========
+
+Apps
+-----------------------------------------------------------------------
+
+- Test app can now run multiple named test cases, specified via the
+  "testCases" command line argument.
+- Fixed errors caused by special characters in .gfr filenames.
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed unwanted viewport scrolling when dragging from one NodeGraph
+  into another, or from the NodeEditor across a NodeGraph (#1321).
+- Hid Viewer diagnostic modes for unavailable renderers.
+- Fixed SceneInspector inheritance and history windows, which were broken
+  in 0.13.0.0.
+- Fixed ObjectWriter UI, which was broken in 0.13.0.0.
+
+OSL
+-----------------------------------------------------------------------
+
+- Added utility shaders for float maths and noise.
+
+Image
+-----------------------------------------------------------------------
+
+- Fixed bug in DeleteChannels::hashChannelNames().
+
+Houdini
+-----------------------------------------------------------------------
+
+- Added support for Houdini 14 (requires Cortex 9.0.0-b7).
+
+API
+-----------------------------------------------------------------------
+
+- Added GafferUI._qtObject method.
+- PlugLayout
+  - Added layoutSections() method.
+  - Added section argument to layoutOrder() method.
+
+Build
+-----------------------------------------------------------------------
+
+- Added support for Boost >= 1.54.
+- Fixed Appleseed packaging. We were omitting the directory containing
+  the Cortex display driver.
+
+# 0.13.0.0
+==========
+
+Apps
+-----------------------------------------------------------------------
+
+- Improved error message for execute app.
+
+Core
+-----------------------------------------------------------------------
+
+- Improved Dispatcher
+  - Stopped merging of identical tasks from different nodes.
+    We decided that this auto-merging caused more confusion than it
+    was worth, and it may actually have prevented useful executable
+    graphs which would have been intentionally running identical
+    tasks at different points in the graph.
+  - Added cycle detection.
+
+UI
+-----------------------------------------------------------------------
+
+- Avoided unnecessary rebuilds of MenuBar menus. This can improve
+  performance for slow-to-build custom menus.
+- Added font file browser to the Text node.
+- Improved NodeGraph plug tooltips - they now contain the plug description.
+- Plugs may now be promoted to Box level via the right click plug
+  menu in the NodeGraph.
+- Fixed search box in file open dialogues.
+- Improved dialogues for picking scene paths
+  - Opened in tree mode rather than list mode
+  - Removed unnecessary columns
+  - Added filtering to display only cameras where appropriate
+- CustomAttributes/DeleteAttributes
+  - Added right click menu for quickly adding attributes from the
+    currently selected object.
+- Viewer
+  - Added shading mode menu. This allows the default shading to be overridden
+    with another shader. Currently configured menu entries allow visualisation
+    of shader assignments and visibility for RenderMan, Arnold and Appleseed
+    (#1037).
+  - Improved error handling.
+- SceneInspector
+  - Improved shader display in attributes section. The node colour of the
+    assigned shader is used as the background colour.
+  - Improved performance (#1050).
+- Node UIs
+  - Added tool menu to NodeEditor
+  - Added support for metadata-driven activators.
+  - Added support for metadata-driven section summaries.
+  - Added support for metadata-driven custom widgets.
+
+Scene
+-----------------------------------------------------------------------
+
+- InteractiveRender
+  - Fixed crash when deleting a running InteractiveRender.
+  - Fixed coordinate system update problem.
+- Fixed bug preventing filter plugs from being promoted to Boxes.
+- Improved set computation
+  - Separated the computation of sets from the computation of globals.
+    This should prevent delays caused when calculating large unneeded
+    sets along with the globals.
+  - Made sets compute individually on demand. This should reduce the
+    overhead of large unneeded sets.
+  - Added "sets" plug to source nodes, to allow set membership to
+    be defined at creation time.
+  - Optimised SetFilter hashing.
+  - Prevented wildcards from being used in the Set node (#1307).
+- Made Parameters node compatible with subclasses of Light/Camera/ExternalProcedural,
+  such as those used internally at IE.
+- Shader node now adds "gaffer:nodeColor" entry into the blind data
+  for the shader in the scene - this allows UI components to display
+  the colour as appropriate.
+- Added AttributeVisualiser node. This applies an OpenGL shader to
+  visualise the values of attributes and shader assignments.
+
+Appleseed
+-----------------------------------------------------------------------
+
+- Fixed typo in AppleseedOptions plug names.
+
+Documentation
+-----------------------------------------------------------------------
+
+- Improved doxyen documentation configuration.
+- Documented all GafferScene nodes.
+- Documented all GafferOSL nodes.
+- Documented all GafferRenderMan nodes.
+- Documented all GafferArnold nodes.
+- Added support for Arnold "desc" metadata items.
+
+API
+-----------------------------------------------------------------------
+
+- Refactored Node UI to provide all features via the PlugLayout and
+  Metadata entries.
+  - Added support for a "fixedLineHeight" metadata entry in
+    MultiLineStringPlugValueWidget.
+  - Added support for "layout:section" metadata - this allows the
+    layout to be split into sections, and will provide the basis for
+    replacing the Sectioned* widgets, adding support for sections in
+    the UIEditor, and replacing the section management code in the
+    StandardNodeUI.
+  - Added support for Metadata activators - these allow the editability
+    of a plug to be driven by the values of other plugs.
+  - Added support for section summaries driven by Metadata.
+  - Deprecated SectionedCompoundDataPlugValueWidget.
+  - Deprecated SectionedCompoundPlugValueWidget.
+  - Improved layoutOrder() API. It now returns the ordered plugs
+    for a specific parent, rather than accepting a possibly unrelated
+    list of plugs.
+  - Added support for arbitrary custom widgets to be inserted into
+    layouts.
+  - Reimplemented StandardNodeUI using PlugLayout.
+- Fixed ExecutableNode::requirements() binding.
+- Added support for fixing the height (measured in number of lines)
+  of the MultiLineTextWidget.
+- Fixed support for functools.partial( classMethod ) commands in
+  Menus.
+- ScenePath : added setScene()/getScene() accessors.
+- Added SceneFilterPathFilter class. This tongue twister uses any of
+  the GafferScene::Filter nodes to implement a Gaffer::PathFilter to
+  filter the children of a GafferScene::ScenePath.
+- Added ScenePath::createStandardFilter() method.
+- Fixed crash when a Path is deleted before its PathFilter.
+- Added PathChooserDialogue.pathChooserWidget() method.
+- Added ScenePathPlugValueWidget.
+- Gave precedence to exact plug matches over wildcard matches in Metadata
+  queries.
+- Added addition controls over Context substitution methods.
+- Improved StringPlug with additional control over substitutions.
+- Improved PlugType to support box and bool plugs.
+- Added ValuePlugSerialiser::repr() method. This is intended to allow
+  derived class bindings to base their own `repr()` implementation on
+  the ValuePlug one.
+- Made TypedObjectPlug compatible with instantiation for new types
+  outside of Gaffer. This is achieved by moving the implementation into a
+  .inl file which may be included as necessary. Added TypedObjectPlugClass
+  to simplify binding such instantiations.
+- Implemented PathMatcherData::hash().
+- Added GafferScene::PathMatcherDataPlug.
+- Reimplemented SceneNode sets API.
+- Added GafferUI.LazyMethod for deferring widget method calls until
+  visible/idle.
+
+ Incompatibilities
+-----------------------------------------------------------------------
+
+- StringPlug
+  - Reimplemented as a standalone class
+  - TypedPlug<string> is no longer instantiated (binary incompatibility).
+  - Must now include "Gaffer/StringPlug.h" rather than "Gaffer/TypedPlug.h"
+    (source incompatibility).
+- GafferCortex
+  - Removed BoxParameterHandler and CompoundNumericParameterHandler. Their
+    functionality is now covered by TypedParameterHandler.
+- GafferScene
+  - Reimplemented sets API.
+  - Removed SceneReader "sets" plug.
+- GafferAppleseed
+  - Fixed typo in AppleseedOptions plug names.
+- PlugLayout
+  - Changed layoutOrder() signature.
+- StandardNodeUI
+  - Removed DisplayMode enum.
+  - Removed displayMode constructor argument.
+  - Removed _header() method.
+  - Removed _tabbedContainer() method.
+
+Build
+-----------------------------------------------------------------------
+
+- Updated default dependency versions
+  - OIIO 1.5.13
+  - OSL 1.6.3dev
+  - LLVM 3.4
+  - Alembic 1.5.8
+  - Cortex 9.0.0-b6
+- Added bundled Appleseed renderer
+
+# 0.12.1.0
+==========
+
+Core
+-----------------------------------------------------------------------
+
+- Fixed hangs introduced in 0.12.0.0. These were seen when stopping
+  Appleseed renders and when ganging plugs in Caribou.
+- Fixed thread-related crashes introduced in 0.12.0.0. These have not
+  been observed in the wild, but caused intermittent failures in the
+  unit tests.
+
+UI
+-----------------------------------------------------------------------
+
+- Improved error messages output by OpDialogue.
+- Fixed unwanted auto-expansion in SceneHierarchy panel.
+
+Scene
+-----------------------------------------------------------------------
+
+- Added current scene location to error messages emitted by SceneProcedural.
+- Reduced memory usage for sets by 10%.
+- Optimised set computations. This reduces globals computation time for
+  a complex production scene by 60%.
+- Fixed PathFilter wildcard matching bug.
+
+OSL
+-----------------------------------------------------------------------
+
+- Added metadata presets support for color and point parameters.
+
+API
+-----------------------------------------------------------------------
+
+- Added iterators to GafferScene::PathMatcher.
+- Added GafferUI.EditMenu.selectionAvailable() method.
+
+# 0.12.0.0
+==========
+
+Core
+-----------------------------------------------------------------------
+
+- Optimised CompoundDataPlug::hash() to ignore disabled members. This
+  reduces globals hashing time by 20% for a complex production scene.
+- Fixes Expression serialisation bugs (#1081, #1243).
+- Optimised ValuePlug hash caching. It now caches more aggressively,
+  keeping cache entries alive across multiple computations. This reduces
+  scene traversal time for a complex production scene by 70%.
+- Improved dirty propagation mechanism.
+  - Batched propagation for UndoContexts, so dirtiness is signalled
+    only once for operations batched within a single undo action.
+  - Fixed bugs which meant dirtiness was signalled when child/parent
+    plug connections were in an inconsistent state.
+  - Addition and removal of dynamic plugs now triggers dirty
+    propagation.
+- The values of environment variables used for string plug
+  substitutions are now frozen at startup.
+
+UI
+-----------------------------------------------------------------------
+
+- Improved indicator for non-default plug values (#1216).
+- Added copy/paste entries to plug menus (#601).
+- SceneInspector now shows parameters for ExternalProcedural and
+  Light objects.
+- Added available set names to Set node "sets" plug popup menu.
+
+Scene
+-----------------------------------------------------------------------
+
+- Fixed PathMatcher wildcard matching bug (#1252).
+- Added Parameters node. This can be used for tweaking the parameters
+  of lights, cameras and external procedurals (#1259).
+- Added PointsType node (#476).
+- Fixes Seeds node to take into account the bounding box of the generated
+  points.
+- Fixed dirty propagation bugs in CoordinateSystem and ClippingPlane
+  nodes.
+- Improved InteractiveRenderer pausing during edits.
+- Added DeleteSets node.
+- Fixed CustomOptions dirty propagation (#1039).
+- Fixed ContextVariables dirty propagation.
+- Optimised Filter mechanism, giving a 7-20% improvement in performance
+  across a range of production scenes.
+
+Appleseed
+-----------------------------------------------------------------------
+
+- Added support for interactive renderering with shader and light
+  edits.
+
+Image
+-----------------------------------------------------------------------
+
+- Added support for image metadata
+  - ImagePlug has a new metadata child plug.
+  - ImageReader reads metadata from file.
+  - ImageWriter writes metadata to file.
+  - ImagePrimitiveSource loads metadata from `ImagePrimitive::blindData()`.
+  - Merge copies metadata from the first input.
+  - ImageMetadata node creates/sets metadata.
+  - DeleteImageMetadata node removed metadata.
+  - CopyImageMetadata transfers metadata from one image to another.
+- Optimised many nodes with direct internal pass-though connections.
+
+API
+-----------------------------------------------------------------------
+
+- StringAlgo
+  - Added `hasWildcards()` function.
+  - Removed flawed MatchPatternLess (#1252).
+- NodeAlgo
+  - Added `isSetToUserDefault( plug )` function.
+- RendererAlgo
+  - Added `outputAttributes()` method.
+- ImageNode
+  - `hash*()` and `compute*()` methods are no longer pure virtual.
+    This allows subclasses to make direct internal connections to
+    pass through input plugs unchanged.
+- PlugValueWidget
+  - Replaced `_dropValue()` method with `_convertValue()`.
+- Menu
+  - Added support for `functools.partial( WeakMethod )`
+    in menu commands.
+- Simplified and improved Merge node implementation.
+- Added MetadataProcessor base class to GafferImage.
+- Added Plug::dirty() virtual method. This is used to inform a Plug
+  that it has been dirtied by Plug::propagateDirtiness().
+- Fixed DependencyNodeWrapper to translate python exceptions to C++.
+
+Build
+-----------------------------------------------------------------------
+
+- Fixed compilation without NDEBUG=1 with gcc 4.1.2.
+
+ Incompatibilities
+-----------------------------------------------------------------------
+
+- Removed MatchPatternLess from StringAlgo.h.
+- Replaced PlugValueWidget `_dropValue()` method with `_convertValue()`.
+- Removed GafferImage::FilterProcessor.
+- Added/removed virtual overrides in GafferImage.
+- Added virtual function to Plug.
+
+# 0.11.0.0
+=========
+
+Image
+-----------------------------------------------------------------------
+
+- Image nodes are now documented
+- RemoveChannels renamed to DeleteChannels
+
+Scene
+-----------------------------------------------------------------------
+
+- Fixed a bug in the InteractiveRender that was causing a crash when the scene child names changed.
+
+# 0.10.1.0
+=========
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed FilterPlugValueWidget filter menu
+
+Scene
+-----------------------------------------------------------------------
+
+- Fixed dirty propagation for globals in the camera node
+- IPR now blocks the UI while it's starting up, and is more selective
+  about sending scene edits.
+
+Core
+-----------------------------------------------------------------------
+
+- Fixed dirty propagation bug in expressions
+
+# 0.10.0.0
+=========
+
+Core
+-----------------------------------------------------------------------
+
+- Reimplemented paths framework in C++ (#1190). This gives much 
+  improved performance - 10x or more speed improvements in the
+  SceneHierarchy panel.
+- Fixed subprocess hangs seen when dispatching renders inside Maya.
+- Restored compatibility with references from prior to version 0.8.0.0.
+
+UI
+-----------------------------------------------------------------------
+
+- Added bookmarks system for NodeGraph (#849).
+  - Bookmark nodes using the right-click node context menu
+  - Connect plugs to bookmarked nodes using the right-click plug
+    context menu.
+- Added NodeGraph Ctrl+Click to select all downstream nodes (#941).
+- Added additional "Edit/Select Connected" menu items
+- Fixed "Edit/SelectConnected" menu items to ignore invisible nodes.
+- Fixed "Edit/SelectAll" menu item to ignore invisible nodes (#1207).
+- Highlighted plugs at non-default values in the NodeEditor (#1216).
+- SceneInspector
+  - Significant performance improvements.
+  - Added name based filtering for options and attributes (#1159).
+  - Added query caching.
+- Fixed bug whereby Widget.setVisible( notABool ) could cause problems.
+- Fixed clearing of StandardNodeGadget errors for non-DependencyNodes.
+
+Scene
+-----------------------------------------------------------------------
+
+- Added "mode" plug to Set node. This allows paths to be added to or
+  removed from existing sets, in addition to the old behaviour of
+  creating a new set (or replacing an existing one of the same name).
+- Added ClippingPlane node.
+- Added "enabled" plug to Filter nodes (#1196).
+- Added FilterSwitch node (#1197).
+- Added "name" plug to Duplicate node, to provide control over the
+  names given to the duplicates (#1200).
+
+Appleseed
+-----------------------------------------------------------------------
+
+- Added photon target attribute.
+- Added sampler option.
+- Synced default options with new Appleseed defaults.
+
+Cortex
+-----------------------------------------------------------------------
+
+- Added UI hint to control the visibility of the header in the
+  ParameterisedHolder node UI.
+
+API
+-----------------------------------------------------------------------
+
+- GraphGadget
+  - Added degreesOfSeparation argument to upstreamNodeGadgets() method.
+  - Added downstreamNodeGadgets() and connectedNodeGadgets() methods.
+- EditMenu
+  - Added scope() method. This should be used by custom edit menu
+    commands to ensure they operate on the right portion of the
+    node graph.
+- CompoundVectorParameterValueWidget
+  - Added support for "showIndices" parameter user data.
+- PathMatcher
+  - Added addPaths() and removePaths() methods, each taking a second
+    PathMatcher to provide the paths.
+- Serialisation
+  - Made classPath() and modulePath() methods compatible with passing
+    a class as well as an instance.
+- PathListingWidget
+  - Added setSortable() and getSortable() methods.
+- Added MatchPatternPathFilter
+- Added bindings for SceneAlgo camera() and shutter() functions.
+- Metadata
+  - Added control over persistence of instance values.
+- Added preprocessor macros for gaffer version numbers.
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- Path
+  - The info API has been replaced with a property API. Emulation
+    for the old API exists, but it has been deprecated.
+  - Properties must derive from RunTimeTyped, whereas info could
+    contain any python type.
+  - Subclasses now _must_ implement the copy() method.
+- PathListingWidget
+  - Column python class has been replaced with several specialised
+    C++ subclasses. It is no longer possible to derive from Column
+    in python.
+- GraphGadget
+  - Added argument to upstreamNodeGadgets() method.
+- GafferScene::Filter
+  - Renamed "match" plug to "out". Backwards compatibility is
+    provided by a __getattr__ alias in Python.
+
+Build
+-----------------------------------------------------------------------
+
+- Updated public build to use Cortex 9.0.0-b4.
+- libGafferUI now links with Qt. This must be considered when building
+  Gaffer to be hosted inside other applications.
+- Requires subprocess32 python module.
+- Added subprocess32 to dependencies build process.
+
+# 0.9.0.0
+=========
+
+This is primarily a bugfix release.
+
+Core
+-----------------------------------------------------------------------
+
+- Documented all nodes and plugs.
+- Improved Reference workflow
+  - Boxes exported for referencing contain new default values for all
+    promoted plugs to match their current values on the Box.
+  - When reloading a reference, only values the user has changed from
+    their defaults will be kept. Other values will be updated from the
+    new reference.
+  - Box metadata is included when exporting for referencing. This
+    means that colours and descriptions set via the UIEditor will
+    be transferred onto any Reference nodes which load the exported
+    reference (#1171).
+- Added "-threads" command line argument to Gaffer.Application
+- Fixed "gaffer execute" error handling
+
+Cortex
+-----------------------------------------------------------------------
+
+- Documented all nodes and plugs.
+
+Scene
+-----------------------------------------------------------------------
+
+- Added hack for controlling TBB concurrency from SceneProcedural
+  - Using the GAFFERSCENE_SCENEPROCEDURAL_THREADS environment variable
+
+RenderMan
+-----------------------------------------------------------------------
+
+- Fixed hangs caused by deleting or reconnecting a paused
+  InteractiveRenderManRender node.
+
+Appleseed
+-----------------------------------------------------------------------
+
+- Fixed render threads and texture memory options.
+
+Image
+-----------------------------------------------------------------------
+
+- Fixed bug which prevented serialisation of read only FormatPlugs.
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed creation of expressions for BoolPlugs.
+- Fixed context used by scene view camera chooser.
+
+API
+-----------------------------------------------------------------------
+
+- Added Metadata::registerNode() method. This allows all the metadata
+  for a node and its plugs to be registered with a single function call
+  (#1160).
+- Added GafferTest.TestCase.assertNodesAreDocumented().
+- Serialisation
+  - Added serialisation argument to `Serialiser::constructor()`.
+  - Added Serialisation::parent() accessor.
+- ValuePlug
+  - Simplified handling of default values.
+  - Added isSetToDefault() method.
+- Made CompoundDataPlug::addMember() set default value for name plug
+  (#935).
+- Added Python bindings for tbb::task_scheduler_init
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- Added argument to virtual method `Serialiser::constructor()`.
+- Changed layout of ValuePlug classes.
+- Removed virtual overrides from some ValuePlug classes.
+- Added virtual method to ValuePlug.
+
+Build
+-----------------------------------------------------------------------
+
+- Updated public build to use Cortex 9.0.0-b3.
+- Included Shiboken module in release packages.
+
+# 0.8.2.0
+=========
+
+Core
+-----------------------------------------------------------------------
+
+- Prevented errors in Metadata slots from stopping other slots running.
+
+Scene
+-----------------------------------------------------------------------
+
+- Fixed BranchCreator dirty propagation.
+
+RenderMan
+-----------------------------------------------------------------------
+
+- Add trace bias in RenderManAttributes.
+
+Image
+-----------------------------------------------------------------------
+
+- Stopped display transforms hardcoding OCIO "linear" colour space.
+- Fixed dirty propagation for Merge node.
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed evaluation time of look-through cameras in the Viewer.
+- Added camera name to resolution gate overlay.
+- Removed redundant render requests from CompoundNodule.
+- Simplified Gadget render requests when children are added/removed
+- Prevented duplicate errors on StandardNodeGadget tooltips.
+- Fixed CompoundEditor lifetime bug
+- Setting DispatcherUI frameRange widget text in PlaybackRange mode.
+- Made NameWidget replace " " with "_" automatically.
+
+API
+-----------------------------------------------------------------------
+
+- Removed GafferBindings::CatchingSlotCaller.
+- Added Gaffer::CatchingSignalCombiner class.
+- Added Gadget::requestRender() method.
+
+Build
+-----------------------------------------------------------------------
+
+- Fixed GafferRenderMan public build.
+
+# 0.8.1.0
+=========
+
+Core
+-----------------------------------------------------------------------
+
+- Fixed ComputeNodeWrapper exception handling.
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed GafferUI crashes seen at Python shutdown.
+- Added support for hiding some fields of CompoundNumericPlugValueWidgets.
+- Update DispatcherUI; can dispatch box with promoted requirement.
+- Fixed crashes when deleting a node immediately after it errored.
+
+Scene
+-----------------------------------------------------------------------
+
+- Fixed light visibility bug.
+- Fixed coordinate system visibility bug.
+- Added visible() function to SceneAlgo.h.
+- Added GL FacingRatio shader
+
+RenderMan
+-----------------------------------------------------------------------
+
+- Added "vector2" widget annotation support for RenderMan shaders.
+
+Build
+-----------------------------------------------------------------------
+
+- Stopped installing the python module by default
+- Moved installDir to /tmp for local IE builds.
+- Fixed release script to ignore GAFFER_OPTIONS_FILE environment variable.
+- Updated IE publicDependenciesBuild script.
+- Enabled testing of UI modules on Travis CI.
+- Added debug output to installDependencies.py.
+
+-----------------------------------------------------------------------
+
+# 0.8.0.0
+=========
+
+Apps
+-----------------------------------------------------------------------
+
+- Python
+    - Added support for executing files with arbitrary extensions.
+    - Properly handled `sys.exit()` usage from within a script.
+    - Updated sys.argv so `gaffer python myScript.py` behaves like
+      `python myScript.py`.
+
+Core
+-----------------------------------------------------------------------
+
+- Made small optimisations to the computation engine.
+
+UI
+-----------------------------------------------------------------------
+
+- Added "layout:widgetType" metadata entry.
+- Improved image rendering quality.
+- Added error display in the node graph (#1115).
+- Added menu item for applying Random node to IntPlugs.
+- Fixed Box UI error when connecting external BoolPlug to internal IntPlug.
+
+Scene
+-----------------------------------------------------------------------
+
+- Removed support for attribute caches.
+- Optimised SceneReader hashes.
+- Improved hash computation for many node types. This should improve
+  cache memory usage and speed.
+- Fixed SceneReader for invalid files and paths. Previously it would
+  error on the first attempt, but either silently fail or crash on
+  subsequent attempts.
+- Optimised PathMatcher construction.
+- Multithreaded child procedural instantiation in SceneProcedural.
+
+RenderMan
+-----------------------------------------------------------------------
+
+- Added support for a "nodeColor" annotation.
+
+Image
+-----------------------------------------------------------------------
+
+- Optimised ImageReader. Reduced runtime of ImageReader->ImageTransform
+  benchmark by nearly 40%.
+- Fixed thread-safety bug in ImageReader.
+
+OSL
+-----------------------------------------------------------------------
+
+- Added UI support for OSL "help", "label", "divider", "widget" and
+  "options" metadata entries.
+
+Appleseed
+-----------------------------------------------------------------------
+
+- Added visibility attributes to AppleseedAttributes node.
+
+API
+-----------------------------------------------------------------------
+
+- Added outputsToIgnore argument to GafferTest.TestCase.assertHashesValid().
+- Added NodeAlgo support for plug presets specified en masse via arrays.
+- Added Node::errorSignal().
+- Added tokenize() function to StringAlgo.h.
+- Added support for array metadata in OSLShader.
+- Simplified OSLShader::*Metadata() python return types.
+- Added Python bindings exposing the OSL version.
+- Removed Source node.
+- Removed FileSource node.
+- Detemplatized ObjectSource.
+- Added GafferUI.LayoutPlugValueWidget. This is entirely metadata-driven,
+  and will be used to slowly replace legacy CompoundPlugValueWidget UIs.
+- Deprecated CompoundPlugValueWidget.
+- Fixed drawing of ImageGadget children.
+- Added Gadget::executeOnUIThread() method.
+
+Build
+-----------------------------------------------------------------------
+
+- Updated README with simplified build instructions.
+- Added support for OSL 1.6.
+- Requires Cortex 9.0.0-b2.
+- Added Qt headers to Gaffer packages.
+- Fixed TBB compilation on OS X.
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- Simplified OSLShader::*Metadata() python return types.
+- Removed support for attribute caches.
+- Removed Source node.
+- Removed FileSource node.
+- Detemplatized ObjectSource.
+
+-----------------------------------------------------------------------
+
+# 0.7.0.0
+
+This release brings the exciting addition of support for the open source [Appleseed](http://appleseedhq.net/) renderer. It also adds the much asked for Dot node, and a tool for editing render crop windows. Plus of course the usual small improvements, optimisations and bug fixes.
+
+## UI
+
+- Added resolution gate and crop windows overlays to 3d viewer (#1016).
+- Added tool for manipulating crop window.
+- Added "User Default" item to plug popup menus.
+- Added sneaky hotkey for navigating inside any node in NodeGraph.
+- Fixed Reference node UI to match equivalent Box node UI (#1108).
+- Improved positioning of nodes created by the NodeMenu.
+- Improved table widget (#204).
+	- Remove button disabled when selection empty
+	- Newly added rows are selected automatically
+	- Newly added row has keyboard focus for immediate editing
+- Added customisable presets to plug widgets (#1113).
+- Fixed bugs where image viewer was using incorrect context (#1124).
+- Fixed bug where channel mask UI was using incorrect context.
+- Added a refresh button to ImageReaders.
+- Added support for specifying node, nodule, and connection colours via Metadata (#89).
+- Added support for setting node colour in the UIEditor or from the RMB popup in the graph.
+- Fixed bug in ColorChooserDialogue.waitForColor().
+- Added basic colour scheme for nodes in the GUI app (#1098, #154).
+
+## Core
+
+- Optimised Switch node for constant indices. A benchmark with the bunny scene followed by 50 switches shows a 6x speedup overall.
+- Added Dot node (#12).
+- Fixed bindings for Metadata types other than simple typed data (#1136).
+
+## Scene
+
+- Added min/max limits to StandardOptions crop window plug.
+- Fixed bugs which prevented ObjectSource nodes from working after create/undo/redo.
+- Fixed UnionFilter to accept inputs from Boxes.
+
+## Image
+
+- ImageWriter now creates the necessary directories before writing images.
+
+## RenderMan
+
+- Added shader Metadata option "shaderTypeOverride" (#pragma annotation "shaderTypeOverride" "ri:shader" will force the Gaffer shader type to "ri:shader").
+
+## Appleseed
+
+- Added support for the Appleseed renderer, courtesy of Esteban Tovagliari.
+
+## API
+
+- Optimised ScenePlug::stringToPath(). This gives an 88% reduction in runtime for a synthetic test of just that function, and a 7% reduction in total runtime for a scene benchmark using the Instancer.
+- Added hasUserDefault( plug ) and applyUserDefault( plug ) to NodeAlgo.
+- Added Context.__contains__ binding.
+- Simplified numeric plug bindings.
+- Added min/max values to BoxPlug.
+- Added handy CompoundDataPlug::MemberPlug child accessors.
+- Added GafferBindings::NodeClass() overload for suppressing init.
+- Moved shutter() and transform() from RendererAlgo.h to SceneAlgo.h.
+- Added camera() methods to SceneAlgo.h.
+- Removed GLWidget minimum size.
+- Fixed bug where ViewportGadget::setCamera() could forget viewport size.
+- Fixed ViewportGadget::RasterScope to work during selection.
+- Added ViewportGadget::preRenderSignal().
+- Made View::update() non-pure virtual.
+- Added View::contextChangedSignal().
+- Added Tool base class.
+- Fixed bugs in ExceptionAlgo formatPythonException().
+- Fixed StandardStyle border widths to be independent of border radius.
+- Added Menu.popupPosition() method.
+- Improved support for functools.partial() callables in Menu commands.
+- Added metadata to control StandardNodeGadget minimum width, padding, and nodule spacing.
+- Improved StandardNodeGadget drag/drop handling. Previously it would accept drags it wasn't going to use, preventing other handlers from working.
+- Added Nodule::updateDragEndPoint() virtual method.
+- Fixed ScriptNode::deleteNodes() for nodes without enabled plugs.
+- Added customisable edge gadgets to StandardNodeGadget.
+- Added support for changing nodule position on StandardNodeGadget.
+- Guaranteed order of Metadata::registered*Values().
+- Added plug presets methods to Gaffer.NodeAlgo.
+- Added GafferUI.PresetsPlugValueWidget.
+- Added PlugValueWidget.childPlugValueWidget(), so derived classes don't need to implement it if they don't have such children (#1123).
+- Added Style::renderNodeFrame() to distinguish between frames drawn for nodes and those drawn as normal frames.
+- Updated Style bindings.
+- Added useDisplayTransform argument to ColorSwatch constructor.
+- Added useDisplayTransform argument to ColorChooser and ColorChooserDialogue.
+- Added DataBinding.h header with dataToPython().
+
+## Build
+
+- Added scripts for automating releases.
+- Updated IE public build script to use MILESTONE_VERSION, and renamed it to publicDependenciesBuild, since it is no longer used for producing the public release builds.
+- Requires Cortex 9.0.0-b1 for Appleseed support.
+
+## Incompatibilities
+
+- Moved shutter() and transform() from RendererAlgo.h to SceneAlgo.h.
+- Made View::update() non-pure virtual.
+- Added virtual method to Nodule.
+- Added and reordered Style virtual methods.
+
+# 0.6.0.0
+
+#### UI
+
+- Fixed bug which prevented newly created nodes from being inserted inline in the Node Graph.
+- Added error display to string and numeric plug widgets - typically this is useful when a bad expression has been entered. Previously bad expressions would break the UI.
+- Optimised the 3d view significantly.
+- Fixed UI reordering bug in UIEditor (#847).
+- Added menu item for deleting CompoundDataPlugValueWidget children.
+
+#### Apps
+
+- Added ignoreScriptLoadErrors parameter to execute app.
+
+#### Core
+
+- LocalDispatcher now has an option to ignore errors when loading the script (#1084).
+
+#### Scene
+
+- Fixed Grid node GL shader assignment.
+- Fixed bug in Instancer dirty propagation.
+- Fixed SubTree set computation when root path omits the leading slash.
+- Added "isolate from" capability to GafferScene.Isolate node.
+
+#### API
+
+- Added support for invalid variants to GafferUI._Variant.fromVariant().
+- Added TextWidget setErrored()/getErrored() methods.
+- Added GafferSceneUI::SceneGadget class, for optimised display of scenes in OpenGL.
+- Removed bloat from SceneProcedural - this was being used previously to implement the viewer but is no longer needed.
+- Added ValuePlug::getValue() arguments for when hash is known.
+- Added TypedPlugClass helper to GafferBindings.
+- Improved exceptions thrown from ScriptNode::execute().
+- ScriptProcedural now ignores errors when loading the script.
+- Added PlugLayout.layoutOrder() static method.
+- Fixed deadlocks if computes spawn their own threads.
+- Added GafferScene::PathMatcher::prune() and isEmpty() methods.
+
+#### Incompatibilities
+
+- Added argument to ValuePlug::getObjectValue(), and associated derived class getValue() calls. Source compatibility is maintained, but binary compatibility is not.
+- View::setContext() is now virtual.
+
+#### Build
+
+- Requires Cortex 9.0.0-a10
+
+# 0.5.0.1
+
+#### Scene
+
+- Fixed signal threading bug in SceneProcedural which was causing sporadic crashes
+
+# 0.5.0.0
+
+#### Core
+
+- Fixed LocalDispatcher to quote command line arguments and ignore "ui:" prefixed context variables.
+- Avoiding shell subprocess for Local Jobs stats.
+- LocalDispatcher now just constructs a Job and lets it do the heavy lifting
+- Fixed bug where script context changes could leak into local background dispatches.
+- added python error catching to ConnectionBinding, to prevent crashes
+- Fixed serialization bug with extra plugs on references
+- Dispatcher::frameRange() is now public and virtual.
+
+#### UI
+
+- Menu widget: Added support for icons
+- Disabled Kill button when no jobs are selected.
+- Job details tab is scrollable and resizable.
+- Fixed context errors in teh scene inspector
+- Added button to remove failed jobs.
+- Preventing update error for deleted display node.
+- Adding support for icons in menus
+
+#### Image
+
+- Preventing OIIO error overflow crash
+
+# 0.4.0.0
+
+#### Core
+
+- Plugs and ValuePlugs now accept children (#1043).
+- Added child matching to connected Plugs (#1043).
+- Added LocalDispatcher.Job and LocalDispatcher.JobPool to track running batches (#1064).
+- Failing batches not stop a LocalDispatch job.
+
+#### UI
+
+- Improved Object section of SceneInspector (#897).
+- Added a window for tracking currently running LocalDispatcher jobs (#872).
+- Fixed reparenting bug with DispatcherWindows (#1064).
+
+#### Scene
+
+- Fixed poor performance of Prune/Isolate in presence of SetFilter.
+- Added sets support to Parent node (#1065).
+- Outputting all cameras, not just the primary camera, to the renderer.
+- Added support for per-camera resolution overrides, specified with a "resolutionOverride" V2iData in the camera parameters.
+
+#### API
+
+- Plugs and ValuePlugs now accept children. CompoundPlug will be deprecated.
+- Added BranchCreator::hashBranchGlobals() and computeBranchGlobals(), and implemented them for Parent.
+- Added outputCameras() and overload for outputCamera() to RendererAlgo.h.
+- Added LocalDispatcher.Job and LocalDispatcher.JobPool to track running batches.
+
+#### Incompatible changes
+
+- Added additional virtual methods to BranchCreator
+- ValuePlug::settable() is no longer virtual
+- Removed methods and member variable from CompoundPlug
+- InteractiveRender "updateCamera" plug renamed to "updateCameras".
+
+# 0.3.0.0
+
+#### Core
+
+- Added SubGraph base class, which Reference and Box now derive from, allowing them both to be enabled/disabled.
+- Redesigned Dispatcher registration (#922) (see API section for details).
+
+#### UI
+
+- Nodes created via the NodeMenu apply default values to their plugs, using the "userDefault" key in the Metadata (#1038).
+- Exposed the DispatcherWindow to the public API.
+
+#### Cortex
+
+- Moved Cortex-specific functionality into new GafferCortex library and module.
+	- The Gaffer core itself remains heavily dependent on Cortex, and always will. Here we're splitting out "end user" functionality such as OpHolders and ProceduralHolders, so that GafferCortex can be thought of as the user-visible presence of Cortex within Gaffer.
+	- This remains backwards compatible for now via startup files, which allows a grace period for dependent code to update to the new module layout.
+
+#### RenderMan
+
+- Added basic support for RenderMan volume shaders.
+
+#### API
+
+- Added Gaffer.NodeAlgo python scope with applyUserDefaults( node ) (#1038).
+- Redesigned Dispatcher registration (#922).
+	- Dispatchers are registered with Creator functions rather than instances.
+	- Added get/setDefaultDispatcherType(), which can be used to create a new instance of the default type.
+	- SetupPlugsFn is now a static function that can be registered along with a Creator, rather than a virtual method of Dispatcher instances.
+- Added gil release to GafferScene.matchingPaths python binding.
+- Fixed StringPlug string substitution bug.
+- Catching error_already_set in Dispatcher bindings.
+
+#### Incompatible changes
+
+- Reference and Box now derive from SubGraph rather than Node or DependencyNode.
+- Redesigned Dispatcher registration (#922) (see API section for details).
+
+# 0.2.1.0
+
+#### Core
+
+* Expression node optimizations
+
+#### Scene
+
+* Made ShaderAssignment use the shader type as an attribute name.
+* Added Group::nextInPlug() method
+* InteractiveRender now updates all attributes, not just shaders
+
+#### UI
+
+* Dispatcher FrameRange UI displays the value that will actually be dispatched.
+* Removed unwanted horizontal padding from frameless Buttons.
+
 # 0.2.0.0
 
 This release brings significant optimisations, further additions to the SceneInspector, and the usual collection of miscellaneous enhancements and bug fixes.

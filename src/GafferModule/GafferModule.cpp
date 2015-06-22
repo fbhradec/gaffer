@@ -35,6 +35,8 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "tbb/tbb.h"
+
 #include "Gaffer/TimeWarp.h"
 #include "Gaffer/ContextVariables.h"
 #include "Gaffer/Backdrop.h"
@@ -48,6 +50,7 @@
 #include "GafferBindings/ValuePlugBinding.h"
 #include "GafferBindings/NumericPlugBinding.h"
 #include "GafferBindings/TypedPlugBinding.h"
+#include "GafferBindings/StringPlugBinding.h"
 #include "GafferBindings/TypedObjectPlugBinding.h"
 #include "GafferBindings/ScriptNodeBinding.h"
 #include "GafferBindings/ApplicationRootBinding.h"
@@ -56,13 +59,8 @@
 #include "GafferBindings/CompoundPlugBinding.h"
 #include "GafferBindings/CompoundNumericPlugBinding.h"
 #include "GafferBindings/SplinePlugBinding.h"
-#include "GafferBindings/ParameterisedHolderBinding.h"
-#include "GafferBindings/ParameterHandlerBinding.h"
-#include "GafferBindings/CompoundParameterHandlerBinding.h"
 #include "GafferBindings/StandardSetBinding.h"
 #include "GafferBindings/ChildSetBinding.h"
-#include "GafferBindings/OpHolderBinding.h"
-#include "GafferBindings/ProceduralHolderBinding.h"
 #include "GafferBindings/PreferencesBinding.h"
 #include "GafferBindings/ContextBinding.h"
 #include "GafferBindings/BoxPlugBinding.h"
@@ -75,7 +73,6 @@
 #include "GafferBindings/ComputeNodeBinding.h"
 #include "GafferBindings/BoxBinding.h"
 #include "GafferBindings/ActionBinding.h"
-#include "GafferBindings/ExecutableOpHolderBinding.h"
 #include "GafferBindings/ExecutableNodeBinding.h"
 #include "GafferBindings/DispatcherBinding.h"
 #include "GafferBindings/ReferenceBinding.h"
@@ -84,10 +81,57 @@
 #include "GafferBindings/Serialisation.h"
 #include "GafferBindings/MetadataBinding.h"
 #include "GafferBindings/StringAlgoBinding.h"
+#include "GafferBindings/SubGraphBinding.h"
+#include "GafferBindings/DotBinding.h"
+#include "GafferBindings/PathBinding.h"
+#include "GafferBindings/PathFilterBinding.h"
+#include "GafferBindings/CompoundPathFilterBinding.h"
+#include "GafferBindings/LeafPathFilterBinding.h"
+#include "GafferBindings/MatchPatternPathFilterBinding.h"
+#include "GafferBindings/FileSystemPathBinding.h"
 
 using namespace boost::python;
 using namespace Gaffer;
 using namespace GafferBindings;
+
+namespace
+{
+
+// Wraps task_scheduler_init so it can be used as a python
+// context manager.
+class TaskSchedulerInitWrapper : public tbb::task_scheduler_init
+{
+
+	public :
+
+		TaskSchedulerInitWrapper( int max_threads )
+			:	tbb::task_scheduler_init( deferred ), m_maxThreads( max_threads )
+		{
+			if( max_threads != automatic && max_threads <= 0 )
+			{
+				PyErr_SetString( PyExc_ValueError, "max_threads must be either automatic or a positive integer" );
+				throw_error_already_set();
+			}
+		}
+
+		void enter()
+		{
+			initialize( m_maxThreads );
+		}
+
+		bool exit( boost::python::object excType, boost::python::object excValue, boost::python::object excTraceBack )
+		{
+			terminate();
+			return false; // don't suppress exceptions
+		}
+
+	private :
+
+		int m_maxThreads;
+
+};
+
+} // namespace
 
 BOOST_PYTHON_MODULE( _Gaffer )
 {
@@ -95,6 +139,7 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindConnection();
 	bindSignal();
 	bindGraphComponent();
+	bindContext();
 	bindNode();
 	bindDependencyNode();
 	bindComputeNode();
@@ -103,6 +148,7 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindValuePlug();
 	bindNumericPlug();
 	bindTypedPlug();
+	bindStringPlug();
 	bindTypedObjectPlug();
 	bindScriptNode();
 	bindApplicationRoot();
@@ -111,30 +157,31 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindCompoundPlug();
 	bindCompoundNumericPlug();
 	bindSplinePlug();
-	bindParameterisedHolder();
-	bindParameterHandler();
-	bindCompoundParameterHandler();
 	bindStandardSet();
 	bindChildSet();
-	bindOpHolder();
-	bindProceduralHolder();
 	bindPreferences();
-	bindContext();
 	bindBoxPlug();
 	bindExpression();
 	bindTransformPlug();
 	bindTransform2DPlug();
 	bindCompoundDataPlug();
 	bindRandom();
+	bindSubGraph();
 	bindBox();
 	bindAction();
 	bindDispatcher();
-	bindExecutableOpHolder();
 	bindReference();
 	bindArrayPlug();
 	bindSerialisation();
 	bindMetadata();
 	bindStringAlgo();
+	bindDot();
+	bindPath();
+	bindPathFilter();
+	bindCompoundPathFilter();
+	bindLeafPathFilter();
+	bindMatchPatternPathFilter();
+	bindFileSystemPath();
 
 	NodeClass<Backdrop>();
 
@@ -143,6 +190,13 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	DependencyNodeClass<ContextVariablesComputeNode>();
 	DependencyNodeClass<SwitchDependencyNode>();
 	DependencyNodeClass<SwitchComputeNode>();
+
+	object tsi = class_<TaskSchedulerInitWrapper, boost::noncopyable>( "_tbb_task_scheduler_init", no_init )
+		.def( init<int>( arg( "max_threads" ) = int( tbb::task_scheduler_init::automatic ) ) )
+		.def( "__enter__", &TaskSchedulerInitWrapper::enter, return_self<>() )
+		.def( "__exit__", &TaskSchedulerInitWrapper::exit )
+	;
+	tsi.attr( "automatic" ) = int( tbb::task_scheduler_init::automatic );
 
 	object behavioursModule( borrowed( PyImport_AddModule( "Gaffer.Behaviours" ) ) );
 	scope().attr( "Behaviours" ) = behavioursModule;

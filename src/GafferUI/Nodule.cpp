@@ -35,10 +35,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "GafferUI/Nodule.h"
-
 #include "Gaffer/Plug.h"
 #include "Gaffer/Node.h"
+#include "Gaffer/Metadata.h"
+
+#include "GafferUI/Nodule.h"
 
 using namespace GafferUI;
 using namespace Imath;
@@ -65,9 +66,19 @@ const Gaffer::Plug *Nodule::plug() const
 	return m_plug.get();
 }
 
-Nodule::CreatorMap &Nodule::creators()
+void Nodule::updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent )
 {
-	static CreatorMap m;
+}
+
+Nodule::TypeNameCreatorMap &Nodule::typeNameCreators()
+{
+	static TypeNameCreatorMap m;
+	return m;
+}
+
+Nodule::PlugCreatorMap &Nodule::plugCreators()
+{
+	static PlugCreatorMap m;
 	return m;
 }
 
@@ -79,6 +90,25 @@ Nodule::NamedCreatorMap &Nodule::namedCreators()
 
 NodulePtr Nodule::create( Gaffer::PlugPtr plug )
 {
+	IECore::ConstStringDataPtr noduleType = Gaffer::Metadata::plugValue<IECore::StringData>( plug.get(), "nodule:type" );
+	if( noduleType )
+	{
+		if( noduleType->readable() == "" )
+		{
+			return NULL;
+		}
+		const TypeNameCreatorMap &m = typeNameCreators();
+		TypeNameCreatorMap::const_iterator it = m.find( noduleType->readable() );
+		if( it != m.end() )
+		{
+			return it->second( plug );
+		}
+		else
+		{
+			IECore::msg( IECore::Msg::Warning, "Nodule::create", boost::format( "Nonexistent nodule type \"%s\" requested for plug \"%s\"" ) % noduleType->readable() % plug->fullName() );
+		}
+	}
+
 	const Gaffer::Node *node = plug->node();
 	if( node )
 	{
@@ -102,11 +132,11 @@ NodulePtr Nodule::create( Gaffer::PlugPtr plug )
 		}
 	}
 
-	CreatorMap &m = creators();
+	const PlugCreatorMap &m = plugCreators();
 	IECore::TypeId t = plug->typeId();
 	while( t!=IECore::InvalidTypeId )
 	{
-		CreatorMap::const_iterator it = m.find( t );
+		PlugCreatorMap::const_iterator it = m.find( t );
 		if( it!=m.end() )
 		{
 			return it->second( plug );
@@ -117,9 +147,13 @@ NodulePtr Nodule::create( Gaffer::PlugPtr plug )
 	return 0;
 }
 
-void Nodule::registerNodule( IECore::TypeId plugType, NoduleCreator creator )
+void Nodule::registerNodule( const std::string &noduleTypeName, NoduleCreator creator, IECore::TypeId plugType )
 {
-	creators()[plugType] = creator;
+	typeNameCreators()[noduleTypeName] = creator;
+	if( plugType != IECore::InvalidTypeId )
+	{
+		plugCreators()[plugType] = creator;
+	}
 }
 
 void Nodule::registerNodule( const IECore::TypeId nodeType, const std::string &plugPath, NoduleCreator creator )
@@ -136,10 +170,16 @@ std::string Nodule::getToolTip( const IECore::LineSegment3f &line ) const
 	}
 
 	result = m_plug->fullName();
-	Gaffer::NodePtr node = m_plug->ancestor<Gaffer::Node>();
-	if( node )
+	if( const Gaffer::Node *node = m_plug->node() )
 	{
 		result = m_plug->relativeName( node->parent<Gaffer::GraphComponent>() );
+	}
+
+	result = "<h3>" + result + "</h3>";
+	std::string description = Gaffer::Metadata::plugDescription( m_plug.get() );
+	if( description.size() )
+	{
+		result += "\n\n" + description;
 	}
 
 	return result;

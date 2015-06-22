@@ -40,6 +40,7 @@ import os
 import IECore
 import Gaffer
 import GafferUI
+import GafferCortexUI
 import GafferSceneUI # for alembic previews
 
 QtGui = GafferUI._qtImport( "QtGui" )
@@ -72,10 +73,11 @@ class browser( Gaffer.Application ) :
 		
 	def _run( self, args ) :
 	
-		self.root()["scripts"]["script1"] = Gaffer.ScriptNode()
+		scriptNode = Gaffer.ScriptNode()
+		self.root()["scripts"].addChild( scriptNode )
 		
 		with GafferUI.Window( "Gaffer Browser" ) as self.__window :
-			browser = GafferUI.BrowserEditor( self.root()["scripts"]["script1"] )
+			browser = GafferUI.BrowserEditor( scriptNode )
 		
 		if args["initialPath"].value :
 			initialPath = os.path.abspath( args["initialPath"].value )

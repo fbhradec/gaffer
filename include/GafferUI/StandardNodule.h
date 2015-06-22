@@ -38,6 +38,8 @@
 #ifndef GAFFERUI_STANDARDNODULE_H
 #define GAFFERUI_STANDARDNODULE_H
 
+#include "Gaffer/StringAlgo.h"
+
 #include "GafferUI/Nodule.h"
 
 namespace Gaffer
@@ -60,6 +62,8 @@ class StandardNodule : public Nodule
 
 		void setLabelVisible( bool labelVisible );
 		bool getLabelVisible() const;
+
+		virtual void updateDragEndPoint( const Imath::V3f position, const Imath::V3f &tangent );
 
 		virtual Imath::Box3f bound() const;
 
@@ -85,10 +89,15 @@ class StandardNodule : public Nodule
 
 	private :
 
+		void plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug );
+
+		bool updateUserColor();
+
 		bool m_labelVisible;
 		bool m_draggingConnection;
 		Imath::V3f m_dragPosition;
 		Imath::V3f m_dragTangent;
+		boost::optional<Imath::Color3f> m_userColor;
 
 		static NoduleTypeDescription<StandardNodule> g_noduleTypeDescription;
 

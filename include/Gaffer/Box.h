@@ -37,7 +37,7 @@
 #ifndef GAFFER_BOX_H
 #define GAFFER_BOX_H
 
-#include "Gaffer/DependencyNode.h"
+#include "Gaffer/SubGraph.h"
 
 namespace GafferBindings
 {
@@ -54,7 +54,7 @@ IE_CORE_FORWARDDECLARE( Set )
 
 /// A Box is simply a Node which is intended to hold other Nodes
 /// as children.
-class Box : public DependencyNode
+class Box : public SubGraph
 {
 
 	public :
@@ -62,28 +62,23 @@ class Box : public DependencyNode
 		Box( const std::string &name=defaultName<Box>() );
 		virtual ~Box();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Box, BoxTypeId, DependencyNode );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Box, BoxTypeId, SubGraph );
 
-		/// Returns true if it would be valid to call promotePlug( descendantPlug, asUserPlug ),
+		/// Returns true if it would be valid to call promotePlug( descendantPlug ),
 		/// and false otherwise.
-		bool canPromotePlug( const Plug *descendantPlug, bool asUserPlug = true ) const;
+		bool canPromotePlug( const Plug *descendantPlug ) const;
 		/// Promotes the internal descendantPlug so that it is represented
 		/// as an external plug on the Box. The descendantPlug must belong
 		/// to one of the nodes contained in the box.
 		/// Returns the newly created plug.
 		/// \undoable
-		/// \note If asUserPlug is true, then the external plug will be parented
-		/// under userPlug(), otherwise it will be parented directly to the Box.
-		/// The asUserPlug parameter will be removed in a future version, and
-		/// promoted plugs will always be parented directly under the Box -
-		/// see issue #801 for further information.
-		Plug *promotePlug( Plug *descendantPlug, bool asUserPlug = true );
+		Plug *promotePlug( Plug *descendantPlug );
 		/// Returns true if the descendantPlug has been promoted.
 		bool plugIsPromoted( const Plug *descendantPlug ) const;
 		/// Unpromotes a previously promoted plug, removing the
 		/// plug on the Box where possible.
 		/// \undoable
-		void unpromotePlug( Plug *promotedDescandantPlug );
+		void unpromotePlug( Plug *promotedDescendantPlug );
 
 		/// Exports the contents of the Box so that it can be referenced
 		/// by a Reference node.
@@ -94,27 +89,10 @@ class Box : public DependencyNode
 		/// \undoable
 		static BoxPtr create( Node *parent, const Set *childNodes );
 
-		/// Does nothing.
-		virtual void affects( const Plug *input, AffectedPlugsContainer &outputs ) const;
-
-		/// Returns getChild<BoolPlug>( "enabled" ). It is the user's
-		/// responsibility to create this plug if they need it - it is
-		/// not created automatically by the Box.
-		virtual BoolPlug *enabledPlug();
-		virtual const BoolPlug *enabledPlug() const;
-
-		/// Implemented to allow a user to define a pass-through behaviour
-		/// by wiring the box up appropriately. The input to the output
-		/// plug must be connected from a node inside the Box,
-		/// where that node itself has its enabled plug driven
-		/// by the box's enabled plug, and the correspondingInput for the
-		/// node comes from one of the inputs to the box.
-		virtual Plug *correspondingInput( const Plug *output );
-		virtual const Plug *correspondingInput( const Plug *output ) const;
-
 	private :
 
-		bool validatePromotability( const Plug *descendantPlug, bool asUserPlug, bool throwExceptions, bool childPlug = false ) const;
+		bool validatePromotability( const Plug *descendantPlug, bool throwExceptions, bool childPlug = false ) const;
+		static void copyMetadata( const Plug *from, Plug *to );
 
 };
 

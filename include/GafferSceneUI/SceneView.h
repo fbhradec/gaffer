@@ -39,17 +39,31 @@
 #define GAFFERSCENEUI_SCENEVIEW_H
 
 #include "GafferUI/View3D.h"
-#include "GafferUI/RenderableGadget.h"
 
 #include "GafferScene/ScenePlug.h"
 #include "GafferScene/PathMatcherData.h"
 #include "GafferScene/PathFilter.h"
 
 #include "GafferSceneUI/TypeIds.h"
+#include "GafferSceneUI/SceneGadget.h"
+
+namespace GafferScene
+{
+
+IE_CORE_FORWARDDECLARE( SceneProcessor )
+
+} // namespace GafferScene
 
 namespace GafferSceneUI
 {
 
+/// \todo As we add more features to the View classes, they're feeling a
+/// bit monolithic, and not in the modular "plug it together how you like"
+/// spirit of the rest of Gaffer. Internally the various features are implemented
+/// as their own little classes though, so perhaps it would make sense to expose
+/// these in the public API as optional "bolt on" components that applications can
+/// use as they see fit. If we do this, we need to consider how these relate to
+/// Tools, which could also be seen as viewer components.
 class SceneView : public GafferUI::View3D
 {
 
@@ -66,12 +80,6 @@ class SceneView : public GafferUI::View3D
 		Gaffer::CompoundPlug *lookThroughPlug();
 		const Gaffer::CompoundPlug *lookThroughPlug() const;
 
-		Gaffer::BoolPlug *lookThroughEnabledPlug();
-		const Gaffer::BoolPlug *lookThroughEnabledPlug() const;
-
-		Gaffer::StringPlug *lookThroughCameraPlug();
-		const Gaffer::StringPlug *lookThroughCameraPlug() const;
-
 		Gaffer::CompoundPlug *gridPlug();
 		const Gaffer::CompoundPlug *gridPlug() const;
 
@@ -81,10 +89,24 @@ class SceneView : public GafferUI::View3D
 		void expandSelection( size_t depth = 1 );
 		void collapseSelection();
 
+		virtual void setContext( Gaffer::ContextPtr context );
+
+		/// If the view is locked to a particular camera,
+		/// this returns the bound of the resolution gate
+		/// in raster space - this can be useful when
+		/// drawing additional overlays. If the view is not
+		/// locked to a particular camera then returns an
+		/// empty bound.
+		const Imath::Box2f &resolutionGate() const;
+
+		typedef boost::function<GafferScene::SceneProcessorPtr ()> ShadingModeCreator;
+
+		static void registerShadingMode( const std::string &name, ShadingModeCreator );
+		static void registeredShadingModes( std::vector<std::string> &names );
+
 	protected :
 
 		virtual void contextChanged( const IECore::InternedString &name );
-		virtual void update();
 		virtual Imath::Box3f framingBound() const;
 
 	private :
@@ -93,27 +115,28 @@ class SceneView : public GafferUI::View3D
 		GafferScene::PathFilter *hideFilter();
 		const GafferScene::PathFilter *hideFilter() const;
 
-		void selectionChanged( GafferUI::RenderableGadgetPtr renderableGadget );
 		bool keyPress( GafferUI::GadgetPtr gadget, const GafferUI::KeyEvent &event );
 		void transferSelectionToContext();
 		void plugSet( Gaffer::Plug *plug );
 
 		GafferScene::PathMatcherData *expandedPaths();
 		// Returns true if the expansion or selection were modified, false otherwise.
-		bool expandWalk( const std::string &path, size_t depth, GafferScene::PathMatcher &expanded, GafferUI::RenderableGadget::Selection &selected );
-
-		void updateLookThrough();
+		bool expandWalk( const GafferScene::ScenePlug::ScenePath &path, size_t depth, GafferScene::PathMatcher &expanded, GafferScene::PathMatcher &selected );
 
 		boost::signals::scoped_connection m_selectionChangedConnection;
 
 		void baseStateChanged();
 
-		GafferUI::RenderableGadgetPtr m_renderableGadget;
+		SceneGadgetPtr m_sceneGadget;
 
+		class LookThrough;
+		boost::shared_ptr<LookThrough> m_lookThrough;
 		class Grid;
 		boost::shared_ptr<Grid> m_grid;
 		class Gnomon;
 		boost::shared_ptr<Gnomon> m_gnomon;
+		class ShadingMode;
+		boost::shared_ptr<ShadingMode> m_shadingMode;
 
 		static size_t g_firstPlugIndex;
 		static ViewDescription<SceneView> g_viewDescription;

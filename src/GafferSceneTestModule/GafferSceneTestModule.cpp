@@ -45,14 +45,16 @@
 #include "GafferSceneTest/TraverseScene.h"
 #include "GafferSceneTest/TestShader.h"
 #include "GafferSceneTest/TestLight.h"
+#include "GafferSceneTest/ScenePlugTest.h"
+#include "GafferSceneTest/PathMatcherTest.h"
 
 using namespace boost::python;
 using namespace GafferSceneTest;
 
-static void traverseSceneWrapper( GafferScene::ScenePlug *scenePlug, Gaffer::Context *context )
+static void traverseSceneWrapper( GafferScene::ScenePlug *scenePlug )
 {
 	IECorePython::ScopedGILRelease gilRelease;
-	traverseScene( scenePlug, context );
+	traverseScene( scenePlug );
 }
 
 BOOST_PYTHON_MODULE( _GafferSceneTest )
@@ -63,5 +65,9 @@ BOOST_PYTHON_MODULE( _GafferSceneTest )
 	GafferBindings::NodeClass<TestLight>();
 
 	def( "traverseScene", &traverseSceneWrapper );
+	def( "testManyStringToPathCalls", &testManyStringToPathCalls );
+
+	def( "testPathMatcherRawIterator", &testPathMatcherRawIterator );
+	def( "testPathMatcherIteratorPrune", &testPathMatcherIteratorPrune );
 
 }

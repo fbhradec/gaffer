@@ -35,28 +35,44 @@
 ##########################################################################
 
 import os
-import fnmatch
 import string
 
 import IECore
 
+import Gaffer
+import GafferUI
 import GafferImage
 import GafferScene
 
-import GafferUI
-
 ##########################################################################
-# Nodules
+# Metadata
 ##########################################################################
 
-def __parameterNoduleCreator( plug ) :
+Gaffer.Metadata.registerNode(
 
-	if isinstance( plug, ( GafferImage.ImagePlug ) ) :
-		return GafferUI.StandardNodule( plug )
+	GafferScene.OpenGLShader,
 
-	return None
+	"description",
+	"""
+	Loads GLSL shaders for use in the viewer and the OpenGLRender node.
+	GLSL shaders are loaded from *.frag and *.vert files in directories
+	specified by the IECOREGL_SHADER_PATH environment variable.
 
-GafferUI.Nodule.registerNodule( GafferScene.OpenGLShader, fnmatch.translate( "parameters.*" ), __parameterNoduleCreator )
+	Use the ShaderAssignment node to assign shaders to objects in the
+	scene.
+	""",
+
+	plugs = {
+
+		"parameters.*" : [
+
+			"nodule:type", lambda plug : "GafferUI::StandardNodule" if isinstance( plug, GafferImage.ImagePlug ) else ""
+
+		],
+
+	},
+
+)
 
 ##########################################################################
 # Shader menu
@@ -65,7 +81,7 @@ GafferUI.Nodule.registerNodule( GafferScene.OpenGLShader, fnmatch.translate( "pa
 def __shaderCreator( shaderName ) :
 
 	nodeName = os.path.split( shaderName )[-1]
-	nodeName = IECore.CamelCase.toSpaced( nodeName.translate( string.maketrans( ".-", "__" ) ) )
+	nodeName = nodeName.translate( string.maketrans( ".-", "__" ) )
 
 	node = GafferScene.OpenGLShader( nodeName )
 	node.loadShader( shaderName )

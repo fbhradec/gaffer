@@ -82,7 +82,7 @@ class Gadget : public Gaffer::GraphComponent
 		/// Returns the Gadget with the specified name, where name has been retrieved
 		/// from an IECoreGL::HitRecord after rendering some Gadget in GL_SELECT mode.
 		/// \todo Consider better mechanisms.
-		static GadgetPtr select( const std::string &name );
+		static GadgetPtr select( GLuint id );
 
 		/// @name Parent-child relationships
 		////////////////////////////////////////////////////////////////////
@@ -248,7 +248,20 @@ class Gadget : public Gaffer::GraphComponent
 		static IdleSignal &idleSignal();
 		//@}
 
+		typedef boost::function<void ()> UIThreadFunction;
+		/// Arranges for the specified function to be run on the main UI thread.
+		/// Note that this is run asynchronously at some point in the future. If
+		/// using boost::bind() to pass a member function here, you _must_
+		/// guarantee that the class instance will still be alive when the
+		/// member function is called. Typically this means using a smart pointer
+		/// to hold `this`.
+		static void executeOnUIThread( UIThreadFunction function );
+
 	protected :
+
+		/// Emits renderRequestSignal() as necessary for this and all ancestors.
+		/// Use this rather than emit the signal manually.
+		void requestRender();
 
 		/// The subclass specific part of render(). The public render() method
 		/// sets the GL state up with the name attribute and transform for
@@ -259,9 +272,7 @@ class Gadget : public Gaffer::GraphComponent
 	private :
 
 		void styleChanged();
-		void childAdded( GraphComponent *parent, GraphComponent *child );
-		void childRemoved( GraphComponent *parent, GraphComponent *child );
-		void childRenderRequest( Gadget *child );
+		void parentChanged( GraphComponent *child, GraphComponent *oldParent );
 
 		ConstStylePtr m_style;
 
@@ -300,7 +311,14 @@ class Gadget : public Gaffer::GraphComponent
 		// when absolutely necessary (when slots are connected).
 		static IdleSignal &idleSignalAccessedSignal();
 		friend void GafferUIBindings::bindGadget();
-
+		// Used to implement executeOnUIThread(). When Gadget::executeOnUIThread()
+		// is called, it emits this signal to request that EventLoop.py arranges
+		// to call the passed function on the UI thread.
+		/// \todo I suspect that soon we'll have a Qt dependency in the C++
+		/// half of GafferUI, at which point it'd make more sense to implement
+		/// EventLoop in C++ rather than to implement this in such an awkward way.
+		typedef boost::signal<void ( UIThreadFunction )> ExecuteOnUIThreadSignal;
+		static ExecuteOnUIThreadSignal &executeOnUIThreadSignal();
 };
 
 typedef Gaffer::FilteredChildIterator<Gaffer::TypePredicate<Gadget> > GadgetIterator;

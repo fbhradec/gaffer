@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2013-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -57,6 +57,7 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 			horizontalAlignment = horizontalAlignment,
 			verticalAlignment = verticalAlignment,
 		)
+		self.__label._qtWidget().setObjectName( "gafferPlugLabel" )
 		layout.addWidget( self.__label._qtWidget() )
 
 		self.__editableLabel = None # we'll make this lazily as needed
@@ -86,14 +87,7 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 		if label is not None :
 			self.__label.setText( label )
 
-		# if the plug is a user plug, then set things up so it can be renamed
-		# by double clicking on the label. currently we only accept plugs immediately
-		# parented to the user plug, so as to avoid allowing the renaming of child
-		# plugs inside SplinePlugs and the like, where plug names have specific meanings.
-		if plug is not None and plug.node()["user"].isSame( plug.parent() ) :
-			self.__labelDoubleClickConnection = self.__label.buttonDoubleClickSignal().connect( Gaffer.WeakMethod( self.__labelDoubleClicked ) )
-		else :
-			self.__labelDoubleClickConnection = None
+		self.__updateDoubleClickConnection()
 
 	def setHighlighted( self, highlighted ) :
 
@@ -116,10 +110,36 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def _updateFromPlug( self ) :
 
+		plug = self.getPlug()
+
 		self.__label.setEnabled(
-			self.getPlug() is not None and
-			not self.getPlug().getFlags( Gaffer.Plug.Flags.ReadOnly )
+			plug is not None and
+			not plug.getFlags( Gaffer.Plug.Flags.ReadOnly )
 		)
+
+		valueChanged = plug.getInput() is not None
+		if not valueChanged and isinstance( plug, Gaffer.ValuePlug ) :
+			if Gaffer.NodeAlgo.hasUserDefault( plug ) :
+				valueChanged = valueChanged or not Gaffer.NodeAlgo.isSetToUserDefault( plug )
+			else :
+				valueChanged = valueChanged or not plug.isSetToDefault()
+		self.__setValueChanged( valueChanged )
+
+	# Sets whether or not the label be rendered in a ValueChanged state.
+	def __setValueChanged( self, valueChanged ) :
+
+		if valueChanged == self.__getValueChanged() :
+			return
+
+		self.__label._qtWidget().setProperty( "gafferValueChanged", GafferUI._Variant.toVariant( valueChanged ) )
+		self.__label._repolish()
+
+	def __getValueChanged( self ) :
+
+		if "gafferValueChanged" not in self.__label._qtWidget().dynamicPropertyNames() :
+			return False
+
+		return GafferUI._Variant.fromVariant( self.__label._qtWidget().property( "gafferValueChanged" ) )
 
 	def __dragBegin( self, widget, event ) :
 
@@ -143,6 +163,24 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 	def __dragEnd( self, widget, event ) :
 
 		GafferUI.Pointer.setCurrent( None )
+
+	def __updateDoubleClickConnection( self ) :
+
+		# If the plug is a user plug or the child of a box, then set things up so it can be
+		# renamed by double clicking on the label. Currently we only accept plugs immediately
+		# parented to the user plug, so as to avoid allowing the renaming of child plugs inside
+		# SplinePlugs and the like, where plug names have specific meanings.
+
+		self.__labelDoubleClickConnection = None
+
+		if self.getPlug() is None :
+			return
+
+		if not isinstance( self.getPlug().node(), Gaffer.Box ) :
+			if not self.getPlug().node()["user"].isSame( self.getPlug().parent() ) :
+				return
+
+		self.__labelDoubleClickConnection = self.__label.buttonDoubleClickSignal().connect( Gaffer.WeakMethod( self.__labelDoubleClicked ) )
 
 	def __labelDoubleClicked( self, label, event ) :
 

@@ -41,8 +41,6 @@
 
 #include "IECore/MessageHandler.h"
 
-#include "IECorePython/Wrapper.h"
-#include "IECorePython/RunTimeTypedBinding.h"
 #include "IECorePython/ScopedGILLock.h"
 #include "IECorePython/ScopedGILRelease.h"
 
@@ -51,6 +49,7 @@
 #include "Gaffer/ApplicationRoot.h"
 #include "Gaffer/StandardSet.h"
 #include "Gaffer/CompoundDataPlug.h"
+#include "Gaffer/StringPlug.h"
 
 #include "GafferBindings/ScriptNodeBinding.h"
 #include "GafferBindings/SignalBinding.h"
@@ -120,7 +119,16 @@ class ScriptNodeWrapper : public NodeWrapper<ScriptNode>
 			bool result = false;
 			if( !continueOnError )
 			{
-				exec( pythonScript.c_str(), e, e );
+				try
+				{
+					exec( pythonScript.c_str(), e, e );
+				}
+				catch( boost::python::error_already_set &e )
+				{
+					int lineNumber = 0;
+					std::string message = formatPythonException( /* withTraceback = */ false, &lineNumber );
+					throw IECore::Exception( boost::str( boost::format( "Line %d : %s" ) % lineNumber % message ) );
+				}
 			}
 			else
 			{
@@ -445,11 +453,11 @@ void GafferBindings::bindScriptNode()
 		.def( "context", &context )
 	;
 
-	SignalBinder<ScriptNode::ActionSignal, DefaultSignalCaller<ScriptNode::ActionSignal>, ActionSlotCaller>::bind( "ActionSignal" );
-	SignalBinder<ScriptNode::UndoAddedSignal, DefaultSignalCaller<ScriptNode::UndoAddedSignal>, UndoAddedSlotCaller>::bind( "UndoAddedSignal" );
+	SignalClass<ScriptNode::ActionSignal, DefaultSignalCaller<ScriptNode::ActionSignal>, ActionSlotCaller>( "ActionSignal" );
+	SignalClass<ScriptNode::UndoAddedSignal, DefaultSignalCaller<ScriptNode::UndoAddedSignal>, UndoAddedSlotCaller>( "UndoAddedSignal" );
 
-	SignalBinder<ScriptNode::ScriptExecutedSignal>::bind( "ScriptExecutedSignal" );
-	SignalBinder<ScriptNode::ScriptEvaluatedSignal, DefaultSignalCaller<ScriptNode::ScriptEvaluatedSignal>, ScriptEvaluatedSlotCaller>::bind( "ScriptEvaluatedSignal" );
+	SignalClass<ScriptNode::ScriptExecutedSignal>( "ScriptExecutedSignal" );
+	SignalClass<ScriptNode::ScriptEvaluatedSignal, DefaultSignalCaller<ScriptNode::ScriptEvaluatedSignal>, ScriptEvaluatedSlotCaller>( "ScriptEvaluatedSignal" );
 
 	Serialisation::registerSerialiser( ScriptNode::staticTypeId(), new ScriptNodeSerialiser );
 

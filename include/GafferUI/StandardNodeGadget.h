@@ -38,6 +38,8 @@
 #ifndef GAFFERUI_STANDARDNODEGADGET_H
 #define GAFFERUI_STANDARDNODEGADGET_H
 
+#include "Gaffer/StringAlgo.h"
+
 #include "GafferUI/NodeGadget.h"
 #include "GafferUI/LinearContainer.h"
 
@@ -46,11 +48,15 @@ namespace GafferUI
 
 /// The standard means of representing a Node in a GraphGadget.
 /// Nodes are represented as rectangular boxes with the name displayed
-/// centrally and the nodules arranged at the sides. The orientation
-/// argument to the constructor is used to determine whether the direction
-/// of flow is left->right or top->bottom, and in addition nodules may be
-/// positioned arbitrarily using a "nodeGadget:nodulePosition" Metadata entry
-/// with a value of "left", "right", "top" or "bottom".
+/// centrally and the nodules arranged at the sides. Supports the following
+/// Metadata entries :
+///
+/// - "nodeGadget:nodulePosition" : a plug entry with a value of
+/// "left", "right", "top" or "bottom"
+/// - "nodeGadget:minimumWidth" : a node entry with a float value
+/// - "nodeGadget:horizontalNoduleSpacing" : a node entry with a float value
+/// - "nodeGadget:verticalNoduleSpacing" : a node entry with a float value
+/// - "nodeGadget:padding" : a node entry with a float value
 class StandardNodeGadget : public NodeGadget
 {
 
@@ -58,6 +64,19 @@ class StandardNodeGadget : public NodeGadget
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::StandardNodeGadget, StandardNodeGadgetTypeId, NodeGadget );
 
+		enum Edge
+		{
+			TopEdge,
+			BottomEdge,
+			LeftEdge,
+			RightEdge,
+			FirstEdge = TopEdge,
+			LastEdge = RightEdge,
+			NumEdges,
+			InvalidEdge
+		};
+
+		/// \todo Remove orientation parameter - Metadata can do everything it can do.
 		StandardNodeGadget( Gaffer::NodePtr node, LinearContainer::Orientation orientation=LinearContainer::X );
 		virtual ~StandardNodeGadget();
 
@@ -71,30 +90,28 @@ class StandardNodeGadget : public NodeGadget
 		void setContents( GadgetPtr contents );
 		Gadget *getContents();
 		const Gadget *getContents() const;
+		/// Additional Gadgets can be placed alongside the
+		/// Nodules at the end of each outside edge.
+		/// Initially these are SpacerGadgets, but they can
+		/// be replaced with anything.
+		void setEdgeGadget( Edge edge, GadgetPtr gadget );
+		Gadget *getEdgeGadget( Edge edge );
+		const Gadget *getEdgeGadget( Edge edge ) const;
 
 		void setLabelsVisibleOnHover( bool labelsVisible );
 		bool getLabelsVisibleOnHover() const;
 
-		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
 		virtual Imath::Box3f bound() const;
 
 	protected :
 
 		virtual void doRender( const Style *style ) const;
 
+		const Imath::Color3f *userColor() const;
+
 	private :
 
-		NodulePtr addNodule( Gaffer::PlugPtr plug );
-
-		enum Edge
-		{
-			TopEdge,
-			BottomEdge,
-			LeftEdge,
-			RightEdge,
-			FirstEdge = TopEdge,
-			LastEdge = RightEdge
-		};
+		Edge plugEdge( const Gaffer::Plug *plug );
 
 		LinearContainer *noduleContainer( Edge edge );
 		const LinearContainer *noduleContainer( Edge edge ) const;
@@ -104,7 +121,14 @@ class StandardNodeGadget : public NodeGadget
 
 		static NodeGadgetTypeDescription<StandardNodeGadget> g_nodeGadgetTypeDescription;
 
-		typedef std::map<const Gaffer::Plug *, Nodule *> NoduleMap;
+		struct TypeAndNodule
+		{
+			TypeAndNodule() {}
+			TypeAndNodule( IECore::InternedString type, NodulePtr nodule ) : type( type ), nodule( nodule ) {}
+			IECore::InternedString type;
+			NodulePtr nodule;
+		};
+		typedef std::map<const Gaffer::Plug *, TypeAndNodule> NoduleMap;
 		NoduleMap m_nodules;
 
 		void childAdded( Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child );
@@ -122,12 +146,26 @@ class StandardNodeGadget : public NodeGadget
 		Nodule *closestCompatibleNodule( const DragDropEvent &event );
 		bool noduleIsCompatible( const Nodule *nodule, const DragDropEvent &event );
 
+		void plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug );
+		void nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore::InternedString key, const Gaffer::Node *node );
+
+		Nodule *updateNodule( Gaffer::Plug *plug );
+		void updateNoduleLayout();
+		bool updateUserColor();
+		void updatePadding();
+
+		IE_CORE_FORWARDDECLARE( ErrorGadget );
+		ErrorGadget *errorGadget( bool createIfMissing = true );
+		void error( const Gaffer::Plug *plug, const Gaffer::Plug *source, const std::string &message );
+		void displayError( Gaffer::ConstPlugPtr plug, const std::string &message );
+
 		const LinearContainer::Orientation m_orientation;
 		bool m_nodeEnabled;
 		bool m_labelsVisibleOnHover;
 		// we accept drags from nodules and forward them to the
 		// closest compatible child nodule - m_dragDestinationProxy.
 		Nodule *m_dragDestinationProxy;
+		boost::optional<Imath::Color3f> m_userColor;
 
 };
 

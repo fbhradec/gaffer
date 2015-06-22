@@ -69,9 +69,18 @@ class Filter : public Gaffer::ComputeNode
 		Filter( const std::string &name=defaultName<Filter>() );
 		virtual ~Filter();
 
+		virtual Gaffer::BoolPlug *enabledPlug();
+		virtual const Gaffer::BoolPlug *enabledPlug() const;
+
+		Gaffer::IntPlug *outPlug();
+		const Gaffer::IntPlug *outPlug() const;
+
+		/// \deprecated Use outPlug() instead - it returns the
+		/// same thing.
 		Gaffer::IntPlug *matchPlug();
 		const Gaffer::IntPlug *matchPlug() const;
 
+		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 		virtual bool sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const;
 
 		/// Because a single filter may be used with many different input scenes,
@@ -82,12 +91,14 @@ class Filter : public Gaffer::ComputeNode
 		static void setInputScene( Gaffer::Context *context, const ScenePlug *scenePlug );
 		/// Returns an input scene previously stored with setInputScene().
 		static const ScenePlug *getInputScene( const Gaffer::Context *context );
+		/// The name of the variable used to specify the input scene.
+		static const IECore::InternedString inputSceneContextName;
 
 	protected :
 
-		/// Implemented to call hashMatch() below when computing the hash for matchPlug().
+		/// Implemented to call hashMatch() below when computing the hash for outPlug().
 		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		/// Implemented to call computeMatch() below when computing the value of matchPlug().
+		/// Implemented to call computeMatch() below when computing the value of outPlug().
 		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
 
 		/// Must be implemented by derived classes.
@@ -95,8 +106,6 @@ class Filter : public Gaffer::ComputeNode
 		virtual unsigned computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const = 0;
 
 	private :
-
-		static const IECore::InternedString g_inputSceneContextName;
 
 		static size_t g_firstPlugIndex;
 

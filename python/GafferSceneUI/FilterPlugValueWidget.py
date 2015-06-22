@@ -46,7 +46,7 @@ class FilterPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, **kw ) :
 
-		self.__column = GafferUI.ListContainer()
+		self.__column = GafferUI.ListContainer( spacing = 8 )
 		GafferUI.PlugValueWidget.__init__( self, self.__column, plug, **kw )
 
 		row = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 )
@@ -99,7 +99,7 @@ class FilterPlugValueWidget( GafferUI.PlugValueWidget ) :
 			if len( self.__column ) > 1 :
 				filterNodeUI = self.__column[1]
 			if filterNodeUI is None or not filterNodeUI.node().isSame( filterNode ) :
-				filterNodeUI = GafferUI.StandardNodeUI( filterNode, displayMode = GafferUI.StandardNodeUI.DisplayMode.Bare )
+				filterNodeUI = GafferUI.NodeUI.create( filterNode )
 			if len( self.__column ) > 1 :
 				self.__column[1] = filterNodeUI
 			else :
@@ -124,22 +124,15 @@ class FilterPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		with Gaffer.UndoContext( self.getPlug().node().scriptNode() ) :
 			self.getPlug().node().parent().addChild( filterNode )
-			self.getPlug().setInput( filterNode["match"] )
+			self.getPlug().setInput( filterNode["out"] )
 
 		# position the node appropriately.
-		## \todo In an ideal world the GraphGadget would do this
-		# without prompting.
 		scriptWindow = self.ancestor( GafferUI.ScriptWindow )
 		if scriptWindow is not None :
 			nodeGraphs = scriptWindow.getLayout().editors( GafferUI.NodeGraph )
 			if nodeGraphs :
 				graphGadget = nodeGraphs[0].graphGadget()
 				graphGadget.getLayout().positionNode( graphGadget, filterNode )
-
-	def __linkFilter( self ) :
-
-		## \todo Implement browsing to other nodes with existing filters
-		pass
 
 	def __menuDefinition( self ) :
 
@@ -150,10 +143,25 @@ class FilterPlugValueWidget( GafferUI.PlugValueWidget ) :
 			result.append( "/Remove", { "command" : Gaffer.WeakMethod( self.__removeFilter ) } )
 			result.append( "/RemoveDivider", { "divider" : True } )
 
-		for filterType in GafferScene.Filter.__subclasses__() :
+		for filterType in self.__filterTypes() :
 			result.append( "/" + filterType.staticTypeName().rpartition( ":" )[2], { "command" : IECore.curry( Gaffer.WeakMethod( self.__addFilter ), filterType ) } )
 
-		result.append( "/AddDivider", { "divider" : True } )
-		result.append( "/Link...", { "command" : Gaffer.WeakMethod( self.__linkFilter ), "active" : False } )
-
 		return result
+
+	@staticmethod
+	def __filterTypes() :
+	
+		def walk( f ) :
+		
+			result = []
+			
+			subClasses = f.__subclasses__()
+			if not len( subClasses ) :
+				result.append( f )
+			else :
+				for s in subClasses :
+					result += walk( s )
+					
+			return result
+		
+		return walk( GafferScene.Filter )

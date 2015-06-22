@@ -232,6 +232,45 @@ class ValuePlugTest( GafferTest.TestCase ) :
 
 		self.assertTrue( "[\"f\"].setValue" in s.serialise() )
 
+	def testCreateCounterpart( self ) :
+
+		p = Gaffer.ValuePlug()
+		p["i"] = Gaffer.IntPlug()
+		p["f"] = Gaffer.FloatPlug()
+
+		p2 = p.createCounterpart( "p2", Gaffer.Plug.Direction.In )
+		self.assertEqual( p2.keys(), [ "i", "f" ] )
+		self.assertTrue( isinstance( p2["i"], Gaffer.IntPlug ) )
+		self.assertTrue( isinstance( p2["f"], Gaffer.FloatPlug ) )
+		self.assertTrue( isinstance( p2, Gaffer.ValuePlug ) )
+
+	def testPrecomputedHashOptimisation( self ) :
+
+		n = GafferTest.CachingTestNode()
+		n["in"].setValue( "a" )
+
+		a1 = n["out"].getValue( _copy = False )
+		self.assertEqual( a1, IECore.StringData( "a" ) )
+		self.assertEqual( n.numHashCalls, 1 )
+
+		# We apply some leeway in our test for how many hash calls are
+		# made - a good ValuePlug implementation will probably avoid
+		# unecessary repeated calls in most cases, but it's not
+		# what this unit test is about.
+		a2 = n["out"].getValue( _copy = False )
+		self.assertTrue( a2.isSame( a1 ) )
+		self.assertTrue( n.numHashCalls == 1 or n.numHashCalls == 2 )
+
+		h = n["out"].hash()
+		self.assertTrue( n.numHashCalls >= 1 and n.numHashCalls <= 3 )
+		numHashCalls = n.numHashCalls
+
+		# What we care about is that calling getValue() with a precomputed hash
+		# definitely doesn't recompute the hash again.
+		a3 = n["out"].getValue( _copy = False, _precomputedHash = h )
+		self.assertEqual( n.numHashCalls, numHashCalls )
+		self.assertTrue( a3.isSame( a1 ) )
+
 	def setUp( self ) :
 
 		self.__originalCacheMemoryLimit = Gaffer.ValuePlug.getCacheMemoryLimit()

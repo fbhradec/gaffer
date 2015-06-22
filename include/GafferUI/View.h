@@ -80,7 +80,12 @@ class View : public Gaffer::Node
 		/// The Context in which the View should operate.
 		Gaffer::Context *getContext();
 		const Gaffer::Context *getContext() const;
-		void setContext( Gaffer::ContextPtr context );
+		/// May be overridden by derived classes to perform
+		/// additional work, but they _must_ call the base
+		/// class implementation.
+		virtual void setContext( Gaffer::ContextPtr context );
+		/// Signal emitted by setContext().
+		UnarySignal &contextChangedSignal();
 
 		/// Subclasses are responsible for presenting their content in this viewport.
 		ViewportGadget *viewportGadget();
@@ -119,6 +124,10 @@ class View : public Gaffer::Node
 		/// internally to the view. A preprocessor must have an "in" plug
 		/// which will get it's input from inPlug(), and an "out" plug
 		/// which will be returned by preprocessedInPlug().
+		/// \todo Having just one preprocessor is pretty limiting. If we
+		/// allowed chains of preprocessors, and made the API public, then
+		/// we could make Views in a more modular manner, adding components
+		/// (each with their own preprocessors) to build up the view.
 		void setPreprocessor( Gaffer::NodePtr preprocessor );
 		/// Returns the node used for preprocessing, or 0 if no such
 		/// node has been specified (or if it is not of type T).
@@ -151,8 +160,12 @@ class View : public Gaffer::Node
 		/// See notes in Viewer.__updateRequest explaining why it's necessary for the
 		/// Viewer to be responsible for calling this rather than have the View
 		/// do it itself.
+		/// \todo Phase out this mechanism - it is just a nasty workaround for GIL
+		/// problems which we should now have addressed. Refactor the View classes
+		/// to manage their own updates. SceneView/SceneGadget provide a reasonable
+		/// model for how to do this.
 		/// \see View::updateRequestSignal().
-		virtual void update() = 0;
+		virtual void update();
 
 		/// May be overridden by derived classes to control the region that is framed
 		/// when "F" is pressed.
@@ -170,6 +183,7 @@ class View : public Gaffer::Node
 
 		ViewportGadgetPtr m_viewportGadget;
 		Gaffer::ContextPtr m_context;
+		UnarySignal m_contextChangedSignal;
 		UnarySignal m_updateRequestSignal;
 		boost::signals::scoped_connection m_contextChangedConnection;
 		boost::signals::scoped_connection m_preprocessorPlugDirtiedConnection;

@@ -36,14 +36,16 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/python.hpp"
+#include "boost/signals.hpp"
 
 #include "IECorePython/ScopedGILLock.h"
 
 #include "GafferBindings/SignalBinding.h"
 
 using namespace boost::python;
+using namespace GafferBindings;
 
-namespace GafferBindings
+namespace
 {
 
 // A wrapper class presenting the boost::signal::slot_call_iterator
@@ -133,18 +135,18 @@ struct PythonResultCombiner
 };
 
 template<typename Signal>
-static Signal *construct( object combiner )
+Signal *construct( object combiner )
 {
 	return new Signal( PythonResultCombiner( combiner ) );
 }
 
 template<typename Signal>
-static void bind( const char *name )
+void bind( const char *name )
 {
 
-	// bind using the standard SignalBinder, and add a constructor allowing a custom
+	// bind using the standard SignalClass, and add a constructor allowing a custom
 	// result combiner to be passed.
-	scope s = SignalBinder<Signal>::bind( name )
+	scope s = SignalClass<Signal>( name )
 		.def( "__init__", make_constructor( &construct<Signal>, default_call_policies() ) )
 	;
 
@@ -156,6 +158,68 @@ static void bind( const char *name )
 	;
 
 }
+
+// If a boost::signal has a return type of void, it gets converted
+// to a return type of boost::signals::detail::unusable. We register
+// this converter so that we can accept a None return from a python
+// slot where boost::signals::detail::unusable is expected.
+struct UnusableFromNone
+{
+
+	UnusableFromNone()
+	{
+		boost::python::converter::registry::push_back(
+			&convertible,
+			&construct,
+			boost::python::type_id<boost::signals::detail::unusable>()
+		);
+	}
+
+	static void *convertible( PyObject *obj )
+	{
+		return obj == Py_None ? obj : NULL;
+	}
+
+	static void construct( PyObject *obj, boost::python::converter::rvalue_from_python_stage1_data *data )
+	{
+		void *storage = (( converter::rvalue_from_python_storage<boost::signals::detail::unusable>* ) data )->storage.bytes;
+		boost::signals::detail::unusable *unusable = new( storage ) boost::signals::detail::unusable();
+		data->convertible = unusable;
+	}
+
+};
+
+} // namespace
+
+namespace GafferBindings
+{
+
+namespace Detail
+{
+
+boost::python::object pythonConnection( const boost::signals::connection &connection, bool scoped )
+{
+	if( scoped )
+	{
+		// Simply returning `object( scoped_connection( connection ) )`
+		// doesn't work - somehow the scoped_connection dies and the
+		// connection is disconnected before we get into python. So
+		// we construct via the python-bound copy constructor which
+		// avoids the problem.
+		PyTypeObject *type = boost::python::converter::registry::query(
+			boost::python::type_info( typeid( boost::signals::scoped_connection ) )
+		)->get_class_object();
+
+		boost::python::object oType( boost::python::handle<>( boost::python::borrowed( type ) ) );
+		return oType( boost::python::object( connection ) );
+	}
+	else
+	{
+		return boost::python::object( connection );
+	}
+}
+
+} // namespace Detail
 
 void bindSignal()
 {
@@ -169,6 +233,8 @@ void bindSignal()
 	bind<Signal1>( "Signal1" );
 	bind<Signal2>( "Signal2" );
 	bind<Signal3>( "Signal3" );
+
+	UnusableFromNone();
 
 }
 

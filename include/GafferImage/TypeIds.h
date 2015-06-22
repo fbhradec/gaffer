@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2012, John Haddon. All rights reserved.
-//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2013-2015, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -57,9 +57,9 @@ enum TypeId
 	FormatPlugTypeId = 110761,
 	MergeTypeId = 110762,
 	GradeTypeId = 110763,
-	FilterProcessorTypeId = 110764,
+	FilterProcessorTypeId = 110764, // obsolete, available for reuse
 	ConstantTypeId = 110765,
-	SelectTypeId = 110766,
+	SelectTypeId = 110766, // obsolete, available for reuse
 	ChannelMaskPlugTypeId = 110767,
 	ReformatTypeId = 110768,
 	FilterPlugTypeId = 110769,
@@ -78,7 +78,7 @@ enum TypeId
 	LanczosFilterTypeId = 110782,
 	ImageStatsTypeId = 110783,
 	ImageTransformImplementationTypeId = 110784,
-	RemoveChannelsTypeId = 110785,
+	DeleteChannelsTypeId = 110785,
 	ColorProcessorTypeId = 110786,
 	ClampTypeId = 110787,
 	ImageMixinBaseTypeId = 110788,
@@ -87,6 +87,10 @@ enum TypeId
 	ImageContextVariablesTypeId = 110791,
 	ImageSwitchTypeId = 110792,
 	ImageSamplerTypeId = 110793,
+	MetadataProcessorTypeId = 110794,
+	ImageMetadataTypeId = 110795,
+	DeleteImageMetadataTypeId = 110796,
+	CopyImageMetadataTypeId = 110797,
 
 	LastTypeId = 110849
 };

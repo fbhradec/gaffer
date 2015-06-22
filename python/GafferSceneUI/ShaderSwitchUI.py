@@ -34,19 +34,63 @@
 #
 ##########################################################################
 
+import Gaffer
 import GafferUI
 import GafferScene
 
-GafferUI.Nodule.registerNodule( GafferScene.ShaderSwitch, "enabled", lambda plug : None )
-GafferUI.Nodule.registerNodule( GafferScene.ShaderSwitch, "index", lambda plug : None )
+Gaffer.Metadata.registerNode(
 
-GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "enabled", None )
+	GafferScene.ShaderSwitch,
+
+	"description",
+	"""
+	Chooses between multiple input shaders, passing through the
+	chosen shader to the output. The switching is resolved
+	before rendering begins, so no per-sample overhead is
+	incurred during shading.
+	""",
+
+	"nodeGadget:minWidth", 0.0,
+
+	plugs = {
+
+		"in*" : [
+
+			"nodeGadget:nodulePosition", "left",
+
+		],
+
+		"in" : [
+
+			"description",
+			"""
+			The first input shader - the one passed through when
+			the index is 0.
+			""",
+
+		],
+
+		"out" : [
+
+			"description",
+			"""
+			The output shader.
+			""",
+
+			"nodeGadget:nodulePosition", "right",
+
+		],
+
+		"index" : [
+
+			"nodule:type", "",
+
+		],
+
+	},
+
+)
+
 GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "in", None )
 GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "in[0-9]*", None )
 GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "out", None )
-
-def __nodeGadgetCreator( node ) :
-
-	return GafferUI.StandardNodeGadget( node, GafferUI.LinearContainer.Orientation.Y )
-
-GafferUI.NodeGadget.registerNodeGadget( GafferScene.ShaderSwitch, __nodeGadgetCreator )

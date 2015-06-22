@@ -119,6 +119,8 @@ class NodeMenu :
 				if node is None :
 					return
 
+				Gaffer.NodeAlgo.applyUserDefaults( node )
+				
 				for plugName, plugValue in plugValues.items() :
 					node.descendant( plugName ).setValue( plugValue )
 
@@ -128,12 +130,9 @@ class NodeMenu :
 				graphGadget.getLayout().connectNode( graphGadget, node, script.selection() )
 
 			# if no connections were made, we can't expect the graph layout to
-			# know where to put the node, so we'll try to position it based on
+			# know where to put the node, so we'll position it based on
 			# the click location that opened the menu.
-			## \todo This positioning doesn't work very well when the menu min
-			# is not where the mouse was clicked to open the window (when the menu
-			# has been moved to keep it on screen).
-			menuPosition = menu.bound( relativeTo=gadgetWidget ).min
+			menuPosition = menu.popupPosition( relativeTo = gadgetWidget )
 			fallbackPosition = gadgetWidget.getViewportGadget().rasterToGadgetSpace(
 				IECore.V2f( menuPosition.x, menuPosition.y ),
 				gadget = graphGadget
@@ -148,34 +147,3 @@ class NodeMenu :
 			nodeGraph.frame( [ node ], extend = True )
 
 		return f
-
-	## Utility function to append menu items to definition. One item will
-	# be created for each class found on the specified search path.
-	def appendParameterisedHolders( self, path, parameterisedHolderType, searchPathEnvVar, matchExpression = re.compile( ".*" ) ) :
-
-		if isinstance( matchExpression, str ) :
-			matchExpression = re.compile( fnmatch.translate( matchExpression ) )
-
-		self.definition().append( path, { "subMenu" : IECore.curry( self.__parameterisedHolderMenu, parameterisedHolderType, searchPathEnvVar, matchExpression ) } )
-
-	@staticmethod
-	def __parameterisedHolderCreator( parameterisedHolderType, className, classVersion, searchPathEnvVar ) :
-
-		nodeName = className.rpartition( "/" )[-1]
-		node = parameterisedHolderType( nodeName )
-		node.setParameterised( className, classVersion, searchPathEnvVar )
-
-		return node
-
-	@staticmethod
-	def __parameterisedHolderMenu( parameterisedHolderType, searchPathEnvVar, matchExpression ) :
-
-		c = IECore.ClassLoader.defaultLoader( searchPathEnvVar )
-		d = IECore.MenuDefinition()
-		for n in c.classNames() :
-			if matchExpression.match( n ) :
-				nc = "/".join( [ IECore.CamelCase.toSpaced( x ) for x in n.split( "/" ) ] )
-				v = c.getDefaultVersion( n )
-				d.append( "/" + nc, { "command" : NodeMenu.nodeCreatorWrapper( IECore.curry( NodeMenu.__parameterisedHolderCreator, parameterisedHolderType, n, v, searchPathEnvVar ) ) } )
-
-		return d

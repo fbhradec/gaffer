@@ -38,7 +38,6 @@
 #include "boost/python.hpp"
 
 #include "GafferBindings/SignalBinding.h"
-#include "GafferBindings/CatchingSlotCaller.h"
 
 #include "GafferUI/Gadget.h"
 #include "GafferUI/Style.h"
@@ -143,6 +142,23 @@ struct KeySlotCaller
 	}
 };
 
+struct ExecuteOnUIThreadSlotCaller
+{
+	boost::signals::detail::unusable operator()( boost::python::object slot, Gadget::UIThreadFunction function )
+	{
+		object pythonFunction = make_function( function, default_call_policies(), boost::mpl::vector<void>() );
+		try
+		{
+			slot( pythonFunction );
+		}
+		catch( const error_already_set &e )
+		{
+			translatePythonException();
+		}
+		return boost::signals::detail::unusable();
+	}
+};
+
 StylePtr getStyle( Gadget &g )
 {
 	return const_cast<Style *>( g.getStyle() );
@@ -153,8 +169,13 @@ StylePtr style( Gadget &g )
 	return const_cast<Style *>( g.style() );
 }
 
+void render( const Gadget &g, const Style *currentStyle )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	g.render( currentStyle );
+}
+
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS( fullTransformOverloads, fullTransform, 0, 1 );
-BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS( renderOverloads, render, 0, 1 );
 
 } // namespace
 
@@ -177,7 +198,7 @@ void GafferUIBindings::bindGadget()
 		.def( "fullTransform", &Gadget::fullTransform, fullTransformOverloads() )
 		.def( "transformedBound", (Imath::Box3f (Gadget::*)() const)&Gadget::transformedBound )
 		.def( "transformedBound", (Imath::Box3f (Gadget::*)( const Gadget * ) const)&Gadget::transformedBound )
-		.def( "render", &Gadget::render, renderOverloads() )
+		.def( "render", &render, ( arg_( "currentStyle" ) = object() ) )
 		.def( "renderRequestSignal", &Gadget::renderRequestSignal, return_internal_reference<1>() )
 		.def( "setToolTip", &Gadget::setToolTip )
 		.def( "buttonPressSignal", &Gadget::buttonPressSignal, return_internal_reference<1>() )
@@ -199,15 +220,19 @@ void GafferUIBindings::bindGadget()
 		.staticmethod( "idleSignal" )
 		.def( "_idleSignalAccessedSignal", &Gadget::idleSignalAccessedSignal, return_value_policy<reference_existing_object>() )
 		.staticmethod( "_idleSignalAccessedSignal" )
+		.def( "_executeOnUIThreadSignal", &Gadget::executeOnUIThreadSignal, return_value_policy<reference_existing_object>() )
+		.staticmethod( "_executeOnUIThreadSignal" )
+		.def( "_requestRender", &Gadget::requestRender )
 		.def( "select", &Gadget::select ).staticmethod( "select" )
 	;
 
-	SignalBinder<Gadget::RenderRequestSignal, DefaultSignalCaller<Gadget::RenderRequestSignal>, RenderRequestSlotCaller>::bind( "RenderRequestSignal" );
-	SignalBinder<Gadget::ButtonSignal, DefaultSignalCaller<Gadget::ButtonSignal>, ButtonSlotCaller>::bind( "ButtonSignal" );
-	SignalBinder<Gadget::KeySignal, DefaultSignalCaller<Gadget::KeySignal>, KeySlotCaller>::bind( "KeySignal" );
-	SignalBinder<Gadget::DragBeginSignal, DefaultSignalCaller<Gadget::DragBeginSignal>, DragBeginSlotCaller>::bind( "DragBeginSignal" );
-	SignalBinder<Gadget::DragDropSignal, DefaultSignalCaller<Gadget::DragDropSignal>, DragDropSlotCaller>::bind( "DragDropSignal" );
-	SignalBinder<Gadget::EnterLeaveSignal, DefaultSignalCaller<Gadget::EnterLeaveSignal>, EnterLeaveSlotCaller>::bind( "EnterLeaveSignal" );
-	SignalBinder<Gadget::IdleSignal>::bind( "IdleSignal" );
+	SignalClass<Gadget::RenderRequestSignal, DefaultSignalCaller<Gadget::RenderRequestSignal>, RenderRequestSlotCaller>( "RenderRequestSignal" );
+	SignalClass<Gadget::ButtonSignal, DefaultSignalCaller<Gadget::ButtonSignal>, ButtonSlotCaller>( "ButtonSignal" );
+	SignalClass<Gadget::KeySignal, DefaultSignalCaller<Gadget::KeySignal>, KeySlotCaller>( "KeySignal" );
+	SignalClass<Gadget::DragBeginSignal, DefaultSignalCaller<Gadget::DragBeginSignal>, DragBeginSlotCaller>( "DragBeginSignal" );
+	SignalClass<Gadget::DragDropSignal, DefaultSignalCaller<Gadget::DragDropSignal>, DragDropSlotCaller>( "DragDropSignal" );
+	SignalClass<Gadget::EnterLeaveSignal, DefaultSignalCaller<Gadget::EnterLeaveSignal>, EnterLeaveSlotCaller>( "EnterLeaveSignal" );
+	SignalClass<Gadget::IdleSignal>( "IdleSignal" );
+	SignalClass<Gadget::ExecuteOnUIThreadSignal, DefaultSignalCaller<Gadget::EnterLeaveSignal>, ExecuteOnUIThreadSlotCaller>( "ExecuteOnUIThreadSignal" );
 
 }

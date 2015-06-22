@@ -37,43 +37,116 @@
 import fnmatch
 
 import Gaffer
-import GafferScene
 import GafferUI
+import GafferScene
 
 ##########################################################################
 # Metadata
 ##########################################################################
 
-Gaffer.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNode(
 
-GafferScene.InteractiveRender,
+	GafferScene.InteractiveRender,
 
-"""A base class for nodes which can render scenes interactively, updating
-the render to reflect changes to the node graph.""",
+	"description",
+	"""
+	A base class for nodes which can render scenes interactively, updating
+	the render to reflect changes to the node graph.
+	""",
 
-"state",
-"The interactive state.",
+	plugs = {
 
-"updateLights",
-"When on, changes to lights are reflected in the interactive render.",
+		"*" : [
 
+			"nodule:type", "",
+
+		],
+
+		"in" : [
+
+			"description",
+			"""
+			The scene to be rendered.
+			""",
+
+			"nodule:type", "GafferUI::StandardNodule",
+
+		],
+
+		"out" : [
+
+			"description",
+			"""
+			A direct pass-through of the input scene.
+			""",
+
+		],
+
+		"state" : [
+
+			"description",
+			"""
+			The interactive state.
+			""",
+
+			"preset:Stopped", GafferScene.InteractiveRender.State.Stopped,
+			"preset:Running", GafferScene.InteractiveRender.State.Running,
+			"preset:Paused", GafferScene.InteractiveRender.State.Paused,
+
+		],
+
+		"updateLights" : [
+
+			"description",
+			"""
+			When on, changes to lights are reflected in the
+			interactive render.
+			""",
+
+		],
+
+		"updateAttributes" : [
+
+			"description",
+			"""
+			When on, changes to attribute (and shaders) are reflected in the
+			interactive render. When working with complex scenes, it may be
+			worth turning this off to gain increased performance when only
+			editing lights.
+			""",
+
+		],
+
+		"updateCameras" : [
+
+			"description",
+			"""
+			When on, changes to the camera are reflected in the
+			interactive render.
+			""",
+
+		],
+
+		"updateCoordinateSystems" : [
+
+			"description",
+			"""
+			When on, changes to coordinate systems are reflected in the
+			interactive render.
+			""",
+
+		],
+
+	}
 )
 
 ##########################################################################
-# Widgets and nodules
+# Widgets
 ##########################################################################
 
 ## \todo Make a custom UI with play/pause/stop/restart buttons.
 GafferUI.PlugValueWidget.registerCreator(
 	GafferScene.InteractiveRender,
 	"state",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Stopped", GafferScene.InteractiveRender.State.Stopped ),
-		( "Running", GafferScene.InteractiveRender.State.Running ),
-		( "Paused", GafferScene.InteractiveRender.State.Paused ),
-	),
+	GafferUI.PresetsPlugValueWidget,
 )
-
-GafferUI.Nodule.registerNodule( GafferScene.InteractiveRender, fnmatch.translate( "*" ), lambda plug : None )
-GafferUI.Nodule.registerNodule( GafferScene.InteractiveRender, "in", GafferUI.StandardNodule )

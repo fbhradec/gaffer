@@ -40,7 +40,7 @@
 
 #include "IECore/CompoundObject.h"
 
-#include "GafferScene/Source.h"
+#include "GafferScene/SceneNode.h"
 
 #include "GafferSceneTest/TypeIds.h"
 
@@ -49,7 +49,7 @@ namespace GafferSceneTest
 
 /// A source which turns a CompoundObject hierarchy into a scene.
 /// It's useful as a source node in unit tests.
-class CompoundObjectSource : public GafferScene::Source
+class CompoundObjectSource : public GafferScene::SceneNode
 {
 
 	public :
@@ -57,7 +57,7 @@ class CompoundObjectSource : public GafferScene::Source
 		CompoundObjectSource( const std::string &name=defaultName<CompoundObjectSource>() );
 		virtual ~CompoundObjectSource();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneTest::CompoundObjectSource, CompoundObjectSourceTypeId, GafferScene::Source );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferSceneTest::CompoundObjectSource, CompoundObjectSourceTypeId, GafferScene::SceneNode );
 
 		Gaffer::ObjectPlug *inPlug();
 		const Gaffer::ObjectPlug *inPlug() const;
@@ -72,6 +72,8 @@ class CompoundObjectSource : public GafferScene::Source
 		virtual void hashObject( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent, IECore::MurmurHash &h ) const;
 		virtual void hashChildNames( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent, IECore::MurmurHash &h ) const;
 		virtual void hashGlobals( const Gaffer::Context *context, const GafferScene::ScenePlug *parent, IECore::MurmurHash &h ) const;
+		virtual void hashSetNames( const Gaffer::Context *context, const GafferScene::ScenePlug *parent, IECore::MurmurHash &h ) const;
+		virtual void hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const GafferScene::ScenePlug *parent, IECore::MurmurHash &h ) const;
 
 		virtual Imath::Box3f computeBound( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const;
 		virtual Imath::M44f computeTransform( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const;
@@ -79,6 +81,8 @@ class CompoundObjectSource : public GafferScene::Source
 		virtual IECore::ConstObjectPtr computeObject( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const;
 		virtual IECore::ConstInternedStringVectorDataPtr computeChildNames( const ScenePath &path, const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const;
 		virtual IECore::ConstCompoundObjectPtr computeGlobals( const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const;
+		virtual IECore::ConstInternedStringVectorDataPtr computeSetNames( const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const;
+		virtual GafferScene::ConstPathMatcherDataPtr computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const GafferScene::ScenePlug *parent ) const;
 
 		IECore::ConstCompoundObjectPtr entryForPath( const ScenePath &path ) const;
 

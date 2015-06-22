@@ -40,6 +40,8 @@ from _GafferSceneUI import *
 from SceneHierarchy import SceneHierarchy
 from SceneInspector import SceneInspector
 from FilterPlugValueWidget import FilterPlugValueWidget
+from ScenePathPlugValueWidget import ScenePathPlugValueWidget
+
 import SceneNodeUI
 import SceneReaderUI
 import SceneProcessorUI
@@ -77,8 +79,45 @@ import GridUI
 import SetFilterUI
 import DeleteGlobalsUI
 import DeleteOptionsUI
+import DeleteSetsUI
 import ExternalProceduralUI
 import ExecutableRenderUI
+import IsolateUI
+import SelectionToolUI
+import CropWindowToolUI
+import CameraUI
+import SetUI
+import ClippingPlaneUI
+import FilterUI
+import FilterSwitchUI
+import PointsTypeUI
+import ParametersUI
+import TextUI
+import AimConstraintUI
+import AlembicSourceUI
+import CoordinateSystemUI
+import DeleteAttributesUI
+import SeedsUI
+import UnionFilterUI
+import PathFilterUI
+import GroupUI
+import OpenGLRenderUI
+import DeletePrimitiveVariablesUI
+import MeshTypeUI
+import DeleteOutputsUI
+import InstancerUI
+import ObjectToSceneUI
+import FreezeTransformUI
+import SceneElementProcessorUI
+import PointConstraintUI
+import SceneTimeWarpUI
+import FilterMixinBaseUI
+import SceneMixinBaseUI
+import BranchCreatorUI
+import ConstraintUI
+import PlaneUI
+import CubeUI
+import AttributeVisualiserUI
 
 # then all the PathPreviewWidgets. note that the order
 # of import controls the order of display.

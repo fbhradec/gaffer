@@ -161,6 +161,15 @@ void SceneNode::hash( const ValuePlug *output, const Context *context, IECore::M
 		{
 			hashGlobals( context, scenePlug, h );
 		}
+		else if( output == scenePlug->setNamesPlug() )
+		{
+			hashSetNames( context, scenePlug, h );
+		}
+		else if( output == scenePlug->setPlug() )
+		{
+			const IECore::InternedString &setName = context->get<IECore::InternedString>( ScenePlug::setNameContextName );
+			hashSet( setName, context, scenePlug, h );
+		}
 	}
 	else
 	{
@@ -196,6 +205,16 @@ void SceneNode::hashChildNames( const ScenePath &path, const Gaffer::Context *co
 void SceneNode::hashGlobals( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
 	ComputeNode::hash( parent->globalsPlug(), context, h );
+}
+
+void SceneNode::hashSetNames( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
+{
+	ComputeNode::hash( parent->setNamesPlug(), context, h );
+}
+
+void SceneNode::hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
+{
+	ComputeNode::hash( parent->setPlug(), context, h );
 }
 
 void SceneNode::compute( ValuePlug *output, const Context *context ) const
@@ -261,6 +280,19 @@ void SceneNode::compute( ValuePlug *output, const Context *context ) const
 					computeGlobals( context, scenePlug )
 				);
 			}
+			else if( output == scenePlug->setNamesPlug() )
+			{
+				static_cast<InternedStringVectorDataPlug *>( output )->setValue(
+					computeSetNames( context, scenePlug )
+				);
+			}
+			else if( output == scenePlug->setPlug() )
+			{
+				const IECore::InternedString &setName = context->get<IECore::InternedString>( ScenePlug::setNameContextName );
+				static_cast<ObjectPlug *>( output )->setValue(
+					computeSet( setName, context, scenePlug )
+				);
+			}
 		}
 		else
 		{
@@ -300,11 +332,21 @@ IECore::ConstCompoundObjectPtr SceneNode::computeGlobals( const Gaffer::Context 
 	throw IECore::NotImplementedException( string( typeName() ) + "::computeGlobals" );
 }
 
+IECore::ConstInternedStringVectorDataPtr SceneNode::computeSetNames( const Gaffer::Context *context, const ScenePlug *parent ) const
+{
+	throw IECore::NotImplementedException( string( typeName() ) + "::computeSetNames" );
+}
+
+GafferScene::ConstPathMatcherDataPtr SceneNode::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
+{
+	throw IECore::NotImplementedException( string( typeName() ) + "::computeSet" );
+}
+
 IECore::MurmurHash SceneNode::hashOfTransformedChildBounds( const ScenePath &path, const ScenePlug *out ) const
 {
 	IECore::MurmurHash result;
 	ConstInternedStringVectorDataPtr childNamesData = out->childNames( path );
-	vector<InternedString> childNames = childNamesData->readable();
+	const vector<InternedString> &childNames = childNamesData->readable();
 	if( childNames.size() )
 	{
 		ScenePath childPath( path );
@@ -328,7 +370,7 @@ Imath::Box3f SceneNode::unionOfTransformedChildBounds( const ScenePath &path, co
 {
 	Box3f result;
 	ConstInternedStringVectorDataPtr childNamesData = out->childNames( path );
-	vector<InternedString> childNames = childNamesData->readable();
+	const vector<InternedString> &childNames = childNamesData->readable();
 
 	ScenePath childPath( path );
 	childPath.push_back( InternedString() ); // room for the child name

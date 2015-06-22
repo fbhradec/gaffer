@@ -1,6 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2013, John Haddon. All rights reserved.
+//  Copyright (c) 2015, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -38,6 +39,8 @@
 
 #include "Gaffer/Context.h"
 #include "Gaffer/Box.h"
+#include "Gaffer/Dot.h"
+#include "Gaffer/StringPlug.h"
 
 #include "GafferScene/ShaderSwitch.h"
 
@@ -69,6 +72,10 @@ OSLImage::OSLImage( const std::string &name )
 	// simply references data direct from the shading plug, which will itself
 	// be cached. we don't want to count the memory usage for that twice.
 	outPlug()->channelDataPlug()->setFlags( Plug::Cacheable, false );
+	
+	// We don't ever want to change these, so we make pass-through connections.
+	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
+	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 }
 
 OSLImage::~OSLImage()
@@ -132,10 +139,11 @@ bool OSLImage::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *input
 		else
 		{
 			// as for the GafferScene::ShaderAssignment, we accept Box and ShaderSwitch
-			// inputs as an indirect means of later getting a connection to a Shader.
+			// and Dot inputs as an indirect means of later getting a connection to a Shader.
 			if(
 				runTimeCast<const Gaffer::Box>( sourceNode ) ||
-				runTimeCast<const GafferScene::ShaderSwitch>( sourceNode )
+				runTimeCast<const GafferScene::ShaderSwitch>( sourceNode ) ||
+				runTimeCast<const Dot>( sourceNode )
 			)
 			{
 				return true;
@@ -192,12 +200,22 @@ GafferImage::Format OSLImage::computeFormat( const Gaffer::Context *context, con
 
 void OSLImage::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	h = inPlug()->dataWindowPlug()->hash();
+	throw Exception( "Unexpected call to OSLImage::hashDataWindow" );
 }
 
 Imath::Box2i OSLImage::computeDataWindow( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const
 {
-	return inPlug()->dataWindowPlug()->getValue();
+	throw Exception( "Unexpected call to OSLImage::computeDataWindow" );
+}
+
+void OSLImage::hashMetadata( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	throw Exception( "Unexpected call to OSLImage::hashMetadata" );
+}
+
+IECore::ConstCompoundObjectPtr OSLImage::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	throw Exception( "Unexpected call to OSLImage::computeMetadata" );
 }
 
 void OSLImage::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const

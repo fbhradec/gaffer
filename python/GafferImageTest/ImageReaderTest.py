@@ -1,7 +1,7 @@
 ##########################################################################
 #
 #  Copyright (c) 2012, John Haddon. All rights reserved.
-#  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2013-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -36,6 +36,7 @@
 ##########################################################################
 
 import os
+import shutil
 import unittest
 
 import IECore
@@ -46,6 +47,7 @@ import GafferImageTest
 
 class ImageReaderTest( unittest.TestCase ) :
 
+	__testDir = "/tmp/imageReaderTest"
 	fileName = os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/checker.exr" )
 	offsetDataWindowFileName = os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/rgb.100x100.exr" )
 	negativeDataWindowFileName = os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/checkerWithNegativeDataWindow.200x150.exr" )
@@ -75,6 +77,15 @@ class ImageReaderTest( unittest.TestCase ) :
 		self.assertEqual( n["out"]["dataWindow"].getValue(), IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 199, 149 ) ) )
 		self.assertEqual( n["out"]["format"].getValue().getDisplayWindow(), IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 199, 149 ) ) )
 
+		expectedMetadata = IECore.CompoundObject( {
+			"oiio:ColorSpace" : IECore.StringData( 'Linear' ),
+			"compression" : IECore.StringData( 'zips' ),
+			"PixelAspectRatio" : IECore.FloatData( 1 ),
+			"screenWindowCenter" : IECore.V2fData( IECore.V2f( 0, 0 ) ),
+			"screenWindowWidth" : IECore.FloatData( 1 ),
+		} )
+		self.assertEqual( n["out"]["metadata"].getValue(), expectedMetadata )
+		
 		channelNames = n["out"]["channelNames"].getValue()
 		self.failUnless( isinstance( channelNames, IECore.StringVectorData ) )
 		self.failUnless( "R" in channelNames )
@@ -83,11 +94,11 @@ class ImageReaderTest( unittest.TestCase ) :
 		self.failUnless( "A" in channelNames )
 
 		image = n["out"].image()
+		self.assertEqual( image.blindData(), IECore.CompoundData( dict(expectedMetadata) ) )
+		
 		image2 = IECore.Reader.create( self.fileName ).read()
-
 		image.blindData().clear()
 		image2.blindData().clear()
-
 		self.assertEqual( image, image2 )
 
 	def testNegativeDisplayWindowRead( self ) :
@@ -100,8 +111,10 @@ class ImageReaderTest( unittest.TestCase ) :
 		self.assertEqual( d, IECore.Box2i( IECore.V2i( 2, -14 ), IECore.V2i( 35, 19 ) ) )
 
 		expectedImage = IECore.Reader.create( self.negativeDisplayWindowFileName ).read()
+		outImage = n["out"].image()
 		expectedImage.blindData().clear()
-		self.assertEqual( expectedImage, n["out"].image() )
+		outImage.blindData().clear()
+		self.assertEqual( expectedImage, outImage )
 
 	def testNegativeDataWindow( self ) :
 
@@ -158,6 +171,15 @@ class ImageReaderTest( unittest.TestCase ) :
 		n = GafferImage.ImageReader()
 		n["out"]["channelNames"].getValue()
 		n["out"].channelData( "R", IECore.V2i( 0 ) )
+
+	def testNoOIIOErrorBufferOverflows( self ) :
+
+		n = GafferImage.ImageReader()
+		n["fileName"].setValue( "thisReallyReallyReallyReallyReallyReallyReallyReallyReallyLongFilenameDoesNotExist.tif" )
+
+		for i in range( 0, 300000 ) :
+			with IECore.IgnoredExceptions( Exception ) :
+				n["out"]["dataWindow"].getValue()
 
 	def testChannelDataHashes( self ) :
 		# Test that two tiles within the same image have different hashes.
@@ -238,6 +260,38 @@ class ImageReaderTest( unittest.TestCase ) :
 		self.assertTrue( "png" in e )
 		self.assertTrue( "cin" in e )
 		self.assertTrue( "dpx" in e )
+	
+	def testFileRefresh( self ) :
+		
+		testFile = self.__testDir + "/refresh.exr"
+		reader = GafferImage.ImageReader()
+		reader["fileName"].setValue( testFile )
+		dataWindow = reader["out"]["dataWindow"].getValue()
+		
+		shutil.copyfile( self.fileName, testFile )
+		# the default image is cached
+		self.assertEqual( dataWindow, reader["out"]["dataWindow"].getValue() )
+		# until we force a refresh
+		reader["refreshCount"].setValue( reader["refreshCount"].getValue() + 1 )
+		newDataWindow = reader["out"]["dataWindow"].getValue()
+		self.assertNotEqual( dataWindow, newDataWindow )
+		
+		shutil.copyfile( self.circlesExrFileName, testFile )
+		# the old file is cached
+		self.assertEqual( newDataWindow, reader["out"]["dataWindow"].getValue() )
+		# until we force a refresh
+		reader["refreshCount"].setValue( reader["refreshCount"].getValue() + 1 )
+		self.assertNotEqual( newDataWindow, reader["out"]["dataWindow"].getValue() )
+	
+	def setUp( self ) :
+		
+		os.mkdir( self.__testDir )
+	
+	def tearDown( self ) :
+		
+		if os.path.isdir( self.__testDir ) :
+			shutil.rmtree( self.__testDir )
+
 
 if __name__ == "__main__":
 	unittest.main()

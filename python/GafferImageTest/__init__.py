@@ -1,7 +1,7 @@
 ##########################################################################
 #
 #  Copyright (c) 2012, John Haddon. All rights reserved.
-#  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2013-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -46,7 +46,6 @@ from FormatPlugTest import FormatPlugTest
 from MergeTest import MergeTest
 from GradeTest import GradeTest
 from ConstantTest import ConstantTest
-from SelectTest import SelectTest
 from ImageWriterTest import ImageWriterTest
 from ChannelMaskPlugTest import ChannelMaskPlugTest
 from SamplerTest import SamplerTest
@@ -55,13 +54,16 @@ from FilterTest import FilterTest
 from DisplayTest import DisplayTest
 from ImageStatsTest import ImageStatsTest
 from ImageTransformTest import ImageTransformTest
-from RemoveChannelsTest import RemoveChannelsTest
+from DeleteChannelsTest import DeleteChannelsTest
 from ClampTest import ClampTest
 from ImageSwitchTest import ImageSwitchTest
 from ImageTimeWarpTest import ImageTimeWarpTest
 from ImageSamplerTest import ImageSamplerTest
 from ImageNodeTest import ImageNodeTest
 from FormatDataTest import FormatDataTest
+from ImageMetadataTest import ImageMetadataTest
+from DeleteImageMetadataTest import DeleteImageMetadataTest
+from CopyImageMetadataTest import CopyImageMetadataTest
 
 if __name__ == "__main__":
 	import unittest

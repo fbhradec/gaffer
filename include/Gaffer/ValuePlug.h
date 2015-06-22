@@ -56,10 +56,13 @@ class ValuePlug : public Plug
 
 	public :
 
+		/// Constructs a ValuePlug which can be used as a parent for other ValuePlugs.
+		ValuePlug( const std::string &name=defaultName<ValuePlug>(), Direction direction=In, unsigned flags=Default );
 		virtual ~ValuePlug();
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::ValuePlug, ValuePlugTypeId, Plug );
 
+		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
 		/// Accepts the input only if it is derived from ValuePlug.
 		/// Derived classes may accept more types provided they
 		/// derive from ValuePlug too, and they can deal with them
@@ -68,19 +71,27 @@ class ValuePlug : public Plug
 		/// Reimplemented so that values can be propagated from inputs.
 		virtual void setInput( PlugPtr input );
 
+		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+
 		/// Returns true if it is valid to call setFrom(), setToDefault(),
 		/// or setValue() on this plug. False will be returned if the plug
 		/// has an input connection or the ReadOnly flag is set.
-		virtual bool settable() const;
+		bool settable() const;
 
 		/// Must be implemented to set the value of this Plug from the other Plug,
 		/// performing any necessary conversions on the input value. Should throw
 		/// an exception if other is of an unsupported type.
-		virtual void setFrom( const ValuePlug *other ) = 0;
+		virtual void setFrom( const ValuePlug *other );
 
-		/// Must be implemented by derived classes to set the value
-		/// to the default for this Plug.
-		virtual void setToDefault() = 0;
+		/// Sets the value to the default for this plug. The default
+		/// implementation is sufficient for all subclasses except those
+		/// where the number of child plugs varies based on the value.
+		virtual void setToDefault();
+		/// Returns true if the current value of the plug is the same
+		/// as the default value. The default implementation is sufficient
+		/// for all subclasses except those where the number of child plugs
+		/// varies based on the value.
+		virtual bool isSetToDefault() const;
 
 		/// Returns a hash to represent the value of this plug
 		/// in the current context.
@@ -104,16 +115,19 @@ class ValuePlug : public Plug
 
 	protected :
 
-		/// The initialValue will be referenced directly (not copied) and
-		/// therefore must not be changed after passing to the constructor.
-		/// The initialValue must be non-null.
+		/// This constructor must be used by all derived classes which wish
+		/// to store their own values - without calling it defaultObjectValue()
+		/// and getObjectValue() will return NULL. The defaultValue will be
+		/// referenced directly (not copied) and therefore must not be changed
+		/// after passing to the constructor. The defaultValue must be non-null.
+		/// When this constructor is used, the ValuePlug does not accept child
+		/// plugs - values are always stored on leaf plugs.
 		ValuePlug( const std::string &name, Direction direction,
-			IECore::ConstObjectPtr initialValue, unsigned flags );
-		/// For use /only/ by CompoundPlug. This results in a null m_staticValue,
-		/// which is acceptable only because CompoundPlug values are composed from
-		/// the values of child plugs, and aren't computed or stored directly
-		/// (CompoundPlug may not call getObjectValue() or setObjectValue() as a result).
-		ValuePlug( const std::string &name, Direction direction, unsigned flags );
+			IECore::ConstObjectPtr defaultValue, unsigned flags );
+
+		/// Returns the default value that was passed to the constructor.
+		/// It is imperative that this value is not changed.
+		const IECore::Object *defaultObjectValue() const;
 
 		/// Internally all values are stored as instances of classes derived
 		/// from IECore::Object, although this isn't necessarily visible to the user.
@@ -129,7 +143,11 @@ class ValuePlug : public Plug
 		/// following return from getObjectValue(), it is possible that nothing
 		/// else references the value - the value could have come from the cache
 		/// and then have been immediately removed by another thread.
-		IECore::ConstObjectPtr getObjectValue() const;
+		///
+		/// If a precomputed hash is available it may be passed to avoid computing
+		/// it again unnecessarily. Passing an incorrect hash has dire consequences, so
+		/// use with care.
+		IECore::ConstObjectPtr getObjectValue( const IECore::MurmurHash *precomputedHash = NULL ) const;
 		/// Should be called by derived classes when they wish to set the plug
 		/// value - the value is referenced directly (not copied) and so must
 		/// not be changed following the call.
@@ -146,6 +164,9 @@ class ValuePlug : public Plug
 		/// simulate the behaviour of a plug being set when a child is added or removed.
 		void emitPlugSet();
 
+		/// Reimplemented for cache management.
+		virtual void dirty();
+
 	private :
 
 		class Computation;
@@ -153,6 +174,7 @@ class ValuePlug : public Plug
 
 		void setValueInternal( IECore::ConstObjectPtr value, bool propagateDirtiness );
 
+		IECore::ConstObjectPtr m_defaultValue;
 		/// For holding the value of input plugs with no input connections.
 		IECore::ConstObjectPtr m_staticValue;
 

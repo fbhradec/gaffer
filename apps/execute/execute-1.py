@@ -1,7 +1,7 @@
 ##########################################################################
 #  
 #  Copyright (c) 2011-2012, John Haddon. All rights reserved.
-#  Copyright (c) 2014, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2014-2015, Image Engine Design Inc. All rights reserved.
 #  
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -35,7 +35,7 @@
 #  
 ##########################################################################
 
-import os
+import os, sys, traceback
 
 import IECore
 
@@ -59,6 +59,13 @@ class execute( Gaffer.Application ) :
 					check = IECore.FileNameParameter.CheckType.MustExist,
 				),
 				
+				IECore.BoolParameter(
+					name = "ignoreScriptLoadErrors",
+					description = "Causes errors which occur while loading the script "
+						"to be ignored. Not recommended.",
+					defaultValue = False,
+				),
+
 				IECore.StringVectorParameter(
 					name = "nodes",
 					description = "The names of the nodes to execute. If not specified "
@@ -97,9 +104,14 @@ class execute( Gaffer.Application ) :
 		
 	def _run( self, args ) :
 			
-		scriptNode = Gaffer.ScriptNode( os.path.splitext( os.path.basename( args["script"].value ) )[0] )
+		scriptNode = Gaffer.ScriptNode()
 		scriptNode["fileName"].setValue( os.path.abspath( args["script"].value ) )
-		scriptNode.load()
+		try :
+			scriptNode.load( continueOnError = args["ignoreScriptLoadErrors"].value )
+		except Exception as exception :
+			IECore.msg( IECore.Msg.Level.Error, "gaffer execute : loading \"%s\"" % scriptNode["fileName"].getValue(), str( exception ) )
+			return 1
+
 		self.root()["scripts"].addChild( scriptNode )
 		
 		nodes = []
@@ -134,8 +146,21 @@ class execute( Gaffer.Application ) :
 		
 		with context :
 			for node in nodes :
-				node.executeSequence( frames )
-		
+				try :
+					node.executeSequence( frames )
+				except Exception as exception :
+					IECore.msg(
+						IECore.Msg.Level.Debug,
+						"gaffer execute : executing %s" % node.relativeName( scriptNode ),
+						"".join( traceback.format_exception( *sys.exc_info() ) ),
+					)
+					IECore.msg(
+						IECore.Msg.Level.Error,
+						"gaffer execute : executing %s" % node.relativeName( scriptNode ),
+						"".join( traceback.format_exception_only( *sys.exc_info()[:2] ) ),
+					)
+					return 1
+
 		return 0
 
 IECore.registerRunTimeTyped( execute )
