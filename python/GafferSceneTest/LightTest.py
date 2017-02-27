@@ -56,7 +56,8 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( l["out"].transform( "/" ), IECore.M44f() )
 		self.assertEqual( l["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "light" ] ) )
 
-		self.assertTrue( isinstance( l["out"].object( "/light" ), IECore.Light ) )
+		self.assertTrue( isinstance( l["out"].object( "/light" ), IECore.NullObject ) )
+		self.assertTrue( isinstance( l["out"].attributes( "/light" )["light"][-1], IECore.Shader ) )
 
 		self.assertEqual( l["out"].transform( "/light" ), IECore.M44f() )
 		self.assertEqual( l["out"].childNames( "/light" ), IECore.InternedStringVectorData() )
@@ -74,7 +75,7 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 
 		l = GafferSceneTest.TestLight()
 		g = GafferScene.Group()
-		g["in"].setInput( l["out"] )
+		g["in"][0].setInput( l["out"] )
 
 		self.assertSceneValid( g["out"] )
 
@@ -95,7 +96,7 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 		l["parameters"]["intensity"]["r"].setValue( 10 )
 
 		dirtiedNames = [ p[0].relativeName( p[0].node() ) for p in cs ]
-		self.assertTrue( "out.object" in dirtiedNames )
+		self.assertTrue( "out.attributes" in dirtiedNames )
 		self.assertTrue( "out" in dirtiedNames )
 
 	def testDisabled( self ) :
@@ -125,7 +126,7 @@ class LightTest( GafferSceneTest.SceneTestCase ) :
 
 		l["enabled"].setValue( False )
 		self.assertEqual( l["out"]["setNames"].getValue(), IECore.InternedStringVectorData() )
-		
+
 	def testNonExistentSets( self ) :
 
 		l = GafferSceneTest.TestLight()

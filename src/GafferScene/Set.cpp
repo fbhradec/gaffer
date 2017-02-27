@@ -39,9 +39,11 @@
 
 #include "GafferScene/Set.h"
 #include "GafferScene/PathMatcherData.h"
+#include "GafferScene/FilterResults.h"
 
 using namespace std;
 using namespace IECore;
+using namespace Gaffer;
 using namespace GafferScene;
 
 static InternedString g_ellipsis( "..." );
@@ -51,13 +53,22 @@ IE_CORE_DEFINERUNTIMETYPED( Set );
 size_t Set::g_firstPlugIndex = 0;
 
 Set::Set( const std::string &name )
-	:	SceneProcessor( name )
+	:	FilteredSceneProcessor( name, Filter::NoMatch )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new Gaffer::IntPlug( "mode", Gaffer::Plug::In, Create, Create, Remove ) );
 	addChild( new Gaffer::StringPlug( "name", Gaffer::Plug::In, "set" ) );
 	addChild( new Gaffer::StringVectorDataPlug( "paths", Gaffer::Plug::In, new StringVectorData ) );
+
+	addChild( new PathMatcherDataPlug( "__filterResults", Gaffer::Plug::In, new PathMatcherData, Plug::Default & ~Plug::Serialisable ) );
 	addChild( new PathMatcherDataPlug( "__pathMatcher", Gaffer::Plug::Out, new PathMatcherData ) );
+
+	FilterResultsPtr filterResults = new FilterResults( "__FilterResults" );
+	addChild( filterResults );
+
+	filterResults->scenePlug()->setInput( inPlug() );
+	filterResults->filterPlug()->setInput( filterPlug() );
+	filterResultsPlug()->setInput( filterResults->outPlug() );
 
 	// Direct pass-throughs for the things we don't process
 	outPlug()->boundPlug()->setInput( inPlug()->boundPlug() );
@@ -102,33 +113,53 @@ const Gaffer::StringVectorDataPlug *Set::pathsPlug() const
 	return getChild<Gaffer::StringVectorDataPlug>( g_firstPlugIndex + 2 );
 }
 
-PathMatcherDataPlug *Set::pathMatcherPlug()
+PathMatcherDataPlug *Set::filterResultsPlug()
 {
 	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 3 );
+}
+
+const PathMatcherDataPlug *Set::filterResultsPlug() const
+{
+	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 3 );
+}
+
+PathMatcherDataPlug *Set::pathMatcherPlug()
+{
+	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 4 );
 }
 
 const PathMatcherDataPlug *Set::pathMatcherPlug() const
 {
-	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 3 );
+	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 4 );
 }
 
 void Set::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	SceneProcessor::affects( input, outputs );
+	FilteredSceneProcessor::affects( input, outputs );
 
-	if( pathsPlug() == input )
+	if( inPlug()->setNamesPlug() == input )
 	{
-		outputs.push_back( pathMatcherPlug() );
+		outputs.push_back( outPlug()->setNamesPlug() );
+	}
+	else if( inPlug()->setPlug() == input )
+	{
+		outputs.push_back( outPlug()->setPlug() );
+	}
+	else if( modePlug() == input )
+	{
+		outputs.push_back( outPlug()->setNamesPlug() );
+		outputs.push_back( outPlug()->setPlug() );
 	}
 	else if( namePlug() == input )
 	{
 		outputs.push_back( outPlug()->setNamesPlug() );
 		outputs.push_back( outPlug()->setPlug() );
 	}
-	else if(
-		modePlug() == input ||
-		pathMatcherPlug() == input
-	)
+	else if( pathsPlug() == input || filterResultsPlug() == input )
+	{
+		outputs.push_back( pathMatcherPlug() );
+	}
+	else if( pathMatcherPlug() == input )
 	{
 		outputs.push_back( outPlug()->setPlug() );
 	}
@@ -136,11 +167,12 @@ void Set::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) 
 
 void Set::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	SceneProcessor::hash( output, context, h );
+	FilteredSceneProcessor::hash( output, context, h );
 
 	if( output == pathMatcherPlug() )
 	{
 		pathsPlug()->hash( h );
+		filterResultsPlug()->hash( h );
 	}
 }
 
@@ -157,11 +189,15 @@ void Set::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) c
 		vector<InternedString> tokenizedPath;
 		for( vector<string>::const_iterator it = paths.begin(), eIt = paths.end(); it != eIt; ++it )
 		{
+			if( it->empty() )
+			{
+				continue;
+			}
 			tokenizedPath.clear();
-			Gaffer::tokenize( *it, '/', tokenizedPath );
+			StringAlgo::tokenize( *it, '/', tokenizedPath );
 			for( vector<InternedString>::const_iterator nIt = tokenizedPath.begin(), neIt = tokenizedPath.end(); nIt != neIt; ++nIt )
 			{
-				if( Gaffer::hasWildcards( nIt->c_str() ) || *nIt == g_ellipsis )
+				if( StringAlgo::hasWildcards( nIt->c_str() ) || *nIt == g_ellipsis )
 				{
 					throw IECore::Exception( "Path \"" + *it + "\" contains wildcards." );
 				}
@@ -169,16 +205,18 @@ void Set::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) c
 			pathMatcher.addPath( tokenizedPath );
 		}
 
-		static_cast<Gaffer::ObjectPlug *>( output )->setValue( pathMatcherData );
+		pathMatcher.addPaths( filterResultsPlug()->getValue()->readable() );
+
+		static_cast<PathMatcherDataPlug *>( output )->setValue( pathMatcherData );
 		return;
 	}
 
-	SceneProcessor::compute( output, context );
+	FilteredSceneProcessor::compute( output, context );
 }
 
 void Set::hashSetNames( const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	SceneProcessor::hashSetNames( context, parent, h );
+	FilteredSceneProcessor::hashSetNames( context, parent, h );
 	inPlug()->setNamesPlug()->hash( h );
 	modePlug()->hash( h );
 	namePlug()->hash( h );
@@ -188,14 +226,8 @@ IECore::ConstInternedStringVectorDataPtr Set::computeSetNames( const Gaffer::Con
 {
 	ConstInternedStringVectorDataPtr inNamesData = inPlug()->setNamesPlug()->getValue();
 
-	InternedString name = namePlug()->getValue();
-	if( !name.string().size() )
-	{
-		return inNamesData;
-	}
-
-	const std::vector<InternedString> &inNames = inNamesData->readable();
-	if( std::find( inNames.begin(), inNames.end(), name ) != inNames.end() )
+	const std::string &names = namePlug()->getValue();
+	if( !names.size() )
 	{
 		return inNamesData;
 	}
@@ -205,20 +237,48 @@ IECore::ConstInternedStringVectorDataPtr Set::computeSetNames( const Gaffer::Con
 		return inNamesData;
 	}
 
-	InternedStringVectorDataPtr result = inNamesData->copy();
-	result->writable().push_back( name );
-	return result;
+	vector<InternedString> tokenizedNames;
+	StringAlgo::tokenize( names, ' ', tokenizedNames );
+
+	// specific logic if we have only one item, to avoid the more complex logic of adding two lists together
+	if( tokenizedNames.size() == 1 ) {
+		const std::vector<InternedString> &inNames = inNamesData->readable();
+		if( std::find( inNames.begin(), inNames.end(), tokenizedNames[0] ) != inNames.end() )
+		{
+			return inNamesData;
+		}
+
+		InternedStringVectorDataPtr resultData = inNamesData->copy();
+		resultData->writable().push_back( tokenizedNames[0] );
+		return resultData;
+	}
+
+	// inserting the new names into the vector
+	// while making sure we don't have duplicates
+	InternedStringVectorDataPtr resultData = inNamesData->copy();
+
+	std::vector<InternedString> &result = resultData->writable();
+	result.reserve( result.size() + tokenizedNames.size() );
+	std::copy( tokenizedNames.begin(), tokenizedNames.end(), std::back_inserter( result ) );
+	std::sort( result.begin(), result.end() );
+	std::vector<InternedString>::iterator it;
+	it = std::unique( result.begin(), result.end() );
+	result.resize( std::distance( result.begin(), it ) );
+
+	return resultData;
 }
 
 void Set::hashSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	if( setName != namePlug()->getValue() )
+	const std::string allSets = " " + namePlug()->getValue() + " ";
+	const std::string setNameToFind = " " + setName.string() + " ";
+	if( allSets.find( setNameToFind ) == std::string::npos )
 	{
 		h = inPlug()->setPlug()->hash();
 		return;
 	}
 
-	SceneProcessor::hashSet( setName, context, parent, h );
+	FilteredSceneProcessor::hashSet( setName, context, parent, h );
 	inPlug()->setPlug()->hash( h );
 	modePlug()->hash( h );
 	pathMatcherPlug()->hash( h );
@@ -226,7 +286,9 @@ void Set::hashSet( const IECore::InternedString &setName, const Gaffer::Context 
 
 GafferScene::ConstPathMatcherDataPtr Set::computeSet( const IECore::InternedString &setName, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( InternedString( namePlug()->getValue() ) != setName )
+	const std::string allSets = " " + namePlug()->getValue() + " ";
+	const std::string setNameToFind = " " + setName.string() + " ";
+	if( allSets.find( setNameToFind ) == std::string::npos )
 	{
 		return inPlug()->setPlug()->getValue();
 	}

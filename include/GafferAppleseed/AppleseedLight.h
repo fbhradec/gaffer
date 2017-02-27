@@ -37,7 +37,7 @@
 #ifndef GAFFERAPPLESEED_APPLESEEDLIGHT_H
 #define GAFFERAPPLESEED_APPLESEEDLIGHT_H
 
-#include "foundation/utility/containers/specializedarrays.h"
+#include "foundation/utility/api/specializedapiarrays.h"
 
 #include "GafferScene/Light.h"
 
@@ -61,9 +61,12 @@ class AppleseedLight : public GafferScene::Light
 	protected :
 
 		virtual void hashLight( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::LightPtr computeLight( const Gaffer::Context *context ) const;
+		virtual IECore::ObjectVectorPtr computeLight( const Gaffer::Context *context ) const;
 
 	private :
+
+		Gaffer::StringPlug *modelPlug();
+		const Gaffer::StringPlug *modelPlug() const;
 
 		void setupPlugs( const std::string &shaderName, const foundation::DictionaryArray &metadata );
 

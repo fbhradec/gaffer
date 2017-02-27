@@ -46,8 +46,9 @@ Gaffer.Metadata.registerNode(
 
 	"description",
 	"""
-	Writes scenes to disk. Supports all formats for which a
-	writeable Cortex SceneInterface exists.
+	Writes scenes to cache files on disk. Gaffer's native file format is the .scc
+	(SceneCache) format provided by Cortex, but other formats may be supported by
+	registering a new implementation of Cortex's abstract SceneInterface.
 	""",
 
 	plugs = {
@@ -62,7 +63,11 @@ Gaffer.Metadata.registerNode(
 			number is generally not necessary.
 			""",
 
-			"nodule:type", "",
+			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
+			"pathPlugValueWidget:leaf", True,
+			"pathPlugValueWidget:bookmarks", "sceneCache",
+			"fileSystemPathPlugValueWidget:extensions", lambda plug : IECore.StringVectorData( IECore.SceneInterface.supportedExtensions( IECore.IndexedIO.OpenMode.Write ) ),
+			"fileSystemPathPlugValueWidget:extensionsLabel", "Show only cache files",
 
 		],
 
@@ -71,7 +76,9 @@ Gaffer.Metadata.registerNode(
 			"description",
 			"""
 			The scene to be written.
-			"""
+			""",
+
+			"nodule:type", "GafferUI::StandardNodule",
 
 		],
 
@@ -82,28 +89,8 @@ Gaffer.Metadata.registerNode(
 			A direct pass-through of the input scene.
 			""",
 
-			"nodule:type", "",
-
 		],
 
 	}
 
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.SceneWriter,
-	"fileName",
-	lambda plug : GafferUI.PathPlugValueWidget(
-		plug,
-		path = Gaffer.FileSystemPath(
-			"/",
-			filter = Gaffer.FileSystemPath.createStandardFilter(
-				extensions = IECore.SceneInterface.supportedExtensions( IECore.IndexedIO.OpenMode.Write )
-			)
-		),
-		pathChooserDialogueKeywords = {
-			"bookmarks" : GafferUI.Bookmarks.acquire( plug, category = "sceneCache" ),
-			"leaf" : True,
-		},
-	),
 )

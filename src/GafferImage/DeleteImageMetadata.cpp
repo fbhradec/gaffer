@@ -115,11 +115,11 @@ IECore::ConstCompoundObjectPtr DeleteImageMetadata::computeProcessedMetadata( co
 	for ( IECore::CompoundObject::ObjectMap::const_iterator it = inputMetadata->members().begin(), eIt = inputMetadata->members().end(); it != eIt; ++it )
 	{
 		bool keep = true;
-		if ( matchMultiple( it->first.c_str(), names.c_str() ) != invert )
+		if ( StringAlgo::matchMultiple( it->first.c_str(), names.c_str() ) != invert )
 		{
 			keep = false;
 		}
-		
+
 		if ( keep )
 		{
 			result->members()[it->first] = it->second;

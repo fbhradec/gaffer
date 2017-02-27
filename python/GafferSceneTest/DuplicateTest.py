@@ -36,6 +36,7 @@
 
 import IECore
 
+import Gaffer
 import GafferTest
 import GafferScene
 import GafferSceneTest
@@ -84,7 +85,7 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 
 		s = GafferScene.Sphere()
 		g = GafferScene.Group()
-		g["in"].setInput( s["out"] )
+		g["in"][0].setInput( s["out"] )
 
 		d = GafferScene.Duplicate()
 		d["in"].setInput( g["out"] )
@@ -109,7 +110,7 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 
 		s = GafferScene.Sphere()
 		g = GafferScene.Group()
-		g["in"].setInput( s["out"] )
+		g["in"][0].setInput( s["out"] )
 
 		d = GafferScene.Duplicate()
 		d["in"].setInput( g["out"] )
@@ -153,6 +154,55 @@ class DuplicateTest( GafferSceneTest.SceneTestCase ) :
 
 		d["name"].setValue( "test" )
 		self.assertTrue( d["out"]["childNames"] in [ c[0] for c in cs ] )
+
+	def testSets( self ) :
+
+		s = GafferScene.Sphere()
+		s["sets"].setValue( "set" )
+
+		g = GafferScene.Group()
+		g["in"].setInput( s["out"] )
+
+		d = GafferScene.Duplicate()
+		d["in"].setInput( g["out"] )
+		d["target"].setValue( "/group" )
+		d["copies"].setValue( 5 )
+
+		self.assertEqual(
+			set( d["out"].set( "set" ).value.paths() ),
+			set(
+				[ "/group/sphere" ] +
+				[ "/group%d/sphere" % n for n in range( 1, 6 ) ]
+			)
+		)
+
+		d["target"].setValue( "/group/sphere" )
+		d["copies"].setValue( 1500 )
+
+		self.assertEqual(
+			set( d["out"].set( "set" ).value.paths() ),
+			set(
+				[ "/group/sphere" ] +
+				[ "/group/sphere%d" % n for n in range( 1, 1501 ) ]
+			)
+		)
+
+	def testSetNames( self ) :
+
+		s = GafferScene.Sphere()
+		s["sets"].setValue( "testSet" )
+		d = GafferScene.Duplicate()
+		d["in"].setInput( s["out"] )
+		d["target"].setValue( "/sphere" )
+		d["transform"]["translate"].setValue( IECore.V3f( 1, 0, 0 ) )
+
+		with Gaffer.PerformanceMonitor() as m :
+			self.assertEqual( s["out"]["setNames"].hash(), d["out"]["setNames"].hash() )
+			self.assertTrue( s["out"]["setNames"].getValue( _copy = False ).isSame( d["out"]["setNames"].getValue( _copy = False ) ) )
+			self.assertEqual( s["out"]["setNames"].getValue(), IECore.InternedStringVectorData( [ "testSet" ] ) )
+
+		self.assertEqual( m.plugStatistics( d["out"]["setNames"] ).hashCount, 0 )
+		self.assertEqual( m.plugStatistics( d["out"]["setNames"] ).computeCount, 0 )
 
 if __name__ == "__main__":
 	unittest.main()

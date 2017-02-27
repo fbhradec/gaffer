@@ -36,6 +36,8 @@
 
 #include "tbb/mutex.h"
 
+#include "boost/algorithm/string/predicate.hpp"
+
 #include "OSL/oslquery.h"
 
 #include "IECore/MessageHandler.h"
@@ -45,15 +47,24 @@
 #include "Gaffer/NumericPlug.h"
 #include "Gaffer/CompoundNumericPlug.h"
 #include "Gaffer/StringPlug.h"
+#include "Gaffer/SplinePlug.h"
+#include "Gaffer/Metadata.h"
+#include "Gaffer/PlugAlgo.h"
+
+#include "GafferScene/RendererAlgo.h"
+
+#include "GafferImage/OpenImageIOAlgo.h"
 
 #include "GafferOSL/OSLShader.h"
-#include "GafferOSL/OSLRenderer.h"
+#include "GafferOSL/ShadingEngine.h"
 
 using namespace std;
+using namespace Imath;
 using namespace IECore;
 using namespace OSL;
 using namespace Gaffer;
 using namespace GafferScene;
+using namespace GafferImage;
 using namespace GafferOSL;
 
 //////////////////////////////////////////////////////////////////////////
@@ -72,7 +83,7 @@ struct ShadingEngineCacheKey
 	}
 
 	ShadingEngineCacheKey( const OSLShader *s )
-		:	shader( s ), hash( s->stateHash() )
+		:	shader( s ), hash( s->attributesHash() )
 	{
 	}
 
@@ -101,49 +112,29 @@ inline size_t tbb_hasher( const ShadingEngineCacheKey &cacheKey )
 	return tbb_hasher( cacheKey.hash );
 }
 
-OSLRenderer::ConstShadingEnginePtr getter( const ShadingEngineCacheKey &key, size_t &cost )
+ConstShadingEnginePtr getter( const ShadingEngineCacheKey &key, size_t &cost )
 {
 	cost = 1;
 
-	ConstObjectVectorPtr state = key.shader->state();
+	ConstCompoundObjectPtr attributes = key.shader->attributes();
 	key.shader = NULL; // there's no guarantee the node would even exist after this call, so zero it out to avoid temptation
 
-	if( !state->members().size() )
+	CompoundObject::ObjectMap::const_iterator it = attributes->members().find( "osl:surface" );
+	if( it == attributes->members().end() )
 	{
 		return NULL;
 	}
 
-	static OSLRendererPtr g_renderer;
-	static tbb::mutex g_rendererMutex;
-
-	tbb::mutex::scoped_lock lock( g_rendererMutex );
-
-	if( !g_renderer )
+	const ObjectVector *network = runTimeCast<const ObjectVector>( it->second.get() );
+	if( !network || network->members().empty() )
 	{
-		g_renderer = new OSLRenderer;
-		if( const char *searchPath = getenv( "OSL_SHADER_PATHS" ) )
-		{
-			g_renderer->setOption( "osl:searchpath:shader", new StringData( searchPath ) );
-			g_renderer->setOption( "osl:lockgeom", new IntData( 1 ) );
-		}
-		g_renderer->worldBegin();
+		return NULL;
 	}
 
-	IECore::AttributeBlock attributeBlock( g_renderer );
-
-	for( ObjectVector::MemberContainer::const_iterator it = state->members().begin(), eIt = state->members().end(); it != eIt; it++ )
-	{
-		const StateRenderable *s = runTimeCast<const StateRenderable>( it->get() );
-		if( s )
-		{
-			s->render( g_renderer.get() );
-		}
-	}
-
-	return g_renderer->shadingEngine();
+	return new ShadingEngine( network );
 }
 
-typedef LRUCache<ShadingEngineCacheKey, OSLRenderer::ConstShadingEnginePtr> ShadingEngineCache;
+typedef LRUCache<ShadingEngineCacheKey, ConstShadingEnginePtr> ShadingEngineCache;
 ShadingEngineCache g_shadingEngineCache( getter, 10000 );
 
 } // namespace
@@ -163,7 +154,33 @@ OSLShader::~OSLShader()
 {
 }
 
-OSLRenderer::ConstShadingEnginePtr OSLShader::shadingEngine() const
+Gaffer::Plug *OSLShader::correspondingInput( const Gaffer::Plug *output )
+{
+	// better to do a few harmless casts than manage a duplicate implementation
+	return const_cast<Gaffer::Plug *>(
+		const_cast<const OSLShader *>( this )->correspondingInput( output )
+	);
+}
+
+const Gaffer::Plug *OSLShader::correspondingInput( const Gaffer::Plug *output ) const
+{
+	const StringData *input = IECore::runTimeCast<const StringData>( OSLShader::parameterMetadata( output, "correspondingInput" ) );
+	if( !input )
+	{
+		return NULL;
+	}
+
+	const Plug *result = parametersPlug()->getChild<Plug>( input->readable() );
+	if( !result )
+	{
+		IECore::msg( IECore::Msg::Error, "OSLShader::correspondingInput", boost::format( "Parameter \"%s\" does not exist" ) % input->readable() );
+		return NULL;
+	}
+
+	return result;
+}
+
+ConstShadingEnginePtr OSLShader::shadingEngine() const
 {
 	return g_shadingEngineCache.get( ShadingEngineCacheKey( this ) );
 }
@@ -188,13 +205,16 @@ bool OSLShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) const
 
 		if( sourceShaderOutPlug && ( sourceShaderOutPlug == inputPlug || sourceShaderOutPlug->isAncestorOf( inputPlug ) ) )
 		{
-			// source is the output of a shader node, so it'd better be
-			// a generic osl shader.
-			if( !sourceShader->isInstanceOf( staticTypeId() ) )
+			// Source is the output of a shader node, so it needs to
+			// be coming from another OSL shader. Although because Arnold allows
+			// mixing and matching Arnold native shaders and OSL shaders,
+			// we must also accept connections from ArnoldShaders.
+			if( !sourceShader->isInstanceOf( staticTypeId() ) && !sourceShader->isInstanceOf( "GafferArnold::ArnoldShader" ) )
 			{
 				return false;
 			}
-			if( sourceShader->typePlug()->getValue() != "osl:shader" )
+			const std::string sourceShaderType = sourceShader->typePlug()->getValue();
+			if( sourceShaderType != "osl:shader" && sourceShaderType != "ai:surface" )
 			{
 				return false;
 			}
@@ -215,42 +235,13 @@ bool OSLShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) const
 }
 
 //////////////////////////////////////////////////////////////////////////
-// shader loading code
+// Shader loading code
 //////////////////////////////////////////////////////////////////////////
 
-static std::string plugName( const OSLQuery::Parameter *parameter )
+namespace
 {
-	size_t i = parameter->name.find( "." );
-	if( i != string::npos )
-	{
-		return parameter->name.substr( i + 1 ).c_str();
-	}
-	return parameter->name.c_str();
-}
 
-static void transferConnectionOrValue( Plug *sourcePlug, Plug *destinationPlug )
-{
-	if( !sourcePlug )
-	{
-		return;
-	}
-
-	if( Plug *input = sourcePlug->getInput<Plug>() )
-	{
-		destinationPlug->setInput( input );
-	}
-	else
-	{
-		ValuePlug *sourceValuePlug = runTimeCast<ValuePlug>( sourcePlug );
-		ValuePlug *destinationValuePlug = runTimeCast<ValuePlug>( destinationPlug );
-		if( destinationValuePlug && sourceValuePlug )
-		{
-			destinationValuePlug->setFrom( sourceValuePlug );
-		}
-	}
-}
-
-static Plug *loadStringParameter( const OSLQuery::Parameter *parameter, Gaffer::Plug *parent )
+Plug *loadStringParameter( const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent )
 {
 	string defaultValue;
 	if( parameter->sdefault.size() )
@@ -258,7 +249,6 @@ static Plug *loadStringParameter( const OSLQuery::Parameter *parameter, Gaffer::
 		defaultValue = parameter->sdefault[0].c_str();
 	}
 
-	const string name = plugName( parameter );
 	StringPlug *existingPlug = parent->getChild<StringPlug>( name );
 	if(	existingPlug && existingPlug->defaultValue() == defaultValue )
 	{
@@ -267,15 +257,53 @@ static Plug *loadStringParameter( const OSLQuery::Parameter *parameter, Gaffer::
 
 	StringPlugPtr plug = new StringPlug( name, parent->direction(), defaultValue, Plug::Default | Plug::Dynamic );
 
-	transferConnectionOrValue( existingPlug, plug.get() );
+	if( existingPlug )
+	{
+		PlugAlgo::replacePlug( parent, plug );
+	}
+	else
+	{
+		parent->setChild( name, plug );
+	}
 
-	parent->setChild( name, plug );
+	return plug.get();
+}
+
+Plug *loadStringArrayParameter( const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent )
+{
+	StringVectorDataPtr defaultValueData = new StringVectorData();
+	std::vector<std::string> &defaultValueDataWritable = defaultValueData->writable();
+	if( parameter->sdefault.size() )
+	{
+		defaultValueDataWritable.resize( parameter->sdefault.size() );
+		for( size_t i = 0; i < parameter->sdefault.size(); i++ )
+		{
+			defaultValueDataWritable[i] = parameter->sdefault[i].c_str();
+		}
+	}
+
+	StringVectorDataPlug *existingPlug = parent->getChild<StringVectorDataPlug>( name );
+	if(	existingPlug && *existingPlug->defaultValue() == *defaultValueData )
+	{
+		return existingPlug;
+	}
+
+	StringVectorDataPlugPtr plug = new StringVectorDataPlug( name, parent->direction(), defaultValueData, Plug::Default | Plug::Dynamic );
+
+	if( existingPlug )
+	{
+		PlugAlgo::replacePlug( parent, plug );
+	}
+	else
+	{
+		parent->setChild( name, plug );
+	}
 
 	return plug.get();
 }
 
 template<typename PlugType>
-static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::Plug *parent )
+Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent, const CompoundData *metadata )
 {
 	typedef typename PlugType::ValueType ValueType;
 
@@ -289,11 +317,22 @@ static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer:
 		defaultValue = ValueType( parameter->fdefault[0] );
 	}
 
-	/// \todo Get from metadata
 	ValueType minValue( Imath::limits<ValueType>::min() );
 	ValueType maxValue( Imath::limits<ValueType>::max() );
+	if( metadata )
+	{
+		const TypedData<ValueType> *minMeta = metadata->member< TypedData<ValueType> >( "min" );
+		const TypedData<ValueType> *maxMeta = metadata->member< TypedData<ValueType> >( "max" );
+		if( minMeta )
+		{
+			minValue = minMeta->readable();
+		}
+		if( maxMeta )
+		{
+			maxValue = maxMeta->readable();
+		}
+	}
 
-	const string name = plugName( parameter );
 	PlugType *existingPlug = parent->getChild<PlugType>( name );
 	if(
 		existingPlug &&
@@ -307,15 +346,69 @@ static Plug *loadNumericParameter( const OSLQuery::Parameter *parameter, Gaffer:
 
 	typename PlugType::Ptr plug = new PlugType( name, parent->direction(), defaultValue, minValue, maxValue, Plug::Default | Plug::Dynamic );
 
-	transferConnectionOrValue( existingPlug, plug.get() );
+	if( existingPlug )
+	{
+		PlugAlgo::replacePlug( parent, plug );
+	}
+	else
+	{
+		parent->setChild( name, plug );
+	}
 
-	parent->setChild( name, plug );
+	return plug.get();
+}
+
+template<typename PlugType>
+Plug *loadNumericArrayParameter( const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent, const CompoundData *metadata )
+{
+	typedef typename PlugType::ValueType DataType;
+	typedef typename DataType::ValueType ValueType;
+	typedef typename ValueType::value_type ElementType;
+
+	typename DataType::Ptr defaultValueData = new DataType();
+	ValueType &defaultValueDataWritable = defaultValueData->writable();
+	if( parameter->idefault.size() )
+	{
+		defaultValueDataWritable.resize( parameter->idefault.size() );
+		for( size_t i = 0; i < parameter->idefault.size(); i++ )
+		{
+			defaultValueDataWritable[i] = ElementType( parameter->idefault[i] );
+		}
+	}
+	else if( parameter->fdefault.size() )
+	{
+		defaultValueDataWritable.resize( parameter->fdefault.size() );
+		for( size_t i = 0; i < parameter->fdefault.size(); i++ )
+		{
+			defaultValueDataWritable[i] = ElementType( parameter->fdefault[i] );
+		}
+	}
+
+	PlugType *existingPlug = parent->getChild<PlugType>( name );
+	if(
+		existingPlug &&
+		*existingPlug->defaultValue() == *defaultValueData
+	)
+	{
+		return existingPlug;
+	}
+
+	typename PlugType::Ptr plug = new PlugType( name, parent->direction(), defaultValueData, Plug::Default | Plug::Dynamic );
+
+	if( existingPlug )
+	{
+		PlugAlgo::replacePlug( parent, plug );
+	}
+	else
+	{
+		parent->setChild( name, plug );
+	}
 
 	return plug.get();
 }
 
 template <typename PlugType>
-static Plug *loadCompoundNumericParameter( const OSLQuery::Parameter *parameter, Gaffer::Plug *parent )
+Plug *loadCompoundNumericParameter( const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent, const CompoundData *metadata )
 {
 	typedef typename PlugType::ValueType ValueType;
 	typedef typename ValueType::BaseType BaseType;
@@ -339,39 +432,183 @@ static Plug *loadCompoundNumericParameter( const OSLQuery::Parameter *parameter,
 	/// \todo Get from metadata
 	ValueType minValue( Imath::limits<BaseType>::min() );
 	ValueType maxValue( Imath::limits<BaseType>::max() );
+	if( metadata )
+	{
+		const TypedData<ValueType> *minMeta = metadata->member< TypedData<ValueType> >( "min" );
+		const TypedData<ValueType> *maxMeta = metadata->member< TypedData<ValueType> >( "max" );
+		if( minMeta )
+		{
+			minValue = minMeta->readable();
+		}
+		if( maxMeta )
+		{
+			maxValue = maxMeta->readable();
+		}
+	}
 
-	const string name = plugName( parameter );
+	IECore::GeometricData::Interpretation interpretation = OpenImageIOAlgo::geometricInterpretation( (TypeDesc::VECSEMANTICS)parameter->type.vecsemantics );
+
+	// we don't set color because we have a dedicated plug type for that.
+	if( interpretation == GeometricData::Color )
+	{
+		interpretation = GeometricData::None;
+	}
+
 	PlugType *existingPlug = parent->getChild<PlugType>( name );
 	if(
 		existingPlug &&
 		existingPlug->defaultValue() == defaultValue &&
 		existingPlug->minValue() == minValue &&
-		existingPlug->maxValue() == maxValue
+		existingPlug->maxValue() == maxValue &&
+		existingPlug->interpretation() == interpretation
 	)
 	{
 		return existingPlug;
 	}
 
-	typename PlugType::Ptr plug = new PlugType( name, parent->direction(), defaultValue, minValue, maxValue, Plug::Default | Plug::Dynamic );
+	typename PlugType::Ptr plug = new PlugType( name, parent->direction(), defaultValue, minValue, maxValue, Plug::Default | Plug::Dynamic, interpretation );
 
 	if( existingPlug )
 	{
-		for( size_t i = 0, e = existingPlug->children().size(); i < e; ++i )
-		{
-			transferConnectionOrValue(
-				existingPlug->getChild( i ),
-				plug->getChild( i )
-			);
-		}
+		PlugAlgo::replacePlug( parent, plug );
+	}
+	else
+	{
+		parent->setChild( name, plug );
 	}
 
-	parent->setChild( name, plug );
 	return plug.get();
 }
 
-static Plug *loadClosureParameter( const OSLQuery::Parameter *parameter, Gaffer::Plug *parent )
+template <typename PlugType>
+Plug *loadCompoundNumericArrayParameter( const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent, const CompoundData *metadata )
 {
-	const string name = plugName( parameter );
+	typedef typename PlugType::ValueType DataType;
+	typedef typename DataType::ValueType ValueType;
+	typedef typename ValueType::value_type ElementType;
+	typedef typename ElementType::BaseType BaseType;
+
+	typename DataType::Ptr defaultValueData = new DataType();
+	ValueType &defaultValueDataWritable = defaultValueData->writable();
+	if( parameter->idefault.size() )
+	{
+		defaultValueDataWritable.resize( parameter->idefault.size() / ElementType::dimensions() );
+		for( size_t j = 0; j < defaultValueDataWritable.size(); j++ )
+		{
+			for( size_t i = 0; i < ElementType::dimensions(); ++i )
+			{
+				defaultValueDataWritable[j][i] = BaseType( parameter->idefault[ j * ElementType::dimensions() + i] );
+			}
+		}
+	}
+	else if( parameter->fdefault.size() )
+	{
+		defaultValueDataWritable.resize( parameter->fdefault.size() / ElementType::dimensions() );
+		for( size_t j = 0; j < defaultValueDataWritable.size(); j++ )
+		{
+			for( size_t i = 0; i < ElementType::dimensions(); ++i )
+			{
+				defaultValueDataWritable[j][i] = BaseType( parameter->fdefault[ j * ElementType::dimensions() + i] );
+			}
+		}
+	}
+
+
+
+	PlugType *existingPlug = parent->getChild<PlugType>( name );
+	if(
+		existingPlug &&
+		*existingPlug->defaultValue() == *defaultValueData
+	)
+	{
+		return existingPlug;
+	}
+
+	typename PlugType::Ptr plug = new PlugType( name, parent->direction(), defaultValueData, Plug::Default | Plug::Dynamic );
+
+	if( existingPlug )
+	{
+		PlugAlgo::replacePlug( parent, plug );
+	}
+	else
+	{
+		parent->setChild( name, plug );
+	}
+
+	return plug.get();
+}
+
+Plug *loadMatrixParameter( const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent )
+{
+	const vector<float> &d = parameter->fdefault;
+	M44f defaultValue(
+		d[0], d[1], d[2], d[3],
+		d[4], d[5], d[6], d[7],
+		d[8], d[9], d[10], d[11],
+		d[12], d[13], d[14], d[15]
+	);
+
+	M44fPlug *existingPlug = parent->getChild<M44fPlug>( name );
+	if( existingPlug && existingPlug->defaultValue() == defaultValue )
+	{
+		return existingPlug;
+	}
+
+	M44fPlugPtr plug = new M44fPlug( name, parent->direction(), defaultValue, Plug::Default | Plug::Dynamic );
+
+	if( existingPlug )
+	{
+		PlugAlgo::replacePlug( parent, plug );
+	}
+	else
+	{
+		parent->setChild( name, plug );
+	}
+
+	return plug.get();
+}
+
+Plug *loadMatrixArrayParameter( const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent )
+{
+	const vector<float> &d = parameter->fdefault;
+
+	M44fVectorDataPtr defaultValueData = new M44fVectorData();
+	std::vector<Imath::M44f> &defaultValueDataWritable = defaultValueData->writable();
+	if( parameter->fdefault.size() )
+	{
+		defaultValueDataWritable.resize( parameter->fdefault.size() / 16 );
+		for( size_t i = 0; i < defaultValueDataWritable.size(); i++ )
+		{
+			defaultValueDataWritable[i] = M44f(
+				d[i*16+0], d[i*16+1], d[i*16+2], d[i*16+3],
+				d[i*16+4], d[i*16+5], d[i*16+6], d[i*16+7],
+				d[i*16+8], d[i*16+9], d[i*16+10], d[i*16+11],
+				d[i*16+12], d[i*16+13], d[i*16+14], d[i*16+15] );
+		}
+	}
+
+	M44fVectorDataPlug *existingPlug = parent->getChild<M44fVectorDataPlug>( name );
+	if( existingPlug && *existingPlug->defaultValue() == *defaultValueData )
+	{
+		return existingPlug;
+	}
+
+	M44fVectorDataPlugPtr plug = new M44fVectorDataPlug( name, parent->direction(), defaultValueData, Plug::Default | Plug::Dynamic );
+
+	if( existingPlug )
+	{
+		PlugAlgo::replacePlug( parent, plug );
+	}
+	else
+	{
+		parent->setChild( name, plug );
+	}
+
+	return plug.get();
+}
+
+Plug *loadClosureParameter( const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent )
+{
 	Plug *existingPlug = parent->getChild<Plug>( name );
 	if(	existingPlug && existingPlug->typeId() == Plug::staticTypeId() )
 	{
@@ -380,92 +617,220 @@ static Plug *loadClosureParameter( const OSLQuery::Parameter *parameter, Gaffer:
 
 	PlugPtr plug = new Plug( name, parent->direction(), Plug::Default | Plug::Dynamic );
 
-	transferConnectionOrValue( existingPlug, plug.get() );
+	if( existingPlug )
+	{
+		PlugAlgo::replacePlug( parent, plug );
+	}
+	else
+	{
+		parent->setChild( name, plug );
+	}
 
+	return plug.get();
+}
+
+void updatePoints( Splineff &spline, const OSLQuery::Parameter *positionsParameter, const OSLQuery::Parameter *valuesParameter )
+{
+	const vector<float> &positions = positionsParameter->fdefault;
+	const vector<float> &values = valuesParameter->fdefault;
+
+	for( size_t i = 0; ( i < positions.size() ) && ( i < values.size() ); ++i )
+	{
+		spline.points.insert( Splineff::Point( positions[i], values[i] ) );
+	}
+}
+
+void updatePoints( SplinefColor3f &spline, const OSLQuery::Parameter *positionsParameter, const OSLQuery::Parameter *valuesParameter )
+{
+	const vector<float> &positions = positionsParameter->fdefault;
+	const vector<float> &values = valuesParameter->fdefault;
+
+	for( size_t i = 0; i < positions.size() && i*3+2 < values.size(); ++i )
+	{
+		spline.points.insert(
+			SplinefColor3f::Point(
+				positions[i],
+				Color3f(
+					values[i*3],
+					values[i*3+1],
+					values[i*3+2]
+				)
+			)
+		);
+	}
+}
+
+template <typename PlugType>
+Plug *loadSplineParameters( const OSLQuery::Parameter *positionsParameter, const OSLQuery::Parameter *valuesParameter, const OSLQuery::Parameter *basisParameter, const InternedString &name, Gaffer::Plug *parent )
+{
+	typedef typename PlugType::ValueType ValueType;
+	ValueType defaultValue;
+
+	const std::string &basis = basisParameter->sdefault.front().string();
+	if( basis == "bezier" )
+	{
+		defaultValue.basis = CubicBasisf::bezier();
+	}
+	else if( basis == "bspline" )
+	{
+		defaultValue.basis = CubicBasisf::bSpline();
+	}
+	else if( basis == "linear" )
+	{
+		defaultValue.basis = CubicBasisf::linear();
+	}
+	updatePoints( defaultValue, positionsParameter, valuesParameter );
+
+	PlugType *existingPlug = parent->getChild<PlugType>( name );
+	if( existingPlug && existingPlug->defaultValue() == defaultValue )
+	{
+		return existingPlug;
+	}
+
+	typename PlugType::Ptr plug = new PlugType( name, parent->direction(), defaultValue, Plug::Default | Plug::Dynamic );
 	parent->setChild( name, plug );
 
 	return plug.get();
 }
 
-// forward declaration so loadStructParameter() can call it.
-static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::Plug *parent, bool keepExistingValues );
-
-static Plug *loadStructParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::Plug *parent, bool keepExistingValues )
+bool findSplineParameters( const OSLQuery &query, const OSLQuery::Parameter *parameter, std::string &nameWithoutSuffix, const OSLQuery::Parameter * &positionsParameter, const OSLQuery::Parameter * &valuesParameter, const OSLQuery::Parameter * &basisParameter )
 {
-	CompoundPlug *result = NULL;
-
-	const string name = plugName( parameter );
-	CompoundPlug *existingPlug = parent->getChild<CompoundPlug>( name );
-	if( existingPlug )
+	const char *suffixes[] = { "Positions", "Values", "Basis", NULL };
+	const char *suffix = NULL;
+	for( const char **suffixPtr = suffixes; *suffixPtr; ++suffixPtr )
 	{
-		if( !keepExistingValues )
+		if( boost::ends_with( parameter->name.c_str(), *suffixPtr ) )
 		{
-			existingPlug->clearChildren();
+			suffix = *suffixPtr;
+			break;
 		}
-		result = existingPlug;
+	}
+
+	if( !suffix )
+	{
+		return false;
+	}
+
+	nameWithoutSuffix = parameter->name.string().substr( 0, parameter->name.string().size() - strlen( suffix ) );
+
+	positionsParameter = query.getparam( nameWithoutSuffix + "Positions" );
+	if(
+		!positionsParameter ||
+		!positionsParameter->type.is_array() ||
+		positionsParameter->type.basetype != TypeDesc::FLOAT ||
+		positionsParameter->type.aggregate != TypeDesc::SCALAR
+	)
+	{
+		return false;
+	}
+
+	valuesParameter = query.getparam( nameWithoutSuffix + "Values" );
+	if(
+		!valuesParameter ||
+		!valuesParameter->type.is_array() ||
+		valuesParameter->type.basetype != TypeDesc::FLOAT ||
+		( valuesParameter->type.aggregate != TypeDesc::SCALAR && valuesParameter->type.vecsemantics != TypeDesc::COLOR )
+	)
+	{
+		return false;
+	}
+
+	basisParameter = query.getparam( nameWithoutSuffix + "Basis" );
+	if( !basisParameter || basisParameter->type != TypeDesc::TypeString )
+	{
+		return false;
+	}
+
+	return true;
+}
+
+Plug *loadSplineParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::Plug *parent, const std::string &prefix )
+{
+
+	string nameWithoutSuffix;
+	const OSLQuery::Parameter *positionsParameter;
+	const OSLQuery::Parameter *valuesParameter;
+	const OSLQuery::Parameter *basisParameter;
+
+	if( !findSplineParameters( query, parameter, nameWithoutSuffix, positionsParameter, valuesParameter, basisParameter ) )
+	{
+		return NULL;
+	}
+
+	const string name = nameWithoutSuffix.substr( prefix.size() );
+	if( valuesParameter->type.vecsemantics == TypeDesc::COLOR )
+	{
+		return loadSplineParameters<SplinefColor3fPlug>( positionsParameter, valuesParameter, basisParameter, name, parent );
 	}
 	else
 	{
-		result = new CompoundPlug( name, parent->direction(), Plug::Default | Plug::Dynamic );
+		return loadSplineParameters<SplineffPlug>( positionsParameter, valuesParameter, basisParameter, name, parent );
 	}
+}
 
-#if OSL_LIBRARY_VERSION_CODE > 10500
-	typedef OIIO::ustring String;
-#else
-	typedef std::string String;
-#endif
+// Forward declaration so loadStructParameter() can call it.
+void loadShaderParameters( const OSLQuery &query, Gaffer::Plug *parent, const CompoundData *metadata, const std::string &prefix = "" );
 
-	for( vector<String>::const_iterator it = parameter->fields.begin(), eIt = parameter->fields.end(); it != eIt; ++it )
+Plug *loadStructParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent )
+{
+	Plug *result = NULL;
+
+	Plug *existingPlug = parent->getChild<Plug>( name );
+	if( !existingPlug || existingPlug->typeId() != Plug::staticTypeId() )
 	{
-		std::string fieldName = std::string( parameter->name.c_str() ) + "." + it->c_str();
-		loadShaderParameter( query, query.getparam( fieldName ), result, keepExistingValues );
-	}
-
-	// remove any old plugs which it turned out we didn't need
-
-	if( keepExistingValues )
-	{
-		for( int i = result->children().size() - 1; i >= 0; --i )
+		// No existing plug, or it was the wrong type (we used to use a CompoundPlug).
+		result = new Plug( name, parent->direction(), Plug::Default | Plug::Dynamic );
+		if( existingPlug )
 		{
-			GraphComponent *child = result->getChild<GraphComponent>( i );
-			if( std::find( parameter->fields.begin(), parameter->fields.end(), child->getName().string() ) == parameter->fields.end() )
+			// Transfer old plugs onto the replacement.
+			for( PlugIterator it( existingPlug ); !it.done(); ++it )
 			{
-				result->removeChild( child );
+				result->addChild( *it );
 			}
 		}
 	}
+	else
+	{
+		result = existingPlug;
+	}
+
+	/// \todo Should we support metadata on the children of a struct parameter?
+	/// The OSL spec doesn't appear to standardize a way to specify this.
+	/// We could attach metadata to the struct, but would it then be named
+	/// something like "structElementName_min"?
+	loadShaderParameters( query, result, NULL, parameter->name.string() + "." );
 
 	parent->setChild( name, result );
 
 	return result;
 }
 
-static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, Gaffer::Plug *parent, bool keepExistingValues )
+Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Parameter *parameter, const InternedString &name, Gaffer::Plug *parent, const CompoundData *metadata )
 {
 	Plug *result = NULL;
 
 	if( parameter->isstruct )
 	{
-		result = loadStructParameter( query, parameter, parent, keepExistingValues );
+		result = loadStructParameter( query, parameter, name, parent );
 	}
 	else if( parameter->isclosure )
 	{
-		result = loadClosureParameter( parameter, parent );
+		result = loadClosureParameter( parameter, name, parent );
 	}
 	else if( parameter->type.arraylen == 0 )
 	{
 		if( parameter->type.basetype == TypeDesc::FLOAT || parameter->type.basetype == TypeDesc::INT )
 		{
-			// numeric in some way
+			// Numeric in some way.
 			if( parameter->type.aggregate == TypeDesc::SCALAR )
 			{
 				if( parameter->type.basetype == TypeDesc::FLOAT )
 				{
-					result = loadNumericParameter<FloatPlug>( parameter, parent );
+					result = loadNumericParameter<FloatPlug>( parameter, name, parent, metadata );
 				}
 				else
 				{
-					result = loadNumericParameter<IntPlug>( parameter, parent );
+					result = loadNumericParameter<IntPlug>( parameter, name, parent, metadata );
 				}
 			}
 			else if( parameter->type.aggregate == TypeDesc::VEC3 )
@@ -474,27 +839,78 @@ static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Paramet
 				{
 					if( parameter->type.vecsemantics == TypeDesc::COLOR )
 					{
-						result = loadCompoundNumericParameter<Color3fPlug>( parameter, parent );
+						result = loadCompoundNumericParameter<Color3fPlug>( parameter, name, parent, metadata );
 					}
 					else
 					{
-						result = loadCompoundNumericParameter<V3fPlug>( parameter, parent );
+						result = loadCompoundNumericParameter<V3fPlug>( parameter, name, parent, metadata );
 					}
 				}
 				else
 				{
-					result = loadCompoundNumericParameter<V3iPlug>( parameter, parent );
+					result = loadCompoundNumericParameter<V3iPlug>( parameter, name, parent, metadata );
+				}
+			}
+			else if( parameter->type.aggregate == TypeDesc::MATRIX44 )
+			{
+				if( parameter->type.basetype == TypeDesc::FLOAT )
+				{
+					result = loadMatrixParameter( parameter, name, parent );
 				}
 			}
 		}
 		else if( parameter->type.basetype == TypeDesc::STRING )
 		{
-			result = loadStringParameter( parameter, parent );
+			result = loadStringParameter( parameter, name, parent );
 		}
 	}
 	else
 	{
-		/// \todo support array parameters
+		// Arrays
+		if( parameter->type.basetype == TypeDesc::FLOAT || parameter->type.basetype == TypeDesc::INT )
+		{
+			// Numeric in some way.
+			if( parameter->type.aggregate == TypeDesc::SCALAR )
+			{
+				if( parameter->type.basetype == TypeDesc::FLOAT )
+				{
+					result = loadNumericArrayParameter<FloatVectorDataPlug>( parameter, name, parent, metadata );
+				}
+				else
+				{
+					result = loadNumericArrayParameter<IntVectorDataPlug>( parameter, name, parent, metadata );
+				}
+			}
+			else if( parameter->type.aggregate == TypeDesc::VEC3 )
+			{
+				if( parameter->type.basetype == TypeDesc::FLOAT )
+				{
+					if( parameter->type.vecsemantics == TypeDesc::COLOR )
+					{
+						result = loadCompoundNumericArrayParameter<Color3fVectorDataPlug>( parameter, name, parent, metadata );
+					}
+					else
+					{
+						result = loadCompoundNumericArrayParameter<V3fVectorDataPlug>( parameter, name, parent, metadata );
+					}
+				}
+				else
+				{
+					result = loadCompoundNumericParameter<V3iPlug>( parameter, name, parent, metadata );
+				}
+			}
+			else if( parameter->type.aggregate == TypeDesc::MATRIX44 )
+			{
+				if( parameter->type.basetype == TypeDesc::FLOAT )
+				{
+					result = loadMatrixArrayParameter( parameter, name, parent );
+				}
+			}
+		}
+		else if( parameter->type.basetype == TypeDesc::STRING )
+		{
+			result = loadStringArrayParameter( parameter, name, parent );
+		}
 	}
 
 	if( !result )
@@ -505,95 +921,153 @@ static Plug *loadShaderParameter( const OSLQuery &query, const OSLQuery::Paramet
 	return result;
 }
 
-static void loadShaderParameters( const OSLQuery &query, Gaffer::Plug *parametersPlug, bool keepExistingValues )
+void loadShaderParameters( const OSLQuery &query, Gaffer::Plug *parent, const CompoundData *metadata, const std::string &prefix )
 {
 
-	// if we're not preserving existing values then remove all existing parameter plugs - the various
-	// plug creators above know that if a plug exists then they should preserve its values.
+	// Make sure we have a plug to represent each parameter, reusing plugs wherever possible.
 
-	if( !keepExistingValues )
-	{
-		parametersPlug->clearChildren();
-	}
-
-	// make sure we have a plug to represent each parameter, reusing plugs wherever possible.
-
-	set<string> validPlugNames;
+	set<const Plug *> validPlugs;
 	for( size_t i = 0; i < query.nparams(); ++i )
 	{
 		const OSLQuery::Parameter *parameter = query.getparam( i );
 		const Plug::Direction direction = parameter->isoutput ? Plug::Out : Plug::In;
-		if( direction != parametersPlug->direction() )
+		if( direction != parent->direction() )
 		{
 			continue;
 		}
 
-		if( parameter->name.find( "." ) != string::npos )
+		if( !boost::starts_with( parameter->name.c_str(), prefix ) )
 		{
-			// member of a struct - will be loaded when the struct is loaded
 			continue;
 		}
 
-		const Plug *plug = loadShaderParameter( query, parameter, parametersPlug, keepExistingValues );
+		const string name = parameter->name.string().substr( prefix.size() );
+		if( name.find( "." ) != string::npos )
+		{
+			// Member of a struct - will be loaded when the struct is loaded
+			continue;
+		}
+
+		// Spline parameters are a nasty special case because multiple shader
+		// parameters become a single plug on the node, so we deal with them
+		// outside of `loadShaderParameter()`, which deals exclusively with
+		// the one-parameter-at-a-time case.
+		const Plug *plug = loadSplineParameter( query, parameter, parent, prefix );
+		if( !plug )
+		{
+			const CompoundData *parameterMetadata = NULL;
+			if( metadata )
+			{
+				parameterMetadata = metadata->member<IECore::CompoundData>( name );
+			}
+
+
+			plug = loadShaderParameter( query, parameter, name, parent, parameterMetadata );
+		}
 
 		if( plug )
 		{
-			validPlugNames.insert( parameter->name.c_str() );
+			validPlugs.insert( plug );
 		}
 	}
 
-	// remove any old plugs which it turned out we didn't need
+	// Remove any old plugs which it turned out we didn't need.
 
-	if( keepExistingValues )
+	for( int i = parent->children().size() - 1; i >= 0; --i )
 	{
-		for( int i = parametersPlug->children().size() - 1; i >= 0; --i )
+		Plug *child = parent->getChild<Plug>( i );
+		if( validPlugs.find( child ) == validPlugs.end() )
 		{
-			GraphComponent *child = parametersPlug->getChild<GraphComponent>( i );
-			if( validPlugNames.find( child->getName().string() ) == validPlugNames.end() )
-			{
-				parametersPlug->removeChild( child );
-			}
+			parent->removeChild( child );
 		}
 	}
 
 }
 
+} // namespace
+
 void OSLShader::loadShader( const std::string &shaderName, bool keepExistingValues )
 {
+	Plug *existingOut = outPlug();
+	if( shaderName.empty() )
+	{
+		parametersPlug()->clearChildren();
+		namePlug()->setValue( "" );
+		typePlug()->setValue( "" );
+		if( existingOut )
+		{
+			existingOut->clearChildren();
+		}
+		return;
+	}
+
 	const char *searchPath = getenv( "OSL_SHADER_PATHS" );
 
 	OSLQuery query;
 	if( !query.open( shaderName, searchPath ? searchPath : "" ) )
 	{
-		throw Exception( query.error() );
+		throw Exception( query.geterror() );
 	}
 
-	loadShaderParameters( query, parametersPlug(), keepExistingValues );
-
-	if( query.shadertype() == "shader" )
+	const bool outPlugHadChildren = existingOut ? existingOut->children().size() : false;
+	if( !keepExistingValues )
 	{
-		CompoundPlug *existingOut = getChild<CompoundPlug>( "out" );
-		if( !existingOut || existingOut->typeId() != CompoundPlug::staticTypeId() )
+		// If we're not preserving existing values then remove all existing
+		// parameter plugs - the various plug creators above know that if a
+		// plug exists then they should preserve its values.
+		parametersPlug()->clearChildren();
+		if( existingOut )
 		{
-			CompoundPlugPtr outPlug = new CompoundPlug( "out", Plug::Out, Plug::Default | Plug::Dynamic );
-			setChild( "out", outPlug );
-		}
-		loadShaderParameters( query, getChild<CompoundPlug>( "out" ), keepExistingValues );
-	}
-	else
-	{
-		Plug *existingOut = getChild<Plug>( "out" );
-		if( !existingOut || existingOut->typeId() != Plug::staticTypeId() )
-		{
-			PlugPtr outPlug = new Plug( "out", Plug::Out, Plug::Default | Plug::Dynamic );
-			setChild( "out", outPlug );
+			existingOut->clearChildren();
 		}
 	}
 
+	m_metadata = NULL;
 	namePlug()->setValue( shaderName );
 	typePlug()->setValue( std::string( "osl:" ) + query.shadertype().c_str() );
 
-	m_metadata = NULL;
+	const IECore::CompoundData *metadata = OSLShader::metadata();
+	const IECore::CompoundData *parameterMetadata = NULL;
+	if( metadata )
+	{
+		parameterMetadata = metadata->member<IECore::CompoundData>( "parameter" );
+	}
+
+
+	loadShaderParameters( query, parametersPlug(), parameterMetadata );
+
+	if( !existingOut || existingOut->typeId() != Plug::staticTypeId() )
+	{
+		PlugPtr outPlug = new Plug( "out", Plug::Out, Plug::Default | Plug::Dynamic );
+		if( existingOut )
+		{
+			// We had an out plug but it was the wrong type (we used
+			// to use a CompoundPlug before that was deprecated). Move
+			// over any existing child plugs onto our replacement.
+			for( PlugIterator it( existingOut ); !it.done(); ++it )
+			{
+				outPlug->addChild( *it );
+			}
+		}
+		setChild( "out", outPlug );
+	}
+
+	if( query.shadertype() == "shader" )
+	{
+		loadShaderParameters( query, outPlug(), parameterMetadata );
+	}
+	else
+	{
+		outPlug()->clearChildren();
+	}
+
+	if( static_cast<bool>( outPlug()->children().size() ) != outPlugHadChildren )
+	{
+		// OSLShaderUI registers a dynamic metadata entry which depends on whether or
+		// not the plug has children, so we must notify the world that the value will
+		// have changed.
+		Metadata::plugValueChangedSignal()( staticTypeId(), "out", "nodule:type", outPlug() );
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -614,6 +1088,36 @@ static IECore::DataPtr convertMetadata( const OSLQuery::Parameter &metadata )
 	{
 		return new IECore::StringData( metadata.sdefault[0].c_str() );
 	}
+	else if( metadata.type.aggregate == TypeDesc::VEC3 )
+	{
+		if( metadata.type.basetype == TypeDesc::FLOAT )
+		{
+			if( metadata.type.vecsemantics == TypeDesc::COLOR )
+			{
+				return new IECore::Color3fData( Imath::Color3f(
+					metadata.fdefault[0],
+					metadata.fdefault[1],
+					metadata.fdefault[2]
+				) );
+			}
+			else
+			{
+				return new IECore::V3fData( Imath::V3f(
+					metadata.fdefault[0],
+					metadata.fdefault[1],
+					metadata.fdefault[2]
+				) );
+			}
+		}
+		else
+		{
+			return new IECore::V3iData( Imath::V3i(
+				metadata.idefault[0],
+				metadata.idefault[1],
+				metadata.idefault[2]
+			) );
+		}
+	}
 	else if( metadata.type.arraylen > 0 )
 	{
 		if( metadata.type.elementtype() == TypeDesc::FLOAT )
@@ -626,16 +1130,12 @@ static IECore::DataPtr convertMetadata( const OSLQuery::Parameter &metadata )
 		}
 		else if( metadata.type.elementtype() == TypeDesc::STRING )
 		{
-#if OSL_LIBRARY_VERSION_CODE < 10600
-			return new StringVectorData( metadata.sdefault );
-# else
 			StringVectorDataPtr result = new StringVectorData;
 			for( vector<ustring>::const_iterator it = metadata.sdefault.begin(), eIt = metadata.sdefault.end(); it != eIt; ++it )
 			{
 				result->writable().push_back( it->string() );
 			}
 			return result;
-#endif
 		}
 	}
 
@@ -669,7 +1169,7 @@ static IECore::ConstCompoundDataPtr metadataGetter( const std::string &key, size
 	OSLQuery query;
 	if( !query.open( key, searchPath ? searchPath : "" ) )
 	{
-		throw Exception( query.error() );
+		throw Exception( query.geterror() );
 	}
 
 	CompoundDataPtr metadata = new CompoundData;
@@ -682,7 +1182,29 @@ static IECore::ConstCompoundDataPtr metadataGetter( const std::string &key, size
 		const OSLQuery::Parameter *parameter = query.getparam( i );
 		if( parameter->metadata.size() )
 		{
-			parameterMetadata->writable()[parameter->name.c_str()] = convertMetadata( parameter->metadata );
+			string nameWithoutSuffix;
+			const OSLQuery::Parameter *positionsParameter;
+			const OSLQuery::Parameter *valuesParameter;
+			const OSLQuery::Parameter *basisParameter;
+
+			// If this parameter is part of a spline, register the metadata onto the spline plug
+			if( findSplineParameters( query, parameter, nameWithoutSuffix, positionsParameter, valuesParameter, basisParameter ) )
+			{
+				// We merge metadata found on all the parameters that make up the plug, but in no particular order.
+				// If you specify conflicting metadata on the different parameters you may get inconsistent results.
+				CompoundData *prevData = parameterMetadata->member<CompoundData>( nameWithoutSuffix );
+				CompoundDataPtr data = convertMetadata( parameter->metadata );
+				if( prevData )
+				{
+					data->writable().insert( prevData->readable().begin(), prevData->readable().end() );
+				}
+
+				parameterMetadata->writable()[nameWithoutSuffix] = data;
+			}
+			else
+			{
+				parameterMetadata->writable()[parameter->name.c_str()] = convertMetadata( parameter->metadata );
+			}
 		}
 	}
 
@@ -721,7 +1243,7 @@ const IECore::Data *OSLShader::parameterMetadata( const Gaffer::Plug *plug, cons
 		return NULL;
 	}
 
-	if( plug->parent<Plug>() != parametersPlug() )
+	if( plug->parent<Plug>() != parametersPlug() && plug->parent<Plug>() != outPlug() )
 	{
 		return NULL;
 	}
@@ -731,5 +1253,6 @@ const IECore::Data *OSLShader::parameterMetadata( const Gaffer::Plug *plug, cons
 	{
 		return NULL;
 	}
+
 	return p->member<IECore::Data>( key );
 }

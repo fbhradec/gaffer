@@ -37,7 +37,6 @@
 import os
 import unittest
 import subprocess32 as subprocess
-import shutil
 
 import IECore
 
@@ -49,7 +48,11 @@ import GafferAppleseedTest
 
 class AppleseedRenderTest( GafferTest.TestCase ) :
 
-	__scriptFileName = "/tmp/test.gfr"
+	def setUp( self ) :
+
+		GafferTest.TestCase.setUp( self )
+
+		self.__scriptFileName = self.temporaryDirectory() + "/test.gfr"
 
 	def testExecute( self ) :
 
@@ -57,26 +60,21 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 
 		s["plane"] = GafferScene.Plane()
 		s["render"] = GafferAppleseed.AppleseedRender()
-		s["render"]["mode"].setValue( "generate" )
+		s["render"]["mode"].setValue( s["render"].Mode.SceneDescriptionMode )
 		s["render"]["in"].setInput( s["plane"]["out"] )
 
 		s["expression"] = Gaffer.Expression()
-		s["expression"]["engine"].setValue( "python" )
-		s["expression"]["expression"].setValue( "parent['render']['fileName'] = '/tmp/test.%d.appleseed' % int( context['frame'] )" )
+		s["expression"].setExpression( "parent['render']['fileName'] = '" + self.temporaryDirectory() + "/test.%d.appleseed' % int( context['frame'] )" )
 
 		s["fileName"].setValue( self.__scriptFileName )
 		s.save()
 
-		p = subprocess.Popen(
-			"gaffer execute " + self.__scriptFileName + " -frames 1-3",
-			shell=True,
-			stderr = subprocess.PIPE,
+		subprocess.check_call(
+			[ "gaffer", "execute", self.__scriptFileName, "-frames", "1-3" ]
 		)
-		p.wait()
-		self.failIf( p.returncode )
 
 		for i in range( 1, 4 ) :
-			self.failUnless( os.path.exists( "/tmp/test.%d.appleseed" % i ) )
+			self.failUnless( os.path.exists( self.temporaryDirectory() + "/test.%d.appleseed" % i ) )
 
 	def testWaitForImage( self ) :
 
@@ -84,29 +82,34 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 
 		s["plane"] = GafferScene.Plane()
 
+		s["options"] = GafferAppleseed.AppleseedOptions()
+		s["options"]["in"].setInput( s["plane"]["out"] )
+		s["options"]["options"]["aaSamples"]["value"].setValue( 1 )
+		s["options"]["options"]["aaSamples"]["enabled"].setValue( True )
+
 		s["outputs"] = GafferScene.Outputs()
 		s["outputs"].addOutput(
 			"beauty",
 			IECore.Display(
-				"/tmp/test.exr",
+				self.temporaryDirectory() + "/test.exr",
 				"exr",
 				"rgba",
 				{}
 			)
 		)
-		s["outputs"]["in"].setInput( s["plane"]["out"] )
+		s["outputs"]["in"].setInput( s["options"]["out"] )
 
 		s["render"] = GafferAppleseed.AppleseedRender()
 		s["render"]["in"].setInput( s["outputs"]["out"] )
 
-		s["render"]["verbosity"].setValue( "fatal" )
-		s["render"]["fileName"].setValue( "/tmp/test.appleseed" )
+		s["render"]["fileName"].setValue( self.temporaryDirectory() + "/test.appleseed" )
 
 		s["fileName"].setValue( self.__scriptFileName )
+		s.save()
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
-		self.failUnless( os.path.exists( "/tmp/test.exr" ) )
+		self.failUnless( os.path.exists( self.temporaryDirectory() + "/test.exr" ) )
 
 	def testExecuteWithStringSubstitutions( self ) :
 
@@ -114,23 +117,19 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 
 		s["plane"] = GafferScene.Plane()
 		s["render"] = GafferAppleseed.AppleseedRender()
-		s["render"]["mode"].setValue( "generate" )
+		s["render"]["mode"].setValue( s["render"].Mode.SceneDescriptionMode )
 		s["render"]["in"].setInput( s["plane"]["out"] )
-		s["render"]["fileName"].setValue( "/tmp/test.####.appleseed" )
+		s["render"]["fileName"].setValue( self.temporaryDirectory() + "/test.####.appleseed" )
 
 		s["fileName"].setValue( self.__scriptFileName )
 		s.save()
 
-		p = subprocess.Popen(
-			"gaffer execute " + self.__scriptFileName + " -frames 1-3",
-			shell=True,
-			stderr = subprocess.PIPE,
+		subprocess.check_call(
+			[ "gaffer", "execute", self.__scriptFileName, "-frames", "1-3" ]
 		)
-		p.wait()
-		self.failIf( p.returncode )
 
 		for i in range( 1, 4 ) :
-			self.failUnless( os.path.exists( "/tmp/test.%04d.appleseed" % i ) )
+			self.failUnless( os.path.exists( self.temporaryDirectory() + "/test.%04d.appleseed" % i ) )
 
 	def testImageOutput( self ) :
 
@@ -138,23 +137,27 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 
 		s["plane"] = GafferScene.Plane()
 
+		s["options"] = GafferAppleseed.AppleseedOptions()
+		s["options"]["in"].setInput( s["plane"]["out"] )
+		s["options"]["options"]["aaSamples"]["value"].setValue( 1 )
+		s["options"]["options"]["aaSamples"]["enabled"].setValue( True )
+
 		s["outputs"] = GafferScene.Outputs()
 		s["outputs"].addOutput(
 			"beauty",
 			IECore.Display(
-				"/tmp/test.####.exr",
+				self.temporaryDirectory() + "/test.####.exr",
 				"exr",
 				"rgba",
 				{}
 			)
 		)
-		s["outputs"]["in"].setInput( s["plane"]["out"] )
+		s["outputs"]["in"].setInput( s["options"]["out"] )
 
 		s["render"] = GafferAppleseed.AppleseedRender()
 		s["render"]["in"].setInput( s["outputs"]["out"] )
 
-		s["render"]["verbosity"].setValue( "fatal" )
-		s["render"]["fileName"].setValue( "/tmp/test.####.appleseed" )
+		s["render"]["fileName"].setValue( self.temporaryDirectory() + "/test.####.appleseed" )
 
 		s["fileName"].setValue( self.__scriptFileName )
 		s.save()
@@ -163,10 +166,10 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 		for i in range( 1, 4 ) :
 			c.setFrame( i )
 			with c :
-				s["render"].execute()
+				s["render"]["task"].execute()
 
 		for i in range( 1, 4 ) :
-			self.failUnless( os.path.exists( "/tmp/test.%04d.exr" % i ) )
+			self.failUnless( os.path.exists( self.temporaryDirectory() + "/test.%04d.exr" % i ) )
 
 	def testTypeNamePrefixes( self ) :
 
@@ -186,8 +189,8 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 	def testDirectoryCreation( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["variables"].addMember( "renderDirectory", "/tmp/renderTests" )
-		s["variables"].addMember( "appleseedDirectory", "/tmp/appleseedTests" )
+		s["variables"].addMember( "renderDirectory", self.temporaryDirectory() + "/renderTests" )
+		s["variables"].addMember( "appleseedDirectory", self.temporaryDirectory() + "/appleseedTests" )
 
 		s["plane"] = GafferScene.Plane()
 
@@ -206,56 +209,32 @@ class AppleseedRenderTest( GafferTest.TestCase ) :
 		s["render"] = GafferAppleseed.AppleseedRender()
 		s["render"]["in"].setInput( s["outputs"]["out"] )
 		s["render"]["fileName"].setValue( "$appleseedDirectory/test.####.appleseed" )
-		s["render"]["mode"].setValue( "generate" )
+		s["render"]["mode"].setValue( s["render"].Mode.SceneDescriptionMode )
 
-		self.assertFalse( os.path.exists( "/tmp/renderTests" ) )
-		self.assertFalse( os.path.exists( "/tmp/appleseedTests" ) )
-		self.assertFalse( os.path.exists( "/tmp/appleseedTests/test.0001.appleseed" ) )
+		self.assertFalse( os.path.exists( self.temporaryDirectory() + "/renderTests" ) )
+		self.assertFalse( os.path.exists( self.temporaryDirectory() + "/appleseedTests" ) )
+		self.assertFalse( os.path.exists( self.temporaryDirectory() + "/appleseedTests/test.0001.appleseed" ) )
+		self.assertFalse( os.path.exists( self.__scriptFileName ) )
 
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.__scriptFileName )
+		s.save()
+
+		with s.context() :
+			s["render"]["task"].execute()
+
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/renderTests" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/appleseedTests" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/appleseedTests/test.0001.appleseed" ) )
+		self.assertTrue( os.path.exists( self.__scriptFileName ) )
 
 		# check it can cope with everything already existing
 
 		with s.context() :
-			s["render"].execute()
+			s["render"]["task"].execute()
 
-		self.assertTrue( os.path.exists( "/tmp/renderTests" ) )
-		self.assertTrue( os.path.exists( "/tmp/appleseedTests" ) )
-		self.assertTrue( os.path.exists( "/tmp/appleseedTests/test.0001.appleseed" ) )
-
-		# check it can cope with everything already existing
-
-		with s.context() :
-			s["render"].execute()
-
-		self.assertTrue( os.path.exists( "/tmp/renderTests" ) )
-		self.assertTrue( os.path.exists( "/tmp/appleseedTests" ) )
-		self.assertTrue( os.path.exists( "/tmp/appleseedTests/test.0001.appleseed" ) )
-
-	def setUp( self ) :
-
-		for i in range( 1, 4 ) :
-			if os.path.exists( "/tmp/test.%d.appleseed" % i ) :
-				os.remove( "/tmp/test.%d.appleseed" % i )
-			if os.path.exists( "/tmp/test.%04d.appleseed" % i ) :
-				os.remove( "/tmp/test.%04d.appleseed" % i )
-			if os.path.exists( "/tmp/test.%04d.exr" % i ) :
-				os.remove( "/tmp/test.%04d.exr" % i )
-
-		for f in (
-			"/tmp/renderTests",
-			"/tmp/appleseedTests/test.0001.appleseed",
-			"/tmp/appleseedTests",
-			"/tmp/test.exr",
-		) :
-			if os.path.isfile( f ) :
-				os.remove( f )
-			elif os.path.isdir( f ) :
-				shutil.rmtree( f )
-
-	def tearDown( self ) :
-
-		self.setUp()
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/renderTests" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/appleseedTests" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/appleseedTests/test.0001.appleseed" ) )
 
 if __name__ == "__main__":
 	unittest.main()

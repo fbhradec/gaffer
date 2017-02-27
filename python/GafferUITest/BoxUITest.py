@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2013-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -51,10 +51,10 @@ class BoxUITest( GafferUITest.TestCase ) :
 
 	IECore.registerRunTimeTyped( NodulePositionNode )
 
-	Gaffer.Metadata.registerPlugValue( NodulePositionNode, "op1", "nodeGadget:nodulePosition", "left" )
-	Gaffer.Metadata.registerPlugValue( NodulePositionNode, "sum", "nodeGadget:nodulePosition", "right" )
+	Gaffer.Metadata.registerValue( NodulePositionNode, "op1", "noduleLayout:section", "left" )
+	Gaffer.Metadata.registerValue( NodulePositionNode, "sum", "noduleLayout:section", "right" )
 
-	Gaffer.Metadata.registerPlugValue( NodulePositionNode, "op2", "nodule:type", "" )
+	Gaffer.Metadata.registerValue( NodulePositionNode, "op2", "nodule:type", "" )
 
 	def testNodulePositions( self ) :
 
@@ -72,8 +72,8 @@ class BoxUITest( GafferUITest.TestCase ) :
 
 		boxGadget = g.nodeGadget( box )
 
-		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( box["in"] ) ), IECore.V3f( -1, 0, 0 ) )
-		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( box["out"] ) ), IECore.V3f( 1, 0, 0 ) )
+		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( box["op1"] ) ), IECore.V3f( -1, 0, 0 ) )
+		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( box["sum"] ) ), IECore.V3f( 1, 0, 0 ) )
 
 		# Now test that a copy/paste of the box maintains the tangents in the copy.
 
@@ -85,19 +85,19 @@ class BoxUITest( GafferUITest.TestCase ) :
 		box2 = s2[box.getName()]
 		boxGadget2 = g2.nodeGadget( box2 )
 
-		self.assertEqual( boxGadget2.noduleTangent( boxGadget2.nodule( box2["in"] ) ), IECore.V3f( -1, 0, 0 ) )
-		self.assertEqual( boxGadget2.noduleTangent( boxGadget2.nodule( box2["out"] ) ), IECore.V3f( 1, 0, 0 ) )
+		self.assertEqual( boxGadget2.noduleTangent( boxGadget2.nodule( box2["op1"] ) ), IECore.V3f( -1, 0, 0 ) )
+		self.assertEqual( boxGadget2.noduleTangent( boxGadget2.nodule( box2["sum"] ) ), IECore.V3f( 1, 0, 0 ) )
 
 	def testNodulePositionsForPromotedPlugs( self ) :
-	
+
 		s = Gaffer.ScriptNode()
 		g = GafferUI.GraphGadget( s )
-		
+
 		s["b"] = Gaffer.Box()
 		s["b"]["n"] = self.NodulePositionNode()
-		
+
 		boxGadget = g.nodeGadget( s["b"] )
-		
+
 		p1 = s["b"].promotePlug( s["b"]["n"]["op1"] )
 		p2 = s["b"].promotePlug( s["b"]["n"]["sum"] )
 
@@ -134,16 +134,16 @@ class BoxUITest( GafferUITest.TestCase ) :
 		self.assertTrue( w2 is w )
 
 	def testUIForNonMatchingPromotedPlugTypes( self ) :
-	
+
 		box = Gaffer.Box()
 		box["user"]["b"] = Gaffer.BoolPlug()
 		box["node"] = Gaffer.Node()
 		box["node"]["i"] = Gaffer.IntPlug()
 		box["node"]["i"].setInput( box["user"]["b"] )
-		
+
 		ui = GafferUI.NodeUI.create( box )
 		w = ui.plugValueWidget( box["user"]["b"], lazy=False )
-		
+
 		self.assertTrue( isinstance( w, GafferUI.BoolPlugValueWidget ) )
 
 	def testUIForOutputPlugTypes( self ) :
@@ -179,6 +179,19 @@ class BoxUITest( GafferUITest.TestCase ) :
 		s.execute( s.serialise( filter = Gaffer.StandardSet( [ s["b"] ] ) ) )
 
 		self.assertEqual( g.nodeGadget( s["b1"] ).nodule( s["b1"]["p"] ), None )
+
+	def testPromotionIgnoresLayoutSection( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["b"] = Gaffer.Box()
+		s["b"]["n"] = Gaffer.Node()
+
+		s["b"]["n"]["user"]["p"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		Gaffer.Metadata.registerValue( s["b"]["n"]["user"]["p"], "layout:section", "SomeWeirdSection" )
+
+		p = s["b"].promotePlug( s["b"]["n"]["user"]["p"] )
+		self.assertNotEqual( Gaffer.Metadata.value( p, "layout:section" ), "SomeWeirdSection" )
 
 if __name__ == "__main__":
 	unittest.main()

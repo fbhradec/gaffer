@@ -34,6 +34,7 @@
 #
 ##########################################################################
 
+import os
 import unittest
 import threading
 
@@ -44,7 +45,7 @@ import GafferTest
 import GafferImage
 import GafferImageTest
 
-class ImageNodeTest( GafferTest.TestCase ) :
+class ImageNodeTest( GafferImageTest.ImageTestCase ) :
 
 	def testCacheThreadSafety( self ) :
 
@@ -68,17 +69,33 @@ class ImageNodeTest( GafferTest.TestCase ) :
 			except Exception, e :
 				exceptions.append( e )
 
-		threads = []
+		def processer() :
+
+			try :
+				GafferImageTest.processTiles( g["out"] )
+			except Exception, e :
+				exceptions.append( e )
+
+		graderThreads = []
 		for i in range( 0, 10 ) :
 			thread = threading.Thread( target = grader )
-			threads.append( thread )
+			graderThreads.append( thread )
 			thread.start()
 
-		for thread in threads :
+		for thread in graderThreads :
 			thread.join()
 
 		for image in images :
 			self.assertEqual( image, gradedImage )
+
+		processerThreads = []
+		for i in range( 0, 10 ) :
+			thread = threading.Thread( target = processer )
+			processerThreads.append( thread )
+			thread.start()
+
+		for thread in processerThreads :
+			thread.join()
 
 		for e in exceptions :
 			raise e
@@ -90,12 +107,15 @@ class ImageNodeTest( GafferTest.TestCase ) :
 
 	def setUp( self ) :
 
+		GafferTest.TestCase.setUp( self )
+
 		self.__previousCacheMemoryLimit = Gaffer.ValuePlug.getCacheMemoryLimit()
 
 	def tearDown( self ) :
+
+		GafferTest.TestCase.tearDown( self )
 
 		Gaffer.ValuePlug.setCacheMemoryLimit( self.__previousCacheMemoryLimit )
 
 if __name__ == "__main__":
 	unittest.main()
-

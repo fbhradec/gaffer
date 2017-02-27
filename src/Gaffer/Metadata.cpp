@@ -42,11 +42,14 @@
 #include "boost/multi_index/sequenced_index.hpp"
 #include "boost/multi_index/ordered_index.hpp"
 #include "boost/multi_index/member.hpp"
+#include "boost/optional.hpp"
 
 #include "IECore/CompoundData.h"
+#include "IECore/SimpleTypedData.h"
 
 #include "Gaffer/Node.h"
 #include "Gaffer/Action.h"
+#include "Gaffer/Plug.h"
 
 #include "Gaffer/Metadata.h"
 
@@ -58,6 +61,26 @@ using namespace Gaffer;
 
 namespace
 {
+
+typedef std::pair<InternedString, Metadata::ValueFunction> NamedValue;
+
+typedef multi_index::multi_index_container<
+	NamedValue,
+	multi_index::indexed_by<
+		multi_index::ordered_unique<
+			multi_index::member<NamedValue, InternedString, &NamedValue::first>
+		>,
+		multi_index::sequenced<>
+	>
+> Values;
+
+typedef std::map<IECore::InternedString, Values> MetadataMap;
+
+MetadataMap &metadataMap()
+{
+	static MetadataMap m;
+	return m;
+}
 
 struct NodeMetadata
 {
@@ -84,8 +107,8 @@ struct NodeMetadata
 			multi_index::sequenced<>
 		>
 	> PlugValues;
-	
-	typedef map<MatchPattern, PlugValues> PlugPathsToValues;
+
+	typedef map<StringAlgo::MatchPattern, PlugValues> PlugPathsToValues;
 
 	NodeValues nodeValues;
 	PlugPathsToValues plugPathsToValues;
@@ -121,7 +144,7 @@ typedef multi_index::multi_index_container<
 		multi_index::sequenced<>
 	>
 > InstanceValues;
-	
+
 typedef concurrent_hash_map<const GraphComponent *, InstanceValues *> InstanceMetadataMap;
 
 InstanceMetadataMap &instanceMetadataMap()
@@ -152,14 +175,19 @@ InstanceValues *instanceMetadata( const GraphComponent *instance, bool createIfM
 	return NULL;
 }
 
-const Data *instanceValue( const GraphComponent *instance, InternedString key, bool *persistent = NULL )
+// It's valid to register NULL as an instance value and expect it to override
+// any non-NULL registration. We use OptionalData as a way of distinguishing
+// between an explicit registration of NULL and no registration at all.
+typedef boost::optional<ConstDataPtr> OptionalData;
+
+OptionalData instanceValue( const GraphComponent *instance, InternedString key, bool *persistent = NULL )
 {
 	const InstanceValues *m = instanceMetadata( instance, /* createIfMissing = */ false );
 	if( !m )
 	{
-		return NULL;
+		return OptionalData();
 	}
-	
+
 	InstanceValues::const_iterator vIt = m->find( key );
 	if( vIt != m->end() )
 	{
@@ -167,32 +195,41 @@ const Data *instanceValue( const GraphComponent *instance, InternedString key, b
 		{
 			*persistent = vIt->persistent;
 		}
-		return vIt->value.get();
+		return vIt->value;
 	}
-	
-	return NULL;
+
+	return OptionalData();
 }
 
-void registerInstanceValueAction( GraphComponent *instance, InternedString key, IECore::ConstDataPtr value, bool persistent )
+void registerInstanceValueAction( GraphComponent *instance, InternedString key, OptionalData value, bool persistent )
 {
-	InstanceValues *m = instanceMetadata( instance, /* createIfMissing = */ value != NULL );
+	InstanceValues *m = instanceMetadata( instance, /* createIfMissing = */ static_cast<bool>( value ) );
 	if( !m )
 	{
 		return;
 	}
-	
-	NamedInstanceValue namedValue( key, value, persistent );
-	
+
 	InstanceValues::const_iterator it = m->find( key );
-	if( it == m->end() )
+	if( value )
 	{
-		m->insert( namedValue );
+		NamedInstanceValue namedValue( key, *value, persistent );
+		if( it == m->end() )
+		{
+			m->insert( namedValue );
+		}
+		else
+		{
+			m->replace( it, namedValue );
+		}
 	}
 	else
 	{
-		m->replace( it, namedValue );
+		if( it != m->end() )
+		{
+			m->erase( it );
+		}
 	}
-	
+
 	if( Node *node = runTimeCast<Node>( instance ) )
 	{
 		Metadata::nodeValueChangedSignal()( node->typeId(), key, node );
@@ -206,15 +243,23 @@ void registerInstanceValueAction( GraphComponent *instance, InternedString key, 
 	}
 }
 
-void registerInstanceValue( GraphComponent *instance, IECore::InternedString key, IECore::ConstDataPtr value, bool persistent )
+void registerInstanceValue( GraphComponent *instance, IECore::InternedString key, OptionalData value, bool persistent )
 {
 	bool currentPersistent = true;
-	const IECore::Data *currentValue = instanceValue( instance, key, &currentPersistent );
-	if( persistent == currentPersistent )
+	OptionalData currentValue = instanceValue( instance, key, &currentPersistent );
+	if( !value && !currentValue )
 	{
+		// we can early out if we didn't have a value before and we don't
+		// want one now.
+		return;
+	}
+	else if( value && currentValue && persistent == currentPersistent )
+	{
+		// if we already had a value, we can early out if it's the same as
+		// the new one.
 		if(
-			( !currentValue && !value ) ||
-			( currentValue && value && currentValue->isEqualTo( value.get() ) )
+			( *currentValue == *value ) ||
+			( *currentValue && *value && (*currentValue)->isEqualTo( value->get() ) )
 		)
 		{
 			return;
@@ -226,7 +271,7 @@ void registerInstanceValue( GraphComponent *instance, IECore::InternedString key
 		// ok to bind raw pointers to instance, because enact() guarantees
 		// the lifetime of the subject.
 		boost::bind( &registerInstanceValueAction, instance, key, value, persistent ),
-		boost::bind( &registerInstanceValueAction, instance, key, ConstDataPtr( currentValue ), currentPersistent )
+		boost::bind( &registerInstanceValueAction, instance, key, currentValue, currentPersistent )
 	);
 }
 
@@ -246,6 +291,50 @@ void registeredInstanceValues( const GraphComponent *graphComponent, std::vector
 }
 
 } // namespace
+
+void Metadata::registerValue( IECore::InternedString target, IECore::InternedString key, IECore::ConstDataPtr value )
+{
+	registerValue( target, key, boost::lambda::constant( value ) );
+}
+
+void Metadata::registerValue( IECore::InternedString target, IECore::InternedString key, ValueFunction value )
+{
+	metadataMap()[target].insert( NamedValue( key, value ) );
+	valueChangedSignal()( target, key );
+}
+
+void Metadata::registeredValues( IECore::InternedString target, std::vector<IECore::InternedString> &keys )
+{
+	const MetadataMap &m = metadataMap();
+	MetadataMap::const_iterator it = m.find( target );
+	if( it == m.end() )
+	{
+		return;
+	}
+
+	const Values::nth_index<1>::type &index = it->second.get<1>();
+	for( Values::nth_index<1>::type::const_iterator it = index.begin(), eIt = index.end(); it != eIt; ++it )
+	{
+		keys.push_back( it->first );
+	}
+}
+
+IECore::ConstDataPtr Metadata::valueInternal( IECore::InternedString target, IECore::InternedString key )
+{
+	const MetadataMap &m = metadataMap();
+	MetadataMap::const_iterator it = m.find( target );
+	if( it == m.end() )
+	{
+		return NULL;
+	}
+
+	Values::const_iterator vIt = it->second.find( key );
+	if( vIt != it->second.end() )
+	{
+		return vIt->second();
+	}
+	return NULL;
+}
 
 void Metadata::registerNodeValue( IECore::TypeId nodeTypeId, IECore::InternedString key, IECore::ConstDataPtr value )
 {
@@ -302,9 +391,9 @@ void Metadata::registeredNodeValues( const Node *node, std::vector<IECore::Inter
 
 IECore::ConstDataPtr Metadata::nodeValueInternal( const Node *node, IECore::InternedString key, bool inherit, bool instanceOnly )
 {
-	if( const Data *iv = instanceValue( node, key ) )
+	if( OptionalData iv = instanceValue( node, key ) )
 	{
-		return iv;
+		return *iv;
 	}
 
 	if( instanceOnly )
@@ -329,6 +418,40 @@ IECore::ConstDataPtr Metadata::nodeValueInternal( const Node *node, IECore::Inte
 	return NULL;
 }
 
+void Metadata::deregisterValue( IECore::TypeId nodeTypeId, IECore::InternedString key )
+{
+	deregisterNodeValue( nodeTypeId, key );
+}
+
+void Metadata::deregisterValue( IECore::TypeId nodeTypeId, const StringAlgo::MatchPattern &plugPath, IECore::InternedString key )
+{
+	deregisterPlugValue( nodeTypeId, plugPath, key );
+}
+
+void Metadata::deregisterValue( GraphComponent *target, IECore::InternedString key )
+{
+	registerInstanceValue( target, key, OptionalData(), /* persistent = */ false );
+}
+
+void Metadata::deregisterNodeValue( IECore::TypeId nodeTypeId, IECore::InternedString key )
+{
+	NodeMetadata::NodeValues &m = nodeMetadataMap()[nodeTypeId].nodeValues;
+
+	NodeMetadata::NodeValues::const_iterator it = m.find( key );
+	if( it == m.end() )
+	{
+		return;
+	}
+
+	m.erase( it );
+	nodeValueChangedSignal()( nodeTypeId, key, NULL );
+}
+
+void Metadata::deregisterNodeValue( Node *node, IECore::InternedString key )
+{
+	registerInstanceValue( node, key, OptionalData(), /* persistent = */ false );
+}
+
 void Metadata::registerNodeDescription( IECore::TypeId nodeTypeId, const std::string &description )
 {
 	registerNodeValue( nodeTypeId, "description", ConstDataPtr( new StringData( description ) ) );
@@ -348,16 +471,52 @@ std::string Metadata::nodeDescription( const Node *node, bool inherit )
 	return "";
 }
 
-void Metadata::registerPlugValue( IECore::TypeId nodeTypeId, const MatchPattern &plugPath, IECore::InternedString key, IECore::ConstDataPtr value )
+std::vector<Node*> Metadata::nodesWithMetadata( GraphComponent *root, IECore::InternedString key, bool instanceOnly )
+{
+	std::vector<Node*> nodes;
+	if( instanceOnly )
+	{
+		// if we're only looking for instance data, we can improve the performance
+		// for large graphs by explicitly iterating through the instanceMetaDataMap:
+		InstanceMetadataMap::const_iterator it = instanceMetadataMap().begin();
+		InstanceMetadataMap::const_iterator end = instanceMetadataMap().end();
+		for( ; it != end; ++it )
+		{
+			const Node* node = runTimeCast<const Node>( it->first );
+			if( !node || !root->isAncestorOf( node ) )
+			{
+				continue;
+			}
+
+			if( it->second->find( key ) != it->second->end() )
+			{
+				nodes.push_back( const_cast<Node*>( node ) );
+			}
+		}
+	}
+	else
+	{
+		for( RecursiveNodeIterator it( root ); !it.done(); ++it )
+		{
+			if( nodeValueInternal( it->get(), key, /* inherit = */ true, instanceOnly ) )
+			{
+				nodes.push_back( it->get() );
+			}
+		}
+	}
+	return nodes;
+}
+
+void Metadata::registerPlugValue( IECore::TypeId nodeTypeId, const StringAlgo::MatchPattern &plugPath, IECore::InternedString key, IECore::ConstDataPtr value )
 {
 	registerPlugValue( nodeTypeId, plugPath, key, boost::lambda::constant( value ) );
 }
 
-void Metadata::registerPlugValue( IECore::TypeId nodeTypeId, const MatchPattern &plugPath, IECore::InternedString key, PlugValueFunction value )
+void Metadata::registerPlugValue( IECore::TypeId nodeTypeId, const StringAlgo::MatchPattern &plugPath, IECore::InternedString key, PlugValueFunction value )
 {
 	NodeMetadata &nodeMetadata = nodeMetadataMap()[nodeTypeId];
 	NodeMetadata::PlugValues &plugValues = nodeMetadata.plugPathsToValues[plugPath];
-	
+
 	NodeMetadata::NamedPlugValue namedValue( key, value );
 
 	NodeMetadata::PlugValues::const_iterator it = plugValues.find( key );
@@ -369,7 +528,7 @@ void Metadata::registerPlugValue( IECore::TypeId nodeTypeId, const MatchPattern 
 	{
 		plugValues.replace( it, namedValue );
 	}
-	
+
 	plugValueChangedSignal()( nodeTypeId, plugPath, key, NULL );
 }
 
@@ -394,7 +553,7 @@ void Metadata::registeredPlugValues( const Plug *plug, std::vector<IECore::Inter
 				NodeMetadata::PlugPathsToValues::const_iterator it, eIt;
 				for( it = nIt->second.plugPathsToValues.begin(), eIt = nIt->second.plugPathsToValues.end(); it != eIt; ++it )
 				{
-					if( match( plugPath, it->first ) )
+					if( StringAlgo::match( plugPath, it->first ) )
 					{
 						const NodeMetadata::PlugValues::nth_index<1>::type &index = it->second.get<1>();
 						for( NodeMetadata::PlugValues::nth_index<1>::type::const_reverse_iterator vIt = index.rbegin(), veIt = index.rend(); vIt != veIt; ++vIt )
@@ -414,9 +573,9 @@ void Metadata::registeredPlugValues( const Plug *plug, std::vector<IECore::Inter
 
 IECore::ConstDataPtr Metadata::plugValueInternal( const Plug *plug, IECore::InternedString key, bool inherit, bool instanceOnly )
 {
-	if( const Data *iv = instanceValue( plug, key ) )
+	if( OptionalData iv = instanceValue( plug, key ) )
 	{
-		return iv;
+		return *iv;
 	}
 
 	if( instanceOnly )
@@ -453,7 +612,7 @@ IECore::ConstDataPtr Metadata::plugValueInternal( const Plug *plug, IECore::Inte
 			// wildcard matches.
 			for( it = nIt->second.plugPathsToValues.begin(); it != eIt; ++it )
 			{
-				if( match( plugPath, it->first ) )
+				if( StringAlgo::match( plugPath, it->first ) )
 				{
 					NodeMetadata::PlugValues::const_iterator vIt = it->second.find( key );
 					if( vIt != it->second.end() )
@@ -468,12 +627,32 @@ IECore::ConstDataPtr Metadata::plugValueInternal( const Plug *plug, IECore::Inte
 	return NULL;
 }
 
-void Metadata::registerPlugDescription( IECore::TypeId nodeTypeId, const MatchPattern &plugPath, const std::string &description )
+void Metadata::deregisterPlugValue( IECore::TypeId nodeTypeId, const StringAlgo::MatchPattern &plugPath, IECore::InternedString key )
+{
+	NodeMetadata &nodeMetadata = nodeMetadataMap()[nodeTypeId];
+	NodeMetadata::PlugValues &plugValues = nodeMetadata.plugPathsToValues[plugPath];
+
+	NodeMetadata::PlugValues::const_iterator it = plugValues.find( key );
+	if( it == plugValues.end() )
+	{
+		return;
+	}
+
+	plugValues.erase( it );
+	plugValueChangedSignal()( nodeTypeId, plugPath, key, NULL );
+}
+
+void Metadata::deregisterPlugValue( Plug *plug, IECore::InternedString key )
+{
+	registerInstanceValue( plug, key, OptionalData(), /* persistent = */ false );
+}
+
+void Metadata::registerPlugDescription( IECore::TypeId nodeTypeId, const StringAlgo::MatchPattern &plugPath, const std::string &description )
 {
 	registerPlugValue( nodeTypeId, plugPath, "description", ConstDataPtr( new StringData( description ) ) );
 }
 
-void Metadata::registerPlugDescription( IECore::TypeId nodeTypeId, const MatchPattern &plugPath, PlugValueFunction description )
+void Metadata::registerPlugDescription( IECore::TypeId nodeTypeId, const StringAlgo::MatchPattern &plugPath, PlugValueFunction description )
 {
 	registerPlugValue( nodeTypeId, plugPath, "description", description );
 }
@@ -485,6 +664,92 @@ std::string Metadata::plugDescription( const Plug *plug, bool inherit )
 		return d->readable();
 	}
 	return "";
+}
+
+std::vector<Plug*> Metadata::plugsWithMetadata( GraphComponent *root, IECore::InternedString key, bool instanceOnly )
+{
+	std::vector<Plug*> plugs;
+	if( instanceOnly )
+	{
+		// If we're only looking for instance data, we can improve the performance
+		// for large graphs by explicitly iterating through the instanceMetaDataMap.
+		// This reduced the time to call this function from 0.1 sec to 1.e-5 sec
+		// in my reasonably sized test scene.
+
+		InstanceMetadataMap::const_iterator it = instanceMetadataMap().begin();
+		InstanceMetadataMap::const_iterator end = instanceMetadataMap().end();
+		for( ; it != end; ++it )
+		{
+			const Plug* plug = runTimeCast<const Plug>( it->first );
+			if( !plug || !root->isAncestorOf( plug ) )
+			{
+				continue;
+			}
+
+			if( it->second->find( key ) != it->second->end() )
+			{
+				plugs.push_back( const_cast<Plug*>( plug ) );
+			}
+		}
+	}
+	else
+	{
+		for( FilteredRecursiveChildIterator<TypePredicate<Plug> > it( root ); !it.done(); ++it )
+		{
+			if( plugValueInternal( it->get(), key, /* inherit = */ true, false ) )
+			{
+				plugs.push_back( it->get() );
+			}
+		}
+	}
+	return plugs;
+}
+
+void Metadata::registerValue( GraphComponent *target, IECore::InternedString key, IECore::ConstDataPtr value, bool persistent )
+{
+	registerInstanceValue( target, key, value, persistent );
+}
+
+void Metadata::registeredValues( const GraphComponent *target, std::vector<IECore::InternedString> &keys, bool instanceOnly, bool persistentOnly )
+{
+	if( const Node *node = runTimeCast<const Node>( target ) )
+	{
+		registeredNodeValues( node, keys, /* inherit = */ true, instanceOnly, persistentOnly );
+	}
+	else if( const Plug *plug = runTimeCast<const Plug>( target ) )
+	{
+		registeredPlugValues( plug, keys, /* inherit = */ true, instanceOnly, persistentOnly );
+	}
+	else
+	{
+		registeredInstanceValues( plug, keys, persistentOnly );
+	}
+}
+
+IECore::ConstDataPtr Metadata::valueInternal( const GraphComponent *target, IECore::InternedString key, bool instanceOnly )
+{
+	if( const Node *node = runTimeCast<const Node>( target ) )
+	{
+		return nodeValueInternal( node, key, /* inherit = */ true, instanceOnly );
+	}
+	else if( const Plug *plug = runTimeCast<const Plug>( target ) )
+	{
+		return plugValueInternal( plug, key, /* inherit = */ true, instanceOnly );
+	}
+	else if( !instanceOnly )
+	{
+		if( OptionalData iv = instanceValue( target, key ) )
+		{
+			return *iv;
+		}
+	}
+	return NULL;
+}
+
+Metadata::ValueChangedSignal &Metadata::valueChangedSignal()
+{
+	static ValueChangedSignal s;
+	return s;
 }
 
 Metadata::NodeValueChangedSignal &Metadata::nodeValueChangedSignal()

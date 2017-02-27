@@ -1,7 +1,7 @@
 ##########################################################################
 #
 #  Copyright (c) 2012, John Haddon. All rights reserved.
-#  Copyright (c) 2012-2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2012-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -35,7 +35,6 @@
 #
 ##########################################################################
 
-import os
 import unittest
 
 import IECore
@@ -45,7 +44,7 @@ import GafferTest
 import GafferScene
 import GafferSceneTest
 
-class ShaderAssignmentTest( unittest.TestCase ) :
+class ShaderAssignmentTest( GafferSceneTest.SceneTestCase ) :
 
 	def testFilter( self ) :
 
@@ -92,11 +91,6 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 		n = GafferTest.AddNode()
 		self.assertFalse( a["filter"].acceptsInput( n["sum"] ) )
 
-		p = Gaffer.IntPlug()
-		p.setInput( f["out"] )
-
-		self.assertTrue( a["filter"].acceptsInput( p ) )
-
 	def testAssignShaderFromOutsideBox( self ) :
 
 		s = Gaffer.ScriptNode()
@@ -120,7 +114,7 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s.execute( ss )
 
-		self.assertTrue( s["Box"]["a"]["shader"].getInput().isSame( s["Box"]["in"] ) )
+		self.assertTrue( s["Box"]["a"]["shader"].getInput().isSame( s["Box"]["shader"] ) )
 
 	def testDisabled( self ) :
 
@@ -206,8 +200,11 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 		s["b"]["n"] = Gaffer.Node()
 		s["b"]["a"] = GafferScene.ShaderAssignment()
 		s["b"]["n"]["out"] = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out )
-		s["b"]["in"] = s["b"]["a"]["shader"].createCounterpart( "in", Gaffer.Plug.Direction.In )
-		s["b"]["out"] = s["b"]["a"]["shader"].createCounterpart( "out", Gaffer.Plug.Direction.Out )
+
+		# This emulates old plugs which were promoted when the "shader" plug on a ShaderAssignment
+		# was just a plain Plug rather than a ShaderPlug.
+		s["b"]["in"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["b"]["out"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic, direction = Gaffer.Plug.Direction.Out )
 
 		# shader assignments should accept connections speculatively
 		# from unconnected box inputs and outputs.
@@ -233,6 +230,22 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 		s["b"]["s"] = GafferSceneTest.TestShader()
 		s["b"]["out"].setInput( s["b"]["s"]["out"] )
 		self.assertTrue( s["a"]["shader"].acceptsInput( s["b"]["out"] ) )
+
+	def testRejectInputsToBoxes( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = Gaffer.Node()
+		s["n"]["out"] = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out )
+
+		s["s"] = GafferSceneTest.TestShader()
+
+		s["b"] = Gaffer.Box()
+		s["b"]["a"] = GafferScene.ShaderAssignment()
+		p = s["b"].promotePlug( s["b"]["a"]["shader"] )
+
+		self.assertFalse( p.acceptsInput( s["n"]["out"] ) )
+		self.assertTrue( p.acceptsInput( s["s"]["out"] ) )
 
 	def testInputAcceptanceFromSwitches( self ) :
 
@@ -262,10 +275,10 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 		s["b"] = Gaffer.Box()
 		s["b"]["a"] = GafferScene.ShaderAssignment()
 		p = s["b"].promotePlug( s["b"]["a"]["filter"] )
-		s["b"].exportForReference( "/tmp/test.grf" )
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
 
 		s["r"] = Gaffer.Reference()
-		s["r"].load( "/tmp/test.grf" )
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
 
 		self.assertTrue( s["r"]["a"]["filter"].getInput().isSame( s["r"][p.getName()] ) )
 
@@ -282,10 +295,10 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 		s["b"]["a"]["filter"].setInput( s["b"]["d"]["out"] )
 
 		p = s["b"].promotePlug( s["b"]["d"]["in"] )
-		s["b"].exportForReference( "/tmp/test.grf" )
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
 
 		s["r"] = Gaffer.Reference()
-		s["r"].load( "/tmp/test.grf" )
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
 
 		self.assertTrue( s["r"]["a"]["filter"].source().isSame( s["r"][p.getName()] ) )
 
@@ -300,17 +313,20 @@ class ShaderAssignmentTest( unittest.TestCase ) :
 		s["b"]["a"] = GafferScene.ShaderAssignment()
 		p = s["b"].promotePlug( s["b"]["a"]["shader"] )
 
-		s["b"].exportForReference( "/tmp/test.grf" )
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
 
 		s["r"] = Gaffer.Reference()
-		s["r"].load( "/tmp/test.grf" )
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
 
 		self.assertTrue( s["r"]["a"]["shader"].getInput().node().isSame( s["r"] ) )
 
-	def tearDown( self ) :
+	def testEnabledDoesntAffectPassThroughs( self ) :
 
-		if os.path.exists( "/tmp/test.grf" ) :
-			os.remove( "/tmp/test.grf" )
+		s = GafferScene.ShaderAssignment()
+		cs = GafferTest.CapturingSlot( s.plugDirtiedSignal() )
+
+		s["enabled"].setValue( False )
+		self.assertEqual( set( x[0] for x in cs ), set( ( s["enabled"], s["out"]["attributes"], s["out"] ) ) )
 
 if __name__ == "__main__":
 	unittest.main()

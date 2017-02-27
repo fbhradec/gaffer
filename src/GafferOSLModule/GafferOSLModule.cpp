@@ -36,15 +36,22 @@
 
 #include "boost/python.hpp"
 
+#include "OSL/oslversion.h"
+
+#include "IECorePython/ScopedGILRelease.h"
+#include "IECorePython/IECoreBinding.h"
+
 #include "Gaffer/StringPlug.h"
 
 #include "GafferBindings/DependencyNodeBinding.h"
 #include "GafferBindings/DataBinding.h"
+#include "GafferBindings/SignalBinding.h"
 
 #include "GafferOSL/OSLShader.h"
-#include "GafferOSL/OSLRenderer.h"
+#include "GafferOSL/ShadingEngine.h"
 #include "GafferOSL/OSLImage.h"
 #include "GafferOSL/OSLObject.h"
+#include "GafferOSL/OSLCode.h"
 
 using namespace boost::python;
 using namespace GafferBindings;
@@ -54,15 +61,18 @@ namespace
 {
 
 /// \todo Move this serialisation to the bindings for GafferScene::Shader, once we've made Shader::loadShader() virtual
-/// and implemented it so reloading works in ArnoldShader and OpenGLShader.
+/// and implemented it so reloading works in OpenGLShader.
 class OSLShaderSerialiser : public GafferBindings::NodeSerialiser
 {
 
 	virtual std::string postScript( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
 	{
-		const OSLShader *shader = static_cast<const OSLShader *>( graphComponent );
-		std::string shaderName = shader->namePlug()->getValue();
-		if( shaderName.size() )
+		const OSLShader *oslShader = static_cast<const OSLShader *>( graphComponent );
+		const std::string shaderName = oslShader->namePlug()->getValue();
+		// We don't serialise a `loadShader()` call for OSLCode nodes
+		// because the OSLCode node generates the shader from the plugs,
+		// and not the other way around.
+		if( shaderName.size() && !IECore::runTimeCast<const OSLCode>( oslShader ) )
 		{
 			return boost::str( boost::format( "%s.loadShader( \"%s\", keepExistingValues=True )\n" ) % identifier % shaderName );
 		}
@@ -102,6 +112,53 @@ int oslLibraryVersionCode()
 	return OSL_LIBRARY_VERSION_CODE;
 }
 
+std::string oslCodeSource( const OSLCode &oslCode, const std::string &shaderName )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return oslCode.source( shaderName );
+}
+
+std::string repr( ShadingEngine::Transform &s )
+{
+	return boost::str(
+		boost::format( "GafferOSL.ShadingEngine.Transform( fromObjectSpace = %s, toObjectSpace = %s )" )
+			% IECorePython::repr<Imath::M44f>( s.fromObjectSpace )
+			% IECorePython::repr<Imath::M44f>( s.toObjectSpace )
+	);
+}
+
+IECore::CompoundDataPtr shadeWrapper( ShadingEngine &shadingEngine, const IECore::CompoundData *points, boost::python::dict pythonTransforms )
+{
+	ShadingEngine::Transforms transforms;
+
+	list values = pythonTransforms.values();
+	list keys = pythonTransforms.keys();
+
+	for (int i = 0; i < boost::python::len( keys ); i++)
+	{
+		object key( keys[i] );
+		object value( values[i] );
+
+		extract<const char *> keyElem( key );
+		if( !keyElem.check() )
+		{
+			PyErr_SetString( PyExc_TypeError, "Incompatible key type. Only strings accepted." );
+			throw_error_already_set();
+		}
+
+		extract<ShadingEngine::Transform> valueElem( value );
+		if( !valueElem.check() )
+		{
+			PyErr_SetString( PyExc_TypeError, "Incompatible value type. Only GafferOSL.ShadingEngine.Transform accepted." );
+			throw_error_already_set();
+		}
+
+		transforms[ keyElem() ] = valueElem();
+	}
+
+	return shadingEngine.shade( points, transforms );
+}
+
 } // namespace
 
 BOOST_PYTHON_MODULE( _GafferOSL )
@@ -123,13 +180,32 @@ BOOST_PYTHON_MODULE( _GafferOSL )
 	def( "oslLibraryVersionPatch", &oslLibraryVersionPatch );
 	def( "oslLibraryVersionCode", &oslLibraryVersionCode );
 
-	scope s = IECorePython::RunTimeTypedClass<OSLRenderer>()
-		.def( init<>() )
-		.def( "shadingEngine", &OSLRenderer::shadingEngine )
+
+	{
+		scope s = IECorePython::RefCountedClass<ShadingEngine, IECore::RefCounted>( "ShadingEngine" )
+			.def( init<const IECore::ObjectVector *>() )
+			.def( "shade", &shadeWrapper,
+				(
+					boost::python::arg( "points" ),
+					boost::python::arg( "transforms" ) = boost::python::dict()
+				)
+			)
+		;
+
+		class_<ShadingEngine::Transform>( "Transform" )
+			.def( init<const Imath::M44f &>() )
+			.def( init<const Imath::M44f &, const Imath::M44f&>() )
+			.def_readwrite( "fromObjectSpace", &ShadingEngine::Transform::fromObjectSpace )
+			.def_readwrite( "toObjectSpace", &ShadingEngine::Transform::toObjectSpace )
+			.def( "__repr__", &repr )
+		;
+	}
+
+	scope s = GafferBindings::DependencyNodeClass<OSLCode>()
+		.def( "source", &oslCodeSource, ( arg_( "shaderName" ) = "" ) )
+		.def( "shaderCompiledSignal", &OSLCode::shaderCompiledSignal, return_internal_reference<1>() )
 	;
 
-	IECorePython::RefCountedClass<OSLRenderer::ShadingEngine, IECore::RefCounted>( "ShadingEngine" )
-		.def( "shade", &OSLRenderer::ShadingEngine::shade )
-	;
+	SignalClass<OSLCode::ShaderCompiledSignal>( "ShaderCompiledSignal" );
 
 }

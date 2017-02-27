@@ -40,6 +40,8 @@
 
 #include "GafferImage/ImageProcessor.h"
 
+#include "GafferScene/ShaderPlug.h"
+
 #include "GafferOSL/TypeIds.h"
 
 namespace GafferOSL
@@ -55,8 +57,8 @@ class OSLImage : public GafferImage::ImageProcessor
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferOSL::OSLImage, OSLImageTypeId, GafferImage::ImageProcessor );
 
-		Gaffer::Plug *shaderPlug();
-		const Gaffer::Plug *shaderPlug() const;
+		GafferScene::ShaderPlug *shaderPlug();
+		const GafferScene::ShaderPlug *shaderPlug() const;
 
 		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 
@@ -66,18 +68,6 @@ class OSLImage : public GafferImage::ImageProcessor
 
 		virtual bool enabled() const;
 
-		// Reimplemented to throw. Because they are connected as direct pass-throughs these methods should never be called.
-		virtual void hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashMetadata( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const;
-		virtual IECore::ConstCompoundObjectPtr computeMetadata( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const;
-
-		// Reimplemented to assign directly from the input. Format cannot be a direct connection
-		// because it needs to update when the default format changes.
-		/// \todo: make this a direct pass-through once FormatPlug supports it.
-		virtual void hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual GafferImage::Format computeFormat( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const;
-		
 		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;

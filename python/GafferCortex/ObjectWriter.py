@@ -42,13 +42,14 @@ import os
 import IECore
 
 import Gaffer
+import GafferDispatch
 import GafferCortex
 
-class ObjectWriter( Gaffer.ExecutableNode ) :
+class ObjectWriter( GafferDispatch.TaskNode ) :
 
 	def __init__( self, name="ObjectWriter" ) :
 
-		Gaffer.ExecutableNode.__init__( self, name )
+		GafferDispatch.TaskNode.__init__( self, name )
 
 		inPlug = Gaffer.ObjectPlug( "in", Gaffer.Plug.Direction.In, IECore.NullObject.defaultNullObject() )
 		self.addChild( inPlug )
@@ -76,7 +77,7 @@ class ObjectWriter( Gaffer.ExecutableNode ) :
 			if not self["fileName"].getValue() or self["in"].source() == self["in"] :
 				return IECore.MurmurHash()
 
-			h = Gaffer.ExecutableNode.hash( self, context )
+			h = GafferDispatch.TaskNode.hash( self, context )
 			h.append( self["fileName"].hash() )
 			h.append( self["in"].hash() )
 			if "parameters" in self.keys() :
@@ -102,8 +103,6 @@ class ObjectWriter( Gaffer.ExecutableNode ) :
 	def __ensureWriter( self ) :
 
 		fileName = self["fileName"].getValue()
-		## \todo See equivalent todo in ArnoldRender.__fileName()
-		fileName = Gaffer.Context.current().substitute( fileName )
 		if fileName :
 
 			extension = os.path.splitext( fileName )[-1]

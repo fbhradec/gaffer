@@ -37,8 +37,6 @@
 
 import weakref
 
-import IECore
-
 import Gaffer
 import GafferUI
 
@@ -121,4 +119,3 @@ class _BlinkBehaviour( object ) :
 
 		if self.__toggleCount >= self.__blinks * 2 :
 			self.__timer.stop()
-

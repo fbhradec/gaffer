@@ -37,7 +37,7 @@
 
 import Gaffer
 
-class BlockedConnection() :
+class BlockedConnection( object ) :
 
 	def __init__( self, connectionOrConnections ) :
 
@@ -62,4 +62,3 @@ class BlockedConnection() :
 			c.__blockCount -= 1
 			if c.__blockCount == 0 :
 				c.unblock()
-

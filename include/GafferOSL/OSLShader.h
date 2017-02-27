@@ -40,10 +40,11 @@
 #include "GafferScene/Shader.h"
 
 #include "GafferOSL/TypeIds.h"
-#include "GafferOSL/OSLRenderer.h"
 
 namespace GafferOSL
 {
+
+IE_CORE_FORWARDDECLARE( ShadingEngine )
 
 class OSLShader : public GafferScene::Shader
 {
@@ -55,11 +56,15 @@ class OSLShader : public GafferScene::Shader
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferOSL::OSLShader, OSLShaderTypeId, GafferScene::Shader );
 
+		/// Returns a plug based on the "correspondingInput" metadata of each output plug
+		virtual Gaffer::Plug *correspondingInput( const Gaffer::Plug *output );
+		virtual const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const;
+
 		/// \undoable.
 		/// \todo Make this method virtual and define it on the Shader base class.
 		void loadShader( const std::string &shaderName, bool keepExistingValues=false );
 
-		OSLRenderer::ConstShadingEnginePtr shadingEngine() const;
+		ConstShadingEnginePtr shadingEngine() const;
 
 		/// Returns an OSL metadata item from the shader.
 		const IECore::Data *shaderMetadata( const IECore::InternedString &name ) const;

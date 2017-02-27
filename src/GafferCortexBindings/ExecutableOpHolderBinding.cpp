@@ -40,7 +40,7 @@
 
 #include "Gaffer/Context.h"
 
-#include "GafferBindings/ExecutableNodeBinding.h"
+#include "GafferDispatchBindings/TaskNodeBinding.h"
 
 #include "GafferCortex/ExecutableOpHolder.h"
 #include "GafferCortex/CompoundParameterHandler.h"
@@ -49,11 +49,11 @@
 #include "GafferCortexBindings/ExecutableOpHolderBinding.h"
 
 using namespace boost::python;
-using namespace GafferBindings;
+using namespace GafferDispatchBindings;
 using namespace GafferCortex;
 using namespace GafferCortexBindings;
 
-typedef ParameterisedHolderWrapper< ExecutableNodeWrapper<ExecutableOpHolder> > ExecutableOpHolderWrapper;
+typedef ParameterisedHolderWrapper< TaskNodeWrapper<ExecutableOpHolder> > ExecutableOpHolderWrapper;
 
 static IECore::OpPtr getOp( ExecutableOpHolder &n )
 {
@@ -62,7 +62,7 @@ static IECore::OpPtr getOp( ExecutableOpHolder &n )
 
 void GafferCortexBindings::bindExecutableOpHolder()
 {
-	ExecutableNodeClass<ExecutableOpHolder, ExecutableOpHolderWrapper>()
+	TaskNodeClass<ExecutableOpHolder, ExecutableOpHolderWrapper>()
 		.def(
 			"setOp",
 			&ExecutableOpHolder::setOp,

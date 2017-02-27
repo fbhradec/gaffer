@@ -63,6 +63,30 @@ Gaffer.Metadata.registerNode(
 			this will be removed.
 			""",
 
+			"plugValueWidget:type", "GafferSceneUI.ScenePathPlugValueWidget",
+
+		],
+
+		"keepLights" : [
+
+			"description",
+			"""
+			Keeps all lights, regardless of other settings. This is
+			useful when isolating an asset but wanting to render it
+			using a light rig located elsewhere in the scene.
+			""",
+
+		],
+
+		"keepCameras" : [
+
+			"description",
+			"""
+			Keeps all cameras, regardless of other settings. This is
+			useful when isolating an asset but wanting to render it
+			through a camera located elsewhere in the scene.
+			""",
+
 		],
 
 		"adjustBounds" : [
@@ -80,14 +104,4 @@ Gaffer.Metadata.registerNode(
 
 	}
 
-)
-
-##########################################################################
-# Widgets and nodules
-##########################################################################
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.Isolate,
-	"from",
-	GafferSceneUI.ScenePathPlugValueWidget
 )

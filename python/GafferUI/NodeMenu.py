@@ -50,7 +50,7 @@ import GafferUI
 # different applications to coexist happily in the same process, separate node
 # menus are maintained per application, and NodeMenu.acquire() is used to
 # obtain the appropriate menu.
-class NodeMenu :
+class NodeMenu( object ) :
 
 	## Chances are you want to use acquire() to get the NodeMenu for a
 	# specific application, rather than construct one directly.
@@ -86,15 +86,15 @@ class NodeMenu :
 
 	## Utility function to append a menu item to definition.
 	# nodeCreator must be a callable that returns a Gaffer.Node.
-	def append( self, path, nodeCreator, plugValues={}, **kw ) :
+	def append( self, path, nodeCreator, plugValues={}, postCreator=None, **kw ) :
 
-		item = IECore.MenuItemDefinition( command = self.nodeCreatorWrapper( nodeCreator=nodeCreator, plugValues=plugValues ), **kw )
+		item = IECore.MenuItemDefinition( command = self.nodeCreatorWrapper( nodeCreator=nodeCreator, plugValues=plugValues, postCreator=postCreator ), **kw )
 		self.definition().append( path, item )
 
 	## Utility function which takes a callable that creates a node, and returns a new
 	# callable which will add the node to the graph.
 	@staticmethod
-	def nodeCreatorWrapper( nodeCreator, plugValues={} ) :
+	def nodeCreatorWrapper( nodeCreator, plugValues={}, postCreator=None ) :
 
 		def f( menu ) :
 
@@ -120,7 +120,7 @@ class NodeMenu :
 					return
 
 				Gaffer.NodeAlgo.applyUserDefaults( node )
-				
+
 				for plugName, plugValue in plugValues.items() :
 					node.descendant( plugName ).setValue( plugValue )
 
@@ -145,5 +145,8 @@ class NodeMenu :
 			script.selection().add( node )
 
 			nodeGraph.frame( [ node ], extend = True )
+
+			if postCreator is not None :
+				postCreator( node, menu )
 
 		return f

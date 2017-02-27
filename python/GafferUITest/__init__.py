@@ -90,7 +90,6 @@ from NameLabelTest import NameLabelTest
 from NameWidgetTest import NameWidgetTest
 from GLWidgetTest import GLWidgetTest
 from BookmarksTest import BookmarksTest
-from SectionedCompoundDataPlugValueWidgetTest import SectionedCompoundDataPlugValueWidgetTest
 from PlaybackTest import PlaybackTest
 from SpacerGadgetTest import SpacerGadgetTest
 from BoxUITest import BoxUITest
@@ -104,6 +103,13 @@ from DotNodeGadgetTest import DotNodeGadgetTest
 from DocumentationTest import DocumentationTest
 from LazyMethodTest import LazyMethodTest
 from ReferenceUITest import ReferenceUITest
+from CompoundDataPlugValueWidgetTest import CompoundDataPlugValueWidgetTest
+from GraphGadgetTest import GraphGadgetTest
+from MenuBarTest import MenuBarTest
+from GadgetWidgetTest import GadgetWidgetTest
+from CompoundNoduleTest import CompoundNoduleTest
+from SwitchNodeGadgetTest import SwitchNodeGadgetTest
+from NoduleLayoutTest import NoduleLayoutTest
 
 if __name__ == "__main__":
 	unittest.main()

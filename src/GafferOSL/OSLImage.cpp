@@ -38,15 +38,11 @@
 #include "IECore/CompoundData.h"
 
 #include "Gaffer/Context.h"
-#include "Gaffer/Box.h"
-#include "Gaffer/Dot.h"
 #include "Gaffer/StringPlug.h"
-
-#include "GafferScene/ShaderSwitch.h"
 
 #include "GafferOSL/OSLImage.h"
 #include "GafferOSL/OSLShader.h"
-#include "GafferOSL/OSLRenderer.h"
+#include "GafferOSL/ShadingEngine.h"
 
 using namespace std;
 using namespace Imath;
@@ -64,7 +60,7 @@ OSLImage::OSLImage( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
-	addChild( new Plug( "shader" ) );
+	addChild( new GafferScene::ShaderPlug( "shader" ) );
 
 	addChild( new Gaffer::ObjectPlug( "__shading", Gaffer::Plug::Out, new CompoundData() ) );
 
@@ -72,8 +68,9 @@ OSLImage::OSLImage( const std::string &name )
 	// simply references data direct from the shading plug, which will itself
 	// be cached. we don't want to count the memory usage for that twice.
 	outPlug()->channelDataPlug()->setFlags( Plug::Cacheable, false );
-	
+
 	// We don't ever want to change these, so we make pass-through connections.
+	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 }
@@ -82,14 +79,14 @@ OSLImage::~OSLImage()
 {
 }
 
-Gaffer::Plug *OSLImage::shaderPlug()
+GafferScene::ShaderPlug *OSLImage::shaderPlug()
 {
-	return getChild<Plug>( g_firstPlugIndex );
+	return getChild<GafferScene::ShaderPlug>( g_firstPlugIndex );
 }
 
-const Gaffer::Plug *OSLImage::shaderPlug() const
+const GafferScene::ShaderPlug *OSLImage::shaderPlug() const
 {
-	return getChild<Plug>( g_firstPlugIndex );
+	return getChild<GafferScene::ShaderPlug>( g_firstPlugIndex );
 }
 
 Gaffer::ObjectPlug *OSLImage::shadingPlug()
@@ -106,7 +103,12 @@ void OSLImage::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outpu
 {
 	ImageProcessor::affects( input, outputs );
 
-	if( input == shaderPlug() )
+	if(
+		input == shaderPlug() ||
+		input == inPlug()->formatPlug() ||
+		input == inPlug()->channelNamesPlug() ||
+		input == inPlug()->channelDataPlug()
+	)
 	{
 		outputs.push_back( shadingPlug() );
 	}
@@ -131,25 +133,11 @@ bool OSLImage::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *input
 
 	if( plug == shaderPlug() )
 	{
-		const Node *sourceNode = inputPlug->source<Plug>()->node();
-		if( const OSLShader *shader = runTimeCast<const OSLShader>( sourceNode ) )
+		if( const GafferScene::Shader *shader = runTimeCast<const GafferScene::Shader>( inputPlug->source<Plug>()->node() ) )
 		{
-			return shader->typePlug()->getValue() == "osl:surface";
+			const OSLShader *oslShader = runTimeCast<const OSLShader>( shader );
+			return oslShader && oslShader->typePlug()->getValue() == "osl:surface";
 		}
-		else
-		{
-			// as for the GafferScene::ShaderAssignment, we accept Box and ShaderSwitch
-			// and Dot inputs as an indirect means of later getting a connection to a Shader.
-			if(
-				runTimeCast<const Gaffer::Box>( sourceNode ) ||
-				runTimeCast<const GafferScene::ShaderSwitch>( sourceNode ) ||
-				runTimeCast<const Dot>( sourceNode )
-			)
-			{
-				return true;
-			}
-		}
-		return false;
 	}
 
 	return true;
@@ -186,36 +174,6 @@ void OSLImage::compute( Gaffer::ValuePlug *output, const Gaffer::Context *contex
 	}
 
 	ImageProcessor::compute( output, context );
-}
-
-void OSLImage::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	h = inPlug()->formatPlug()->hash();
-}
-
-GafferImage::Format OSLImage::computeFormat( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const
-{
-	return inPlug()->formatPlug()->getValue();
-}
-
-void OSLImage::hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	throw Exception( "Unexpected call to OSLImage::hashDataWindow" );
-}
-
-Imath::Box2i OSLImage::computeDataWindow( const Gaffer::Context *context, const GafferImage::ImagePlug *parent ) const
-{
-	throw Exception( "Unexpected call to OSLImage::computeDataWindow" );
-}
-
-void OSLImage::hashMetadata( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	throw Exception( "Unexpected call to OSLImage::hashMetadata" );
-}
-
-IECore::ConstCompoundObjectPtr OSLImage::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
-{
-	throw Exception( "Unexpected call to OSLImage::computeMetadata" );
 }
 
 void OSLImage::hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -292,13 +250,13 @@ void OSLImage::hashShading( const Gaffer::Context *context, IECore::MurmurHash &
 	const OSLShader *shader = runTimeCast<const OSLShader>( shaderPlug()->source<Plug>()->node() );
 	if( shader )
 	{
-		shader->stateHash( h );
+		shader->attributesHash( h );
 	}
 }
 
 IECore::ConstCompoundDataPtr OSLImage::computeShading( const Gaffer::Context *context ) const
 {
-	OSLRenderer::ConstShadingEnginePtr shadingEngine;
+	ConstShadingEnginePtr shadingEngine;
 	if( const OSLShader *shader = runTimeCast<const OSLShader>( shaderPlug()->source<Plug>()->node() ) )
 	{
 		shadingEngine = shader->shadingEngine();

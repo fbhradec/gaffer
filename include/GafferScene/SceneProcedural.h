@@ -70,15 +70,18 @@ class SceneProcedural : public IECore::Renderer::Procedural
 		IE_CORE_DECLAREMEMBERPTR( SceneProcedural );
 
 		/// A copy of context is taken.
-		SceneProcedural( ConstScenePlugPtr scenePlug, const Gaffer::Context *context, const ScenePlug::ScenePath &scenePath=ScenePlug::ScenePath() );
+		SceneProcedural( ConstScenePlugPtr scenePlug, const Gaffer::Context *context, const ScenePlug::ScenePath &scenePath=ScenePlug::ScenePath(), bool computeBound = true );
 		virtual ~SceneProcedural();
 
 		virtual IECore::MurmurHash hash() const;
+		/// Returns an accurate computed bound if `computeBound=true`
+		/// was passed to the constructor, otherwise returns
+		/// Procedural::noBound.
 		virtual Imath::Box3f bound() const;
 		virtual void render( IECore::Renderer *renderer ) const;
-		
+
 		typedef boost::signal<void ( void )> AllRenderedSignal;
-		
+
 		/// A signal emitted when all pending SceneProcedurals have been rendered or destroyed
 		static AllRenderedSignal &allRenderedSignal();
 
@@ -111,38 +114,39 @@ class SceneProcedural : public IECore::Renderer::Procedural
 		};
 
 		Attributes m_attributes;
+		IECore::ConstCompoundObjectPtr m_attributesObject;
 
 	private :
 
-		void updateAttributes( bool full );
-		void computeBound();
+		void updateAttributes();
+		void initBound( bool compute );
 		void motionTimes( unsigned segments, std::set<float> &times ) const;
-		
-		// A global counter of all the scene procedurals that are hanging around but haven't been rendered yet, which 
+
+		// A global counter of all the scene procedurals that are hanging around but haven't been rendered yet, which
 		// gets incremented in the constructor and decremented in doRender() or the destructor, whichever happens first.
 		// When this counter falls to zero, a signal is emitted, so you can eg clear the cache when procedural expansion
 		// has finished during a render.
 		static tbb::atomic<int> g_pendingSceneProcedurals;
-		
-		
+
+
 		// Indicates if SceneProcedural::doRender() has been called. If not, g_pendingSceneProcedurals is decremented in the
 		// destructor
 		mutable bool m_rendered;
-		
+
 		void decrementPendingProcedurals() const;
-		
+
 		// We use this variable for caching the bound computation, so we can compute bounds for
 		// a SceneProcedural's children in parallel, and avoid computing them again when we send
 		// them all to the renderer in serial
 		Imath::Box3f m_bound;
-		
+
 		// struct for creating child procedurals in parallel and computing their bounds, using
 		// tbb::parallel_for:
 		class SceneProceduralCreate;
-		
+
 		static tbb::mutex g_allRenderedMutex;
 		static AllRenderedSignal g_allRenderedSignal;
-		
+
 };
 
 IE_CORE_DECLAREPTR( SceneProcedural );

@@ -39,24 +39,22 @@ from _GafferImageUI import *
 
 import DisplayUI
 from FormatPlugValueWidget import FormatPlugValueWidget
-from FilterPlugValueWidget import FilterPlugValueWidget
 from ChannelMaskPlugValueWidget import ChannelMaskPlugValueWidget
 
+import OpenImageIOReaderUI
 import ImageReaderUI
-import ImageViewToolbar
+import ImageViewUI
 import ImageTransformUI
 import ConstantUI
 import ImageSwitchUI
-import OpenColorIOUI
+import ColorSpaceUI
 import ImageContextVariablesUI
 import ImageStatsUI
 import DeleteChannelsUI
-import ReformatUI
 import ObjectToImageUI
 import ClampUI
 import ImageWriterUI
 import GradeUI
-import ImageMixinBaseUI
 import ImageTimeWarpUI
 import ImageSamplerUI
 import MergeUI
@@ -66,5 +64,22 @@ import ImageProcessorUI
 import ImageMetadataUI
 import DeleteImageMetadataUI
 import CopyImageMetadataUI
+import ImageLoopUI
+import ShuffleUI
+import PremultiplyUI
+import UnpremultiplyUI
+import CropUI
+import ResizeUI
+import ResampleUI
+import LUTUI
+import CDLUI
+import DisplayTransformUI
+import OffsetUI
+import BlurUI
+import ShapeUI
+import TextUI
+import WarpUI
+import UVWarpUI
+import MirrorUI
 
 __import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "GafferImageUI" )

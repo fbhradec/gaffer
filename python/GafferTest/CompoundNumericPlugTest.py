@@ -198,11 +198,11 @@ class CompoundNumericPlugTest( GafferTest.TestCase ) :
 	def testRunTimeTyped( self ) :
 
 		p = Gaffer.Color3fPlug()
-		self.failUnless( p.isInstanceOf( Gaffer.CompoundPlug.staticTypeId() ) )
+		self.failUnless( p.isInstanceOf( Gaffer.ValuePlug.staticTypeId() ) )
 		self.failUnless( p.isInstanceOf( Gaffer.Plug.staticTypeId() ) )
 
 		t = p.typeId()
-		self.assertEqual( IECore.RunTimeTyped.baseTypeId( t ), Gaffer.CompoundPlug.staticTypeId() )
+		self.assertEqual( IECore.RunTimeTyped.baseTypeId( t ), Gaffer.ValuePlug.staticTypeId() )
 
 	def testSetToDefault( self ) :
 
@@ -355,6 +355,12 @@ class CompoundNumericPlugTest( GafferTest.TestCase ) :
 		ss = s.serialise( filter = Gaffer.StandardSet( [ s["n"] ] ) )
 		self.assertEqual( ss.count( "setValue" ), 1 )
 
+		s["n"]["p"]["z"].setInput( s["n"]["p"]["y"] )
+
+		ss = s.serialise( filter = Gaffer.StandardSet( [ s["n"] ] ) )
+		self.assertEqual( ss.count( "setValue" ), 2 )
+		self.assertEqual( ss.count( "setInput" ), 1 )
+
 	def testUndoMerging( self ) :
 
 		s = Gaffer.ScriptNode()
@@ -385,6 +391,32 @@ class CompoundNumericPlugTest( GafferTest.TestCase ) :
 		s.undo()
 
 		self.assertEqual( s["n"]["p"].getValue(), IECore.V3f( 4, 5, 6 ) )
+		self.assertTrue( s.undoAvailable() )
+
+		s.undo()
+
+		self.assertEqual( s["n"]["p"].getValue(), IECore.V3f( 0 ) )
+		self.assertFalse( s.undoAvailable() )
+
+	def testUndoMergingWithUnchangingComponents( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["p"] = Gaffer.V3fPlug()
+
+		self.assertEqual( s["n"]["p"].getValue(), IECore.V3f( 0 ) )
+		self.assertFalse( s.undoAvailable() )
+
+		with Gaffer.UndoContext( s, mergeGroup="test" ) :
+			s["n"]["p"].setValue( IECore.V3f( 1, 2, 0 ) )
+
+		self.assertEqual( s["n"]["p"].getValue(), IECore.V3f( 1, 2, 0 ) )
+		self.assertTrue( s.undoAvailable() )
+
+		with Gaffer.UndoContext( s, mergeGroup="test" ) :
+			s["n"]["p"].setValue( IECore.V3f( 2, 4, 0 ) )
+
+		self.assertEqual( s["n"]["p"].getValue(), IECore.V3f( 2, 4, 0 ) )
 		self.assertTrue( s.undoAvailable() )
 
 		s.undo()
@@ -435,4 +467,3 @@ class CompoundNumericPlugTest( GafferTest.TestCase ) :
 
 if __name__ == "__main__":
 	unittest.main()
-

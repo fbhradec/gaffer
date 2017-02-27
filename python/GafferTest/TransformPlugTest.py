@@ -101,8 +101,8 @@ class TransformPlugTest( GafferTest.TestCase ) :
 	def testRunTimeTyped( self ) :
 
 		p = Gaffer.TransformPlug()
-		self.failIf( p.typeId() == Gaffer.CompoundPlug.staticTypeId() )
-		self.failUnless( p.isInstanceOf( Gaffer.CompoundPlug.staticTypeId() ) )
+		self.failIf( p.typeId() == Gaffer.ValuePlug.staticTypeId() )
+		self.failUnless( p.isInstanceOf( Gaffer.ValuePlug.staticTypeId() ) )
 
 	def testPivot( self ) :
 
@@ -145,6 +145,20 @@ class TransformPlugTest( GafferTest.TestCase ) :
 			)
 		)
 
+	def testDynamicSerialisation( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["p"] = Gaffer.TransformPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["n"]["p"]["translate"].setValue( IECore.V3f( 1, 2, 3 ) )
+		s["n"]["p"]["rotate"].setValue( IECore.V3f( 4, 5, 6 ) )
+		ss = s.serialise()
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( ss )
+
+		self.assertEqual( s2["n"]["p"]["translate"].getValue(), IECore.V3f( 1, 2, 3 ) )
+		self.assertEqual( s2["n"]["p"]["rotate"].getValue(), IECore.V3f( 4, 5, 6 ) )
+
 if __name__ == "__main__":
 	unittest.main()
-

@@ -59,7 +59,6 @@ View::View( const std::string &name, Gaffer::PlugPtr inPlug )
 
 	setContext( new Context() );
 
-	plugDirtiedSignal().connect( boost::bind( &View::plugDirtied, this, ::_1 ) );
 	viewportGadget()->keyPressSignal().connect( boost::bind( &View::keyPress, this, ::_1, ::_2 ) );
 }
 
@@ -103,38 +102,19 @@ const ViewportGadget *View::viewportGadget() const
 	return m_viewportGadget.get();
 }
 
-View::UnarySignal &View::updateRequestSignal()
-{
-	return m_updateRequestSignal;
-}
-
 void View::setPreprocessor( Gaffer::NodePtr preprocessor )
 {
 	setChild( "__preprocessor", preprocessor );
 	preprocessor->getChild<Plug>( "in" )->setInput( inPlug<Plug>() );
-	m_preprocessorPlugDirtiedConnection = preprocessor->plugDirtiedSignal().connect( boost::bind( &View::plugDirtied, this, ::_1 ) );
 }
 
 void View::contextChanged( const IECore::InternedString &name )
 {
-	updateRequestSignal()( this );
 }
 
 boost::signals::connection &View::contextChangedConnection()
 {
 	return m_contextChangedConnection;
-}
-
-void View::plugDirtied( const Gaffer::Plug *plug )
-{
-	if( plug == preprocessedInPlug<Gaffer::Plug>() )
-	{
-		updateRequestSignal()( this );
-	}
-}
-
-void View::update()
-{
 }
 
 bool View::keyPress( GadgetPtr gadget, const KeyEvent &keyEvent )

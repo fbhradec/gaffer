@@ -38,12 +38,16 @@
 #ifndef GAFFERSCENE_SHADER_H
 #define GAFFERSCENE_SHADER_H
 
+#include "boost/unordered_set.hpp"
+
 #include "IECore/ObjectVector.h"
 #include "IECore/Shader.h"
+#include "IECore/CompoundObject.h"
 
 #include "Gaffer/DependencyNode.h"
 #include "Gaffer/TypedPlug.h"
 #include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/ArrayPlug.h"
 
 #include "GafferScene/TypeIds.h"
 
@@ -51,7 +55,6 @@ namespace Gaffer
 {
 
 IE_CORE_FORWARDDECLARE( StringPlug )
-IE_CORE_FORWARDDECLARE( CompoundPlug )
 
 } // namespace Gaffer
 
@@ -101,66 +104,35 @@ class Shader : public Gaffer::DependencyNode
 		/// outPlug().
 		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 
-		/// Returns a hash representing the result of state().
+		/// \deprecated Use ShaderPlug::attributesHash() instead.
+		/// \todo Protect these methods, and enforce access via the
+		/// ShaderPlug methods - this would be consistent with our
+		/// other APIs where nodes provide the engine, but plugs
+		/// provide the interface.
+		IECore::MurmurHash attributesHash() const;
+		virtual void attributesHash( IECore::MurmurHash &h ) const;
+		/// \deprecated See above.
+		virtual IECore::ConstCompoundObjectPtr attributes() const;
+
+		/// \deprecated
 		IECore::MurmurHash stateHash() const;
+		/// \deprecated
 		void stateHash( IECore::MurmurHash &h ) const;
-		/// Returns a series of IECore::StateRenderables suitable for specifying this
-		/// shader (and it's inputs) to an IECore::Renderer.
+		/// \deprecated
 		IECore::ConstObjectVectorPtr state() const;
 
 	protected :
 
-		class NetworkBuilder
-		{
-
-			public :
-
-				NetworkBuilder( const Shader *rootNode );
-
-				IECore::MurmurHash stateHash();
-				IECore::ConstObjectVectorPtr state();
-
-				IECore::MurmurHash shaderHash( const Shader *shaderNode );
-				/// May return an empty string if a shader has been disabled.
-				const std::string &shaderHandle( const Shader *shaderNode );
-
-			private :
-
-				NetworkBuilder();
-
-				// Returns the node that should be used taking into account
-				// enabledPlug() and correspondingInput().
-				const Shader *effectiveNode( const Shader *shaderNode ) const;
-				IECore::Shader *shader( const Shader *shaderNode );
-
-				void parameterHashWalk( const Shader *shaderNode, const Gaffer::Plug *parameterPlug, IECore::MurmurHash &h );
-				void parameterValueWalk( const Shader *shaderNode, const Gaffer::Plug *parameterPlug, const IECore::InternedString &parameterName, IECore::CompoundDataMap &values );
-
-				const Shader *m_rootNode;
-				IECore::ObjectVectorPtr m_state;
-
-				struct ShaderAndHash
-				{
-				 	IECore::ShaderPtr shader;
-				 	IECore::MurmurHash hash;
-				};
-
-				typedef std::map<const Shader *, ShaderAndHash> ShaderMap;
-				ShaderMap m_shaders;
-
-				unsigned int m_handleCount;
-
-		};
-
 		/// Called when computing the hash for this node. May be reimplemented in derived classes
 		/// to deal with special cases, in which case parameterValue() should be reimplemented too.
-		virtual void parameterHash( const Gaffer::Plug *parameterPlug, NetworkBuilder &network, IECore::MurmurHash &h ) const;
+		virtual void parameterHash( const Gaffer::Plug *parameterPlug, IECore::MurmurHash &h ) const;
 		/// Called for each parameter plug when constructing an IECore::Shader from this node.
-		/// May be reimplemented in derived classes to deal with special cases, and must currently
-		/// be reimplemented to deal with shader connections.
-		virtual IECore::DataPtr parameterValue( const Gaffer::Plug *parameterPlug, NetworkBuilder &network ) const;
+		/// May be reimplemented in derived classes to deal with special cases.
+		virtual IECore::DataPtr parameterValue( const Gaffer::Plug *parameterPlug ) const;
 
 	private :
+
+		class NetworkBuilder;
 
 		void nameChanged();
 		void nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore::InternedString key, const Node *node );

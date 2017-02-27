@@ -96,6 +96,40 @@ void Prune::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs 
 	}
 }
 
+bool Prune::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const
+{
+	if( !FilteredSceneProcessor::acceptsInput( plug, inputPlug ) )
+	{
+		return false;
+	}
+
+	if( plug == filterPlug() )
+	{
+		if( const Filter *filter = runTimeCast<const Filter>( inputPlug->source<Plug>()->node() ) )
+		{
+			if(
+				filter->sceneAffectsMatch( inPlug(), inPlug()->boundPlug() ) ||
+				filter->sceneAffectsMatch( inPlug(), inPlug()->transformPlug() ) ||
+				filter->sceneAffectsMatch( inPlug(), inPlug()->attributesPlug() ) ||
+				filter->sceneAffectsMatch( inPlug(), inPlug()->objectPlug() ) ||
+				filter->sceneAffectsMatch( inPlug(), inPlug()->childNamesPlug() )
+			)
+			{
+				// We make a single call to filterHash() in hashSet(), to account for
+				// the fact that the filter is used in remapping sets. This wouldn't
+				// work for filter types which actually vary based on data within the
+				// scene hierarchy, because then multiple calls would be necessary.
+				// We could make more calls here, but that would be expensive.
+				/// \todo In an ideal world we'd be able to compute a hash for the
+				/// filter across a whole hierarchy.
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
 void Prune::hashBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
 	if( adjustBoundsPlug()->getValue() )
@@ -128,13 +162,28 @@ void Prune::hashChildNames( const ScenePath &path, const Gaffer::Context *contex
 {
 	ContextPtr tmpContext = filterContext( context );
 	Context::Scope scopedContext( tmpContext.get() );
+	const Filter::Result m = (Filter::Result)filterPlug()->getValue();
 
-	if( filterPlug()->getValue() & Filter::DescendantMatch )
+	if( m & Filter::ExactMatch )
+	{
+		h = inPlug()->childNamesPlug()->defaultValue()->Object::hash();
+	}
+	else if( m & Filter::DescendantMatch )
 	{
 		// we might be computing new childnames for this level.
 		FilteredSceneProcessor::hashChildNames( path, context, parent, h );
-		inPlug()->childNamesPlug()->hash( h );
-		filterPlug()->hash( h );
+
+		ConstInternedStringVectorDataPtr inputChildNamesData = inPlug()->childNamesPlug()->getValue();
+		const vector<InternedString> &inputChildNames = inputChildNamesData->readable();
+
+		ScenePath childPath = path;
+		childPath.push_back( InternedString() ); // for the child name
+		for( vector<InternedString>::const_iterator it = inputChildNames.begin(), eIt = inputChildNames.end(); it != eIt; ++it )
+		{
+			childPath[path.size()] = *it;
+			tmpContext->set( ScenePlug::scenePathContextName, childPath );
+			filterPlug()->hash( h );
+		}
 	}
 	else
 	{
@@ -147,8 +196,13 @@ IECore::ConstInternedStringVectorDataPtr Prune::computeChildNames( const ScenePa
 {
 	ContextPtr tmpContext = filterContext( context );
 	Context::Scope scopedContext( tmpContext.get() );
+	const Filter::Result m = (Filter::Result)filterPlug()->getValue();
 
-	if( filterPlug()->getValue() & Filter::DescendantMatch )
+	if( m & Filter::ExactMatch  )
+	{
+		return inPlug()->childNamesPlug()->defaultValue();
+	}
+	else if( m & Filter::DescendantMatch )
 	{
 		// we may need to delete one or more of our children
 		ConstInternedStringVectorDataPtr inputChildNamesData = inPlug()->childNamesPlug()->getValue();
@@ -159,7 +213,7 @@ IECore::ConstInternedStringVectorDataPtr Prune::computeChildNames( const ScenePa
 
 		ScenePath childPath = path;
 		childPath.push_back( InternedString() ); // for the child name
-		for( vector<InternedString>::const_iterator it = inputChildNames.begin(), eIt = inputChildNames.end(); it != eIt; it++ )
+		for( vector<InternedString>::const_iterator it = inputChildNames.begin(), eIt = inputChildNames.end(); it != eIt; ++it )
 		{
 			childPath[path.size()] = *it;
 			tmpContext->set( ScenePlug::scenePathContextName, childPath );
@@ -193,7 +247,7 @@ void Prune::hashSet( const IECore::InternedString &setName, const Gaffer::Contex
 	// calls to computeSet() and a huge overhead in recomputing
 	// the same sets repeatedly.
 	//
-	// See further comments in FilteredSceneProcessor::affects().
+	// See further comments in acceptsInput()
 	ContextPtr c = filterContext( context );
 	c->remove( ScenePlug::scenePathContextName );
 	Context::Scope s( c.get() );
@@ -209,7 +263,7 @@ GafferScene::ConstPathMatcherDataPtr Prune::computeSet( const IECore::InternedSt
 		return inputSetData;
 	}
 
-	PathMatcherDataPtr outputSetData = new PathMatcherData;
+	PathMatcherDataPtr outputSetData = inputSetData->copy();
 	PathMatcher &outputSet = outputSetData->writable();
 
 	ContextPtr tmpContext = filterContext( context );
@@ -224,18 +278,14 @@ GafferScene::ConstPathMatcherDataPtr Prune::computeSet( const IECore::InternedSt
 			// This path and all below it are pruned, so we can
 			// ignore it and prune the traversal to the descendant
 			// paths.
+			outputSet.prune( *pIt );
 			pIt.prune();
 			++pIt;
 		}
 		else if( m & Filter::DescendantMatch )
 		{
-			// This path isn't pruned, so we add it, and then
-			// continue our traversal as normal to find out
-			// which descendants _are_ pruned.
-			if( pIt.exactMatch() )
-			{
-				outputSet.addPath( *pIt );
-			}
+			// This path isn't pruned, so we continue our traversal
+			// as normal to find out which descendants _are_ pruned.
 			++pIt;
 		}
 		else
@@ -244,19 +294,9 @@ GafferScene::ConstPathMatcherDataPtr Prune::computeSet( const IECore::InternedSt
 			// below it. We can avoid retesting the filter for
 			// all descendant paths, since we know they're not
 			// pruned.
-			/// \todo If PathMatcher could share nodes internally,
-			/// it could provide us with a method to just reference
-			/// the whole subtree here.
 			assert( m == Filter::NoMatch );
-			PathMatcher::RawIterator next = pIt; next.prune(); ++next;
-			while( pIt != next )
-			{
-				if( pIt.exactMatch() )
-				{
-					outputSet.addPath( *pIt );
-				}
-				++pIt;
-			}
+			pIt.prune();
+			++pIt;
 		}
 	}
 

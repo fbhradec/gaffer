@@ -128,7 +128,7 @@ class StandardNodeGadgetTest( GafferUITest.TestCase ) :
 		g = GafferUI.StandardNodeGadget( n )
 		self.assertEqual( g.noduleTangent( g.nodule( n["op1"] ) ), IECore.V3f( 0, 1, 0 ) )
 
-		Gaffer.Metadata.registerPlugValue( n.typeId(), "op1", "nodeGadget:nodulePosition", "left" )
+		Gaffer.Metadata.registerValue( n.typeId(), "op1", "noduleLayout:section", "left" )
 
 		g = GafferUI.StandardNodeGadget( n )
 		self.assertEqual( g.noduleTangent( g.nodule( n["op1"] ) ), IECore.V3f( -1, 0, 0 ) )
@@ -148,9 +148,13 @@ class StandardNodeGadgetTest( GafferUITest.TestCase ) :
 		g = GafferUI.StandardNodeGadget( n )
 
 		for name, edge in g.Edge.names.items() :
+			self.assertTrue( g.getEdgeGadget( edge ) is None )
 			eg = GafferUI.TextGadget( name )
 			g.setEdgeGadget( edge, eg )
 			self.assertTrue( g.getEdgeGadget( edge ).isSame( eg ) )
+			g.setEdgeGadget( edge, None )
+			self.assertTrue( g.getEdgeGadget( edge ) is None )
+			self.assertTrue( eg.parent() is None )
 
 	def testEdgeGadgetsAndNoduleAddition( self ) :
 
@@ -172,7 +176,7 @@ class StandardNodeGadgetTest( GafferUITest.TestCase ) :
 		g = GafferUI.StandardNodeGadget( n )
 		self.assertEqual( g.noduleTangent( g.nodule( n["op2"] ) ), IECore.V3f( 0, 1, 0 ) )
 
-		Gaffer.Metadata.registerPlugValue( n["op2"], "nodeGadget:nodulePosition", "left" )
+		Gaffer.Metadata.registerValue( n["op2"], "noduleLayout:section", "left" )
 		self.assertEqual( g.noduleTangent( g.nodule( n["op2"] ) ), IECore.V3f( -1, 0, 0 ) )
 
 	def testRemoveNoduleAfterCreation( self ) :
@@ -183,7 +187,7 @@ class StandardNodeGadgetTest( GafferUITest.TestCase ) :
 		g = GafferUI.StandardNodeGadget( n )
 		self.assertEqual( g.noduleTangent( g.nodule( n["p"] ) ), IECore.V3f( 0, 1, 0 ) )
 
-		Gaffer.Metadata.registerPlugValue( n["p"], "nodule:type", "" )
+		Gaffer.Metadata.registerValue( n["p"], "nodule:type", "" )
 		self.assertEqual( g.nodule( n["p"] ), None )
 
 	def testPlugReferences( self ) :
@@ -216,12 +220,73 @@ class StandardNodeGadgetTest( GafferUITest.TestCase ) :
 		self.assertTrue( isinstance( n1, GafferUI.StandardNodule ) )
 		self.assertTrue( isinstance( n2, GafferUI.StandardNodule ) )
 
-		Gaffer.Metadata.registerPlugValue( n["p1"], "nodule:type", "GafferUI::CompoundNodule" )
+		Gaffer.Metadata.registerValue( n["p1"], "nodule:type", "GafferUI::CompoundNodule" )
 
 		self.assertTrue( isinstance( g.nodule( n["p1"] ), GafferUI.CompoundNodule ) )
 		self.assertTrue( g.nodule( n["p2"] ).isSame( n2 ) )
 		self.assertTrue( n1.parent() is None )
 
+	def testNoduleSignals( self ) :
+
+		n = Gaffer.Node()
+		g = GafferUI.StandardNodeGadget( n )
+
+		added = GafferTest.CapturingSlot( g.noduleAddedSignal() )
+		removed = GafferTest.CapturingSlot( g.noduleRemovedSignal() )
+
+		n["p"] = Gaffer.Plug()
+		self.assertEqual( len( added ), 1 )
+		self.assertTrue( added[0][0].isSame( g ) )
+		self.assertTrue( added[0][1].isSame( g.nodule( n["p"] ) ) )
+		self.assertEqual( len( removed ), 0 )
+
+		del added[:]
+
+		Gaffer.Metadata.registerValue( n["p"], "nodule:type", "" )
+		self.assertEqual( len( added ), 0 )
+		self.assertEqual( len( removed ), 1 )
+		self.assertTrue( removed[0][0].isSame( g ) )
+		self.assertTrue( removed[0][1].plug().isSame( n["p"] ) )
+
+		del removed[:]
+
+		Gaffer.Metadata.registerValue( n["p"], "nodule:type", "GafferUI::StandardNodule" )
+		self.assertEqual( len( added ), 1 )
+		self.assertTrue( added[0][0].isSame( g ) )
+		self.assertTrue( added[0][1].isSame( g.nodule( n["p"] ) ) )
+		self.assertEqual( len( removed ), 0 )
+
+		del added[:]
+
+		p = n["p"]
+		del n["p"]
+		self.assertEqual( len( added ), 0 )
+		self.assertEqual( len( removed ), 1 )
+		self.assertTrue( removed[0][0].isSame( g ) )
+		self.assertTrue( removed[0][1].plug().isSame( p ) )
+
+	def testNoduleOrdering( self ) :
+
+		n = Gaffer.Node()
+		n["a"] = Gaffer.IntPlug()
+		n["b"] = Gaffer.IntPlug()
+
+		g = GafferUI.StandardNodeGadget( n )
+
+		g.bound()
+		self.assertLess(
+			g.nodule( n["a"] ).transformedBound().center().x,
+			g.nodule( n["b"] ).transformedBound().center().x
+		)
+
+		Gaffer.Metadata.registerValue( n["a"], "noduleLayout:index", 1 )
+		Gaffer.Metadata.registerValue( n["b"], "noduleLayout:index", 0 )
+
+		g.bound()
+		self.assertGreater(
+			g.nodule( n["a"] ).transformedBound().center().x,
+			g.nodule( n["b"] ).transformedBound().center().x
+		)
+
 if __name__ == "__main__":
 	unittest.main()
-

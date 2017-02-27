@@ -1,5 +1,2331 @@
-# 0.14.0.0
-==========
+Improvements
+------------
+
+- ArnoldOptions : Added texture system settings (#1958).
+- CustomOptions, CustomAttributes, PrimitiveVariables, OSLCode : Added option to add point and normal values in addition to vectors (#1977).
+- OSLShader : Added support for specifying nodule visibility via metadata (#1975).
+- Appleseed :
+  - Added automatic instancing support (#1978).
+  - Added support for multiple cameras (#1978).
+- GUI : User defaults are now applied to new ScriptNodes (#1960).
+
+Fixes
+-----
+
+- Isolate : Fixed bug when using keepLights or keepCameras (#1965).
+- InteractiveArnoldRender : Fixed occasional hangs (#1983).
+- Browser app : Fixed shutdown errors (#1981).
+- Light visualisers : Fixed errors triggered by specific intensity values (#1982).
+- OSLShader : Fixed ambiguities between point, vector and normal types (#1977).
+- Display : Fixed to support retries after failing to launch the server (#1972).
+- UIEditor : Fixed preset naming bugs (#1966).
+- Wrapper : Fixed bugs when Gaffer was installed in a location with spaces in the file path (#1961, #1962).
+
+API
+---
+
+- GafferUI::PlugAdder : Added support for subclassing in Python ()
+- CompoundNumericPlug : Added `IECore::GeometricData::Interpretation` setting (#1977).
+- Added `GafferImage::OpenImageIOAlgo` namespace with various utility functions (#1977).
+- Added `Gaffer::PlugAlgo` namespace with a `replacePlug()` utility function (#1977).
+- Fixed binding of `Serialiser::childNeedsSerialisation` (#1973).
+
+Build
+-----
+
+- Fixed build on macOS Sierra (#1978).
+- Updated standard dependency versions :
+  - Appleseed 1.6.0-beta
+  - Boost 1.61
+  - OSL 1.7.5
+  - Alembic 1.6.1
+  - FreeType 2.7.1
+  - Qt 4.8.7
+  - Cortex 9.16.2
+
+0.31.0.0
+========
+
+Breaking Changes
+----------------
+
+- ScriptNode (#1935)
+  - Removed evaluate() method.
+  - Removed scriptEvaluatedSignal() method.
+  - Reordered virtual methods.
+- Options (#1929)
+  - Moved "prefix" plug to CustomOptions node.
+  - Added virtual method.
+- Shader : Removed NetworkBuilder from the API (#1936).
+- OSL ShadingEngine : Added argument to `shade()` method (#1944).
+- Moved all Algo to nested namespaces (#1953).
+
+Improvements
+------------
+
+- ShaderSwitch (#1938)
+  - Added support for all parameter types.
+  - Added support for expressions and other inputs to the index plug.
+- Added a generic Switch node to the NodeGraph menu (#1938).
+- ArnoldShader
+  - Added support for pass-through of an input parameter when disabled (#1936).
+  - Added simplified NodeGraph view for shaders like AlSurface and Standard. They
+    are now shown with most parameters hidden by default, and additional parameters
+    can be added on demand (#1951).
+- OSLShader : Added support for pass-through of input parameters (#1936).
+- ArnoldOptions : Added sample clamp options (#1943).
+- Camera : Added "Copy From Viewer" item to NodeEditor tool menu (#1950).
+- Stats app (#1949)
+  - Added command line arguments to output
+  - Added current version to output
+  - Added -contextMonitor argument (#1952)
+- OSLObject : Added support for "world" and "object" coordinate systems (#1944).
+- Arnold renderer : Added automatic creation of directories for log files (#1954).
+- Rewrote NodeGraph nodule layout code for improved consistency between plugs on nodes
+  and nested plugs. StandardNodeGadget and CompoundNodule now support the same set of
+  metadata (#1952).
+
+Fixes
+-----
+
+- Fixed error when importing GafferScene or GafferImage before GafferDispatch.
+- ScriptNode : Fixed node deletion code to automatically reconnect nested child plugs (#1936).
+- Set : Fixed update bug (#1941).
+- ObjectSource : Fixed update bug (#1941).
+- Reference : Fix reload bug where connections to nested plugs were lost (#1940).
+- Dot : Fixed bug where output plug was lost during save (#1946).
+- OSLImage : Fix `affects()` so input image affects shading.
+- ChannelDataProcess : Fix `affects()`.
+
+API
+---
+
+- ScriptNode (#1935)
+  - Made serialisation and execution useable from C++.
+  - Added `isExecuting()` method.
+- Switch
+  - Added `setup()` method to simplify creation of custom switches.
+  - Added `activeInPlug()` method.
+- ImageGadget
+  - Added `textureLoader()` method.
+- Added PlugAdder gadget to simplify the process of adding dynamic
+  plugs within the NodeGraph.
+- OSL Shading Engine : Added support for named transform spaces (#1944).
+- Added ContextMonitor class.
+- Menu : Added `modal` argument to `popup()` method.
+- MetadataAlgo : Added `affectedByChange()` overload for nodes.
+
+0.30.2.0
+========
+
+Improvements
+------------
+
+- Graph Layout : Don't apply positions if the layout algorithm fails.
+- StandardOptions : Added "render:sampleMotion" parameter.
+  - Currently with Arnold support ( RenderMan support requires Cortex update ).
+- Arnold backend : Options prefixed with "header:" are written into the header of image outputs.
+
+Fixes
+-----
+
+- ArnoldDisplacement :
+  - Accepts OSLShader inputs to map plug.
+  - Fixed dirty propagation.
+- ArnoldOptions : Removed errorColorBadMesh option.
+- Arnold backend : Leave instancing of ASS archives to Arnold itself.
+  - Fixed a crash bug when Arnold's procedural cache is in use (tested in Arnold 4.2.15.1)
+- Build :
+  - Fixed failing Travis tests by removing `ImageWriterTest.testMultipleWrite()`.
+  - IE options supply DCC specific LINKFLAGS if specified.
+
+0.30.1.0
+========
+
+Improvements
+------------
+
+- Arnold backend : Added support for adding arbitrary parameters to the Arnold options by using
+a CustomOptions node to create options prefixed with "ai:declare:" (#1911).
+- ArnoldOptions : Added AA_seed. If not specified, this defaults to the current frame (#1913).
+- Expression : Added support for PathMatcherDataPlugs in python expressions. In particular this allows the FilterResults node to be used as an input to an expression (#1915).
+- Documentation : Added Expression reference (#1918).
+
+Fixes
+-----
+
+- Dispatcher
+  - Fixed GIL management bug which could cause deadlock if pre/post dispatch slots launched threads that attempt to use Python (#1916).
+  - Fixed UI bug in frame range field (#1917).
+- Reference : Reconnect outputs from any plugs.
+
+API
+---
+
+- Menu : Added support for `functools.partial` in "active" and "checkBox" fields (#1914).
+- NodeGraph : Added support for "nodeGraph:childrenViewable" metadata. This controls whether the subgraph of a node is accessible via the "Show Contents..." menu item and the cursor down keypress (#1914).
+- PathMatcher/PathMatcherData : Added Python __repr__ support (#1915).
+
+0.30.0.0
+========
+
+Breaking Changes
+----------------
+
+- Resample : Replaced `dataWindow` plug with `matrix` plug (#1896).
+- OpenImageIOReader : Changed units of cache memory limit methods to bytes (#1895).
+- Serialiser : Added `serialisation` argument to all methods (#1882).
+- Metadata : Removed `inherit` argument from the `plugsWithMetadata()` and `nodesWithMetadata()`
+  methods (#1882).
+- ExecutableRender : Removed `command()` method (#1885).
+- Changed return type of `Filter::outPlug()`, `FilteredSceneProcessor::filterPlug() and
+  `FilterProcessor::inPlug()`. Source code compatibility is maintained.
+
+Features
+--------
+
+- Added Mirror node for flipping and flopping images (#1896).
+- Added FilterResults node for searching an input scene for
+  all locations matched by a filter (#1908).
+
+Improvements
+------------
+
+- Reference : Added "Duplicate as Box" menu item in NodeGraph (#1898, #1899).
+- Box : Added "Import Reference" menu item in NodeEditor (#1898, #1899).
+- OSLObject/OSLImage : Added support for vector shader parameters (#1901).
+- OSLShader : Added support for array parameters (#1892).
+- Render nodes : Added cache clearing after scene generation (#1900).
+- Stats app : Added OIIO memory usage reporting (#1895).
+- GUI app : Increased default cache size to 1 gigabyte (#1895).
+- Image view : Added solo channel plug and button (#1881).
+- Node Graph :
+  - The internal network of Reference nodes may now
+     be viewed by pressing the cursor down key (#1882).
+- ArnoldShader : Added support for "gaffer.plugType" "" metadata.
+  This can be used to disable the loading of a plug (#1884).
+- Documentation
+  - Added release notes section (#1886).
+  - Fixed broken links (#1894).
+- Improved loading times for scripts with many ArnoldShaders.
+- Added support for alternate shiboken install location (#1891).
+- Isolate : Added `keepLights` and `keepCameras` plugs (#1893).
+- Light Visualisers :
+  - Added basic area light visualisations to StandardLightVisualiser.
+  - Added visualisation metadata for Arnold quad, disk, cylinder, and skydome lights.
+
+Fixes
+-----
+
+- ImageTransform : Fixed negative scaling (#1896, #1613).
+- Set : Fixed filter update bug (#1878, #1908).
+- Cache preferences : Stopped serialising metadata unnecessarily (#1895).
+- OSX (#1879, #1566, #1880, #1885)
+  - Fixed numerous build errors
+  - Fixed problems caused by System Integrity Protection
+- Reference (#561, #1882)
+  - Fixed copy/paste of nodes from inside a Reference
+  - Prevented editing of internal nodes. They may now be viewed
+    but in a read-only state.
+- Arnold
+  - Fixed ai:shape:step_size attribute (#1883).
+- Fixed crashes when using as_color_texture shader (#1905).
+
+API
+---
+
+- OpenImageIOReader (#1895)
+  - Added `cacheMemoryUsage()` static method
+  - Changed units of cache memory limit methods to bytes.
+- Serialiser : Added `serialisation` argument to all methods (#1882)
+- Metadata (#1882)
+  - Added simplified API and deprecated previous API
+  - Added MetadataAlgo.h with methods for controlling read-onliness and
+    querying if a metadata change affects a particular plug.
+  - Removed `inherit` argument from the `plugsWithMetadata()` and `nodesWithMetadata()`
+    methods.
+- Plug : Deprecated ReadOnly flag - use MetadataAlgo instead (#1882).
+- ExecutableRender : Removed `command()` method (#OSX).
+- StandardNodule : Added support for "label" metadata (#1889).
+- Added M44fVectorDataPlug (#1892).
+- ValuePlug : Added `clearCache()` method (#1900).
+- ErrorDialogue
+  - Added ErrorHandler context manager.
+  - Added `messages` constructor parameter.
+
+0.29.0.0
+========
+
+Highlights of this release include an entirely rewritten Appleseed backend with support
+for editing geometry and environment lights during interactive renders, an OSLCode node
+for the writing of OSL shaders within Gaffer, and much improved OSL support in GafferArnold.
+
+Apps
+----
+
+- Screengrab
+  - Added delay command line argument (#1861).
+
+Core
+----
+
+- StringPlug
+  - Fixed substitutions when plug has an input (#1860).
+
+Appleseed
+---------
+
+- InteractiveAppleseedRender (#1833)
+  - Reimplemented completely to using new Gaffer scene description
+    APIs.
+  - Added support for adding/removing/deforming/transforming objects during rendering.
+  - Added support for changing environment lights during rendering.
+  - Improved performance and responsiveness.
+- AppleseedRender (#1833)
+  - Reimplemented completely to using new Gaffer scene description APIs.
+- AppleseedShaderBall
+  - Added threads and max samples settings (#1833).
+  - Increased sphere tesselation #1869.
+
+Arnold
+------
+
+- InteractiveArnoldRender
+  - Added support for editing subdivision attributes while rendering (#1855).
+- ArnoldOptions
+  - Added log verbosity settings (#1866).
+- OSL
+  - Improved OSL shader support using Arnold's new osl_shader node (#1873).
+- Improved warning messages for unsupported parameters (#1872).
+
+OSL
+---
+
+- Added OSLCode node, to allow editing of OSL shader snippets on the fly (#1861).
+
+UI
+--
+
+- ArnoldShader
+  - Added support for specifying UI layout via Arnold metadata.
+    In particular, this greatly improves the NodeEditor UI for the
+    AlShaders (#757, #1864).
+- ArnoldAttributes
+  - Fixed formatting of Subdivision section summary (#1855).
+- NodeMenu
+  - Sorted Arnold shaders into submenus (#1870).
+- ScriptEditor/Expression/PythonCommand
+  - Made code font monospaced (#1861).
+- ShaderView
+  - Fixed initial framing  (#1861).
+  - Fixed bug triggered by shaders changing type  (#1861).
+- Expression
+  - Fixed broken popup menus on non-ValuePlugs (#1861).
+- OSLShader
+  - Fixed support for "null" widget type (#1865).
+- ImageReader/SceneReader/AlembicSource
+  - Improved layout of reload button (#1867).
+- ArnoldOptions
+  - Moved threads setting to Rendering section.
+- Added indentation to nested collapsible widgets (#1866).
+- SceneInspector
+  - Fixed errors when selected path doesn't exist (#1874).
+- Display
+  - Don't attempt to start server unless UI is connected (#222).
+- Added home shortcut for image view.
+- Selection/Crop Tools
+  - Fixed precision issues when far from origin.
+
+Documentation
+-------------
+
+- Consolidated reference docs into a parent section (#1860).
+- Added string substitutions reference (#1860).
+
+API
+---
+
+- Renderer
+  - Added bool return value to ObjectInterface::attributes(), to signify
+    success/failure #1855.
+- OSLShader
+  - Added support for unloading with `OSLShader::loadShader( "" )` (#1859).
+  - Fixed loading of surface type after loading of shader type (#1859).
+- LabelPlugValueWidget
+  - Added support for "labelPlugValueWidget:renameable" metadata (#1861).
+- MultiLineTextWidget
+  - Added "role" property (#1861).
+- MultiLineStringPlugValueWidget
+  - Added support for specifying role via "multiLineStringPlugValueWidget:role"
+    metadata (#1861).
+- OSL
+  - Added GafferOSL/Spline.h header, to simplify use of splines in shaders (#1861).
+- View
+  - Removed `virtual void plugDirtied()`.
+- CompoundDataPlug
+  - Added support for BoolVectorData (#1863).
+- PlugLayout
+  - Added support for "layout:accessory" metadata.
+- Added RefreshPlugValueWidget and deprecated IncrementingPlugValueWidget (#1867).
+- ViewportGadget
+  - Don't convert raster positions to V2i.
+
+Build
+-----
+
+- Added OSLHOME build option, only necessary when building without using GafferHQ/dependencies (#1871).
+
+Breaking changes
+----------------
+
+- View
+  - Removed `virtual void plugDirtied()`.
+
+0.28.3.0
+========
+
+OSL
+---
+
+- Metadata
+  - Support OSL "page", "connectable", and "URL" metadata
+  - Support metadata on spline plugs
+  - Support min/max metadata
+
+0.28.2.1
+========
+
+API
+---
+
+- ArnoldShader
+  - Fix `outPlug()` loading bug introduced in 0.28.2.0.
+
+
+0.28.2.0
+========
+
+UI
+--
+
+- Fixed incorrect re-use of widgets when swapping plugs with the same name.
+
+Scene
+-----
+
+- Fixed context scoping issue during renders.
+
+Arnold
+------
+
+- Added curve min_pixel_width and mode attributes.
+- Shaders are now re-loadable, and will automatically reload during script load.
+
+Cortex
+------
+
+- Fixed incorrect re-use of plugs when swapping parameters with the same name.
+
+API
+---
+
+- SceneAlgo
+  - Fixed context used by `sets()` function.
+- RendererAlgo (preview)
+  - Fixed context used by `RenderSets` class.
+- ArnoldShader
+  - Added keepExistingValue argument to `loadShader()`.
+  - Added `loadShader()` to serialisation.
+  - Reusing existing plugs wherever possible.
+- CompoundParameterHandler
+  - Match by parameter object instead of name.
+- CompoundPlugValueWidget
+  - Match by plug object instead of name.
+
+0.28.1.0
+========
+
+UI
+--
+
+- The 3D Viewer can now look through lights (#1846).
+- Prefixed NodeMenu search text for RSL and OSL shaders with ri and osl respectively (#1850).
+
+Arnold
+------
+
+- Added support for trace sets (#1847). Any standard gaffer set with a name beginning with "render:" will be exported to Arnold as a trace set.
+- Fixed ArnoldDisplacement crash (#1849).
+- Added support for a `gaffer.nodeMenu.category` metadata value to customise the shader menu (#1850).
+
+Scene
+-----
+
+- Added LightToCamera node (#1846).
+
+API
+---
+
+- Context (#1848)
+  - Added GIL release in `set()` method bindings to
+    fix potential deadlocks.
+  - Fixed bug which meant that `remove()` wasn't
+    emitting `changedSignal()`.
+- SceneAlgo
+  - Added `sets()` overload to compute a subset of all sets.
+- RendererAlgo (preview)
+  - Added RenderSets utility class.
+  - Modified output methods to take a RenderSets argument.
+- ShaderPlug
+  - Fixed bug involving plugs with no input (#1849).
+
+Build
+-----
+
+- Added INSTALL_POST_COMMAND option, to allow custom commands to be run after installation (#1845).
+
+0.28.0.1
+========
+
+UI
+--
+
+- Viewer
+  - Construct as invisible to avoid unnecessary updates
+  - Improved renderer management for shader swatches
+  - Support reregistration of shader swatch scenes
+
+Scene
+-----
+
+- FilterPlug
+  - Fixed compatibility with legacy SubGraphs and Dots
+
+Arnold
+------
+
+- ArnoldShaderBall
+  - Added threads plug and limited cores used by the shader swatches
+
+Appleseed
+---------
+
+- Removed unwanted shaders from Appleseed shader menu
+
+Build
+-----
+
+- Resources now install even when not building docs
+
+0.28.0.0
+========
+
+UI
+--
+
+- Viewer
+  - Added interactive shader swatches (#1828).
+  - Added visualisation of Arnold spotlight lens radius (#1835).
+  - Fixed visualisation of lights aligned to camera (#1835).
+- NodeGraph
+  - Added "Move To" menu items for Dot nodes.
+- InteractiveRender
+  - Added Play/Pause/Stop buttons.
+
+Scene
+-----
+
+- Added LightTweaks node (#1829).
+- Added ShaderBall node (#1828).
+- Added CopyOptions node (#1834).
+- Fixed FilterSwitch serialisation bug (#1814, #1815).
+
+Arnold
+------
+
+- Added support for shader network inputs to light parameters (#1828).
+- Added support for spline shader parameters (#1813).
+- Added support for OSL shaders (#1813).
+- Added bucketSize and bucketScanning options to ArnoldOptions node (#1827).
+- Added ArnoldShaderBall node (#1828).
+- Added performance monitor support to ArnoldRender (#1831).
+- Improved parameter linking support in renderer backend.
+- Fixed crashes caused by trying to use two render nodes at once in the same process (#1818).
+
+Appleseed
+---------
+
+- Added AppleseedShaderBall node (#1828).
+- Fixed problems with searchpath initialisation (#1828).
+
+RenderMan
+---------
+
+- Added RenderManShaderBall node (#1828).
+
+Dispatch
+--------
+
+- Fixed performance problems with complex dispatch graphs (#1820).
+
+Image
+-----
+
+- Fixed sizing of whitespace in Text node (#1822).
+
+OSL
+---
+
+- Fixed problems with OSL_SHADER_PATHS initialisation (#1813).
+
+Documentation
+-------------
+
+- Added missing image to "Getting Started" tutorial (#1810).
+
+Build
+-----
+
+- Replaced appleseed build options with single APPLESEED_ROOT option (#1812).
+
+API
+---
+
+- Scene
+  - Added FilterPlug (#1815).
+  - Added ShaderPlug (#1828).
+  - Deprecated public attributes methods on Shader node.
+  - Allowed ObjectSource derived classes to define more than one default set (#1821).
+- UI
+  - Added `Gadget::visibilityChangedSignal()` (#1828).
+- Arnold
+  - Added gaffer.plugType metadata support for shader parameters (#1817).
+- Monitor
+  - Added support for NULL argument to Scope class (#1831).
+
+Breaking Changes
+----------------
+
+- Added an argument to `GafferArnold::ParameterAlgo::setupPlug()` (#1817).
+- Modified ObjectSource virtual methods (#1821).
+
+0.27.1.0
+========
+
+Core
+----
+
+- Fixed crash caused by using an invalid expression language (#1801).
+
+Arnold
+------
+
+- Fixed motion blurred light bug (#1805).
+- Fixed overscan rendering (#1803).
+
+OSL
+---
+
+- Added support for matrix parameters (#1798, #1800)
+
+API
+---
+
+- Replaced cropWindow with renderRegion in new IECoreScenePreview::Renderer::camera().
+
+0.27.0.1
+========
+
+UI
+--
+
+- ViewportGadget
+  - Exposed world position to shaders
+
+0.27.0.0
+========
+
+Apps
+----
+
+- Screengrab (#1793, #1559)
+  - Added arguments for Viewer and NodeGraph framing
+  - Added arguments for Viewer and SceneHiearchy expansion and selection
+  - Added argument for grabbing a single plug from the NodeEditor
+
+Scene
+-----
+
+- Fixed SubTree to error when an invalid root is entered (#1786, #1790).
+- Added filter input to Set, to define additional paths to add/remove.
+
+Arnold
+------
+
+- Added ArnoldMeshLight node (#1787)
+- Added ArnoldDisplacement node (#1776)
+- Added subdivision attributes to ArnoldAttributes (#1776)
+- ArnoldOptions (#1788)
+  - Added total depth and transparency depth/threshold plugs
+- Fixed warnings about unhandled light parameters
+- Fixed crashes/errors caused by multiple cameras and a threading
+  bug (#1785)
+- Fixed bogus warning about "ai:log:filename" option.
+
+OSL
+---
+
+- Expression (#1791, #1789)
+  - Fixed string comparison bug
+  - Fixed bugs when plug names share a common prefix
+  - Fixed mistaken assignments
+- Added support for spline parameters in shaders (#1782)
+- Fixed reload button on shader UI
+
+Documenation
+------------
+
+- Added basic lighting and rendering tutorial (#1793).
+
+Build
+-----
+
+- Fixed debug builds (#1781)
+- Added debug builds to Travis tests (#1781)
+- Fixed clang compilation error in Serialisation.cpp
+
+API
+---
+
+- Made FilteredSceneProcessor subclassable in Python.
+
+Breaking Changes
+----------------
+
+- Rederived Set from FilteredSceneProcessor.
+- Changed LightVisualiser API
+  - Added attributeName argument to visualise() virtual method.
+  - Added attributeName argument to registerLightVisualiser() factory method.
+- Changed StandardLightVisualiser metadata prefix convention from
+  "light:renderer:shaderName" to "renderer:light:shaderName", to
+  match the ordering of the data as it appears in the scene module
+  (attributeName:shaderName).
+- Light nodes now output IECore::Shader objects rather than IECore::Lights
+
+0.26.0.0
+========
+
+Arnold
+------
+
+- Added automatic instancing of identical objects (#1775).
+- Added support for user attributes (#1775).
+- Added support for filter widths in output specifications (#1773).
+- Updated subdivision attributes to match Arnold versions 4.2.8.0 and
+  onwards (#1775).
+- Moved path setup to wrapper. This means that `gaffer env kick` can
+  be used to render a pregenerated ass file (#1774).
+
+UI
+--
+
+- NodeGraph
+  - Added automatic layout of nodes generated by scripts (#1751, #1771).
+  - Fixed duplicate position plug names (#762).
+
+API
+---
+
+- Renamed ExecutableNode to TaskNode (#1767).
+- Protected TaskNode internal virtual methods. Use the TaskPlug
+  methods instead (#1767).
+- Replaced OSLRenderer with ShadingEngine (#1770).
+- GraphGadget
+  - Added unpositionedNodes() method (#1751).
+
+Build
+-----
+
+- Updated public build to use OSL 1.7.2 and OIIO 1.6.14.
+
+Breaking Changes
+-----------------
+
+- Renamed ExecutableNode.
+- Protected internal TaskNode methods.
+- Replaced OSLRenderer with ShadingEngine.
+- Dropped support for OSL versions prior to 1.7.
+
+0.25.1.0
+========
+
+Apps
+-----------------------------------------------------------------------
+
+- Screengrab
+  - Support for grabbing the ScriptEditor.
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed crash on mouse move over an about-to-become-visible GLWidget.
+
+Scene
+-----------------------------------------------------------------------
+
+- Attributes
+  - Avoided unnecessary dirty propagation.
+  - Deactivated filter field when in global mode.
+- InteractiveRender
+  - Fixed object visibility bug.
+  - Fixed context management bugs.
+- RenderUI
+  - Exposing nodules for task plugs.
+
+Image
+-----------------------------------------------------------------------
+
+- ImageGadget
+  - Taking pixel aspect into account when drawing.
+  - Fixed color inspector for non-square pixels.
+
+Arnold
+-----------------------------------------------------------------------
+
+- ArnoldRenderer
+  - Reusing shaders where possible.
+  - Ensuring shader nodes are named (uniquely).
+  - Fixed sharing of attributes between lights.
+  - Fixed time_samples.
+  - Fixed default shader override on ExternalProcedurals.
+- ArnoldOptions
+  - Added missing sampling and depth options.
+- ArnoldAttributes
+  - Supporting additional shading attributes.
+    - "ai:matte", "ai:opaque", "ai:receive_shadows" and "ai:self_shadows"
+
+Documentation
+-----------------------------------------------------------------------
+
+- Added scripting tutorials and reference.
+- Added bookmarks to config file tutorial.
+- Added examples for the "test" app.
+- Added OpenVDB license to appendices.
+- Renamed "Performance Guidelines" tutorial to "Managing Complexity".
+
+API
+-----------------------------------------------------------------------
+
+- ScriptEditor
+  - Added inputWidget() and execute() methods.
+- ImageGadget
+  - Added pixelAt() method.
+  - Added missing bindings.
+
+0.25.0.0
+========
+
+Apps
+-----------------------------------------------------------------------
+
+- Fixed ordering of GAFFER_STARTUP_PATHS, so that custom scripts can
+  override Gaffer's built in configuration files (#1752).
+
+Scene
+-----------------------------------------------------------------------
+
+- Set
+  - Added support for modifying multiple sets with a single node,
+    by entering multiple names separated by spaces (#1748).
+
+Arnold
+-----------------------------------------------------------------------
+
+- ArnoldRender node now uses the same backend as the
+  InteractiveArnoldRender node. Rendering is now performed directly
+  in Gaffer rather than using a procedural (#1755).
+- ArnoldShader ( #1758)
+  - Added support for BYTE and UINT input parameters and VECTOR
+    and POINT output types.
+- Added support for crop windows, overscan and resolution multipliers
+  (#1744).
+
+Build
+-----------------------------------------------------------------------
+
+- Fixed compilation of GafferAppleseed with GCC 5 (#1757).
+
+API
+-----------------------------------------------------------------------
+
+- Made IECorePreview module private (#1731).
+- Changed default orientation of environment light visualiser (#1749).
+- Fixed SceneAlgo::camera() when "option:render:camera" is "".
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- Made IECoreScenePreview private.
+- ArnoldRender node no longer has a verbosity plug.
+- Changed default orientation of environment light visualiser.
+
+0.24.1.0
+========
+
+Core
+-----------------------------------------------------------------------
+
+- Fixed performance of acceptsInput() for serial Switch networks (#1722)
+- Context now uses GeometricTypedData where appropriate.
+- Disallow setting user defaults on nodes in nodes.
+- Fixed serialization of dynamic TransformPlug
+
+UI
+-----------------------------------------------------------------------
+
+- Improved picking of "backwards" connections.
+
+Apps
+-----------------------------------------------------------------------
+
+- Added basic documentation.
+
+Scene
+-----------------------------------------------------------------------
+
+- Updated several nodes to register metadata in one shot with `registerNode()`
+- SceneView
+  - Fixed drawing mode.
+  - Added controls for curve drawing.
+    - Using uninterpolated GL lines by default.
+- Restored default base state in SceneGadget.
+- GafferScene
+  - Added preview of new Cortex Renderer API.
+  - Added preview of RendererAlgo for new Renderer API.
+  - Added preview of new InteractiveRender node.
+- SceneAlgo
+  - Added `globalAttributes()` function.
+- SceneNode
+  - Reduced unnecessary dirty signalling.
+
+Image
+-----------------------------------------------------------------------
+
+- Removed unnecessary `UVWarp::Engine::hash()` method.
+- ImageWriter can now be subclassed in Python.
+
+OSL
+-----------------------------------------------------------------------
+
+- Updated OSLShaderUI to register metadata in one shot with `registerNode()`
+- OSL Expressions now support V3f data from the Context.
+
+Arnold
+-----------------------------------------------------------------------
+
+- ArnoldOptions
+  - Added licensing section.
+  - Added basic support for controlling render logs.
+- Added preview of IECoreArnold ShaderAlgo.
+- Added preview of IECoreArnold ProceduralAlgo.
+- Added preview of new IECoreArnold Renderer.
+- Added InteractiveArnoldRender node.
+- Added support for Arnold matrix parameters as M44fPlugs
+
+RenderMan
+-----------------------------------------------------------------------
+
+- Remove deprecated RenderManShaderUI class
+- Updated RenderMan shaders to register metadata in one shot with `registerNode()`
+
+0.24.0.0
+========
+
+UI
+-----------------------------------------------------------------------
+
+- Added node reference documentation menu item to NodeEditor tool menus.
+- GafferUI.Collapsible supports Widget.reveal().
+- ScriptWindow no longer stops the EventLoop if it's already stopped.
+- Fixed PathWidget WeakMethod error at shutdown.
+
+Scene
+-----------------------------------------------------------------------
+
+- Improved error messages emitted by Group node.
+
+Image
+-----------------------------------------------------------------------
+
+- Fixed UVWarp crash triggered by negative data window origins (#1707).
+
+OSL
+-----------------------------------------------------------------------
+
+- Fixed crash when deleting connections to an OSL expression (#1695).
+- Added support for BoolPlugs in OSL expressions (#1697).
+
+Dispatch
+-----------------------------------------------------------------------
+
+- Stopped SystemCommand swallowing the stdout of launched processes
+  (#1712).
+- Disabled automatic substitutions for command (#1692). This was broken
+  by #1671.
+- Added LocalDispatcher environmentCommand plug.
+
+Arnold
+-----------------------------------------------------------------------
+
+- Added ArnoldVDB node (#1711).
+- Added volume step size to ArnoldAttributes node (#1694).
+- Fixed metadata for ArnoldLight UIs (#1696).
+- Added "ai:threads" option
+  - Exposed via ArnoldOptions under the Performance section.
+  - ArnoldRender uses ai:threads option to drive kick -t command line arg.
+
+Apps
+-----------------------------------------------------------------------
+
+- Removed procedural app
+- Screengrab app
+  - Added `-editor` argument
+  - Added `-selection` argument
+  - Added `-nodeEditor.reveal` argument
+  - Fix crashes at shutdown
+
+Documentation
+-----------------------------------------------------------------------
+
+- Introduced HTML documentation which is shipped with every Gaffer
+  release (#1702, #1708, #1710).
+- Mentioned PerformanceMonitor.
+
+Build
+-----------------------------------------------------------------------
+
+- Simplified packaging. Use the gafferDependencies project if the
+  dependencies are needed for your build.
+- Convert BUILD_DIR to an absolute path.
+
+API
+-----------------------------------------------------------------------
+
+- View (#1713)
+  - Removed View3D and ObjectView derived classes.
+  - Removed update() and updateRequestSignal() methods.
+- Added DocumentationAlgo namespace with functions to assist in
+  auto-generating documentation.
+- Removed CompoundPlug usage from Shader nodes (#1701).
+- Added **kw arguments to all Widget constructors.
+- Removed deprecated Widget keyword arguments(#655, #1704).
+- Removed all use of deprecated IECorePython::Wrapper (#1116, #1703).
+- Removed deprecated `ValuePlug::inCompute()` method. Use `Process::current()`
+  instead.
+- Removed deprecated `Filter::matchPlug()` method. Use `Filter::outPlug()`
+  instead.
+- Removed deprecated SignalBinder class. Use SignalClass instead.
+- Removed deprecated iterator methods. Use `Iterator::done()` instead.
+
+0.23.2.0
+========
+
+Apps
+-----------------------------------------------------------------------
+
+- Stats
+  - Fixed bug which caused errors when there were no items to print
+    in a particular category (#1667).
+  - Added -performanceMonitor flag, which outputs in depth statistics
+    for use in analysing and optimising performance (#1668).
+  - Added -image flag for outputting image statistics (#1680).
+
+UI
+-----------------------------------------------------------------------
+
+- Added back "Remove Input" menu option for promoted plugs. This differs
+  from the "Unpromote" option in that it breaks the connection but keeps
+  the promoted plug on the outside of the box (#1678).
+- NodeGraph (#1679)
+  - Tightened rules for inserting nodes into noodles. Nodes are now only
+    inserted when disabling the inserted node would create a pass-through
+    equivalent to the original connection, and deleting the node will
+    restore the original connection. Previously nodes could be inserted
+    in such a way that one end of the connection was broken, or two new
+    connections were made which had no logical in->out connection through
+    the inserted node.
+  - Stopped highlighting connections when hovering in their middle, where
+    they cannot be dragged anyway.
+  - Made it harder to accidentally drag a long connection by grabbing it
+    in the middle - the sensitive section is now limited to a shorter
+    segment near the end.
+
+Scene
+-----------------------------------------------------------------------
+
+- Improved output of objects and transforms which are static, but for
+  which motion blur has been requested via StandardAttributes. Motion
+  blocks are now omitted when no motion is detected (#1662).
+- ScriptProcedural (#1676)
+  - Fixed clearing of caches after procedural expansion in Arnold.
+  - Improved error reporting to include the node which caused the
+    error.
+  - Added support for performance monitoring.
+- StandardOptions
+  - Added new performanceMonitor option, which enables/disables the
+    performance monitoring now supported by the ScriptProcedural
+    (#1676).
+- Duplicate
+  - Optimised set name computation. This knocks 35% off the time
+    to compute a set in a custom downstream node with certain
+    suboptimal qualities (#1682).
+- Fixed hangs caused by missing GIL management in SceneAlgo
+  bindings (#1686, #1687).
+
+Dispatch
+-----------------------------------------------------------------------
+
+- ExecutableNodes now support automatic substitution of variables in
+  StringPlug values, in the same way as has always been supported
+  by other node types (#887, #1671).
+- Fixed order of dispatch when postTasks exist (#1675).
+
+Arnold
+-----------------------------------------------------------------------
+
+- Removed use of deprecated UI APIs. Specifically,
+  `PlugValueWidget.registerCreator()` has been deprecated, and all code
+  should use the equivalent "plugValueWidget:type" metadata instead
+  (#1673).
+
+RenderMan
+-----------------------------------------------------------------------
+
+- Added initial support for using OSL shaders in 3delight.
+
+Appleseed
+-----------------------------------------------------------------------
+
+- Updated to [Appleseed 1.4.0-beta](https://github.com/appleseedhq/appleseed/releases/tag/1.4.0-beta).
+- Renamed volume priority attribute to medium priority.
+
+Cortex
+-----------------------------------------------------------------------
+
+- Fixed UI error when launching a ClassVectorParameter UI with
+  preexisting child parameters (#665, #1670).
+
+Documentation
+-----------------------------------------------------------------------
+
+- Added GafferDispatch to the API docs.
+
+API
+-----------------------------------------------------------------------
+
+- Added Process and Monitor classes. Processes expose internal
+  processes such as ComputeNode::compute() and ComputeNode::hash()
+  to Monitors - classes which can observe the internal workings of
+  Gaffer via the exposed Processes (#1668).
+- Added PerformanceMonitor class. This uses the Monitor/Process
+  API to collect statistics useful in analysing and optimising
+  performance (#1668).
+- RendererAlgo
+  - Added outputObject() method (#1662).
+  - Added outputTransform() method (#1662).
+- ValuePlug
+  - Deprecated inCompute() method - use Process::current() instead
+    (#1668).
+- FormatData
+  - Added workaround for unstable hash() method when compiling with
+    GCC 4.4.7 (#1669).
+- ExecutableNode
+  - Moved public interface to TaskPlug. The ExecutableNode virtual
+    interface is now considered to be protected, and will be made
+    so in a future release.
+- ScenePlug
+  - Fixed python binding for pathToString().
+  - Added helpers for accessing globals and set names. These manage
+    the context such that it is friendlier to the hash cache, by
+    removing variables we know to change frequently but which cannot
+    affect the result #(1683).
+
+Build
+-----------------------------------------------------------------------
+
+- Updated Cortex to version 9.8.0.
+- Updated Appleseed version to 1.4.0-beta.
+
+0.23.1.0
+========
+
+Apps
+-----------------------------------------------------------------------
+
+- Stats App
+  - Added outputs for scene traversal time and memory usage.
+
+Core
+-----------------------------------------------------------------------
+
+- Improved performance of the computation cache, particularly when under
+  heavy multithreaded load (#1638).
+- Fixed GIL lock issues.
+  - CompoundDataPlug releases when adding child plugs.
+  - GraphComponent releases when adding/removing children.
+  - Reference releases in load().
+- Switch
+  - Add SwitchTraits<BaseType> to control context for index evaluation.
+
+UI
+-----------------------------------------------------------------------
+
+- SceneHierarchy
+  - Added search field (#1572, #1649).
+  - Added set filter (#48, #1649).
+- NodeEditor
+  - Improved error handling for labels and multiline text fields (#1650).
+- NodeGraph
+  - Fix "Find..." shortcut.
+- SceneInspector
+  - Fixed labelling of CoordinateSystem sets (#1648).
+- ExecutableNode
+  - Fixed UI for individually promoted pre/post tasks (#1647).
+- UIEditor
+  - Add label field to plug section.
+- GLWidget
+  - Supports use in Maya when using PySide.
+
+Scene
+-----------------------------------------------------------------------
+
+- ScenePlug
+  - set() and setHash() are friendlier to the hash cache.
+- SceneSwitch
+  - Removed scene:path from context for index.
+- FilterProcessor
+  - Implement pass-through when disabled.
+- PathFilter
+  - Fixed bugs which treated empty paths as "/" rather than ignoring them (#1642)
+   - Avoid unnecessary hashing of __pathMatcher plug.
+- Set
+  - Fixed bugs which treated empty paths as "/" rather than ignoring them (#1642)
+- SetFilter
+  - Remove unnecessary context manipulation..
+- DeleteSets
+  - Fixed bug which could pass-through a deleted set.
+- Isolate/Prune
+  - Fixed bugs which caused incorrect results when used with a
+    particular custom filter outside of Gaffer (#1652).
+- Shader
+  - Fixed crashes caused by cyclic connections in shader networks (#1646).
+- Fixed GIL lock issues.
+  - Outputs releases in addOutput().
+
+Image
+-----------------------------------------------------------------------
+
+- Warp
+  - Added Warp base class.
+  - Added UVWarp node.
+- BufferAlgo
+  - Added index() function.
+- ImageSwitch
+  - Removed tile variables from context for index.
+
+RenderMan
+-----------------------------------------------------------------------
+
+- Fixed GIL lock issues.
+  - RenderManShader releases in loadShader().
+
+API
+-----------------------------------------------------------------------
+
+- PathMatcher
+  - Fixed bugs which treated empty paths as "/" rather than as empty (#1642).
+- SceneAlgo
+  - Added PathMatcher overloads for `filteredParallelTraverse()` and
+    `matchingPaths()` (#1649).
+- MultiLineTextWidget
+  - Added `setErrored()/getErrored()` methods to (#1650).
+- MultiLineStringPlugValueWidget/LabelPlugValueWidget
+  - Added error handling (#1650).
+- ExecutableNode
+  - Disabled nodule creation by default for all but TaskPlugs. Nodules
+    can be explicitly reenabled using a ( "nodule:type", "GafferUI.StandardNodule" )
+    metadata registration for a particular plug.
+- DownstreamIterator/RecursiveChildIterators
+  - Fixed API for completion of iteration.
+- FilteredChildIterator
+  - Added done() method.
+- TypedObjectPlug bindings : Add _copy argument to defaultValue() method.
+
+Build
+-----------------------------------------------------------------------
+
+- GafferUI now links to QtOpenGL
+
+0.23.0.1
+========
+
+Cortex
+-----------------------------------------------------------------------
+
+- Fixed ParameterisedHolder::parameterChanged() exception handling.
+
+0.23.0.0
+========
+
+Core
+-----------------------------------------------------------------------
+
+- Reverted cyclic connection check on plug connection
+- Reduced hash cache clearing frequency to speed up instancing.
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed labelling of renamed plugs which had a custom label. The label
+  is now removed by the rename operation (#1635).
+
+Scene
+-----------------------------------------------------------------------
+
+- Improved set performance and memory usage significantly for all node
+  types (#1623).
+- Added a MeshToPoints node (#1640).
+- Added sets support in the Duplicate node (#1623).
+
+Arnold
+-----------------------------------------------------------------------
+
+- Added support for motion blur, courtesy of Cortex 9.7.0.
+
+API
+-----------------------------------------------------------------------
+
+- Fixed python bindings to accept any iterable where previously only
+  lists were accepted (#1634).
+- ScriptWindow
+  - Added createIfNecessary argument to ScriptWindow.acquire() (#1639).
+- NameLabel (#1635)
+  - Exposed default formatter.
+  - Deprecated setText().
+- PathMatcher (#1623)
+  - Reimplemented using lazy-copy-on-write sharing.
+  - Added addPaths() overload with prefix path.
+  - Added subTree() method.
+  - Added `RawIterator find( path )` method.
+
+Build
+-----------------------------------------------------------------------
+
+- Updated release builds to Cortex 9.7.0.
+- Updated OCIO build to be compatible with Maya. It should now be
+  possible to run a standard Gaffer build from within Maya.
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- PathMatcher binary compatibility changes.
+
+0.22.0.0
+========
+
+This release brings support for dispatching via Pixar's Tractor, in
+additional to the usual medley of bug fixes and optimisations.
+
+Core
+-----------------------------------------------------------------------
+
+- Prevented the creation of cyclic connections (#1630).
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed bugs in "Set Key" plug menu item.
+- Fixed Backdrop node positioning when creating a backdrop with no
+  nodes selected (#1625).
+- Fixed NodeEditor layout problems caused by long summaries (#1629).
+
+Scene
+-----------------------------------------------------------------------
+
+- SceneProcedural (#1615)
+  - Fixed bug which could cause motion blurred bounding
+    boxes to be computed incorrectly.
+  - Removed duplicate attribute computations. This shaves
+    9% off the time to first pixel for a complex benchmark scene.
+
+RenderMan
+-----------------------------------------------------------------------
+
+- Improved time to first pixel for raytraced 3delight renders (#1614).
+
+Arnold
+-----------------------------------------------------------------------
+
+- Fixed warnings about inaccurate bounds (#1614).
+
+Appleseed
+-----------------------------------------------------------------------
+
+- Added support for volume priority attribute (#1631).
+
+Tractor
+-----------------------------------------------------------------------
+
+- Added a new GafferTractor module, which enables dispatching of
+  Gaffer's task graphs to renderfarms running Pixar's Tractor (#1619).
+
+Cortex
+-----------------------------------------------------------------------
+
+- Fixed UI for promoted presets parameters (#1624).
+- Fixed parameter ordering in UI (#1627).
+
+API
+-----------------------------------------------------------------------
+
+- ValuePlug
+  - Prevented the addition of children which are not themselves
+    ValuePlugs.
+  - Allowed subclassing in Python.
+- FilteredSceneProcessor
+  - Removed restrictions on `Filter::sceneAffectsMatch()` (#1620).
+- SceneProcedural/ScriptProcedural
+  - Added support for using Renderer::Procedural::noBound (#1614).
+- Fixed GIL management in DependencyNodeWrapper.
+- Added DownstreamIterator.
+- Improved error handling during dirty propagation.
+- Batched dirty propagation during script loading, execution and
+  destruction (#1632).
+
+Tests
+-----------------------------------------------------------------------
+
+- Unexpected messages are now treated as errors.
+
+Build
+-----------------------------------------------------------------------
+
+- Requires Cortex 9.6.0.
+
+0.21.0.0
+========
+
+Apps
+-----------------------------------------------------------------------
+
+- Added `gaffer stats` application. This takes a script and prints out
+  information about version, settings, variables and nodes (#1437).
+
+Core
+-----------------------------------------------------------------------
+
+- Fixed serialisation of quotes and other special characters in metadata
+  keys. This was most visible when using special characters in custom
+  preset names (#1599).
+- Simplified metadata serialisations (#1599).
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed UV orientation for area light visualisations (#1600).
+- Fixed environment light visualisations on OSX (#1609).
+- Viewer (#1592)
+  - Improved image viewer performance.
+  - Fixed several image viewer bugs (#1427, #1426, #1356, #773).
+  - Added support for custom toolbars on all edges of the viewer,
+    for both views and nodes.
+- Fixed hang when browsing scene locations (#1618).
+
+Image
+-----------------------------------------------------------------------
+
+- Fixed reference counting bugs in Premultiply and Unpremultiply nodes
+  (#1598).
+- Fixed crashes caused by Merge requesting nonexistent upstream
+  channels (#1596).
+
+Appleseed
+-----------------------------------------------------------------------
+
+- Added support for exposure parameters on Appleseed lights (#1608).
+- Simplified light menus (#1608).
+- Improved environment light visualisations (#1608).
+
+API
+-----------------------------------------------------------------------
+
+- ImageAlgo
+  - Added channelExists() function (#1596).
+- ExceptionAlgo
+  - Fixed line number extraction for syntax errors (#1599).
+- Menu
+  - Fixed broken shortcuts after assigning new menu definition (#1597).
+  - Fixed scoping of MenuBar shortcuts. In particular this fixes
+    a bug whereby an embedded Gaffer panel could prevent Maya's
+    main window shortcuts from working (#1597).
+- Replaced all old-style python classes with new style ones #1607.
+- GafferImageUI
+  - Added ImageGadget class.
+- PlugLayout improvements
+  - Added support for "layout:divider" metadata - this replaces
+    the old "divider" metadata.
+  - Added support for multiple layouts, using a different metadata
+    prefix for each layout.
+  - Added support for creating partial layouts, using a new rootSection
+    constructor argument.
+- Toolbar improvements
+  - Toolbars can now be defined for all edges, not just the top of
+    frame (#1592).
+  - StandardNodeToolbar has a new constructor argument to choose which
+    edge to create the toolbar for. A new "toolbarLayout:section" metadata
+    value chooses which toolbar plugs belong in, with values of
+    "Top", "Bottom", "Left" and "Right" (#1592).
+- GLWidget
+  - Improved overlay mechanism. Overlays may be queried and removed as
+    well as set. Container overlays are transparent to mouse events in
+    areas where no child widget exists (#1592).
+- NumericPlugValueWidget
+  - Added support for "fixedCharacterWidth" metadata.
+
+Build
+-----------------------------------------------------------------------
+
+- Added GCC 5 build to Travis test setup.
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- Removed ImageView::update() virtual override.
+- Replaced GLWidget.addOverlay() method with setOverlay()/getOverlay() methods.
+
+0.20.0.0
+========
+
+Apps
+-----------------------------------------------------------------------
+
+- Added support for choosing the debugger used via a new GAFFER_DEBUGGER
+  environment variable.
+
+Core
+-----------------------------------------------------------------------
+
+- Improved ContextProcessor performance. This shaved 10% off the startup
+  time for a complex render (#1573).
+- Added framesPerSecond plug to ScriptNode. This provides user-level
+  control over the frame rate for each script (#1576).
+- Fixed hang triggered by deletion of a plug during computation
+  (#1576, #1580).
+
+Dispatch
+-----------------------------------------------------------------------
+
+- Moved all dispatch functionality from Gaffer module into a new
+  GafferDispatch module. Backwards compatibility is provided by
+  config files, but it is recommended that code be updated to use
+  GafferDispatch directly (#1577).
+- Renamed "requirements" plug to "preTasks" and "requirement" plug
+  to "task". Again, backwards compatibility is provided by a config
+  file, but it is recommended that code be updated to use the new
+  names (#1577).
+- Added "postTasks". These are nodes that are executed following another
+  node, even if they are not explicitly included in the list of nodes
+  to dispatch (#1577).
+- Added "dispatcher.immediate" plug to all executable nodes. This
+  causes the node to be executed immediately in the current process
+  when dispatched (#1577).
+- Removed "dispatcher.local.executeInForeground" plug - use the new
+  "dispatcher.immediate" plug instead (#1577).
+- Added sequence support to PythonCommand node. This causes the command
+  to be called once for all frames, instead of once per frame (#1578).
+- Fixed bug which could cause all frames downstream of pass-through
+  nodes (like TaskList and TaskContextVariables) to depend on all
+  upstream frames (#1577).
+- Fixed detection of direct dependency cycles (#1577).
+
+Image
+-----------------------------------------------------------------------
+
+- Crop
+  - Added option to crop to a specific format, optionally centered (#1570).
+- Fixed crashes triggered by images with empty data windows (#1575).
+- Improved ImageWriter to write out images progressively as the input
+  image is generated (#1517). This improved speed by 65% and memory usage
+  by 60% when generating a 10K image.
+
+Scene
+-----------------------------------------------------------------------
+
+- Lights are now represented as attributes at a location rather than as
+  objects. This allows lights for multiple different renderers to exist
+  at the same location, allows the creation of area lights, and provides
+  the necessary support for using shader networks within lights in the
+  future (#1590).
+- Shader nodes now support the loading of light shaders (#1590).
+- Added metadata support for specifying the orientation of lights
+  in the renderer (#1590).
+
+RenderMan
+-----------------------------------------------------------------------
+
+- Fixed crash when reloading coshader arrays.
+
+UI
+-----------------------------------------------------------------------
+
+- Improved viewport visualisation of lights (#1590, #11).
+- Added workaround for PySide bug which prevented stylesheets from
+  working as expected (#1574).
+- Improved error reporting for failed dispatches (#1593).
+- Fixed graphical glitch in OpDialogue error icon (#1593).
+
+API
+-----------------------------------------------------------------------
+
+- ImageAlgo
+  - Added parallelProcessTiles and parallelGather tiles functions
+    to facilitate easy parallel processing of images (#1517).
+- BufferAlgo
+  - Moved image window methods from ImageAlgo (#1517).
+- Format
+  - Fixed space conversions for empty boxes (#1575).
+- TestCase
+  - Improved output for assertTypeNamesArePrefixed() failures.
+- Dispatch
+  - Renamed requirements -> preTasks
+  - Added LoggingExecutableNode to GafferDispatchTest. This
+    facilitates easier testing of dispatchers.
+- SceneUI
+  - Added ObjectVisualiser and AttributeVisualiser base classes
+    to support custom representations of objects and attributes
+    within the viewport (#1590).
+- Metadata
+  - Added methods for adding and querying non-node values (#1590).
+
+Build
+-----------------------------------------------------------------------
+
+- Added CXXSTD argument to SConstruct. Pass CXXSTD=c++11 to build
+  with C++11 support (#1586).
+- Added testing with GCC 4.8 and C++11 to Travis test setup (#1586).
+- Updated Cortex version to 9.5.0 (minimum requirement is 9.3.0).
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- Removed "dispatcher.local.executeInForeground" plug - use the new
+  "dispatcher.immediate" plug instead.
+- Moved image window methods from ImageAlgo.h into BufferAlgo.h.
+- Lights are now represented as attributes rather than as objects (#1590).
+- The Parameters node no longer works for lights (#1590).
+
+0.19.0.0
+========
+
+Apps
+-----------------------------------------------------------------------
+
+- Added a preference for OIIO cache memory to the gui app.
+
+Core
+-----------------------------------------------------------------------
+
+- Added a TaskSwitch node.
+- Added support for variable substitutions within SystemCommand.
+- Added a PythonCommand node.
+- Expression
+	- Added support for assigning floats to IntPlugs in Python expressions.
+	- Added detection of circular dependencies within expressions.
+- Added support for metadata edits on Reference nodes (#1536).
+- Fixed bug which caused internal connections to be removed when
+  unparenting a Node.
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed SceneInspector context bug.
+- Fixed display bug in Wedge string mode
+
+Image
+-----------------------------------------------------------------------
+
+- Added Blur node.
+- Added Text node.
+- ImageReader
+	- Added modes for handling missing frames.
+	- Added settings for masking image sequences.
+	- Added automatic conversion to linear using OIIO colorspace
+	  metadata (#250).
+	- Renamed old ImageReader to OpenImageIOReader - this is now
+	  just a utility class which is used internally.
+- Added ImagePrimitiveProcessor base class.
+- Added methods for controlling the OIIO cache memory.
+- Fixed bug which prevented the ImageWriter using the requested
+  compression (#1538).
+- Resample
+	- Added expandDataWindow plug.
+	- Added support for "smoothGaussian" filter.
+	- Fixed bug which prevented subpixel translations.
+- Fixed dirty propagation bugs in Offset node.
+- Added Difference operation to Merge.
+- ImageTransform
+	- Improved performance up to 50%.
+	- Improved quality.
+	- Changed rotation direction to counter clockwise.
+	- Made "cubic" the default filter./
+- Removed Reformat node. Use Resize instead.
+- Fixed computation of max in ImageStats.
+- Fixed performance bug when ImageNodes are used inside
+  a Box subclass implemented in Python.
+- Fixed Merge dataWindow computation when the first input
+  is unconnected.
+
+Arnold
+-----------------------------------------------------------------------
+
+- Added ray depth setting to ArnoldOptions node.
+
+Documentation
+-----------------------------------------------------------------------
+
+- Updated for latest changes.
+
+API
+-----------------------------------------------------------------------
+
+- Added python bindings for ImageWriter::Mode.
+- Expression::setExpression() preserves previous state in the case
+  that parsing fails.
+- Stopped CompoundNumericPlug::getChild() from masking the base class
+  equivalents.
+- Added ImageTestCase with assertImagesEqual() method.
+- Removed filter from ImageSampler.
+- Added Resample::filters() method.
+- ImageTestCase
+	- Fixed threshold comparison bug in assertImagesEqual().
+	- Added assertImageHashesEqual() method.
+- Added OpenColorIOTransform::availableSpaces() method
+- Context::Scope may now be constructed with a NULL argument -
+  this is a no-op.
+- Reintroduced default format substitutions to AtomicFormatPlug.
+- Added GafferImage::Shape base class.
+- Removed ChannelMaskPlug::channelIndex() method. Use ImageAlgo
+  colorIndex() method instead.
+- Added channel name utility methods to ImageAlgo.
+
+Build
+-----------------------------------------------------------------------
+
+- Improved reporting in Travis config.
+- Updated several dependencies to match the VFX Reference Platform.
+	- Boost 1.55
+	- OpenEXR 2.2.0
+	- OpenColorIO 1.0.9
+- Updated to Appleseed 1.3.0-beta
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- ImageTransform now uses OIIO filters rather than GafferImage filters -
+  the old filter names are no longer supported.
+- ImageTransform now rotates counter clockwise.
+- Removed Reformat and redirected it to Resize, which supports OIIO filters
+  rather than GafferImage filters.
+- Removed filter plug from ImageSampler. Bilinear interpolation is used
+  instead.
+- Removed FilterPlug. Use StringPlug instead.
+- Removed Filter. Use OIIO filters instead.
+- Removed FilterPlugValueWidget. Use presets instead.
+- Removed ChannelMaskPlug::channelIndex() method. Use ImageAlgo
+  colorIndex() method instead.
+
+0.18.0.0
+========
+
+This release brings a number of updates to GafferImage, including
+user-editable Formats, bug fixes to Resize and Crop, and a new Offset
+node. It also fixes a few bugs todo with Expressions, Switches, and UI
+crashes.
+
+Core
+-----------------------------------------------------------------------
+
+- `Node::userPlug()` is now a Plug instead of a CompoundPlug.
+- Preventing unwanted child connection tracking on userPlug().
+- Changed scriptNode() to return `this` when node is a ScriptNode.
+- Support indirect connections to Switch index
+    - Emitting Node::plugInputChangedSignal() for all downstream connections.
+- Expressions don't let `__in` plug track child inputs.
+- Added top level plug argument to `Expression::Engine::apply()`.
+- PythonExpressionEngine drives `apply()` by plug type not data type.
+- PythonExpressionEngine supports arbitrary compound plugs types.
+- Improved PythonExpressionEngine::defaultExpression().
+- Fixed a bug in plugs/nodesWithMetadata.
+- Fixed errors when serialising parent metadata only.
+- Reference/Box no longer export user plugs (#801).
+
+UI
+-----------------------------------------------------------------------
+
+- Skipping intermediate dots in tooltips.
+- Fixed crash in the GraphGadget when a non-nodule plug was removed from a node.
+- Improved UI robustness for errors on enabledPlug() expressions.
+- Fixed potential connection lifetime bugs in the Viewer.
+
+Image
+-----------------------------------------------------------------------
+
+- Added AtomicFormatPlug and replaced all non-user facing FormatPlugs with this.
+    - This plug does not perform default format substitutions.
+    - This plug does not serialise registered Formats.
+- Changed FormatPlug to be a user-editable Format specification
+    - Using FormatPlug in all user facing scenarios (e.g. Constant, Resize, etc).
+- Deprecated Reformat. Use Resize instead.
+- Moved default Format mechanism onto FormatPlug.
+- Fixed default Format issues inside boxes (#888).
+- Fixed nodes which were unusable if no default format was specified in the context (#888).
+    - We now fall back to a default default format in that case.
+- The default format was not getting transferred to the script context after loading (#888).
+- Rationalised and simplified the Format registry.
+    - Fixed registerFormat() so that a second registration overrides the first.
+    - Requiring name when registering a format.
+    - Names should no longer include the numeric values.
+    - Renamed removeFormat() to deregisterFormat().
+    - Removed unused signals and not-so-useful methods.
+    - Separated registered names and ostream output.
+        - The ostream output just uses numeric values, keeping it in line with
+          the Imath classes.
+        - Querying the registered name for a format returns an
+          empty string if it hasn't been registered. Previously it returned
+          a generated name, making it hard to tell if it had actually been
+          registered or not.
+- FormatPlugValueWidget supports manual entry of custom formats.
+    - This widget only supports FormatPlugs, not AtomicFormatPlugs.
+- ImageStats now uses a postCreate to set plug values via the UI only.
+- Renamed CropUI.postCreateCrop to CropUI.postCreate.
+- Fixed Resize disabling.
+- Add Offset node.
+- Fixed bug in Crop::affects().
+- Added Crop "resetOrigin" plug.
+    - This resets the origin of the format back to [0,0], which is intuitively what is expected.
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- Changed type of Node::userPlug()
+- Moved default Format API from Format class onto FormatPlug class.
+- Changed Format registry API.
+- Crop now resets the display window origin to 0,0. Turn off the "resetOrigin" plug for the old behaviour.
+- Renamed CropUI.postCreateCrop to CropUI.postCreate.
+
+0.17.0.0
+========
+
+This release brings several major features in addition to the usual
+enhancements and bug fixes. Of particular interest are the addition
+of a basic keyframing system, support for using OSL expressions
+alongside the existing Python expressions, and several new image
+processing nodes exposing OpenColorIO functionality.
+
+Core
+-----------------------------------------------------------------------
+
+- Added Animation node, providing basic support for keyframed animation.
+- Added frames-per-second support to Contexts, to map between frames
+  and a time in seconds.
+- Expression
+  - Fixed bug when identical expressions acted on different plug types.
+  - Added support for calling `context.getTime()`.
+  - Added support for calling `context.getFramesPerSecond()`.
+  - Fixed bugs when a plug or node is renamed.
+  - Fixed bugs when manually disconnecting an output or input
+    of an expression.
+  - Improved error reporting in the UI.
+- Fixed InputGenerator backwards compatibility bug introduced in
+  0.16.0.0.
+- Box
+  - Promoting a plug now properly copies plug metadata (#1468).
+- Plug
+  - Fixed rare crash during dirty propagation.
+  - Fixed bug in child connection tracking behaviour.
+
+UI
+-----------------------------------------------------------------------
+
+- NodeEditor
+  - Plug context menus
+    - Added keyframing menu items for numeric and bool plugs.
+    - Added Lock/Unlock meu items.
+    - Added menu item for creating an OSL expression.
+  - Tool menu
+    - Added "Revert to Defaults" menu item.
+- NodeGraph
+  - Added right click menu items for reordering plugs on Boxes.
+  - Fixed bugs triggered by the dynamic hiding and showing of plugs
+    via the UIEditor.
+- Dot
+  - Added optional labels. These can be derived from the
+    dot node name or the upstream node name or may be
+    specified directly.
+- Shader loading dialogues
+  - Added bookmarks.
+- Viewer
+  - Fixed bug which could mean the camera would move unexpectedly
+    even when look-through mode is not enabled.
+  - Fixed OpenColorIO configs.
+- UIEditor
+  - Fixed renaming of empty user sections.
+  - Prevented renaming of section to invalid names like "".
+  - Added default Settings section.
+  - Fixed presets UI to update values when the selected preset
+    changes.
+  - Ignores user plugs on box nodes.
+- Box
+  - Added default Settings section.
+  - Disabled plug addition button in User section.
+- Fixed bug which could cause the display of corrupted icons.
+- ShaderSwitch
+  - Fixed UI to provide access to each input rather than just the
+    array input as a whole (#1461).
+- Numeric fields
+  - Ensured that keyboard-nudged numbers have an extra 0 added as
+    necessary to ensure that the same digit is always being modified.
+
+Image
+-----------------------------------------------------------------------
+
+- New OpenColorIO nodes
+  - LUT
+  - CDL
+  - DisplayTransform
+- ImageWriter
+  - Added file format options.
+  - Made sure OIIO queries for nchannel and alpha support are
+    respected.
+- Merge
+  - Fixed artifacts when the data windows differ between layers.
+  - Fixed crash.
+- Resize
+  - Fixed artifacts when upsizing with the sinc filter (#1457).
+- Changed convention for image bounding boxes to specify that the
+  maximum coordinates are exclusive (outside the box).
+- Fixed Crop UI for images with the default format.
+- Resample
+  - Fixed incorrect input sample region.
+
+Scene
+-----------------------------------------------------------------------
+
+- Fixed loading of UnionFilters from Gaffer 0.15.0.0 (#1474).
+- Fixed loading of FilterSwitches from Gaffer 0.15.0.0 (#1474).
+- Attributes are now output to the renderer before shaders at the
+  same location. This works around a bug in 3delight's shader
+  construction.
+- Fixed crash when loading sets from an empty SceneReader.
+- Added support for frames-per-second to SceneReader, AlembicSource
+  and SceneWriter.
+
+OSL
+-----------------------------------------------------------------------
+
+- Added support for using OSL as a general purpose expression language.
+
+Cortex
+-----------------------------------------------------------------------
+
+- Fixed issue where non-ValuePlugs were not syncing during setPlugValue().
+- Fixed OpHolder node summaries.
+
+API
+-----------------------------------------------------------------------
+
+- Expression
+  - Redesigned API to better support multiple languages.
+- Context
+  - Added "framesPerSecond" variable and time accessors.
+- Metadata
+  - Added nodesWithMetadata() and plugsWithMetadata() methods.
+- StandardNodeGadget
+  - Removed orientation constructor parameter. Use metadata instead.
+  - Added dynamic nodule reordering controlled by metadata.
+- ScriptNode
+  - Fixed undo merging for CompoundNumericPlugs (#422).
+- Plug
+  - Made setFlags() undoable.
+- PlugLayout
+  - Ignore custom widgets with type "". This allows a widget
+    inherited from a base class to be removed by a derived class
+    or instance metadata.
+- Removed UserPlugValueWidget.
+- Added UserPlug namespace.
+- Deprecated use of arbitrary Widget constructor keyword arguments
+  for auto-parenting. The `parenting` argument should be used instead.
+- Image
+  - Renamed GafferImage::OpenColorIO to ColorSpace.
+  - Changed convention for image bounding boxes to specify that the
+    maximum coordinates are exclusive (outside the box).
+    - Added image window utility methods to assist with this change.
+  - Added OpenColorIOTransform abstract base class. This makes it
+    easy to implement nodes whose processing is performed via OpenColorIO.
+  - Sampler
+    - Remove sample window accessors.
+    - Deprecated constructor taking a filter.
+- Added NumericWidget.valueToString() method.
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+- Redesigned expression API to better support multiple languages.
+- Changed convention for image bounding boxes to specify that the
+  maximum coordinates are exclusive (outside the box).
+- NodeGadget
+  - Added noduleAddedSignal() and noduleRemovedSignal().
+- StandardNodeGadget
+  - Removed orientation constructor parameter. Use metadata instead.
+- GraphComponentWrapper
+  - Improved constructors to allow any type to be passed to the single
+    argument constructor.
+- Removed UserPlugValueWidget.
+- Deprecated use of arbitrary Widget constructor keyword arguments
+  for auto-parenting. The `parenting` argument should be used instead.
+- Renamed GafferImage::OpenColorIO to ColorSpace.
+- Sampler
+  - Remove sample window accessors.
+  - Deprecated constructor taking a filter.
+
+0.16.0.4
+========
+
+Scene
+-----------------------------------------------------------------------
+- Output attributes to the renderer before other state to fix some inconsistent behaviour
+
+Build
+-----------------------------------------------------------------------
+- Updated IE internal build options
+
+0.16.0.3
+========
+
+UI
+-----------------------------------------------------------------------
+
+- fixed a problem whereby presets were not being transferred when
+  promoting a compound plug on a RenderManAttributes node.
+
+Core
+-----------------------------------------------------------------------
+
+- Fixed issue where non-ValuePlugs were not syncing during
+  setPlugValue().
+
+0.16.0.2
+========
+
+UI
+-----------------------------------------------------------------------
+
+- Box : Copy all metadata when promoting plugs.
+- UIEditor : Never edit user plug for Box nodes.
+
+0.16.0.1
+========
+
+UI
+-----------------------------------------------------------------------
+
+- UIEditor : Update preset value on selection change.
+- ShaderSwitchUI : Fix NodeGraph representation (#1461).
+
+0.16.0.0
+========
+
+Apps
+-----------------------------------------------------------------------
+
+- Python
+  - Sets __name__ to "__main__" to conform more closely to a standard
+    python interpreter (#1405).
+  - Fixed to accepts -flag arguments (#1406).
+- GUI
+  - Removed cortex nodes from the node menu. They can be reintroduced
+    with an appropriate config file, but our intention is that Cortex
+    play only a "behind the scenes" role in Gaffer in the future.
+
+Core
+-----------------------------------------------------------------------
+
+- Added version metadata to all saved files (#1436).
+- Fixed dispatching of nodes inside References.
+- Python expressions can now write to AtomicBoxPlugs.
+- Added support for promoting ArrayPlugs to boxes.
+
+UI
+-----------------------------------------------------------------------
+
+- Fixed image format menu to make changes undoable.
+- Added sequence browsing to the relevant file choosers.
+- Hid TaskContextVariables.variables plug in the NodeGraph.
+- Fixed editability of promoted CompoundDataPlugs.
+- Box promotion now tranfers nodule and connection colours.
+
+Image
+-----------------------------------------------------------------------
+
+- Added a Resize node. This will replace the Reformat node over time.
+- Added a Crop node.
+- Added a Shuffle node (#1380).
+- Added Premultiply and Unpremultiply nodes.
+- ImageWriter
+    - Fixed writing to image formats which don't support separate
+      display and data windows - the full display window is now written,
+      padded with black as necessary.
+    - Added progress message.
+    - Fixed tiled writing (previously scanlines were always written).
+
+Scene
+-----------------------------------------------------------------------
+
+- Fixed bug in Isolate which meant that a filter which matched nothing
+  at all had no effect. It now removes the entire scene as expected.
+- Fixed bug in Prune which meant that a filter which matched the root
+  was not removing the entire scene.
+- Added support for arbitrary IECore::PreWorldRenderables in global
+  options.
+- Improved performance of bounds propagation (around 7% improvement
+  for a Transform node and a complex filter).
+
+Cortex
+-----------------------------------------------------------------------
+
+- Fixed bug which caused errors with read-only parameter plugs.
+
+API
+-----------------------------------------------------------------------
+
+- Replaced all InputGenerators with ArrayPlugs, and removed InputGenerator
+  class. ImageProcessor and SceneProcessor may now provide an array of
+  inputs for any derived class to use.
+- Paths
+  - Added sequence support to FileSystemPath.
+  - Added FileSequencePathFilter class for filtering sequences from
+    FileSystemPath.
+  - FileSequencePathPlugValueWidget supports metadata for sequence
+    display.
+  - Deprecated SequencePath.
+- Added Resample node to GafferImage, for use in node internals.
+- Dispatcher
+  - The current job directory is added to the context for use
+    by Executable nodes.
+- Sampler
+  - Fixed binding of sample( int, int )
+- Added AtomicBox2fPlug.
+- Made SceneNode and SceneProcessor subclassable in Python.
+- Made ImageNode and ImageProcessor subclassable in Python.
+- Made SubGraph subclassable in Python.
+- Added _copy argument to ImagePlug.channelData() method.
+- CompoundPlug deprecation
+  - Rederived the following plugs from ValuePlug or Plug in preparation
+    for removal of CompoundPlug :
+      - BoxPlug
+      - CompoundNumericPlug
+      - Transform2DPlug
+      - TransformPlug
+      - CompoundDataPlug
+      - ArrayPlug
+  - Replaced use of CompoundPlug in the following nodes
+    - Light
+    - Outputs
+- Added support for extra constructor arguments in node wrappers.
+
+Incompatibilities
+-----------------------------------------------------------------------
+
+The scene and image processing nodes have been overhauled to allow any
+node to use an array of inputs. While full backwards compatibility with
+old scenes is expected, please let us know if you have any problems
+loading an old scene. Please also update any dependent code to the new
+APIs as soon as possible.
+
+- Removed InputGenerator. Use ArrayPlug instead.
+- Removed FilterMixinBase. Use FilterProcessor instead.
+- SwitchComputeNode and SwitchDependencyNode now require that the "in"
+  plug is an ArrayPlug.
+- Changed base classes for many plugs, breaking binary compatibility
+  but in most cases not source compatibility.
+
+
+Build
+-----------------------------------------------------------------------
+
+- Added checks for doxygen and inkscape prior to building.
+- Fixed non-reporting of graphics build errors (#1395).
+- Updated to faster container-based testing on Travis.
+- Added appleseed unit tests to Travis setup.
+
+0.15.0.0
+========
+
+UI
+-----------------------------------------------------------------------
+
+- UI Editor
+  - Added dropdown menu for choosing widget type (#739).
+  - Added section for specifying additional widget settings (#739).
+  - Added preset editor (#739).
+  - Added section for editing section summaries.
+  - Added NodeGraph section.
+- Added drag and drop of objects onto Set nodes in the NodeGraph.
+- Fixed crash which could occur when opening recent files.
+- Fixed crash which could occur when using OpenGL widgets within Maya.
+- Added support for summary tooltips on node UI tabs (#332).
+- Fixed bugs which could cause a blank NodeEditor if an expression
+  referenced a script variable.
+- Fixed bugs in channel mask menus on image processing nodes.
+
+Core
+-----------------------------------------------------------------------
+
+- Added Wedge node. This allows tasks to be dispatched multiple times
+  using a range of values (#1372).
+- Added TaskContextVariables node. This allows variables to be defined
+  within the tree of tasks (renders etc) executed by a dispatcher.
+- Added Loop node. This takes an input and loops it N times through an
+  external graph before outputting it again. This provides the user with
+  the ability to do things with the graph which were previously only
+  achievable with code.
+- Reference
+  - Fixed serialisation of empty reference.
+  - Fixed serialisation of user plug metadata.
+  - Fixed referencing of promoted plugs
+    - ExecutableNode requirements plug
+    - UnionFilter filter inputs
+    - OSLImage and OSLObject shader plugs.
+    - RenderManShader coshader plugs (#1358).
+- Expression
+  - Fixed support for setting GafferImage FormatPlugs.
+- ContextVariables
+  - Fixed serialisation bug where additional plugs were added on
+    save/load and copy/paste.
+- Improved Context and ValuePlug performance.
+
+Image
+-----------------------------------------------------------------------
+
+- Added ImageLoop node.
+- Performance
+  - Improved Reformat performance.
+  - Improved threading peformance for small images.
+- ImageWriter
+  - Improved error messages.
+  - Fixed bugs with empty filenames and filenames using
+    substitutions.
+- ImageTransform
+  - Fixed copy/paste.
+  - Fixed dirty propagation bug which could prevent the viewer
+    updating at the right time.
+- ImageReader
+  - Added error reporting for missing files.
+
+Scene
+-----------------------------------------------------------------------
+
+- Added SceneLoop node.
+- Transform
+  - Fixed bugs in World mode.
+  - Added Parent, Local Reset and World Reset modes.
+  - Renamed Object space to Local.
+  - Changed default space to Local.
+  - Note that these are backwards incompatible changes, necessary to
+    fix an important bug and get the Transform node on a solid footing
+    for the future. To get the same results as the old World mode, use
+    the new Parent mode.
+- FreezeTransform
+  - Fixed bug which prevented the UI updating when the input object
+    was changed.
+- Fixed bugs which could cause incorrect bounds to be computed.
+
+Appleseed
+-----------------------------------------------------------------------
+
+- Removed options and attributes that are not useful in Gaffer.
+- Fixed default values for some options and attributes.
+- Documented all nodes.
+- Added support for shading overrides.
+
+API
+-----------------------------------------------------------------------
+
+- Pass-through connections may now be made for FormatPlug (#1250).
+- Added TaskContextProcessor base class. This enables the development
+  of ExecutableNodes which request their input requirements in different
+  contexts.
+- Added support for directly setting Color3f context values from Python.
+- UI Metadata additions. Many additions were made to the metadata supported
+  by the Node UIs, and the existing UIs were ported to make use of it.
+  - "layout:visibilityActivator"
+  - "plugValueWidget:type"
+  - "compoundDataPlugValueWidget:editable"
+  - "boolPlugValueWidget:displayMode"
+  - "vectorDataPlugValueWidget:dragPointer"
+  - "pathPlugValueWidget:leaf"
+  - "pathPlugValueWidget:valid"
+  - "pathPlugValueWidget:bookmarks"
+  - "fileSystemPathPlugValueWidget:extensions"
+  - "fileSystemPathPlugValueWidget:extensionsLabel"
+- ScriptProcedural
+  - Added context parameter.
+- BoolWidget
+  - Added setDisplayMode()/getDisplayMode() accessors.
+- Added AcceptsDependencyCycles Plug flag. See the Loop node for an
+  example of use.
+- Added FileSystemPathPlugValueWidget.
+- Metadata
+  - Fixed inconsistent handling of NULL values.
+  - Added methods for deregistering values.
+- Removed GafferUI.SectionedCompoundPlugValueWidget.
+- Activator expressions are now attached to the parent of the plug, rather than always being on the node.
+- Removed StringPlugValueWidget continuousUpdate constructor argument. Use metadata instead.
+- Removed MultiLineStringPlugValueWidget continuousUpdate constructor argument. Use metadata instead.
+- SceneNode
+  - Added childNames argument to bounds union methods.
+- SceneAlgo
+  - Added `bound( const IECore::Object * )` function.
+
+Build
+-----------------------------------------------------------------------
+
+- Updated to Cortex 9.0.0.
+- Updated to OIIO 1.5.17.
+- Updated to OSL 1.6.8.
+- Updated to 1.2.0-beta.
+
+Incompatibilies
+-----------------------------------------------------------------------
+
+- Removed `Reference::fileNamePlug()` (#801). Use `Reference::fileName()`
+  instead. Use `continueOnError = True` when loading old scripts.
+- Removed arguments from CompoundDataPlugValueWidget constructor. Use
+  Metadata instead.
+- Removed SectionedCompoundDataPlugVlueWidget. Use LayoutPlugValueWidget
+  and metadata instead.
+- Changed base class for ImagePlug.
+- Changed base class for ScenePlug.
+- Changed base class for SplinePlug.
+- Removed ImageMixinBase. Use ImageProcessor instead.
+- Removed SceneMixinBase. Use SceneProcessor instead.
+- Removed GafferUI.SectionedCompoundPlugValueWidget. Use LayoutPlugValueWidget instead.
+- Activator expressions are now attached to the parent of the plug, rather than always being on the node.
+- Changed ChannelMaskPlugValueWidget constructor arguments.
+- Changed Transform behaviour to fix bug in world space mode, add new modes and change the default mode to local. If you need the old world space behaviour, use the new parent space mode.
+
+0.14.0.0
+========
 
 UI
 -----------------------------------------------------------------------
@@ -95,8 +2421,8 @@ API
   setSelection()/getSelection().
 - Added arguments to Metadata signals.
 
-# 0.13.1.0
-==========
+0.13.1.0
+========
 
 Apps
 -----------------------------------------------------------------------
@@ -145,8 +2471,8 @@ Build
 - Fixed Appleseed packaging. We were omitting the directory containing
   the Cortex display driver.
 
-# 0.13.0.0
-==========
+0.13.0.0
+========
 
 Apps
 -----------------------------------------------------------------------
@@ -326,8 +2652,8 @@ Build
   - Cortex 9.0.0-b6
 - Added bundled Appleseed renderer
 
-# 0.12.1.0
-==========
+0.12.1.0
+========
 
 Core
 -----------------------------------------------------------------------
@@ -364,8 +2690,8 @@ API
 - Added iterators to GafferScene::PathMatcher.
 - Added GafferUI.EditMenu.selectionAvailable() method.
 
-# 0.12.0.0
-==========
+0.12.0.0
+========
 
 Core
 -----------------------------------------------------------------------
@@ -472,8 +2798,8 @@ Build
 - Added/removed virtual overrides in GafferImage.
 - Added virtual function to Plug.
 
-# 0.11.0.0
-=========
+0.11.0.0
+========
 
 Image
 -----------------------------------------------------------------------
@@ -486,8 +2812,8 @@ Scene
 
 - Fixed a bug in the InteractiveRender that was causing a crash when the scene child names changed.
 
-# 0.10.1.0
-=========
+0.10.1.0
+========
 
 UI
 -----------------------------------------------------------------------
@@ -506,13 +2832,13 @@ Core
 
 - Fixed dirty propagation bug in expressions
 
-# 0.10.0.0
-=========
+0.10.0.0
+========
 
 Core
 -----------------------------------------------------------------------
 
-- Reimplemented paths framework in C++ (#1190). This gives much 
+- Reimplemented paths framework in C++ (#1190). This gives much
   improved performance - 10x or more speed improvements in the
   SceneHierarchy panel.
 - Fixed subprocess hangs seen when dispatching renders inside Maya.
@@ -616,8 +2942,8 @@ Build
 - Requires subprocess32 python module.
 - Added subprocess32 to dependencies build process.
 
-# 0.9.0.0
-=========
+0.9.0.0
+=======
 
 This is primarily a bugfix release.
 
@@ -702,8 +3028,8 @@ Build
 - Updated public build to use Cortex 9.0.0-b3.
 - Included Shiboken module in release packages.
 
-# 0.8.2.0
-=========
+0.8.2.0
+=======
 
 Core
 -----------------------------------------------------------------------
@@ -750,8 +3076,8 @@ Build
 
 - Fixed GafferRenderMan public build.
 
-# 0.8.1.0
-=========
+0.8.1.0
+=======
 
 Core
 -----------------------------------------------------------------------
@@ -789,10 +3115,8 @@ Build
 - Enabled testing of UI modules on Travis CI.
 - Added debug output to installDependencies.py.
 
------------------------------------------------------------------------
-
-# 0.8.0.0
-=========
+0.8.0.0
+=======
 
 Apps
 -----------------------------------------------------------------------
@@ -890,9 +3214,8 @@ Incompatibilities
 - Removed FileSource node.
 - Detemplatized ObjectSource.
 
------------------------------------------------------------------------
-
-# 0.7.0.0
+0.7.0.0
+========
 
 This release brings the exciting addition of support for the open source [Appleseed](http://appleseedhq.net/) renderer. It also adds the much asked for Dot node, and a tool for editing render crop windows. Plus of course the usual small improvements, optimisations and bug fixes.
 
@@ -992,7 +3315,8 @@ This release brings the exciting addition of support for the open source [Apples
 - Added virtual method to Nodule.
 - Added and reordered Style virtual methods.
 
-# 0.6.0.0
+0.6.0.0
+=======
 
 #### UI
 
@@ -1040,13 +3364,15 @@ This release brings the exciting addition of support for the open source [Apples
 
 - Requires Cortex 9.0.0-a10
 
-# 0.5.0.1
+0.5.0.1
+=======
 
 #### Scene
 
 - Fixed signal threading bug in SceneProcedural which was causing sporadic crashes
 
-# 0.5.0.0
+0.5.0.0
+=======
 
 #### Core
 
@@ -1072,7 +3398,8 @@ This release brings the exciting addition of support for the open source [Apples
 
 - Preventing OIIO error overflow crash
 
-# 0.4.0.0
+0.4.0.0
+=======
 
 #### Core
 
@@ -1108,7 +3435,8 @@ This release brings the exciting addition of support for the open source [Apples
 - Removed methods and member variable from CompoundPlug
 - InteractiveRender "updateCamera" plug renamed to "updateCameras".
 
-# 0.3.0.0
+0.3.0.0
+=======
 
 #### Core
 
@@ -1146,7 +3474,8 @@ This release brings the exciting addition of support for the open source [Apples
 - Reference and Box now derive from SubGraph rather than Node or DependencyNode.
 - Redesigned Dispatcher registration (#922) (see API section for details).
 
-# 0.2.1.0
+0.2.1.0
+=======
 
 #### Core
 
@@ -1163,7 +3492,8 @@ This release brings the exciting addition of support for the open source [Apples
 * Dispatcher FrameRange UI displays the value that will actually be dispatched.
 * Removed unwanted horizontal padding from frameless Buttons.
 
-# 0.2.0.0
+0.2.0.0
+=======
 
 This release brings significant optimisations, further additions to the SceneInspector, and the usual collection of miscellaneous enhancements and bug fixes.
 
@@ -1228,7 +3558,8 @@ This release brings significant optimisations, further additions to the SceneIns
 - Fixed RenderManShader compilation in Clang 3.4
 - GafferOSL compatibility for OSL version 1.5
 
-# 0.1.1.0
+0.1.1.0
+=======
 
 #### Core
 
@@ -1259,7 +3590,8 @@ This release brings significant optimisations, further additions to the SceneIns
 - Fixed typedef issues when building with GCC 4.8
 - Added Travis config for build verification (doesn't run the tests yet)
 
-# 0.1.0.0
+0.1.0.0
+=======
 
 #### Apps
 
@@ -1291,7 +3623,8 @@ This release brings significant optimisations, further additions to the SceneIns
 
 - Requires Cortex 9.0.0-a5
 
-# 0.101.0
+0.101.0
+=======
 
 #### Core
 
@@ -1336,7 +3669,8 @@ This release brings significant optimisations, further additions to the SceneIns
 - Added missing OSL, OIIO, OCIO includes to the dependency package.
 - Clang compatibility fixes.
 
-# 0.100.0
+0.100.0
+=======
 
 This release features significant improvements to Dispatcher and SceneInspector functionality, along with the usual bunch of small fixes and improvements.
 
@@ -1389,7 +3723,8 @@ This release features significant improvements to Dispatcher and SceneInspector 
 - Best used with 3delight version 11.0.96. This has bug fixes to support moving coordinate systems during IPR.
 - Requires Cortex 9.0.0-a3.
 
-# 0.99.0
+0.99.0
+======
 
 #### Apps
 
@@ -1450,9 +3785,8 @@ This release features significant improvements to Dispatcher and SceneInspector 
 - Updated default build to use PySide 1.2.2.
 - Stopped using python-config for build configuration. It was unreliable on Mac, and the hardcoded paths it returns prevented us from building with prebuilt binary dependencies.
 
--------------------------------------------------------------------------------
-
-# 0.98.0
+0.98.0
+======
 
 This release makes dispatchers available via the UI for the first time. Dispatchers allow many tasks (such as rib generation, rendering and compositing) to be processed for a series of frames, with dependencies between the tasks determining the execution order. It also adds support for adding and removing lights during IPR renders, and the usual  small fixes and improvements.
 
@@ -1504,7 +3838,8 @@ This release makes dispatchers available via the UI for the first time. Dispatch
 - Improved Plug bindings with a new PlugClass helper class.
 - ExecutableNode::executionHash() must now call the base class implementation first - see documentation for details.
 
-# 0.97.0
+0.97.0
+======
 
 This release is focussed mainly on optimisation and bug fixes, with significant speedups being provided by moving to a new caching implementation provided by Cortex 9. Behind the scenes it also contains progress towards exposing Dispatcher functionality at the user level.
 
@@ -1560,7 +3895,8 @@ This release is focussed mainly on optimisation and bug fixes, with significant 
 - Recent Cortex LRUCache improvements offer significant performance gains.
 - Updated default TBB version to 4.2.
 
-# 0.96.0
+0.96.0
+======
 
 #### Core
 
@@ -1594,7 +3930,8 @@ This release is focussed mainly on optimisation and bug fixes, with significant 
 - Added checks for zombie ScriptNodes and Widgets at app shutdown. This can catch many common programming errors.
 - Added BoxPlugValueWidget class.
 
-# 0.95.0
+0.95.0
+======
 
 #### UI
 
@@ -1625,7 +3962,8 @@ This release is focussed mainly on optimisation and bug fixes, with significant 
 - Replaced GafferScene::Render base class with RendererAlgo.h header.
 - Simplified Executable nodes and tidied up implementation, in preparation for actually integrating Despatchers properly.
 
-# 0.94.0
+0.94.0
+======
 
 #### Apps
 
@@ -1716,7 +4054,8 @@ This release is focussed mainly on optimisation and bug fixes, with significant 
 
 - Now using Coverity static analysis - this resulted in a number of bugs being found and fixed in this version.
 
-# 0.93.0
+0.93.0
+======
 
 #### Core
 
@@ -1755,14 +4094,16 @@ This release is focussed mainly on optimisation and bug fixes, with significant 
 - Added fallbackResult to WeakMethod.
 - Fixed CompoundPlug plugSetSignal() emission when children change.
 
-# 0.92.1
+0.92.1
+======
 
 #### Scene
 
 - Improved shader assignment reporting in SceneInspector (#335)
 - Improved shader handle generation
 
-# 0.92.0
+0.92.0
+======
 
 #### Core
 
@@ -1815,7 +4156,8 @@ This release is focussed mainly on optimisation and bug fixes, with significant 
 
 - Requires Cortex 8.2.0.
 
-# 0.91.0
+0.91.0
+======
 
 #### Apps
 
@@ -1862,7 +4204,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 - Switched formatRepr() signature to take a reference rather than a pointer.
 - Added MessageWidget setMessageLevel() and getMessageLevel() methods.
 
-# 0.90.0
+0.90.0
+======
 
 #### Scene
 
@@ -1882,7 +4225,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 - Added MessageWidget.forwardingMessageHandler(), to allow messages received by the widget to be propagated on to other handlers. This can be useful for connecting the OpDialogue to a centralised logging system.
 - Deprecated MessageWidget appendMessage() and appendException() methods. The same result can be achieved by passing messages via the message handler instead.
 
-# 0.89.0
+0.89.0
+======
 
 #### Core
 
@@ -1929,7 +4273,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 - Updated public build to use OpenShadingLanguage 1.4.1.
 - Removed pkg-config from the dependency requirements.
 
-# 0.88.1
+0.88.1
+======
 
 #### Core
 
@@ -1945,7 +4290,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 
 - Fixed threading issue in Display node
 
-# 0.88.0
+0.88.0
+======
 
 #### Core
 
@@ -2006,7 +4352,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 
 - Fixed compilation with GCC 4.4.
 
-# 0.87.1
+0.87.1
+======
 
 #### UI
 
@@ -2019,7 +4366,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 - Added ImageSampler node to GafferImage
 - Fixed colour space used for ImageView colour sampling (now in linear space).
 
-# 0.87.0
+0.87.0
+======
 
 #### UI
 
@@ -2060,7 +4408,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 - Added dependenciesPackage build target. This can be used to make a package of prebuilt dependencies to seed a build. from.
 - Updated default Cortex version to 8.0.0b5.
 
-# 0.86.0
+0.86.0
+======
 
 #### UI
 
@@ -2130,13 +4479,15 @@ can be used to write values to the output primitive variables. The Out* shaders 
 - Added many missing IntrusivePtr typedefs.
 - Added support for "divider" Metadata in viewer toolbars.
 
-# 0.85.1
+0.85.1
+======
 
 #### Scene
 
 - Compatibility with Cortex 8.0.0b1
 
-# 0.85.0
+0.85.0
+======
 
 #### API
 
@@ -2180,7 +4531,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 
 - Added closure parameter support to OSLShader
 
-# 0.84.0
+0.84.0
+======
 
 #### UI
 
@@ -2237,7 +4589,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 - Fixed DependencyNode::enabledPlug() python bindings.
 - Added python binding for ValuePlug::setFrom().
 
-# 0.83.0
+0.83.0
+======
 
 #### UI
 
@@ -2264,14 +4617,14 @@ can be used to write values to the output primitive variables. The Out* shaders 
 	- OSLShader node represents OSL shaders and allows them to be connected into shading networks.
 	- OSLImage node executes OSL shaders in the context of an input image to perform arbitrary image processing.
 	- OSLObject node executes OSL shaders in the context of an object's primitive variables to perform geometry deformation.
-	
+
 #### API
 
 - Added custom formatters and name depth control to NameLabel.
 - Added Widget.isAncestorOf() method.
 - Added ButtonEvent.button field.
 - Improved path matching to provide more complete information.
-- Added GraphGadget::upstreamNodeGadgets() method. 
+- Added GraphGadget::upstreamNodeGadgets() method.
 
 #### Support apps
 
@@ -2279,7 +4632,8 @@ can be used to write values to the output primitive variables. The Out* shaders 
 
 ####################################################################################################
 
-# 0.82.0
+0.82.0
+======
 
 #### Core
 
@@ -2348,7 +4702,7 @@ UI
 --
 
 - NodeGraph now only drag-selects nodes that are wholly contained in the drag area, not merely intersecting it.
-- Added a Backdrop node (#153). 
+- Added a Backdrop node (#153).
 
 RenderMan
 ---------
@@ -2413,7 +4767,7 @@ Core
 
 - Fixed serialisation of ExecutableOpHolder.
 - Added dynamic requirement plugs to Executable.
-- 
+-
 
 UI
 --
@@ -2517,13 +4871,13 @@ OS X
 - Added workaround for weird focus-stealing behaviour in Maya.
 - Added application variable to the scope available to the screen grab command.
 - Added support for empty and relative paths in Gaffer.Path. ( #432, #324 )
-    
+
     - Added root parameter to all path constructors. This is used to define the root when the path parameter is passed a list of items. Because python doesn't allow overloaded functions this is slightly awkward - see documentation of Path.__init__ for discussion of how this would break down into overloaded constructors when we move the implementation to C++.
     - Added Path.root() and Path.isEmpty() methods.
     - Added Path.setFromPath() method, which copies the elements and the root from another path. This should be used in place of code which formerly did path[:] = otherPath[:].
-    
+
     Note that the new root parameter changes the parameter order for all Path (and derived class) constructors - if you were formerly passing a filter as a non-keyword argument you should now pass it as a keyword argument to avoid problems. Additionally, if you implemented a custom Path subclass, you need to add the root parameter to your constructor and update your copy() and children() implementations. The DictPath changes provide a minimal example of what needs changing.
-    
+
 0.71.0
 ======
 
@@ -2556,7 +4910,7 @@ OS X
 * Added spline parameter support to RenderManShader::loadShader()
 * Added shader annotations for passing default values to RenderManShader splines
 * Added dividers in the NodeEditor, available to RenderMan shaders via the annotation "parameterName.divider" (#288)
-* Added API for undo merging. 
+* Added API for undo merging.
 * Added ScriptNode::undoAddedSignal() (#103)
 * Fixed hiding of Menu when using the search box
 * Fixed tab focus ordering in NodeEditor (#107)
@@ -2644,7 +4998,7 @@ OS X
 0.65.0
 ======
 
-* Added divisions plug to Plane node. 
+* Added divisions plug to Plane node.
 * Added Cube and Sphere scene sources (#97).
 * Added a Text node to GafferScene.
 * Added labelling support to TabbedContainer auto-parenting mechanism.
@@ -2655,7 +5009,7 @@ OS X
 * Improved ImageView to allow subclassing (#323).
 * Set the name attribute for lights properly in the Render node (#326).
 * Fixed GLWidget for use inside Maya 2013.
-* Fixed Recent Files menu bug (#333). 
+* Fixed Recent Files menu bug (#333).
 * Fixed a bug in ViewportGadget drag event propogation.
 
 0.64.0
@@ -2735,7 +5089,7 @@ OS X
     An activator is defined by a global annotation of this form :
         pragma annotation "activator.name.expression" "pythonExpression"
     The python expression may reference current parameter values by name, and also use the connected( "parameterName" ) function to query whether or not a parameter is connected.
-    Activators are then assigned to specific parameters using annotations of this form :    
+    Activators are then assigned to specific parameters using annotations of this form :
         pragma annotation "parameterName.activator" "name"
 
 * Implemented annotation-based uis for RenderManLight node.
@@ -3132,7 +5486,8 @@ OS X
 * Added ScenePlug::fullAttributes() method which returns the full set of inherited attributes at a particular scene path.
 
 0.36.0
-------
+======
+
 * Improved bindings by removing macros and replacing them with proper wrapper classes.
 
 * Added Window.childWindows() method.
@@ -3180,7 +5535,7 @@ OS X
 * Fixed bug which prevented CompoundVectorParameters from being saved in presets.
 
 0.35.7
-------
+======
 
 * Fixed bug which caused Windows to be hidden when being added as the child of another Window.
 
@@ -3213,7 +5568,7 @@ OS X
 * Fixed error caused by browser preview tab.
 
 0.35.6
-------
+======
 
 * Fixed problem where VectorDataWidget would grow to claim size it couldn't use.
 
@@ -3276,14 +5631,14 @@ OS X
 * Added GraphEditor.nodeDoubleClickSignal().
 
 0.35.5
-------
+======
 
 * Fixed graphical glitches caused by incorrectly applying visibility to children of TabbedContainer - this affected the preview section of the browser app particularly badly.
 
 * Added a reportErrors parameter to the OpMatcher constructor - this defaults to True (same behaviour as before) but can be set to False to silence error reporting while loading ops. Note that the OpMatcher used by the BrowserEditor may be customised by implementing the Mode._createOpMatcher() method - this would be the place to pass reportErrors=True.
 
 0.35.4
-------
+======
 
 * Added a GafferBindings::NodeClass class, which simplifies the binding of Node derived classes. It is now a one liner to bind a typical extension node.
 
@@ -3382,17 +5737,17 @@ swatch.
 * Added workaround for Qt problems which caused VectorDataWidget to sometimes be clipped on the right hand edge.
 
 0.35.3
-------
+======
 
 * Fixed LayoutMenu delete function
 
 0.35.2
-------
+======
 
 * Added a minimum size of the OpDialogue
 
 0.35.1
-------
+======
 
 * Removed ParameterValueWidget._addPopupMenu and _popupMenuDefinition, replacing them with PlugValueWidget._addPopupMenu and _popupMenuDefinition. This makes the parameter preset menus automatically available on all parameter uis, and provides for easy extension in the future (menus for manipulating plug inputs, expressions, locking etc). Note that if you previously had a custom ParameterValueWidget class with a _popupMenuDefinition() override, then it will no longer work - use ParameterValueWidget.popupMenuSignal() instead.
 
@@ -3401,7 +5756,7 @@ swatch.
 * Fixed bug which caused the filename column to become too wide when switching to Op browsing mode in the browser and then back to files.
 
 0.35.0
-------
+======
 
 * Sequence Path displays file sequences with a single frame
 
@@ -3434,7 +5789,7 @@ can be constructed easily.
 
 * Fixed bug which meant that colour swatches for plugs had the wrong colour when first shown.
 
-* Simplified EditorWidget implementations by removing setScriptNode() method - now the scriptNode is always provided at construction and cannot be subsequently changed. Renamed ScriptWindow.getScript() to ScriptWindow.scriptNode() and EditorWidget.getScriptNode() to EditorWidget.scriptNode() for consistency. 
+* Simplified EditorWidget implementations by removing setScriptNode() method - now the scriptNode is always provided at construction and cannot be subsequently changed. Renamed ScriptWindow.getScript() to ScriptWindow.scriptNode() and EditorWidget.getScriptNode() to EditorWidget.scriptNode() for consistency.
 
 * Menus now support a "shortCut" entry in the MenuItemDefinition to provide keyboard shortcuts. The standard application, file and edit menus now provide the expected shortcuts, and are greyed out appropriately when they cannot be used for whatever reason.
 
@@ -3503,7 +5858,7 @@ can be constructed easily.
 * Fixed problem where SequencePath would error in info() when given an invalid base path. Now it returns None as expected.
 
 0.34.0
-------
+======
 
 * Added support for ClassVectorParameters.
 
@@ -3522,18 +5877,20 @@ can be constructed easily.
 * NumericPlugValueWidget now sets maximum field width for integer plugs where max values has been set - this slightly improves the ui for the TimeCodeParameterValueWidget.
 
 0.33.2
-------
+======
 
 * Fixed the delete order of ListContainer that was causing popup windows
 
 * Fixed circular reference in menu that was causing popup windows
 
 0.33.1
-------
+======
+
 * Fixed bug in Menu
 
 0.33.0
-------
+======
+
 * Added a MenuButton class to GafferUI.
 
 * The GafferUI.Spacer class now specifies a maximumSize in addition to the previous minimumSize.
@@ -3555,12 +5912,12 @@ can be constructed easily.
 * Fixed problem where the automatic Widget parenting mechanism was attempting to parent Menus unnecessarily.
 
 0.32.1
-------
+======
 
 * Added workaround for problems where string values were not always committed into parameters before the Execute button of the OpDialogue was clicked.
 
 0.32.0
-------
+======
 
 * Added GafferUI.NotificationMessageHandler, for displaying IECore messages in a little window.
 
@@ -3589,7 +5946,7 @@ and rows by clicking on the vertical header.
 * Browsing for paths from a PathPlugValueWidget where the path is presumed empty now starts from the current working directory.
 
 0.31.0
-------
+======
 
 * Fixed getText method of Label widget.
 
@@ -3619,7 +5976,8 @@ and rows by clicking on the vertical header.
 files and file sequences.
 
 0.30.0
-------
+======
+
 * Fixed problem trying to call QLineEdit.setPlaceholderText within Nuke.
 
 * Gaffer.BlockedConnection now supports reentrancy, with the connection only becoming unblocked when the outermost block has been exited.
@@ -3633,7 +5991,7 @@ files and file sequences.
 * VectorDataWidget has a new protected _createRows() method which may be overridden by derived classes to customise the addition of new rows. The PathVectorDataWidget implements this by displaying a dialogue where the user may select multiple paths to be added. This improves the parameter ui for PathVectorParameters.
 
 0.29.0
-------
+======
 
 * The Gaffer.BlockedConnection constructor now accepts a list of connections to block, as an alternative to just a single connection.
 
@@ -3702,7 +6060,7 @@ files and file sequences.
 * Fixed bug in GafferBindings::Serialiser which meant that serialisers were called twice unecessarily.
 
 0.28.1
-------
+======
 
 * Changed the default resize mode of OpDialogue/ErrorDialogue to be manual
 
@@ -3711,7 +6069,8 @@ files and file sequences.
 * Fixed juddering resize events when opening the OpDialogue, by optimising out unecessary calls in Widget.setVisible().
 
 0.28.0
-------
+======
+
 * Added an InfoPathFilter, which allows filtering with an arbitrary match function applied to an arbitrary field of Path.info(). Used this to implement a filter text box for path choosers.
 
 * PathParameterWidget now applies path filters, and has an _filter() method which can be overridden in derived classes to define the filter.
@@ -3769,7 +6128,7 @@ files and file sequences.
 * The VectorDataWidget now sizes itself to fit its contents.
 
 0.27.0
-------
+======
 
 * Keeping the same font dpi no matter where gaffer is running.
 
@@ -3821,14 +6180,14 @@ files and file sequences.
 
 * The CheckBox class now has setText() and getText() accessors.
 
-* Added PathFilterWidget class to allow uis to be built for the filters on paths. Added filter ui to PathChooserWidget, along with a button to refresh the listing. 
+* Added PathFilterWidget class to allow uis to be built for the filters on paths. Added filter ui to PathChooserWidget, along with a button to refresh the listing.
 
 * The Path class now adds "name" and "fullName" entries to the info() dictionary.
 
 * The Menu class now accepts booleans as well as callables for the checkBox MenuItemDefinition entry.
 
 0.26.0
-------
+======
 
 * Gaffer.Application._executeStartupFiles() now takes an optional contextDict to allow variables to be passed to the startup scripts.
 
@@ -3840,7 +6199,7 @@ provides access to this via a menu item.
 * Default stylesheet now does a better job of aligning the corner widget for the TabbedContainer.
 
 0.25.0
-------
+======
 
 * Changed in NumericPlugValueWidget the methods __keypress and __textChanged to be protected
 
@@ -3849,7 +6208,7 @@ provides access to this via a menu item.
 * The GafferUI.Image class now uses a more sensible cache size to eliminate thrashing when loading images from disk. The cache size defaults to 100 MB but can be specified directly using the GAFFERUI_IMAGECACHE_MEMORY environment variable, which is also interpreted as being a number in MB.
 
 0.24.0
-------
+======
 
 * ParameterisedHolder now correctly loads an instance of the held class
 following serialisation.
@@ -3877,7 +6236,7 @@ new functionality.
 * Gaffer can now be run embedded in Nuke.
 
 0.23.0
-------
+======
 
 * Fixed a bug which prevented keypresses in GadgetWidget from being propagated to the parent widget if they were not processed by the GadgetWidget.
 
@@ -3898,12 +6257,12 @@ new functionality.
 * CompoundEditor now provides dynamic behaviour for expanding and collapsing child editors. Hit space to expand the current editor one level, double space for two levels and so on. Space then collapses back one level, double space two levels and so on. When an editor is fully collapsed, hovering over the splitter handle will dynamically show it.
 
 0.22.1
-------
+======
 
 * Changed events keyPress and textChanged to be protected
 
 0.22.0
-------
+======
 
 * Collapsible Widget now supports corner widget expanded
 
@@ -3919,7 +6278,7 @@ new functionality.
 
 
 0.21.0
-------
+======
 
 * Added a selectionMenu widget.
 
@@ -3947,7 +6306,7 @@ new functionality.
 
 * Containers may now be used in the python with statement to make the creation of nested layouts more straightforward. For example :
 
-	with GafferUI.Collapsible() :	
+	with GafferUI.Collapsible() :
 		with GafferUI.ScrolledContainer() :
 			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical ) :
 				GafferUI.TextWidget( "Making uis is easier now" )
@@ -3962,9 +6321,9 @@ new functionality.
 * Viewer is no longer hardcoded to display the result of the "output" plug - it now displays the result of the first output ObjectPlug. This allows it to view the results of procedurals and ops.
 
 * The node creation menus for Ops and Procedurals now create OpHolder and ProceduralHolder nodes rather than generic ParameterisedHolder nodes. Ops and procedurals may now be run in Gaffer.
-			
+
 0.20.0
-------
+======
 
 * GafferUI.EventLoop supports Houdini using hou.ui.addEventLoopCallback
 
@@ -3973,7 +6332,7 @@ new functionality.
 * Using future to import with_statement for python 2.5 compatibility
 
 0.19.0
-------
+======
 
 * Added a BoolVectorDataPlug and a BoolVectorDataParameterHandler.
 
@@ -4000,14 +6359,14 @@ new functionality.
 * Fixed problem with GafferUI.Button positioning on OS X.
 
 0.18.0
-------
+======
 
 * Renamed ArrayNodule to CompoundNodule.
 
 * Bug fix for PathListingWidget with allowMultipleSelection==True. When selecting more than one item, the path being edited is now always set the current directory. This avoids problems where setting the path to the last selected leaf could cause the current selection to be destroyed.
 
 0.17.0
-------
+======
 
 * Fixed a bug in NumericPlug::setValue() which meant it was possible to set value outside the Plug's min/max range.
 
@@ -4041,7 +6400,7 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 * Fixed a bug in the RunTimeTyped registration for TypedPlug.
 
 0.16.0
-------
+======
 
 * Added a StandardNodeGadget::acceptsNodule() method which may be reimplemented by derived classes to control exactly which plugs are represented by the gadget. See GafferUITest.StandardNodeGadgetTest.testSubclassing() for an example.
 
@@ -4054,12 +6413,12 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 * The appearance of disabled buttons is now less confusing.
 
 0.15.1
-------
+======
 
 * Fixed layout problems caused by adding larger items into existing rows of a GridLayout.
 
 0.15.0
-------
+======
 
 * Added a GridContainer class.
 
@@ -4070,7 +6429,7 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 * Gaffer can now be run embedded in maya versions which use Qt natively.
 
 0.14.0
-------
+======
 
 * The parameter userData ["UI"]["visible"] is now supported.
 
@@ -4093,7 +6452,7 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 * Plugs may no longer implement acceptsInput( 0 ) to return false - this was illogical as it prevents the undoing of a connection made by the user.
 
 0.13.0
-------
+======
 
 * Fixed a bug whereby a node would be offset from the mouse position when dragging if starting the drag was delayed while other uis (particularly the NodeEditor) were updating.
 
@@ -4124,7 +6483,7 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 	* Error when double clicking an item.
 	* Selection was not being cleared when the current path wasn't valid.
 	* Path wasn't being set when a leaf item was selected, which meant that hitting Enter in the PathChooserDialogue chose the wrong path.
-	* Double clicking a directory when the current path wasn't valid created another invalid path, rather than replacing the invalid section.	
+	* Double clicking a directory when the current path wasn't valid created another invalid path, rather than replacing the invalid section.
 
 * Added a "python" application which simply executes a python file in the Gaffer environment.
 
@@ -4165,7 +6524,7 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 		a = A()
 
 0.12.0
-------
+======
 
 * Added a VectorDataWidget and a VectorDataPlugValueWidget, handling plugs of type StringVectorPlug, IntVectorPlug, FloatVectorPlug and V3fVectorPlug. Still needs file selector support.
 
@@ -4202,7 +6561,7 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 * The GraphEditor now allows custom right click menus to be displayed for nodes in the graph. See GraphEditor.nodeContextMenuSignal() for brief documentation.
 
 0.11.0
-------
+======
 
 * GafferUI.Image() constructor now accepts unicode strings.
 
@@ -4215,7 +6574,7 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 * GafferUI.StandardNodeGadget can now be customised using a new setContents() method. This allows the central region of the node to be replaced with custom gadgets on a per-node basis. See startup/gui/graphs.py for example code for customising with an icon (note that this is waiting for a PNGImageReader to be available in cortex).
 
 0.10.0
-------
+======
 
 * Fixed flickering in the Viewer - enabled double buffering in same way as GraphEditor.
 
@@ -4269,11 +6628,11 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 	IECore.V3fParameter
 	IECore.Color3fParameter
 	IECore.Color4fParameter
-	
+
 * Fixed TypeError: invalid argument to sipBadCatcherResult() messages coming from ColorSwatch widget.
 
 0.9.0
------
+=====
 
 * Can now access the internal QPixmap for a GafferUI.Image widget using the _qtPixmap() method. This is to assist in implementing other widget types and should be considered off limits for user code (along with all the other protected _qt* function).
 
@@ -4284,7 +6643,7 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 * Fixed bug which would cause Ops to be executed twice in OpDialogue.waitForResult().
 
 0.8.0
------
+=====
 
 * GafferUI.Image now falls back to using Qt image loading code if no IECore.Reader is available. This provides support for PNG images among others. Also fixed some bugs whereby images would fail to load if a full path wasn't provided - now the GAFFERUI_IMAGE_PATHS are used appropriately.
 
@@ -4295,7 +6654,7 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 * Reworked GafferUI.EventLoop to support embedding of Gaffer in Maya. See documentation in GafferUI/EventLoop.py and apps/gui/gui-1.py for details.
 
 0.7.0
------
+=====
 
 * Can now derive from ScriptNode in python and override acceptsChild etc as expected.
 
@@ -4312,28 +6671,28 @@ See python/GafferTest/ParameterHandlerTest.py for an example.
 * GafferUI.Widget derived classes may now pass a GafferUI.Widget instead of a QtGui.QWidget instance to the base class constructor. This makes it possible to develop a wider variety of custom widgets without resorting to Qt APIs.
 
 0.6.0
------
+=====
 
 * Can now specify whether to use PySide or PyQt for Qt python bindings, using the GAFFERUI_QT_BINDINGS environment variable.
 
 0.5.0
------
+=====
 
 * Added a new OpDialogue class to make it easy to run ops.
 
 * Added a new op application, to allow users to run ops in a gui.
 
-* NodeEditor.registerNodeUI has been moved to NodeUI.registerNodeUI, and a NodeUI.create factory functiona added. This allows NodeUIs to be used in places other than the NodeEditor. 
+* NodeEditor.registerNodeUI has been moved to NodeUI.registerNodeUI, and a NodeUI.create factory functiona added. This allows NodeUIs to be used in places other than the NodeEditor.
 
 0.4.0
------
+=====
 
 * Can now derive from GraphComponent in python and override acceptsParent and acceptsChild methods. These methods can also be overridden in other python-derivable classes such as Plug and Node.
 
 * Can now derive from CompoundPlug in python.
 
 0.3.0
------
+=====
 
 * ParameterisedHolders now allow some Parameters to opt out of representation as a Plug by adding a "noHostMapping" user data item with a value of BoolData( True ).
 

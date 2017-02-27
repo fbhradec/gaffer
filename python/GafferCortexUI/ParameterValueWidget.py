@@ -170,6 +170,7 @@ def __parameterPopupMenu( menuDefinition, parameterValueWidget ) :
 	)
 
 	# add menu items for presets
+	menuDefinition.remove( "/Preset", raiseIfMissing=False )
 	if len( parameterHandler.parameter().presetNames() ) :
 		menuDefinition.append( "/PresetDivider", { "divider" : True } )
 
@@ -183,4 +184,3 @@ def __setValue( parameterHandler, value ) :
 	parameterHandler.parameter().setValue( value )
 	with Gaffer.UndoContext( parameterHandler.plug().ancestor( Gaffer.ScriptNode.staticTypeId() ) ) :
 		parameterHandler.setPlugValue()
-

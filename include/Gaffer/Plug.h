@@ -38,9 +38,11 @@
 #ifndef GAFFER_PLUG_H
 #define GAFFER_PLUG_H
 
-#include "Gaffer/GraphComponent.h"
-
 #include "IECore/Object.h"
+
+#include "Gaffer/GraphComponent.h"
+#include "Gaffer/FilteredChildIterator.h"
+#include "Gaffer/FilteredRecursiveChildIterator.h"
 
 namespace Gaffer
 {
@@ -104,11 +106,22 @@ class Plug : public GraphComponent
 			/// an exception if an attempt is made to call their setValue() method. It is
 			/// not valid to make an output plug read only - in the case of an attempt to
 			/// do so an exception will be thrown from setFlags().
+			/// \deprecated Use MetadataAlgo instead.
 			ReadOnly = 0x00000020,
+			/// Generally it is an error to have cyclic dependencies between plugs,
+			/// and creating them will cause an exception to be thrown during dirty
+			/// propagation. However, it is possible to design nodes that create
+			/// pseudo-cycles, where the evaluation of a plug leads to the evaluation
+			/// of the very same plug, but in a different context. This is
+			/// permissible so long as the context is managed such that the cycle is
+			/// not infinite. Because dirty propagation is performed independent of context,
+			/// this flag must be used by such nodes to indicate that the cycle is
+			/// intentional in this case, and is guaranteed to terminate during compute.
+			AcceptsDependencyCycles = 0x00000040,
 			/// When adding values, don't forget to update the Default and All values below,
 			/// and to update PlugBinding.cpp too!
 			Default = Serialisable | AcceptsInputs | PerformsSubstitutions | Cacheable,
-			All = Dynamic | Serialisable | AcceptsInputs | PerformsSubstitutions | Cacheable | ReadOnly
+			All = Dynamic | Serialisable | AcceptsInputs | PerformsSubstitutions | Cacheable | ReadOnly | AcceptsDependencyCycles
 		};
 
 		Plug( const std::string &name=defaultName<Plug>(), Direction direction=In, unsigned flags=Default );
@@ -136,10 +149,11 @@ class Plug : public GraphComponent
 		/// Returns true if all the flags passed are currently set.
 		bool getFlags( unsigned flags ) const;
 		/// Sets the current state of the flags.
-		/// \todo I suspect we need to make this undoable.
+		/// \undoable
 		void setFlags( unsigned flags );
 		/// Sets or unsets the specified flags depending on the enable
 		/// parameter. All other flags remain at their current values.
+		/// \undoable
 		void setFlags( unsigned flags, bool enable );
 
 		/// @name Connections
@@ -214,8 +228,13 @@ class Plug : public GraphComponent
 		void parentChanged();
 		static void propagateDirtinessForParentChange( Plug *plugToDirty );
 
+		void setFlagsInternal( unsigned flags );
+
+		class AcceptsInputCache;
+		bool acceptsInputInternal( const Plug *input ) const;
 		void setInput( PlugPtr input, bool setChildInputs, bool updateParentInput );
 		void setInputInternal( PlugPtr input, bool emit );
+		void emitInputChanged();
 
 		void updateInputFromChildInputs( Plug *checkFirst );
 
@@ -238,6 +257,34 @@ class Plug : public GraphComponent
 };
 
 IE_CORE_DECLAREPTR( Plug );
+
+template<Plug::Direction D=Plug::Invalid, typename T=Plug>
+struct PlugPredicate
+{
+	typedef T ChildType;
+
+	bool operator()( const GraphComponentPtr &g ) const
+	{
+		const T *p = IECore::runTimeCast<T>( g.get() );
+		if( !p )
+		{
+			return false;
+		}
+		if( D==Plug::Invalid )
+		{
+			return true;
+		}
+		return D==p->direction();
+	}
+};
+
+typedef FilteredChildIterator<PlugPredicate<> > PlugIterator;
+typedef FilteredChildIterator<PlugPredicate<Plug::In, Plug> > InputPlugIterator;
+typedef FilteredChildIterator<PlugPredicate<Plug::Out, Plug> > OutputPlugIterator;
+
+typedef FilteredRecursiveChildIterator<PlugPredicate<>, PlugPredicate<> > RecursivePlugIterator;
+typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, Plug>, PlugPredicate<> > RecursiveInputPlugIterator;
+typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, Plug>, PlugPredicate<> > RecursiveOutputPlugIterator;
 
 } // namespace Gaffer
 

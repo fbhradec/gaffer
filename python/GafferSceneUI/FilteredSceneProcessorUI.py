@@ -67,9 +67,10 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"layout:section", "Filter",
-			"nodeGadget:nodulePosition", "right",
+			"noduleLayout:section", "right",
 			"layout:index", -3, # Just before the enabled plug,
 			"nodule:type", "GafferUI::StandardNodule",
+			"plugValueWidget:type", "GafferSceneUI.FilterPlugValueWidget",
 
 		],
 
@@ -78,14 +79,8 @@ Gaffer.Metadata.registerNode(
 )
 
 ##########################################################################
-# Widgets and Gadgets
+# Gadgets
 ##########################################################################
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.FilteredSceneProcessor,
-	"filter",
-	GafferSceneUI.FilterPlugValueWidget,
-)
 
 def __nodeGadget( node ) :
 
@@ -120,7 +115,7 @@ def __selectAffected( node, context ) :
 	pathMatcher = GafferScene.PathMatcher()
 	with context :
 		for scene in scenes :
-			GafferScene.matchingPaths( filter, scene, pathMatcher )
+			GafferScene.SceneAlgo.matchingPaths( filter, scene, pathMatcher )
 
 	context["ui:scene:selectedPaths"] = IECore.StringVectorData( pathMatcher.paths() )
 

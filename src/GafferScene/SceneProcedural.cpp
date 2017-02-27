@@ -47,6 +47,7 @@
 #include "IECore/StateRenderable.h"
 #include "IECore/AngleConversion.h"
 #include "IECore/MotionBlock.h"
+#include "IECore/Primitive.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/ScriptNode.h"
@@ -61,12 +62,30 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
+// Static InternedStrings for attribute and option names. We don't want the overhead of
+// constructing these each time.
+
+static InternedString g_transformBlurOptionName( "option:render:transformBlur" );
+static InternedString g_deformationBlurOptionName( "option:render:deformationBlur" );
+static InternedString g_shutterOptionName( "option:render:shutter" );
+
+static InternedString g_transformBlurGlobalAttributeName( "attribute:gaffer:transformBlur" );
+static InternedString g_transformBlurSegmentsGlobalAttributeName( "attribute:gaffer:transformBlurSegments" );
+static InternedString g_deformationBlurGlobalAttributeName( "attribute:gaffer:deformationBlur" );
+static InternedString g_deformationBlurSegmentsGlobalAttributeName( "attribute:gaffer:deformationBlurSegments" );
+
+static InternedString g_visibleAttributeName( "scene:visible" );
+static InternedString g_transformBlurAttributeName( "gaffer:transformBlur" );
+static InternedString g_transformBlurSegmentsAttributeName( "gaffer:transformBlurSegments" );
+static InternedString g_deformationBlurAttributeName( "gaffer:deformationBlur" );
+static InternedString g_deformationBlurSegmentsAttributeName( "gaffer:deformationBlurSegments" );
+
 // TBB recommends that you defer decisions about how many threads to create
 // to it, so you can write nice high level code and it can decide how best
 // to schedule the work. Generally if left to do this, it schedules it by
 // making as many threads as there are cores, to make best use of the hardware.
 // This is all well and good, until you're running multiple renders side-by-side,
-// telling the renderer to use a limited number of threads so they all play nicely 
+// telling the renderer to use a limited number of threads so they all play nicely
 // together. Let's use the example of a 32 core machine with 4 8-thread 3delight
 // renders running side by side.
 //
@@ -135,7 +154,7 @@ tbb::mutex SceneProcedural::g_allRenderedMutex;
 
 SceneProcedural::AllRenderedSignal SceneProcedural::g_allRenderedSignal;
 
-SceneProcedural::SceneProcedural( ConstScenePlugPtr scenePlug, const Gaffer::Context *context, const ScenePlug::ScenePath &scenePath )
+SceneProcedural::SceneProcedural( ConstScenePlugPtr scenePlug, const Gaffer::Context *context, const ScenePlug::ScenePath &scenePath, bool computeBound )
 	:	m_scenePlug( scenePlug ), m_context( new Context( *context ) ), m_scenePath( scenePath ), m_rendered( false )
 {
 	tbb::task_scheduler_init tsi( tbb::task_scheduler_init::deferred );
@@ -151,34 +170,34 @@ SceneProcedural::SceneProcedural( ConstScenePlugPtr scenePlug, const Gaffer::Con
 	Context::Scope scopedContext( m_context.get() );
 	ConstCompoundObjectPtr globals = m_scenePlug->globalsPlug()->getValue();
 
-	const BoolData *transformBlurData = globals->member<BoolData>( "option:render:transformBlur" );
+	const BoolData *transformBlurData = globals->member<BoolData>( g_transformBlurOptionName );
 	m_options.transformBlur = transformBlurData ? transformBlurData->readable() : false;
 
-	const BoolData *deformationBlurData = globals->member<BoolData>( "option:render:deformationBlur" );
+	const BoolData *deformationBlurData = globals->member<BoolData>( g_deformationBlurOptionName );
 	m_options.deformationBlur = deformationBlurData ? deformationBlurData->readable() : false;
 
-	const V2fData *shutterData = globals->member<V2fData>( "option:render:shutter" );
+	const V2fData *shutterData = globals->member<V2fData>( g_shutterOptionName );
 	m_options.shutter = shutterData ? shutterData->readable() : V2f( -0.25, 0.25 );
 	m_options.shutter += V2f( m_context->getFrame() );
 
 	// attributes
 
-	transformBlurData = globals->member<BoolData>( "attribute:gaffer:transformBlur" );
+	transformBlurData = globals->member<BoolData>( g_transformBlurGlobalAttributeName );
 	m_attributes.transformBlur = transformBlurData ? transformBlurData->readable() : true;
-	
-	const IntData *transformBlurSegmentsData = globals->member<IntData>( "attribute:gaffer:transformBlurSegments" );
+
+	const IntData *transformBlurSegmentsData = globals->member<IntData>( g_transformBlurSegmentsGlobalAttributeName );
 	m_attributes.transformBlurSegments = transformBlurSegmentsData ? transformBlurSegmentsData->readable() : 1;
-	
-	deformationBlurData = globals->member<BoolData>( "attribute:gaffer:deformationBlur" );
+
+	deformationBlurData = globals->member<BoolData>( g_deformationBlurGlobalAttributeName );
 	m_attributes.deformationBlur = deformationBlurData ? deformationBlurData->readable() : true;
-	
-	const IntData *deformationBlurSegmentsData = globals->member<IntData>( "attribute:gaffer:deformationBlurSegments" );
+
+	const IntData *deformationBlurSegmentsData = globals->member<IntData>( g_deformationBlurSegmentsGlobalAttributeName );
 	m_attributes.deformationBlurSegments = deformationBlurSegmentsData ? deformationBlurSegmentsData->readable() : 1;
 
-	computeBound();
-	updateAttributes( true );
-	++g_pendingSceneProcedurals;
+	updateAttributes();
+	initBound( computeBound );
 
+	++g_pendingSceneProcedurals;
 }
 
 SceneProcedural::SceneProcedural( const SceneProcedural &other, const ScenePlug::ScenePath &scenePath )
@@ -193,8 +212,9 @@ SceneProcedural::SceneProcedural( const SceneProcedural &other, const ScenePlug:
 
 	m_context->set( ScenePlug::scenePathContextName, m_scenePath );
 
-	computeBound();
-	updateAttributes( false );
+	updateAttributes();
+	initBound( other.m_bound != Procedural::noBound );
+
 	++g_pendingSceneProcedurals;
 }
 
@@ -206,8 +226,14 @@ SceneProcedural::~SceneProcedural()
 	}
 }
 
-void SceneProcedural::computeBound()
+void SceneProcedural::initBound( bool compute )
 {
+	if( !compute )
+	{
+		m_bound = Procedural::noBound;
+		return;
+	}
+
 	/// \todo I think we should be able to remove this exception handling in the future.
 	/// Either when we do better error handling in ValuePlug computations, or when
 	/// the bug in IECoreGL that caused the crashes in SceneProceduralTest.testComputationErrors
@@ -259,7 +285,7 @@ void SceneProcedural::computeBound()
 	}
 	catch( const std::exception &e )
 	{
-		m_bound = Imath::Box3f();	
+		m_bound = Imath::Box3f();
 		std::string name;
 		ScenePlug::pathToString( m_scenePath, name );
 		IECore::msg( IECore::Msg::Error, "SceneProcedural::bound() " + name, e.what() );
@@ -290,7 +316,7 @@ class SceneProcedural::SceneProceduralCreate
 			SceneProceduralContainer &childProcedurals,
 			const SceneProcedural &parent,
 			const vector<InternedString> &childNames
-			
+
 		) :
 			m_childProcedurals( childProcedurals ),
 			m_parent( parent ),
@@ -308,13 +334,13 @@ class SceneProcedural::SceneProceduralCreate
 				m_childProcedurals[ i ] = sceneProcedural;
 			}
 		}
-	
+
 	private:
-	
+
 		SceneProceduralContainer &m_childProcedurals;
 		const SceneProcedural &m_parent;
 		const vector<InternedString> &m_childNames;
-		
+
 };
 
 
@@ -327,18 +353,17 @@ void SceneProcedural::render( Renderer *renderer ) const
 
 	std::string name;
 	ScenePlug::pathToString( m_scenePath, name );
-	
+
 	/// \todo See above.
 	try
 	{
 
 		// get all the attributes, and early out if we're not visibile
 
-		ConstCompoundObjectPtr attributes = m_scenePlug->attributesPlug()->getValue();
-		const BoolData *visibilityData = attributes->member<BoolData>( "scene:visible" );
+		const BoolData *visibilityData = m_attributesObject->member<BoolData>( g_visibleAttributeName );
 		if( visibilityData && !visibilityData->readable() )
 		{
-		
+
 			if( !m_rendered )
 			{
 				decrementPendingProcedurals();
@@ -356,60 +381,15 @@ void SceneProcedural::render( Renderer *renderer ) const
 
 		// transform
 
-		std::set<float> transformTimes;
-		motionTimes( ( m_options.transformBlur && m_attributes.transformBlur ) ? m_attributes.transformBlurSegments : 0, transformTimes );
-		{
-			ContextPtr timeContext = new Context( *m_context, Context::Borrowed );
-			Context::Scope scopedTimeContext( timeContext.get() );
-
-			MotionBlock motionBlock( renderer, transformTimes, transformTimes.size() > 1 );
-
-			for( std::set<float>::const_iterator it = transformTimes.begin(), eIt = transformTimes.end(); it != eIt; it++ )
-			{
-				timeContext->setFrame( *it );
-				renderer->concatTransform( m_scenePlug->transformPlug()->getValue() );
-			}
-		}
+		RendererAlgo::outputTransform( m_scenePlug.get(), renderer, ( m_options.transformBlur && m_attributes.transformBlur ) ? m_attributes.transformBlurSegments : 0, m_options.shutter );
 
 		// attributes
 
-		outputAttributes( attributes.get(), renderer );
+		RendererAlgo::outputAttributes( m_attributesObject.get(), renderer );
 
 		// object
 
-		std::set<float> deformationTimes;
-		motionTimes( ( m_options.deformationBlur && m_attributes.deformationBlur ) ? m_attributes.deformationBlurSegments : 0, deformationTimes );
-		{
-			ContextPtr timeContext = new Context( *m_context, Context::Borrowed );
-			Context::Scope scopedTimeContext( timeContext.get() );
-
-			unsigned timeIndex = 0;
-			for( std::set<float>::const_iterator it = deformationTimes.begin(), eIt = deformationTimes.end(); it != eIt; it++, timeIndex++ )
-			{
-				timeContext->setFrame( *it );
-				ConstObjectPtr object = m_scenePlug->objectPlug()->getValue();
-				if( const Primitive *primitive = runTimeCast<const Primitive>( object.get() ) )
-				{
-					if( deformationTimes.size() > 1 && timeIndex == 0 )
-					{
-						renderer->motionBegin( deformationTimes );
-					}
-
-						primitive->render( renderer );
-
-					if( deformationTimes.size() > 1 && timeIndex == deformationTimes.size() - 1 )
-					{
-						renderer->motionEnd();
-					}
-				}
-				else if( const VisibleRenderable* renderable = runTimeCast< const VisibleRenderable >( object.get() ) )
-				{
-					renderable->render( renderer );
-					break; // no motion blur for these chappies.
-				}
-
-			}
-		}
+		RendererAlgo::outputObject( m_scenePlug.get(), renderer, ( m_options.deformationBlur && m_attributes.deformationBlur ) ? m_attributes.deformationBlurSegments : 0, m_options.shutter );
 
 		// children
 
@@ -472,38 +452,35 @@ IECore::MurmurHash SceneProcedural::hash() const
 	return IECore::MurmurHash();
 }
 
-void SceneProcedural::updateAttributes( bool full )
+void SceneProcedural::updateAttributes()
 {
 	Context::Scope scopedContext( m_context.get() );
-	
-	// \todo: Investigate if it's worth keeping these around and reusing them in SceneProcedural::render().
-	
-	ConstCompoundObjectPtr attributes;
-	if( full )
-	{
-		attributes = m_scenePlug->fullAttributes( m_scenePath );
-	}
-	else
-	{
-		attributes = m_scenePlug->attributesPlug()->getValue();
-	}
 
-	if( const BoolData *transformBlurData = attributes->member<BoolData>( "gaffer:transformBlur" ) )
+	// We need to compute the attributes during construction so
+	// that we have the right motion blur settings in bound(), and
+	// we don't want to have to compute them again in render(), so
+	// we store them. We only output attributes which are local to
+	// the location we represent.
+	m_attributesObject = m_scenePlug->attributesPlug()->getValue();
+
+	// Some attributes have special meaning to us - we must track
+	// the inherited values of these.
+	if( const BoolData *transformBlurData = m_attributesObject->member<BoolData>( g_transformBlurAttributeName ) )
 	{
 		m_attributes.transformBlur = transformBlurData->readable();
 	}
 
-	if( const IntData *transformBlurSegmentsData = attributes->member<IntData>( "gaffer:transformBlurSegments" ) )
+	if( const IntData *transformBlurSegmentsData = m_attributesObject->member<IntData>( g_transformBlurSegmentsAttributeName ) )
 	{
 		m_attributes.transformBlurSegments = transformBlurSegmentsData->readable();
 	}
 
-	if( const BoolData *deformationBlurData = attributes->member<BoolData>( "gaffer:deformationBlur" ) )
+	if( const BoolData *deformationBlurData = m_attributesObject->member<BoolData>( g_deformationBlurAttributeName ) )
 	{
 		m_attributes.deformationBlur = deformationBlurData->readable();
 	}
 
-	if( const IntData *deformationBlurSegmentsData = attributes->member<IntData>( "gaffer:deformationBlurSegments" ) )
+	if( const IntData *deformationBlurSegmentsData = m_attributesObject->member<IntData>( g_deformationBlurSegmentsAttributeName ) )
 	{
 		m_attributes.deformationBlurSegments = deformationBlurSegmentsData->readable();
 	}

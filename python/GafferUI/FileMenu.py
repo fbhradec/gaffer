@@ -68,6 +68,7 @@ def new( menu ) :
 	application = scriptWindow.scriptNode().ancestor( Gaffer.ApplicationRoot )
 
 	newScript = Gaffer.ScriptNode()
+	Gaffer.NodeAlgo.applyUserDefaults( newScript )
 	application["scripts"].addChild( newScript )
 
 ## A function suitable as the command for a File/Open menu item. It must be invoked from a menu which
@@ -92,14 +93,18 @@ def __open( currentScript, fileName ) :
 	script = Gaffer.ScriptNode()
 	script["fileName"].setValue( fileName )
 
-	messageWidget = GafferUI.MessageWidget()
-	with messageWidget.messageHandler() :
+	with GafferUI.ErrorDialogue.ErrorHandler(
+		title = "Errors Occurred During Loading",
+		closeLabel = "Oy vey",
+		parentWindow = GafferUI.ScriptWindow.acquire( currentScript )
+	) :
 		script.load( continueOnError = True )
 
 	application["scripts"].addChild( script )
 
 	addRecentFile( application, fileName )
 
+	removeCurrentScript = False
 	if not currentScript["fileName"].getValue() and not currentScript["unsavedChanges"].getValue() :
 		# the current script is empty - the user will think of the operation as loading
 		# the new script into the current window, rather than adding a new window. so make it
@@ -109,18 +114,13 @@ def __open( currentScript, fileName ) :
 		## \todo We probably want a way of querying and setting geometry in the public API
 		newWindow._qtWidget().restoreGeometry( currentWindow._qtWidget().saveGeometry() )
 		currentWindow.setVisible( False )
+		removeCurrentScript = True
 
-		# We must defer the removal of the old script because otherwise we trigger a crash bug
-		# in PySide - I think this is because the menu item that invokes us is a child of
-		# currentWindow, and that will get deleted immediately when the script is removed.
+	# We must defer the removal of the old script because otherwise we trigger a crash bug
+	# in PySide - I think this is because the menu item that invokes us is a child of
+	# currentWindow, and that will get deleted immediately when the script is removed.
+	if removeCurrentScript :
 		GafferUI.EventLoop.addIdleCallback( IECore.curry( __removeScript, application, currentScript ) )
-
-	if sum( [ messageWidget.messageCount( level ) for level in ( IECore.Msg.Level.Error, IECore.Msg.Level.Warning ) ] ) :
-		dialogue = GafferUI.Dialogue( "Errors Occurred During Loading" )
-		## \todo These dialogue methods should be available publicly.
-		dialogue._setWidget( messageWidget )
-		dialogue._addButton( "Oy vey" )
-		dialogue.waitForButton( parentWindow=GafferUI.ScriptWindow.acquire( currentScript ) )
 
 def __removeScript( application, script ) :
 
@@ -191,7 +191,7 @@ def save( menu ) :
 	scriptWindow = menu.ancestor( GafferUI.ScriptWindow )
 	script = scriptWindow.scriptNode()
 	if script["fileName"].getValue() :
-		with GafferUI.ErrorDialogue.ExceptionHandler( title = "Error Saving File", parentWindow = scriptWindow ) :
+		with GafferUI.ErrorDialogue.ErrorHandler( title = "Error Saving File", parentWindow = scriptWindow ) :
 			script.save()
 	else :
 		saveAs( menu )
@@ -215,7 +215,7 @@ def saveAs( menu ) :
 		path += ".gfr"
 
 	script["fileName"].setValue( path )
-	with GafferUI.ErrorDialogue.ExceptionHandler( title = "Error Saving File", parentWindow = scriptWindow ) :
+	with GafferUI.ErrorDialogue.ErrorHandler( title = "Error Saving File", parentWindow = scriptWindow ) :
 		script.save()
 
 	application = script.ancestor( Gaffer.ApplicationRoot )

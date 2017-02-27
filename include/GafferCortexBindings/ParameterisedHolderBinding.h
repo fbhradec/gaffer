@@ -41,9 +41,9 @@
 #include "boost/format.hpp"
 
 #include "IECore/Parameter.h"
-#include "IECorePython/Wrapper.h"
 
 #include "GafferBindings/NodeBinding.h"
+#include "GafferBindings/ExceptionAlgo.h"
 
 #include "GafferCortex/ParameterisedHolder.h"
 
@@ -86,7 +86,14 @@ class ParameterisedHolderWrapper : public BaseType
 
 				typename BaseType::WrappedType::ParameterModificationContext parameterModificationContext( this );
 
-				pythonParameterised.attr( "parameterChanged" )( IECore::ParameterPtr( parameter ) );
+				try
+				{
+					pythonParameterised.attr( "parameterChanged" )( IECore::ParameterPtr( parameter ) );
+				}
+				catch( boost::python::error_already_set &e )
+				{
+					GafferBindings::ExceptionAlgo::translatePythonException();
+				}
 			}
 		}
 

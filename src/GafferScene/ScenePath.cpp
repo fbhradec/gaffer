@@ -152,7 +152,7 @@ bool ScenePath::isValid() const
 	}
 
 	Context::Scope scopedContext( m_context.get() );
-	return exists( m_scene.get(), names() );
+	return SceneAlgo::exists( m_scene.get(), names() );
 }
 
 bool ScenePath::isLeaf() const
@@ -222,7 +222,7 @@ Gaffer::PathFilterPtr ScenePath::createStandardFilter( const std::vector<std::st
 		SetFilterPtr setFilter = new SetFilter();
 		unionFilter->addChild( setFilter );
 		setFilter->setPlug()->setValue( *it );
-		unionFilter->inPlug()->getChild<Gaffer::Plug>( it - setNames.begin() )->setInput( setFilter->outPlug() );
+		unionFilter->inPlugs()->getChild<Gaffer::Plug>( it - setNames.begin() )->setInput( setFilter->outPlug() );
 
 		if( it != setNames.begin() )
 		{

@@ -660,9 +660,9 @@ class GraphComponentTest( GafferTest.TestCase ) :
 
 		self.assertTypeNamesArePrefixed(
 			Gaffer,
-			# Ignore the names imported from GafferCortex into
-			# the Gaffer namespace - they're just for backwards
-			# compatibility.
+			# Ignore the names imported from GafferCortex and
+			# GafferDispatch into the Gaffer namespace - they're
+			# just for backwards compatibility.
 			namesToIgnore = set( [
 				"GafferCortex::ObjectReader",
 				"GafferCortex::ObjectWriter",
@@ -672,11 +672,21 @@ class GraphComponentTest( GafferTest.TestCase ) :
 				"GafferCortex::ParameterisedHolderNode",
 				"GafferCortex::ParameterisedHolderDependencyNode",
 				"GafferCortex::ParameterisedHolderComputeNode",
-				"GafferCortex::ParameterisedHolderExecutableNode",
+				"GafferCortex::ParameterisedHolderTaskNode",
 				"GafferCortex::AttributeCachePath",
 				"GafferCortex::ClassLoaderPath",
 				"GafferCortex::IndexedIOPath",
 				"GafferCortex::ParameterPath",
+				"GafferDispatch::Dispatcher",
+				"GafferDispatch::LocalDispatcher",
+				"GafferDispatch::TaskNode",
+				"GafferDispatch::PythonCommand",
+				"GafferDispatch::SystemCommand",
+				"GafferDispatch::TaskContextProcessor",
+				"GafferDispatch::TaskContextVariables",
+				"GafferDispatch::TaskList",
+				"GafferDispatch::TaskSwitch",
+				"GafferDispatch::Wedge",
 			] )
 		)
 		self.assertTypeNamesArePrefixed( GafferTest )
@@ -744,6 +754,11 @@ class GraphComponentTest( GafferTest.TestCase ) :
 		self.assertEqual( len( c.parentChanges ), 1 )
 		self.assertEqual( c.parentChanges[-1], ( None, None ) )
 
+	def testDescriptiveKeyErrors( self ) :
+
+		g = Gaffer.GraphComponent()
+		self.assertRaisesRegexp( KeyError, "'a' is not a child of 'GraphComponent'", g.__getitem__, "a" )
+		self.assertRaisesRegexp( KeyError, "'a' is not a child of 'GraphComponent'", g.__delitem__, "a" )
+
 if __name__ == "__main__":
 	unittest.main()
-

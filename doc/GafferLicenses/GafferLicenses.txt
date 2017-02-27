@@ -1,7 +1,0 @@
-= Gaffer Licenses
-image engine
-v0.89.0, 2014
-:doctype: book
-
-
-include::licenses_dynamicContent.txt[]

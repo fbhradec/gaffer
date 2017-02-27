@@ -37,6 +37,8 @@
 
 from __future__ import with_statement
 
+import sys
+
 import IECore
 
 import Gaffer
@@ -72,11 +74,33 @@ class ScriptProcedural( IECore.ParameterisedProcedural ) :
 					defaultValue = 1,
 				),
 
+				IECore.BoolParameter(
+					name = "computeBound",
+					description =
+						"Determines if the procedural will compute an accurate bound "
+						"or just not specify a bound. Not specifying a bound can give "
+						"improved performance in cases where the procedurals will all "
+						"be expanded immediately anyway.",
+					defaultValue = True,
+				),
+
+				IECore.StringVectorParameter(
+					name = "context",
+					description = "Additional context entries to be used during rendering.",
+					defaultValue = IECore.StringVectorData( [] ),
+					userData = {
+						"parser" : {
+							"acceptFlags" : IECore.BoolData( True ),
+						},
+					},
+				),
+
 			]
 
 		)
 
 		self.__currentFileName = None
+		self.__ensureAllRenderedConnection()
 
 	def doBound( self, args ) :
 
@@ -84,7 +108,7 @@ class ScriptProcedural( IECore.ParameterisedProcedural ) :
 		if plug is  None :
 			return IECore.Box3f()
 
-		sceneProcedural = GafferScene.SceneProcedural( plug, context, "/" )
+		sceneProcedural = GafferScene.SceneProcedural( plug, context, "/", args["computeBound"].value )
 		return sceneProcedural.bound()
 
 	def doRender( self, renderer, args ) :
@@ -93,20 +117,8 @@ class ScriptProcedural( IECore.ParameterisedProcedural ) :
 		if plug is None :
 			return
 
-		self.__postExpansionCacheClearConnection = GafferScene.SceneProcedural.allRenderedSignal().connect( Gaffer.WeakMethod( self.__allRendered ) )
-		
-		sceneProcedural = GafferScene.SceneProcedural( plug, context, "/" )
+		sceneProcedural = GafferScene.SceneProcedural( plug, context, "/", args["computeBound"].value )
 		renderer.procedural( sceneProcedural )
-
-	def __allRendered( self ):
-		
-		# all the procedural expansion's done, so lets clear the value plug cache/object pool to free up a bit of memory:
-		self.__postExpansionCacheClearConnection = None
-
-		IECore.ObjectPool.defaultObjectPool().clear()
-		memoryLimit = Gaffer.ValuePlug.getCacheMemoryLimit()
-		Gaffer.ValuePlug.setCacheMemoryLimit( 0 )
-		Gaffer.ValuePlug.setCacheMemoryLimit( memoryLimit )
 
 	def __plugAndContext( self, args ) :
 
@@ -131,6 +143,80 @@ class ScriptProcedural( IECore.ParameterisedProcedural ) :
 		context = Gaffer.Context( self.__scriptNode.context() )
 		context.setFrame( args["frame"].value )
 
+		for i in range( 0, len(args["context"]), 2 ) :
+			entry = args["context"][i].lstrip( "-" )
+			context[entry] = eval( args["context"][i+1] )
+
+		self.__ensureErrorConnection( node )
+
+		with context :
+			globals = node["out"]["globals"].getValue()
+		if "option:render:performanceMonitor" in globals and globals["option:render:performanceMonitor"].value :
+			self.__ensurePerformanceMonitor()
+
 		return node["out"], context
+
+	__allRenderedConnection = None
+	@classmethod
+	def __ensureAllRenderedConnection( cls ) :
+
+		if cls.__allRenderedConnection is not None :
+			return
+
+		cls.__allRenderedConnection = GafferScene.SceneProcedural.allRenderedSignal().connect( cls.__allRendered )
+
+	@classmethod
+	def __allRendered( cls ):
+
+		if cls.__performanceMonitor is not None :
+			cls.__printPerformance()
+
+		# All the procedural expansion's done, so let's clear various Cortex/Gaffer
+		# caches to free up some memory.
+
+		IECore.ObjectPool.defaultObjectPool().clear()
+		memoryLimit = Gaffer.ValuePlug.getCacheMemoryLimit()
+		Gaffer.ValuePlug.setCacheMemoryLimit( 0 )
+		Gaffer.ValuePlug.setCacheMemoryLimit( memoryLimit )
+
+	__errorConnections = {}
+	@classmethod
+	def __ensureErrorConnection( cls, node ) :
+
+		if node in cls.__errorConnections :
+			return
+
+		cls.__errorConnections[node] = node.errorSignal().connect( cls.__error )
+
+	@staticmethod
+	def __error( plug, source, error ) :
+
+		errorContext = "Plug \"%s\"" % source.relativeName( source.ancestor( Gaffer.ScriptNode ) )
+		if "scene:path" in Gaffer.Context.current() :
+			path = GafferScene.ScenePlug.pathToString( Gaffer.Context.current()["scene:path"] )
+			errorContext += ", Location \"%s\"" % path
+
+		IECore.msg(
+			IECore.Msg.Level.Error,
+			errorContext,
+			error
+		)
+
+	__performanceMonitor = None
+	@classmethod
+	def __ensurePerformanceMonitor( cls ) :
+
+		if cls.__performanceMonitor is not None :
+			return
+
+		cls.__performanceMonitor = Gaffer.PerformanceMonitor()
+		cls.__performanceMonitor.setActive( True )
+
+	@classmethod
+	def __printPerformance( cls ) :
+
+		sys.stderr.write( "\nPerformance Monitor\n===================\n\n" )
+
+		sys.stderr.write( Gaffer.MonitorAlgo.formatStatistics( cls.__performanceMonitor ) )
 
 IECore.registerRunTimeTyped( ScriptProcedural, typeName = "GafferScene::ScriptProcedural" )

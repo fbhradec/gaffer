@@ -80,7 +80,7 @@ class Menu( GafferUI.Widget ) :
 	# doing so means some of it will be off screen. If grabFocus is False, then
 	# the menu will not take keyboard events unless the first such event is a
 	# press of the up or down arrows.
-	def popup( self, parent=None, position=None, forcePosition=False, grabFocus=True ) :
+	def popup( self, parent=None, position=None, forcePosition=False, grabFocus=True, modal=False ) :
 
 		if parent is not None :
 			self.__popupParent = weakref.ref( parent )
@@ -96,7 +96,10 @@ class Menu( GafferUI.Widget ) :
 
 		self._qtWidget().keyboardMode = _Menu.KeyboardMode.Grab if grabFocus else _Menu.KeyboardMode.Close
 
-		self._qtWidget().popup( position )
+		if modal :
+			self._qtWidget().exec_( position )
+		else :
+			self._qtWidget().popup( position )
 
 		# qt is helpful and tries to keep you menu on screen, but this isn't always
 		# what you want, so we override the helpfulness if requested.
@@ -149,6 +152,13 @@ class Menu( GafferUI.Widget ) :
 		item = qtAction.__item
 
 		if not self.__evaluateItemValue( item.active ) :
+			# Because an item's active status can change
+			# dynamically, the status can change between
+			# the time the menu is built and the time a
+			# shortcut triggers an action. The shortcut
+			# triggering code in MenuBar therefore ignores
+			# the active status, and we early-out for
+			# inactive items at the last minute here.
 			return
 
 		args = []
@@ -216,21 +226,12 @@ class Menu( GafferUI.Widget ) :
 			self.__searchMenu.hide()
 
 	# May be called to fully build the menu /now/, rather than only do it lazily
-	# when it's shown. This is used by the MenuBar to make sure that keyboard shortcuts
-	# are available even before the menu has been shown.
+	# when it's shown. This is used by the MenuBar.
 	def _buildFully( self ) :
 
-		# Because we're building the menu before it's shown, we don't really know whether
-		# the items should be active or not - those which pass a callable for item.active
-		# may change status all the time, and we have no way of knowing. So we pass
-		# activeOverride=True so that all menu items are active while they're not on screen.
-		# We early-out in __actionTriggered if we later find out that a keyboard shortcut
-		# has triggered an item which is currently inactive (although we told qt it was
-		# active). See also hideEvent below().
+		self.__build( self._qtWidget(), recurse=True )
 
-		self.__build( self._qtWidget(), activeOverride=True, recurse=True )
-
-	def __build( self, qtMenu, activeOverride=None, recurse=False ) :
+	def __build( self, qtMenu, recurse=False ) :
 
 		if isinstance( qtMenu, weakref.ref ) :
 			qtMenu = qtMenu()
@@ -263,7 +264,7 @@ class Menu( GafferUI.Widget ) :
 					subMenu.__definition = definition.reRooted( "/" + name + "/" )
 					subMenu.aboutToShow.connect( IECore.curry( Gaffer.WeakMethod( self.__build ), weakref.ref( subMenu ) ) )
 					if recurse :
-						self.__build( subMenu, activeOverride, recurse )
+						self.__build( subMenu, recurse )
 
 				else :
 
@@ -275,12 +276,12 @@ class Menu( GafferUI.Widget ) :
 						subMenu.__definition = item.subMenu
 						subMenu.aboutToShow.connect( IECore.curry( Gaffer.WeakMethod( self.__build ), weakref.ref( subMenu ) ) )
 						if recurse :
-							self.__build( subMenu, activeOverride, recurse )
+							self.__build( subMenu, recurse )
 
 					else :
 
 						# it's not a submenu
-						qtMenu.addAction( self.__buildAction( item, name, qtMenu, activeOverride ) )
+						qtMenu.addAction( self.__buildAction( item, name, qtMenu ) )
 
 				done.add( name )
 
@@ -305,7 +306,7 @@ class Menu( GafferUI.Widget ) :
 			spacerWidgetAction.setEnabled( False )
 			qtMenu.addAction( spacerWidgetAction )
 
-	def __buildAction( self, item, name, parent, activeOverride=None ) :
+	def __buildAction( self, item, name, parent ) :
 
 		label = name
 		with IECore.IgnoredExceptions( AttributeError ) :
@@ -334,15 +335,21 @@ class Menu( GafferUI.Widget ) :
 
 			signal.connect( IECore.curry( Gaffer.WeakMethod( self.__actionTriggered ), weakref.ref( qtAction ) ) )
 
-		active = item.active if activeOverride is None else activeOverride
-		active = self.__evaluateItemValue( active )
+		active = self.__evaluateItemValue( item.active )
 		qtAction.setEnabled( active )
 
 		shortCut = getattr( item, "shortCut", None )
 		if shortCut is not None :
 			qtAction.setShortcuts( [ QtGui.QKeySequence( s.strip() ) for s in shortCut.split( "," ) ] )
+			# If we allow shortcuts to be created at the window level (the default),
+			# then we can easily get into a situation where our shortcuts conflict
+			# with those of the host when embedding our MenuBars in an application like Maya.
+			# Here we're limiting the scope so that conflicts don't occur, deferring
+			# to the code in MenuBar to manage triggering of the action with manual
+			# shortcut processing.
+			qtAction.setShortcutContext( QtCore.Qt.WidgetShortcut )
 
-		# when an icon file path is defined in the menu definition 		
+		# when an icon file path is defined in the menu definition
 		icon = getattr( item, "icon", None )
 		if icon is not None :
 			if isinstance( icon, basestring ) :
@@ -389,7 +396,7 @@ class Menu( GafferUI.Widget ) :
 
 		if callable( itemValue ) :
 			kwArgs = {}
-			if "menu" in inspect.getargspec( itemValue )[0] :
+			if "menu" in self.__argNames( itemValue ) :
 				kwArgs["menu"] = self
 			itemValue = itemValue( **kwArgs )
 
@@ -546,13 +553,3 @@ class _Menu( QtGui.QMenu ) :
 					return
 
 		QtGui.QMenu.keyPressEvent( self, qEvent )
-
-	def hideEvent( self, qEvent ) :
-
-		# Make all the menu items active, in case inactive items become active
-		# while the menu is hidden (in which case we need them to have active
-		# status for keyboard shortcuts to work). See also _buildFully() above.
-		for action in self.actions() :
-			action.setEnabled( True )
-
-		QtGui.QMenu.hideEvent( self, qEvent )

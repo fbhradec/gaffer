@@ -36,7 +36,20 @@
 
 import GafferImage
 
-GafferImage.Format.registerFormat( GafferImage.Format( 640, 480, 1. ), "PC Video (640x480) 640x480 1" )
-GafferImage.Format.registerFormat( GafferImage.Format( 1024, 778, 1. ), "1K Super 35 (full-ap) 1024x778 1" )
-GafferImage.Format.registerFormat( GafferImage.Format( 2048, 1556, 1. ), "2K Super 35 (full-ap) 2048x1556 1" )
-GafferImage.Format.registerFormat( GafferImage.Format( 4096, 3112, 1. ), "4K Super 35 (full-ap) 4096x3112 1" )
+GafferImage.Format.registerFormat( "1K Super 35", GafferImage.Format( 1024, 778 ) )
+GafferImage.Format.registerFormat( "2K Super 35", GafferImage.Format( 2048, 1556 ) )
+GafferImage.Format.registerFormat( "4K Super 35", GafferImage.Format( 4096, 3112 ) )
+
+GafferImage.Format.registerFormat( "1K Anamorphic", GafferImage.Format( 1024, 778, 2 ) )
+GafferImage.Format.registerFormat( "2K Anamorphic", GafferImage.Format( 2048, 1556, 2 ) )
+GafferImage.Format.registerFormat( "4K Anamorphic", GafferImage.Format( 4096, 3112, 2 ) )
+
+GafferImage.Format.registerFormat( "1K 16:9", GafferImage.Format( 1024, 576 ) )
+GafferImage.Format.registerFormat( "2K 16:9", GafferImage.Format( 2048, 1152 ) )
+GafferImage.Format.registerFormat( "4K 16:9", GafferImage.Format( 4096, 2304 ) )
+
+GafferImage.Format.registerFormat( "HD 720", GafferImage.Format( 1280, 720 ) )
+GafferImage.Format.registerFormat( "HD 1080", GafferImage.Format( 1920, 1080 ) )
+GafferImage.Format.registerFormat( "UHD", GafferImage.Format( 3840, 2160 ) )
+
+GafferImage.Format.registerFormat( "Alexa 2.8k", GafferImage.Format( 2880, 1620 ) )

@@ -38,6 +38,9 @@ import sys
 import unittest
 import inspect
 import types
+import shutil
+import tempfile
+import functools
 
 import IECore
 
@@ -45,6 +48,18 @@ import Gaffer
 
 ## A useful base class for creating test cases for nodes.
 class TestCase( unittest.TestCase ) :
+
+	def setUp( self ) :
+
+		self.__temporaryDirectory = None
+
+		# Set up a capturing message handler and a cleanup function so
+		# we can assert that no warning or error messages are triggered by
+		# the tests. If any such messages are actually expected during testing,
+		# the relevant tests should use their own CapturingMessageHandler
+		# to grab them and then assert that they are as expected.
+		self.addCleanup( functools.partial( self.__messageHandlerCleanup, IECore.MessageHandler.getDefaultHandler() ) )
+		IECore.MessageHandler.setDefaultHandler( IECore.CapturingMessageHandler() )
 
 	def tearDown( self ) :
 
@@ -63,6 +78,29 @@ class TestCase( unittest.TestCase ) :
 
 		sys.exc_clear()
 
+		if self.__temporaryDirectory is not None :
+			shutil.rmtree( self.__temporaryDirectory )
+
+	@staticmethod
+	def __messageHandlerCleanup( originalHandler ) :
+
+		mh = IECore.MessageHandler.getDefaultHandler()
+		IECore.MessageHandler.setDefaultHandler( originalHandler )
+
+		for message in mh.messages :
+			if message.level in  ( mh.Level.Warning, mh.Level.Error ) :
+				raise RuntimeError( "Unexpected message : " + mh.levelAsString( message.level ) + " : " + message.context + " : " + message.message )
+
+	## Returns a path to a directory the test may use for temporary
+	# storage. This will be cleaned up automatically after the test
+	# has been run.
+	def temporaryDirectory( self ) :
+
+		if self.__temporaryDirectory is None :
+			 self.__temporaryDirectory = tempfile.mkdtemp( prefix = "gafferTest" )
+
+		return self.__temporaryDirectory
+
 	## Attempts to ensure that the hashes for a node
 	# are reasonable by jiggling around input values
 	# and checking that the hash changes when it should.
@@ -72,7 +110,7 @@ class TestCase( unittest.TestCase ) :
 		inputPlugs = []
 		def __walkInputs( parent ) :
 			for child in parent.children() :
-				if isinstance( child, Gaffer.CompoundPlug ) :
+				if len( child ) :
 					__walkInputs( child )
 				elif isinstance( child, Gaffer.ValuePlug ) :
 					if child not in inputsToIgnore :
@@ -116,6 +154,7 @@ class TestCase( unittest.TestCase ) :
 
 	def assertTypeNamesArePrefixed( self, module, namesToIgnore = () ) :
 
+		incorrectTypeNames = []
 		for name in dir( module ) :
 
 			cls = getattr( module, name )
@@ -125,7 +164,10 @@ class TestCase( unittest.TestCase ) :
 			if issubclass( cls, IECore.RunTimeTyped ) :
 				if cls.staticTypeName() in namesToIgnore :
 					continue
-				self.assertEqual( cls.staticTypeName(), module.__name__ + "::" + cls.__name__ )
+				if cls.staticTypeName() != module.__name__ + "::" + cls.__name__ :
+					incorrectTypeNames.append( cls.staticTypeName() )
+
+		self.assertEqual( incorrectTypeNames, [] )
 
 	def assertDefaultNamesAreCorrect( self, module ) :
 
@@ -165,19 +207,36 @@ class TestCase( unittest.TestCase ) :
 			if not inspect.isclass( cls ) or not issubclass( cls, Gaffer.Node ) :
 				continue
 
+			if not cls.__module__.startswith( module.__name__ + "." ) :
+				# Skip nodes which look like they've been injected from
+				# another module by one of the compatibility config files.
+				# We use this same test in `DocumentationAlgo.exportNodeReference()`.
+				continue
+
 			try :
 				node = cls()
 			except :
 				continue
 
-			description = Gaffer.Metadata.nodeValue( node, "description", inherit = False )
+			description = Gaffer.Metadata.value( node, "description" )
 			if (not description) or description.isspace() :
+				# No description.
 				undocumentedNodes.append( node.getName() )
+			else :
+				baseNode = None
+				try :
+					baseNode = cls.__bases__[0]()
+				except :
+					pass
+				if baseNode is not None :
+					if description == Gaffer.Metadata.value( baseNode, "description" ) :
+						# Same description as base class
+						undocumentedNodes.append( node.getName() )
 
 			def checkPlugs( graphComponent ) :
 
 				if isinstance( graphComponent, Gaffer.Plug ) and not graphComponent.getName().startswith( "__" ) :
-					description = Gaffer.Metadata.plugValue( graphComponent, "description" )
+					description = Gaffer.Metadata.value( graphComponent, "description" )
 					if (not description) or description.isspace() :
 						undocumentedPlugs.append( graphComponent.fullName() )
 
@@ -206,5 +265,11 @@ class TestCase( unittest.TestCase ) :
 				continue
 
 			for plug in node.children( Gaffer.Plug ) :
-				if plug.direction() == plug.Direction.In and isinstance( plug, Gaffer.ValuePlug ) :
-					self.assertTrue( plug.isSetToDefault(), plug.fullName() + " not at default value following construction" )
+
+				if plug.direction() != plug.Direction.In or not isinstance( plug, Gaffer.ValuePlug ) :
+					continue
+
+				if not plug.getFlags( plug.Flags.Serialisable ) :
+					continue
+
+				self.assertTrue( plug.isSetToDefault(), plug.fullName() + " not at default value following construction" )

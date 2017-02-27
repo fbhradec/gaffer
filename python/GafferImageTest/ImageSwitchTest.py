@@ -34,6 +34,7 @@
 #
 ##########################################################################
 
+import inspect
 import unittest
 
 import IECore
@@ -41,8 +42,9 @@ import IECore
 import Gaffer
 import GafferTest
 import GafferImage
+import GafferImageTest
 
-class ImageSwitchTest( GafferTest.TestCase ) :
+class ImageSwitchTest( GafferImageTest.ImageTestCase ) :
 
 	def testDefaultName( self ) :
 
@@ -62,10 +64,10 @@ class ImageSwitchTest( GafferTest.TestCase ) :
 		in1 = GafferImage.Constant()
 
 		switch = GafferImage.ImageSwitch()
-		switch["in"].setInput( in0["out"] )
-		switch["in1"].setInput( in1["out"] )
+		switch["in"][0].setInput( in0["out"] )
+		switch["in"][1].setInput( in1["out"] )
 
-		for p in [ switch["in"], switch["in1"] ] :
+		for p in [ switch["in"][0], switch["in"][1] ] :
 			for n in [ "format", "dataWindow", "metadata", "channelNames", "channelData" ] :
 				a = switch.affects( p[n] )
 				self.assertEqual( len( a ), 1 )
@@ -97,8 +99,8 @@ class ImageSwitchTest( GafferTest.TestCase ) :
 		in0["color"].setValue( IECore.Color4f( 0, 1, 0, 1 ) )
 
 		switch = GafferImage.ImageSwitch()
-		switch["in"].setInput( in0["out"] )
-		switch["in1"].setInput( in1["out"] )
+		switch["in"][0].setInput( in0["out"] )
+		switch["in"][1].setInput( in1["out"] )
 
 		self.assertEqual( switch["out"].imageHash(), in0["out"].imageHash() )
 		self.assertEqual( switch["out"].image(), in0["out"].image() )
@@ -121,15 +123,44 @@ class ImageSwitchTest( GafferTest.TestCase ) :
 		script["in0"] = GafferImage.Constant()
 		script["in1"] = GafferImage.Constant()
 
-		script["switch"]["in"].setInput( script["in0"]["out"] )
-		script["switch"]["in1"].setInput( script["in1"]["out"] )
+		script["switch"]["in"][0].setInput( script["in0"]["out"] )
+		script["switch"]["in"][1].setInput( script["in1"]["out"] )
 
 		script2 = Gaffer.ScriptNode()
 		script2.execute( script.serialise() )
 
-		self.assertTrue( script2["switch"]["in"].getInput().isSame( script2["in0"]["out"] ) )
-		self.assertTrue( script2["switch"]["in1"].getInput().isSame( script2["in1"]["out"] ) )
-		self.assertTrue( script2["switch"]["in2"].getInput() is None )
+		self.assertTrue( script2["switch"]["in"][0].getInput().isSame( script2["in0"]["out"] ) )
+		self.assertTrue( script2["switch"]["in"][1].getInput().isSame( script2["in1"]["out"] ) )
+		self.assertTrue( script2["switch"]["in"][2].getInput() is None )
+
+	def testTileNotAvailableInContextExpressions( self ) :
+
+		# We don't want expressions on the index to be sensitive
+		# to the image:tileOrigin or image:channelName context entries,
+		# because then an invalid image could result from splicing together
+		# different images, even requesting tiles outside the data window.
+
+		script = Gaffer.ScriptNode()
+
+		script["switch"] = GafferImage.ImageSwitch()
+		script["in0"] = GafferImage.Constant()
+		script["in0"]["color"].setValue( IECore.Color4f( 1, 1, 1, 1 ) )
+		script["in1"] = GafferImage.Constant()
+		script["in0"]["color"].setValue( IECore.Color4f( 0, 0, 0, 0 ) )
+
+		script["switch"]["in"][0].setInput( script["in0"]["out"] )
+		script["switch"]["in"][1].setInput( script["in1"]["out"] )
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( inspect.cleandoc(
+			"""
+			assert( context.get( "image:channelName", None ) is None )
+			assert( context.get( "image:tileOrigin", None ) is None )
+			parent["switch"]["index"] = 1
+			"""
+		) )
+
+		self.assertEqual( script["switch"]["out"].channelData( "R", IECore.V2i( 0 ) )[0], 0 )
 
 if __name__ == "__main__":
 	unittest.main()

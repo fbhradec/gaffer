@@ -34,8 +34,6 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECoreAppleseed/Renderer.h"
-
 #include "GafferAppleseed/InteractiveAppleseedRender.h"
 
 using namespace GafferScene;
@@ -44,15 +42,10 @@ using namespace GafferAppleseed;
 IE_CORE_DEFINERUNTIMETYPED( InteractiveAppleseedRender );
 
 InteractiveAppleseedRender::InteractiveAppleseedRender( const std::string &name )
-	:	InteractiveRender( name )
+	:	InteractiveRender( "IECoreAppleseed::Renderer", name )
 {
 }
 
 InteractiveAppleseedRender::~InteractiveAppleseedRender()
 {
-}
-
-IECore::RendererPtr InteractiveAppleseedRender::createRenderer() const
-{
-	return new IECoreAppleseed::Renderer();
 }

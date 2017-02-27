@@ -1,7 +1,7 @@
 ##########################################################################
 #
 #  Copyright (c) 2012, John Haddon. All rights reserved.
-#  Copyright (c) 2012-2014, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2012-2016, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -35,6 +35,8 @@
 #
 ##########################################################################
 
+__import__( "GafferImageUI" )
+
 from _GafferSceneUI import *
 
 from SceneHierarchy import SceneHierarchy
@@ -67,7 +69,8 @@ import MapProjectionUI
 import MapOffsetUI
 import CustomAttributesUI
 import CustomOptionsUI
-import SceneViewToolbar
+import SceneViewUI
+import ShaderViewUI
 import SceneSwitchUI
 import ShaderSwitchUI
 import ShaderAssignmentUI
@@ -79,6 +82,7 @@ import GridUI
 import SetFilterUI
 import DeleteGlobalsUI
 import DeleteOptionsUI
+import CopyOptionsUI
 import DeleteSetsUI
 import ExternalProceduralUI
 import ExecutableRenderUI
@@ -102,6 +106,7 @@ import UnionFilterUI
 import PathFilterUI
 import GroupUI
 import OpenGLRenderUI
+import PrimitiveVariableProcessorUI
 import DeletePrimitiveVariablesUI
 import MeshTypeUI
 import DeleteOutputsUI
@@ -111,13 +116,19 @@ import FreezeTransformUI
 import SceneElementProcessorUI
 import PointConstraintUI
 import SceneTimeWarpUI
-import FilterMixinBaseUI
-import SceneMixinBaseUI
 import BranchCreatorUI
 import ConstraintUI
 import PlaneUI
 import CubeUI
 import AttributeVisualiserUI
+import SceneLoopUI
+import FilterProcessorUI
+import MeshToPointsUI
+import RenderUI
+import ShaderBallUI
+import LightTweaksUI
+import LightToCameraUI
+import FilterResultsUI
 
 # then all the PathPreviewWidgets. note that the order
 # of import controls the order of display.

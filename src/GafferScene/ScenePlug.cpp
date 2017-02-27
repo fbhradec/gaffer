@@ -46,13 +46,39 @@
 using namespace Gaffer;
 using namespace GafferScene;
 
+//////////////////////////////////////////////////////////////////////////
+// Utilities
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+// Removes context variables which are unnecessary when computing
+// global aspects of the scene, but which are frequently changed
+// to compute per-location aspects of the scene. This makes us
+// friendlier to the hash caching mechanism in ValuePlug,
+// since it'll see fewer unnecessarily different contexts, and will
+// therefore get more cache hits. We use this in our utility
+// methods for computing set names, sets and globals.
+void removeNonGlobalContextVariables( Context *context )
+{
+	context->remove( Filter::inputSceneContextName );
+	context->remove( ScenePlug::scenePathContextName );
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// ScenePlug
+//////////////////////////////////////////////////////////////////////////
+
 IE_CORE_DEFINERUNTIMETYPED( ScenePlug );
 
 const IECore::InternedString ScenePlug::scenePathContextName( "scene:path" );
 const IECore::InternedString ScenePlug::setNameContextName( "scene:setName" );
 
 ScenePlug::ScenePlug( const std::string &name, Direction direction, unsigned flags )
-	:	CompoundPlug( name, direction, flags )
+	:	ValuePlug( name, direction, flags )
 {
 	// we don't want the children to be serialised in any way - we always create
 	// them ourselves in this constructor so they aren't Dynamic, and we don't ever
@@ -140,6 +166,10 @@ ScenePlug::~ScenePlug()
 
 bool ScenePlug::acceptsChild( const GraphComponent *potentialChild ) const
 {
+	if( !ValuePlug::acceptsChild( potentialChild ) )
+	{
+		return false;
+	}
 	return children().size() != 8;
 }
 
@@ -150,7 +180,7 @@ Gaffer::PlugPtr ScenePlug::createCounterpart( const std::string &name, Direction
 
 bool ScenePlug::acceptsInput( const Gaffer::Plug *input ) const
 {
-	if( !CompoundPlug::acceptsInput( input ) )
+	if( !ValuePlug::acceptsInput( input ) )
 	{
 		return false;
 	}
@@ -324,10 +354,27 @@ IECore::ConstInternedStringVectorDataPtr ScenePlug::childNames( const ScenePath 
 	return childNamesPlug()->getValue();
 }
 
+IECore::ConstCompoundObjectPtr ScenePlug::globals() const
+{
+	ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
+	removeNonGlobalContextVariables( tmpContext.get() );
+	Context::Scope scopedContext( tmpContext.get() );
+	return globalsPlug()->getValue();
+}
+
+IECore::ConstInternedStringVectorDataPtr ScenePlug::setNames() const
+{
+	ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
+	removeNonGlobalContextVariables( tmpContext.get() );
+	Context::Scope scopedContext( tmpContext.get() );
+	return setNamesPlug()->getValue();
+}
+
 ConstPathMatcherDataPtr ScenePlug::set( const IECore::InternedString &setName ) const
 {
 	ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
 	tmpContext->set( setNameContextName, setName );
+	removeNonGlobalContextVariables( tmpContext.get() );
 	Context::Scope scopedContext( tmpContext.get() );
 	return setPlug()->getValue();
 }
@@ -407,10 +454,27 @@ IECore::MurmurHash ScenePlug::childNamesHash( const ScenePath &scenePath ) const
 	return childNamesPlug()->hash();
 }
 
+IECore::MurmurHash ScenePlug::globalsHash() const
+{
+	ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
+	removeNonGlobalContextVariables( tmpContext.get() );
+	Context::Scope scopedContext( tmpContext.get() );
+	return globalsPlug()->hash();
+}
+
+IECore::MurmurHash ScenePlug::setNamesHash() const
+{
+	ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
+	removeNonGlobalContextVariables( tmpContext.get() );
+	Context::Scope scopedContext( tmpContext.get() );
+	return setNamesPlug()->hash();
+}
+
 IECore::MurmurHash ScenePlug::setHash( const IECore::InternedString &setName ) const
 {
 	ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
 	tmpContext->set( setNameContextName, setName );
+	removeNonGlobalContextVariables( tmpContext.get() );
 	Context::Scope scopedContext( tmpContext.get() );
 	return setPlug()->hash();
 }
@@ -418,7 +482,7 @@ IECore::MurmurHash ScenePlug::setHash( const IECore::InternedString &setName ) c
 void ScenePlug::stringToPath( const std::string &s, ScenePlug::ScenePath &path )
 {
 	path.clear();
-	tokenize( s, '/', path );
+	StringAlgo::tokenize( s, '/', path );
 }
 
 void ScenePlug::pathToString( const ScenePlug::ScenePath &path, std::string &s )

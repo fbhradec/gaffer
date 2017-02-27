@@ -47,17 +47,28 @@ def nodeMenuCreateCommand( menu ) :
 
 	nodeGraph = menu.ancestor( GafferUI.NodeGraph )
 	assert( nodeGraph is not None )
+	gadgetWidget = nodeGraph.graphGadgetWidget()
+	graphGadget = nodeGraph.graphGadget()
 
 	script = nodeGraph.scriptNode()
 
 	with Gaffer.UndoContext( script ) :
 
 		backdrop = Gaffer.Backdrop()
-		nodeGraph.graphGadget().getRoot().addChild( backdrop )
+		Gaffer.NodeAlgo.applyUserDefaults( backdrop )
+
+		graphGadget.getRoot().addChild( backdrop )
 
 		if script.selection() :
-			nodeGadget = nodeGraph.graphGadget().nodeGadget( backdrop )
+			nodeGadget = graphGadget.nodeGadget( backdrop )
 			nodeGadget.frame( [ x for x in script.selection() ] )
+		else :
+			menuPosition = menu.popupPosition( relativeTo = gadgetWidget )
+			nodePosition = gadgetWidget.getViewportGadget().rasterToGadgetSpace(
+				IECore.V2f( menuPosition.x, menuPosition.y ),
+				gadget = graphGadget
+			).p0
+			graphGadget.setNodePosition( backdrop, IECore.V2f( nodePosition.x, nodePosition.y ) )
 
 	return backdrop
 
@@ -65,31 +76,54 @@ def nodeMenuCreateCommand( menu ) :
 # Metadata
 ##########################################################################
 
-Gaffer.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNode(
 
-Gaffer.Backdrop,
+	Gaffer.Backdrop,
 
-"""A utility node which allows the positioning of other nodes on a coloured backdrop with optional text. Selecting a backdrop in the ui selects all the nodes positioned on it, and moving it moves them with it.""",
+	"description",
+	"""
+	A utility node which allows the positioning of other nodes on a
+	coloured backdrop with optional text. Selecting a backdrop in the
+	ui selects all the nodes positioned on it, and moving it moves
+	them with it.
+	""",
 
-"title",
-"The title for the backdrop - this will be displayed at the top of the backdrop.",
+	plugs = {
 
-"scale",
-"Controls the size of the backdrop text.",
+		"title" : [
 
-"description",
-"Text describing the contents of the backdrop - this will be displayed below the title.",
+			"description",
+			"""
+			The title for the backdrop - this will be displayed at
+			the top of the backdrop.
+			""",
 
-)
+			"stringPlugValueWidget:continuousUpdate", True,
 
-##########################################################################
-# PlugValueWidget registrations
-##########################################################################
+		],
 
-GafferUI.PlugValueWidget.registerCreator(
-	Gaffer.Backdrop, "title", GafferUI.StringPlugValueWidget, continuousUpdate=True
-)
+		"scale" : [
 
-GafferUI.PlugValueWidget.registerCreator(
-	Gaffer.Backdrop, "description", GafferUI.MultiLineStringPlugValueWidget, continuousUpdate=True
+			"description",
+			"""
+			Controls the size of the backdrop text.
+			""",
+
+		],
+
+		"description" : [
+
+			"description",
+			"""
+			Text describing the contents of the backdrop -
+			this will be displayed below the title.
+			""",
+
+			"plugValueWidget:type", "GafferUI.MultiLineStringPlugValueWidget",
+			"multiLineStringPlugValueWidget:continuousUpdate", True,
+
+		],
+
+	}
+
 )

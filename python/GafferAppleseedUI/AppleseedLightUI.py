@@ -34,18 +34,80 @@
 #
 ##########################################################################
 
+import appleseed
+
 import Gaffer
 import GafferUI
 import GafferAppleseed
 
-GafferUI.PlugValueWidget.registerCreator(
+# Get the light and environments metadata dictionaries from appleseed
+__modelMetadata = appleseed.Light.get_model_metadata()
+__modelMetadata.update( appleseed.EnvironmentEDF.get_model_metadata() )
+__inputMetadata = appleseed.Light.get_input_metadata()
+__inputMetadata.update( appleseed.EnvironmentEDF.get_input_metadata() )
+
+def __nodeDescription( node ) :
+
+	model = node["__model"].getValue()
+
+	try:
+		return __modelMetadata[model]['help']
+	except:
+		return "Loads appleseed lights."
+
+def __plugDescription( plug ) :
+
+	model = plug.node()["__model"].getValue()
+	param = plug.getName()
+
+	# Special case for LatLong and MirrorBall environments.
+	if param == "radiance_map" :
+
+		param = "radiance"
+
+	try:
+		return __inputMetadata[model][param]['help']
+	except:
+		return param
+
+def __plugLabel( plug ) :
+
+	model = plug.node()["__model"].getValue()
+	param = plug.getName()
+
+	# Special case for LatLong and MirrorBall environments.
+	if param == "radiance_map" :
+
+		return "Radiance Map"
+
+	try:
+		return __inputMetadata[model][param]['label']
+	except:
+		return param
+
+Gaffer.Metadata.registerNode(
+
 	GafferAppleseed.AppleseedLight,
-	"parameters.radiance_map",
-	lambda plug : GafferUI.PathPlugValueWidget( plug,
-		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter() ),
-		pathChooserDialogueKeywords = {
-			"bookmarks" : GafferUI.Bookmarks.acquire( plug, category = "image" ),
-			"leaf" : True,
-		},
-	),
+
+	"description", __nodeDescription,
+
+	plugs = {
+
+		"parameters.*" : [
+
+			"description", __plugDescription,
+			"label", __plugLabel,
+
+		],
+
+		"parameters.radiance_map" : [
+
+			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
+			"pathPlugValueWidget:leaf", True,
+			"pathPlugValueWidget:bookmarks", "image",
+
+		],
+
+	},
+
 )

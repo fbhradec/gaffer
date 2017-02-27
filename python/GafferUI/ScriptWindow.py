@@ -132,14 +132,14 @@ class ScriptWindow( GafferUI.Window ) :
 	## Returns the ScriptWindow for the specified script, creating one
 	# if necessary.
 	@staticmethod
-	def acquire( script ) :
+	def acquire( script, createIfNecessary=True ) :
 
 		for w in ScriptWindow.__instances :
 			scriptWindow = w()
 			if scriptWindow is not None and scriptWindow.scriptNode().isSame( script ) :
 				return scriptWindow
 
-		return ScriptWindow( script )
+		return ScriptWindow( script ) if createIfNecessary else None
 
 	## Returns an IECore.MenuDefinition which is used to define the menu bars for all ScriptWindows
 	# created as part of the specified application. This can be edited at any time to modify subsequently
@@ -189,5 +189,5 @@ class ScriptWindow( GafferUI.Window ) :
 			if w.scriptNode().isSame( script ) :
 				ScriptWindow.__automaticallyCreatedInstances.remove( w )
 
-		if not len( scriptContainer.children() ) :
+		if not len( scriptContainer.children() ) and GafferUI.EventLoop.mainEventLoop().running() :
 			GafferUI.EventLoop.mainEventLoop().stop()

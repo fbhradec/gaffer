@@ -62,12 +62,20 @@ class Isolate : public FilteredSceneProcessor
 		Gaffer::StringPlug *fromPlug();
 		const Gaffer::StringPlug *fromPlug() const;
 
+		Gaffer::BoolPlug *keepLightsPlug();
+		const Gaffer::BoolPlug *keepLightsPlug() const;
+
+		Gaffer::BoolPlug *keepCamerasPlug();
+		const Gaffer::BoolPlug *keepCamerasPlug() const;
+
 		Gaffer::BoolPlug *adjustBoundsPlug();
 		const Gaffer::BoolPlug *adjustBoundsPlug() const;
 
 		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
 
 	protected :
+
+		virtual bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const;
 
 		virtual void hashBound( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
 		virtual void hashChildNames( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const;
@@ -79,7 +87,8 @@ class Isolate : public FilteredSceneProcessor
 
 	private :
 
-		bool mayPruneChildren( const ScenePath &path, unsigned filterValue ) const;
+		struct SetsToKeep;
+		bool mayPruneChildren( const ScenePath &path, unsigned filterValue, const SetsToKeep &setsToKeep ) const;
 
 		static size_t g_firstPlugIndex;
 

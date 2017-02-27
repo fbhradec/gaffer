@@ -36,6 +36,7 @@
 
 from DocumentationTest import DocumentationTest
 from RenderManShaderUITest import RenderManShaderUITest
+from RenderManAttributesUITest import RenderManAttributesUITest
 
 if __name__ == "__main__":
 	unittest.main()

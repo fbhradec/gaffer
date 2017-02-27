@@ -87,8 +87,15 @@ void SceneNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outp
 
 	if( input == enabledPlug() )
 	{
-		for( ValuePlugIterator it( outPlug() ); it != it.end(); it++ )
+		for( ValuePlugIterator it( outPlug() ); !it.done(); ++it )
 		{
+			if( (*it)->getInput<Plug>() )
+			{
+				// If the output has been connected as a pass-through,
+				// then it clearly can't be affected by the enabled plug,
+				// because there won't even be a compute() call for it.
+				continue;
+			}
 			outputs.push_back( it->get() );
 		}
 	}
@@ -342,20 +349,30 @@ GafferScene::ConstPathMatcherDataPtr SceneNode::computeSet( const IECore::Intern
 	throw IECore::NotImplementedException( string( typeName() ) + "::computeSet" );
 }
 
-IECore::MurmurHash SceneNode::hashOfTransformedChildBounds( const ScenePath &path, const ScenePlug *out ) const
+IECore::MurmurHash SceneNode::hashOfTransformedChildBounds( const ScenePath &path, const ScenePlug *out, const IECore::InternedStringVectorData *childNamesData ) const
 {
-	IECore::MurmurHash result;
-	ConstInternedStringVectorDataPtr childNamesData = out->childNames( path );
+	ConstInternedStringVectorDataPtr computedChildNames;
+	if( !childNamesData )
+	{
+		computedChildNames = out->childNames( path );
+		childNamesData = computedChildNames.get();
+	}
 	const vector<InternedString> &childNames = childNamesData->readable();
+
+	IECore::MurmurHash result;
 	if( childNames.size() )
 	{
+		ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
+		Context::Scope scopedContext( tmpContext.get() );
+
 		ScenePath childPath( path );
 		childPath.push_back( InternedString() ); // room for the child name
 		for( vector<InternedString>::const_iterator it = childNames.begin(); it != childNames.end(); it++ )
 		{
 			childPath[path.size()] = *it;
-			result.append( out->boundHash( childPath ) );
-			result.append( out->transformHash( childPath ) );
+			tmpContext->set( ScenePlug::scenePathContextName, childPath );
+			out->boundPlug()->hash( result );
+			out->transformPlug()->hash( result );
 		}
 	}
 	else
@@ -366,20 +383,32 @@ IECore::MurmurHash SceneNode::hashOfTransformedChildBounds( const ScenePath &pat
 	return result;
 }
 
-Imath::Box3f SceneNode::unionOfTransformedChildBounds( const ScenePath &path, const ScenePlug *out ) const
+Imath::Box3f SceneNode::unionOfTransformedChildBounds( const ScenePath &path, const ScenePlug *out, const IECore::InternedStringVectorData *childNamesData ) const
 {
-	Box3f result;
-	ConstInternedStringVectorDataPtr childNamesData = out->childNames( path );
+	ConstInternedStringVectorDataPtr computedChildNames;
+	if( !childNamesData )
+	{
+		computedChildNames = out->childNames( path );
+		childNamesData = computedChildNames.get();
+	}
 	const vector<InternedString> &childNames = childNamesData->readable();
 
-	ScenePath childPath( path );
-	childPath.push_back( InternedString() ); // room for the child name
-	for( vector<InternedString>::const_iterator it = childNames.begin(); it != childNames.end(); it++ )
+	Box3f result;
+	if( childNames.size() )
 	{
-		childPath[path.size()] = *it;
-		Box3f childBound = out->bound( childPath );
-		childBound = transform( childBound, out->transform( childPath ) );
-		result.extendBy( childBound );
+		ContextPtr tmpContext = new Context( *Context::current(), Context::Borrowed );
+		Context::Scope scopedContext( tmpContext.get() );
+
+		ScenePath childPath( path );
+		childPath.push_back( InternedString() ); // room for the child name
+		for( vector<InternedString>::const_iterator it = childNames.begin(); it != childNames.end(); it++ )
+		{
+			childPath[path.size()] = *it;
+			tmpContext->set( ScenePlug::scenePathContextName, childPath );
+			Box3f childBound = out->boundPlug()->getValue();
+			childBound = transform( childBound, out->transformPlug()->getValue() );
+			result.extendBy( childBound );
+		}
 	}
 	return result;
 }

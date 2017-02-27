@@ -74,6 +74,18 @@ class NodeWrapper : public GraphComponentWrapper<T>
 		{
 		}
 
+		template<typename Arg1, typename Arg2>
+		NodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2 )
+			:	GraphComponentWrapper<WrappedType>( self, arg1, arg2 )
+		{
+		}
+
+		template<typename Arg1, typename Arg2, typename Arg3>
+		NodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2, Arg3 arg3 )
+			:	GraphComponentWrapper<WrappedType>( self, arg1, arg2, arg3 )
+		{
+		}
+
 		virtual bool isInstanceOf( IECore::TypeId typeId ) const
 		{
 			// Optimise for common queries we know should fail.
@@ -85,13 +97,16 @@ class NodeWrapper : public GraphComponentWrapper<T>
 			// so this optimisation is well worth it.
 			//
 			// Note that we can't actually guarantee that we're not a
-			// ScriptNode, but ScriptNode queries are so common that we
-			// must accelerate them. We adjust for this slightly overzealous
-			// optimisation in ScriptNodeWrapper where we also override
+			// ScriptNode or DependencyNode, but those queries are so
+			// common that we simply must accelerate them. We adjust for
+			// this slightly overzealous optimisation in ScriptNodeWrapper
+			// and DependencyNodeWrapper where we also override
 			// isInstanceOf() and make the necessary correction.
 			if(
 				typeId == (IECore::TypeId)Gaffer::ScriptNodeTypeId ||
+				typeId == (IECore::TypeId)Gaffer::DependencyNodeTypeId ||
 				typeId == (IECore::TypeId)Gaffer::PlugTypeId ||
+				typeId == (IECore::TypeId)Gaffer::ValuePlugTypeId ||
 				typeId == (IECore::TypeId)Gaffer::CompoundPlugTypeId
 			)
 			{
@@ -121,15 +136,15 @@ class NodeSerialiser : public Serialisation::Serialiser
 
 	public :
 
-		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules ) const;
+		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const;
 		/// Implemented to serialise per-instance metadata.
 		virtual std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const;
 		/// Implemented so that only plugs are serialised - child nodes are expected to
 		/// be a part of the implementation of the node rather than something the user
 		/// has created themselves.
-		virtual bool childNeedsSerialisation( const Gaffer::GraphComponent *child ) const;
+		virtual bool childNeedsSerialisation( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const;
 		/// Implemented so that dynamic plugs are constructed appropriately.
-		virtual bool childNeedsConstruction( const Gaffer::GraphComponent *child ) const;
+		virtual bool childNeedsConstruction( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const;
 
 };
 

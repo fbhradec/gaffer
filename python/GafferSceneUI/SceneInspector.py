@@ -277,7 +277,7 @@ class SceneInspector( GafferUI.NodeSetEditor ) :
 			targets = []
 			for scene in self.__scenePlugs :
 				for path in paths :
-					if not GafferScene.exists( scene, path ) :
+					if not GafferScene.SceneAlgo.exists( scene, path ) :
 						# selection may not be valid for both scenes,
 						# and we can't inspect invalid paths.
 						path = None
@@ -735,7 +735,7 @@ class DiffRow( Row ) :
 					diffWidget.contextMenuSignal().connect( Gaffer.WeakMethod( self.__contextMenu ) ),
 				] )
 
-			GafferUI.Spacer( IECore.V2i( 0 ), expand = True )
+			GafferUI.Spacer( IECore.V2i( 0 ), parenting = { "expand" : True } )
 
 		self.__inspector = inspector
 		self.__diffCreator = diffCreator
@@ -848,7 +848,7 @@ class DiffColumn( GafferUI.Widget ) :
 	def __init__( self, inspector, diffCreator = TextDiff, label = None, filterable = False, **kw ) :
 
 		outerColumn = GafferUI.ListContainer()
-		GafferUI.Widget.__init__( self, outerColumn )
+		GafferUI.Widget.__init__( self, outerColumn, **kw )
 
 		assert( isinstance( inspector, Inspector ) )
 
@@ -878,36 +878,43 @@ class DiffColumn( GafferUI.Widget ) :
 	@GafferUI.LazyMethod()
 	def update( self, targets ) :
 
-		inspectors = {}
-		for target in targets :
-			inspectors.update( { i.name() : i for i in self.__inspector.children( target ) } )
+		# this doesn't always get called by SceneInspector.__update(), so we grab the
+		# context from the ancestor NodeSetEditor if it exists, and make it current:
+		nodeSetEditor = self.ancestor( GafferUI.NodeSetEditor )
+		context = nodeSetEditor.getContext() if nodeSetEditor else Gaffer.Context.current()
 
-		# mark all rows as invalid
-		for row in self.__rowContainer :
-			row.__valid = False
+		with context:
 
-		# iterate over the fields we want to display,
-		# creating/updating the rows that are to be valid.
-		for rowName in inspectors.keys() :
+			inspectors = {}
+			for target in targets :
+				inspectors.update( { i.name() : i for i in self.__inspector.children( target ) } )
 
-			row = self.__rows.get( rowName )
-			if row is None :
-				row = DiffRow( inspectors[rowName], self.__diffCreator )
-				self.__rows[rowName] = row
+			# mark all rows as invalid
+			for row in self.__rowContainer :
+				row.__valid = False
 
-			row.update( targets )
-			row.__valid = True
+			# iterate over the fields we want to display,
+			# creating/updating the rows that are to be valid.
+			for rowName in inspectors.keys() :
 
-		# update the rowContainer with _all_ rows (both
-		# valid and invalid) in the correct order. this
-		# is a no-op except when adding new rows. it is
-		# much quicker to hide invalid rows than it is
-		# to reparent widgets so that the container only
-		# contains the valid ones.
-		self.__rowContainer[:] = sorted( self.__rows.values(), key = lambda r : r.inspector().name() )
+				row = self.__rows.get( rowName )
+				if row is None :
+					row = DiffRow( inspectors[rowName], self.__diffCreator )
+					self.__rows[rowName] = row
 
-		# show only the currently valid ones.
-		self.__updateRowVisibility()
+				row.update( targets )
+				row.__valid = True
+
+			# update the rowContainer with _all_ rows (both
+			# valid and invalid) in the correct order. this
+			# is a no-op except when adding new rows. it is
+			# much quicker to hide invalid rows than it is
+			# to reparent widgets so that the container only
+			# contains the valid ones.
+			self.__rowContainer[:] = sorted( self.__rows.values(), key = lambda r : r.inspector().name() )
+
+			# show only the currently valid ones.
+			self.__updateRowVisibility()
 
 	def __updateRowVisibility( self ) :
 
@@ -925,7 +932,7 @@ class DiffColumn( GafferUI.Widget ) :
 			visible = False
 			if row.__valid :
 				numValidRows += 1
-				if Gaffer.matchMultiple( row.inspector().name().lower(), patterns ) :
+				if Gaffer.StringAlgo.matchMultiple( row.inspector().name().lower(), patterns ) :
 					visible = True
 
 			row.setVisible( visible )
@@ -1218,7 +1225,7 @@ class _HistorySection( Section ) :
 			if sourceScene.node() == target.scene.node() :
 				return None
 
-			if not GafferScene.exists( sourceScene, target.path ) :
+			if not GafferScene.SceneAlgo.exists( sourceScene, target.path ) :
 				return None
 
 			return SceneInspector.Target( sourceScene, target.path )
@@ -1515,7 +1522,10 @@ class __ObjectSection( Section ) :
 		if not len( targets ) :
 			return ""
 
-		objects = [ target.object() for target in targets ]
+		objects = [
+			target.object() if target.path is not None else IECore.NullObject.defaultNullObject()
+			for target in targets
+		]
 		typeNames = [ o.typeName().split( ":" )[-1] for o in objects ]
 		typeNames = [ "None" if t == "NullObject" else t for t in typeNames ]
 
@@ -1556,8 +1566,11 @@ class __ObjectSection( Section ) :
 
 		def children( self, target ) :
 
+			if target.path is None :
+				return []
+
 			object = target.object()
-			if object is None or not isinstance( object, IECore.Primitive ) :
+			if not isinstance( object, IECore.Primitive ) :
 				return []
 
 			result = []
@@ -1645,6 +1658,9 @@ class __ObjectSection( Section ) :
 
 		def children( self, target ) :
 
+			if target.path is None :
+				return []
+
 			object = target.object()
 			if not isinstance( object, IECore.Primitive ) :
 				return []
@@ -1690,10 +1706,8 @@ class __SetMembershipSection( Section ) :
 
 		def name( self ) :
 
-			if self.__setName == "__lights" :
-				return "Lights"
-			elif self.__setName == "__cameras" :
-				return "Cameras"
+			if self.__setName.startswith( "__" ) :
+				return IECore.CamelCase.toSpaced( self.__setName[2:] )
 			else :
 				return self.__setName or ""
 
@@ -2007,10 +2021,8 @@ class _SetsSection( Section ) :
 
 		def name( self ) :
 
-			if self.__setName == "__lights" :
-				return "Lights"
-			elif self.__setName == "__cameras" :
-				return "Cameras"
+			if self.__setName.startswith( "__" ) :
+				return IECore.CamelCase.toSpaced( self.__setName[2:] )
 			else :
 				return self.__setName or ""
 

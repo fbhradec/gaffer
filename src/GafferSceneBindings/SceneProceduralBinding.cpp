@@ -60,17 +60,19 @@ void GafferSceneBindings::bindSceneProcedural()
 			init<
 				ConstScenePlugPtr,
 				const Gaffer::Context *,
-				const ScenePlug::ScenePath &
+				const ScenePlug::ScenePath &,
+				bool
 			>(
 				(
 					boost::python::arg( "scenePlug" ),
 					boost::python::arg( "context" ),
-					boost::python::arg( "scenePath" )
+					boost::python::arg( "scenePath" ),
+					boost::python::arg( "computeBound" ) = true
 				)
 			)
 		)
 		.def( "allRenderedSignal", &SceneProcedural::allRenderedSignal, boost::python::return_value_policy<reference_existing_object>() ).staticmethod( "allRenderedSignal" )
 	;
-	
+
 	SignalClass<SceneProcedural::AllRenderedSignal>( "AllRenderedSignal" );
 }

@@ -50,8 +50,7 @@ class PlugValueWidgetTest( unittest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["m"] = GafferTest.MultiplyNode()
 		s["e"] = Gaffer.Expression()
-		s["e"]["engine"].setValue( "python" )
-		s["e"]["expression"].setValue( "parent[\"m\"][\"op1\"] = int( context[\"frame\"] )" )
+		s["e"].setExpression( "parent[\"m\"][\"op1\"] = int( context[\"frame\"] )" )
 
 		w = GafferUI.NumericPlugValueWidget( s["m"]["op1"] )
 		self.failUnless( w.getContext().isSame( s.context() ) )
@@ -86,6 +85,20 @@ class PlugValueWidgetTest( unittest.TestCase ) :
 		w = GafferUI.PlugValueWidget.create( n["p"] )
 		self.assertEqual( w, None )
 
+	def testCreate( self ) :
+
+		n = Gaffer.Node()
+		n["p"] = Gaffer.IntPlug()
+
+		w = GafferUI.PlugValueWidget.create( n["p"] )
+		self.assertTrue( isinstance( w, GafferUI.NumericPlugValueWidget ) )
+		self.assertTrue( w.getPlug().isSame( n["p"] ) )
+
+		Gaffer.Metadata.registerValue( n["p"], "plugValueWidget:type", "GafferUI.ConnectionPlugValueWidget" )
+
+		w = GafferUI.PlugValueWidget.create( n["p"] )
+		self.assertTrue( isinstance( w, GafferUI.ConnectionPlugValueWidget ) )
+		self.assertTrue( w.getPlug().isSame( n["p"] ) )
+
 if __name__ == "__main__":
 	unittest.main()
-

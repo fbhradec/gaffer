@@ -36,17 +36,38 @@
 
 #include "boost/python.hpp" // must be the first include
 
+#include "IECorePython/ScopedGILRelease.h"
+
 #include "Gaffer/Reference.h"
 #include "Gaffer/StringPlug.h"
 
 #include "GafferBindings/ReferenceBinding.h"
 #include "GafferBindings/NodeBinding.h"
+#include "GafferBindings/ExceptionAlgo.h"
+#include "GafferBindings/SignalBinding.h"
 
 using namespace boost::python;
 using namespace Gaffer;
+using namespace GafferBindings;
 
-namespace GafferBindings
+namespace
 {
+
+struct ReferenceLoadedSlotCaller
+{
+	boost::signals::detail::unusable operator()( boost::python::object slot, ReferencePtr r )
+	{
+		try
+		{
+			slot( r );
+		}
+		catch( const error_already_set &e )
+		{
+			ExceptionAlgo::translatePythonException();
+		}
+		return boost::signals::detail::unusable();
+	}
+};
 
 class ReferenceSerialiser : public NodeSerialiser
 {
@@ -54,19 +75,36 @@ class ReferenceSerialiser : public NodeSerialiser
 	virtual std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
 	{
 		const Reference *r = static_cast<const Reference *>( graphComponent );
-		return identifier + ".load( \"" + r->fileNamePlug()->getValue() + "\" )\n";
+
+		const std::string &fileName = r->fileName();
+		if( fileName.empty() )
+		{
+			return "";
+		};
+
+		return identifier + ".load( \"" + fileName + "\" )\n";
 	}
 
 };
 
-void bindReference()
+void load( Reference &r, const std::string &f )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	r.load( f );
+}
+
+} // namespace
+
+void GafferBindings::bindReference()
 {
 	NodeClass<Reference>()
-		.def( "load", &Reference::load )
+		.def( "load", &load )
+		.def( "fileName", &Reference::fileName, return_value_policy<copy_const_reference>() )
+		.def( "referenceLoadedSignal", &Reference::referenceLoadedSignal, return_internal_reference<1>() )
 	;
+
+	SignalClass<Reference::ReferenceLoadedSignal, DefaultSignalCaller<Reference::ReferenceLoadedSignal>, ReferenceLoadedSlotCaller >( "ReferenceLoadedSignal" );
 
 	Serialisation::registerSerialiser( Reference::staticTypeId(), new ReferenceSerialiser );
 
 }
-
-} // namespace GafferBindings

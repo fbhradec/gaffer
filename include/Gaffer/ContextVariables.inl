@@ -58,11 +58,7 @@ ContextVariables<BaseType>::ContextVariables( const std::string &name )
 {
 	BaseType::storeIndexOfNextChild( g_firstPlugIndex );
 	ContextProcessor<BaseType>::addChild(
-		new CompoundDataPlug(
-			"variables",
-			Plug::In,
-			Plug::Default | Plug::Dynamic
-		)
+		new CompoundDataPlug( "variables" )
 	);
 }
 
@@ -98,7 +94,7 @@ template<typename BaseType>
 void ContextVariables<BaseType>::processContext( Context *context ) const
 {
 	std::string name;
-	for( CompoundDataPlug::MemberPlugIterator it( variablesPlug() ); it != it.end(); it++ )
+	for( CompoundDataPlug::MemberPlugIterator it( variablesPlug() ); !it.done(); ++it )
 	{
 		IECore::DataPtr data = variablesPlug()->memberDataAndName( it->get(), name );
 		if( data )

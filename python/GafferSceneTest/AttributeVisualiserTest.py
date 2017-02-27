@@ -46,9 +46,9 @@ class AttributeVisualiserTest( GafferSceneTest.SceneTestCase ) :
 
 		sphere = GafferScene.Sphere()
 		group = GafferScene.Group()
-		group["in"].setInput( sphere["out"] )
-		group["in1"].setInput( sphere["out"] )
-		group["in2"].setInput( sphere["out"] )
+		group["in"][0].setInput( sphere["out"] )
+		group["in"][1].setInput( sphere["out"] )
+		group["in"][2].setInput( sphere["out"] )
 
 		filter1 = GafferScene.PathFilter()
 		filter1["paths"].setValue( IECore.StringVectorData( [ "/group/sphere1" ] ) )
@@ -100,9 +100,9 @@ class AttributeVisualiserTest( GafferSceneTest.SceneTestCase ) :
 
 		sphere = GafferScene.Sphere()
 		group = GafferScene.Group()
-		group["in"].setInput( sphere["out"] )
-		group["in1"].setInput( sphere["out"] )
-		group["in2"].setInput( sphere["out"] )
+		group["in"][0].setInput( sphere["out"] )
+		group["in"][1].setInput( sphere["out"] )
+		group["in"][2].setInput( sphere["out"] )
 
 		shader1 = GafferSceneTest.TestShader()
 		shader1["name"].setValue( "test" )
@@ -119,7 +119,7 @@ class AttributeVisualiserTest( GafferSceneTest.SceneTestCase ) :
 		shader2 = GafferSceneTest.TestShader()
 		shader2["name"].setValue( "test" )
 		shader2["type"].setValue( "gfr:surface" )
-		Gaffer.Metadata.registerNodeValue( shader2, "nodeGadget:color", IECore.Color3f( 1, 0, 0 ) )
+		Gaffer.Metadata.registerValue( shader2, "nodeGadget:color", IECore.Color3f( 1, 0, 0 ) )
 
 		filter2 = GafferScene.PathFilter()
 		filter2["paths"].setValue( IECore.StringVectorData( [ "/group/sphere2" ] ) )

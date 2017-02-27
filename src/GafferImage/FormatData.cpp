@@ -77,9 +77,8 @@ void FormatData::load( LoadContextPtr context )
 template<>
 void SimpleDataHolder<GafferImage::Format>::hash( MurmurHash &h ) const
 {
-	GafferImage::Format f = readable();
-	h.append( f.getDisplayWindow().min );
-	h.append( f.getDisplayWindow().max );
+	const GafferImage::Format &f = readable();
+	h.append( f.getDisplayWindow() );
 	h.append( f.getPixelAspect() );
 }
 

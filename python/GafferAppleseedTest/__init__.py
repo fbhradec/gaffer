@@ -38,6 +38,9 @@ from AppleseedLightTest import AppleseedLightTest
 from AppleseedRenderTest import AppleseedRenderTest
 from AppleseedOptionsTest import AppleseedOptionsTest
 from AppleseedAttributesTest import AppleseedAttributesTest
+from AppleseedShaderAdaptorTest import AppleseedShaderAdaptorTest
+from AppleseedAutoInstancingTest import AppleseedAutoInstancingTest
+from AppleseedCameraTest import AppleseedCameraTest
 
 if __name__ == "__main__":
 	import unittest

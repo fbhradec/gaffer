@@ -53,6 +53,7 @@ from CameraTest import CameraTest
 from OutputsTest import OutputsTest
 from CustomOptionsTest import CustomOptionsTest
 from DeleteOptionsTest import DeleteOptionsTest
+from CopyOptionsTest import CopyOptionsTest
 from SceneNodeTest import SceneNodeTest
 from PathMatcherTest import PathMatcherTest
 from PathFilterTest import PathFilterTest
@@ -108,6 +109,14 @@ from PointsTypeTest import PointsTypeTest
 from ParametersTest import ParametersTest
 from SceneFilterPathFilterTest import SceneFilterPathFilterTest
 from AttributeVisualiserTest  import AttributeVisualiserTest
+from SceneLoopTest import SceneLoopTest
+from SceneProcessorTest import SceneProcessorTest
+from MeshToPointsTest import MeshToPointsTest
+from InteractiveRenderTest import InteractiveRenderTest
+from FilteredSceneProcessorTest import FilteredSceneProcessorTest
+from ShaderBallTest import ShaderBallTest
+from LightTweaksTest import LightTweaksTest
+from FilterResultsTest import FilterResultsTest
 
 if __name__ == "__main__":
 	import unittest

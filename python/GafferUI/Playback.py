@@ -48,7 +48,7 @@ QtCore = GafferUI._qtImport( "QtCore" )
 # controlling frame ranges and signalling changes in playback state.
 # All UI elements requiring such functionality should operate using
 # a Playback object to ensure synchronisation between elements.
-class Playback :
+class Playback( object ) :
 
 	State = IECore.Enum.create( "PlayingForwards", "PlayingBackwards", "Scrubbing", "Stopped" )
 
@@ -163,4 +163,3 @@ class Playback :
 			frame = self.__frameRange[1] + ( frame - math.floor( frame ) )
 
 		self.context().setFrame( frame )
-

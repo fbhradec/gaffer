@@ -53,7 +53,7 @@ IE_CORE_DEFINERUNTIMETYPED( ExecutableRender );
 size_t ExecutableRender::g_firstPlugIndex = 0;
 
 ExecutableRender::ExecutableRender( const std::string &name )
-	:	ExecutableNode( name )
+	:	TaskNode( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new ScenePlug( "in" ) );
@@ -94,7 +94,7 @@ IECore::MurmurHash ExecutableRender::hash( const Gaffer::Context *context ) cons
 	}
 
 	Context::Scope scope( context );
-	IECore::MurmurHash h = ExecutableNode::hash( context );
+	IECore::MurmurHash h = TaskNode::hash( context );
 	/// \todo hash the actual scene when we have a hierarchyHash
 	h.append( (uint64_t)scenePlug );
 	h.append( context->hash() );
@@ -112,7 +112,7 @@ void ExecutableRender::execute() const
 
 	ConstCompoundObjectPtr globals = scene->globalsPlug()->getValue();
 
-	createDisplayDirectories( globals.get() );
+	RendererAlgo::createDisplayDirectories( globals.get() );
 
 	// Scoping the lifetime of the renderer so that
 	// the destructor is run before we run the system
@@ -121,27 +121,17 @@ void ExecutableRender::execute() const
 	// to disk before RiEnd is called.
 	{
 		IECore::RendererPtr renderer = createRenderer();
-		outputOptions( globals.get(), renderer.get() );
-		outputOutputs( globals.get(), renderer.get() );
-		outputCameras( scene, globals.get(), renderer.get() );
-		outputClippingPlanes( scene, globals.get(), renderer.get() );
+		RendererAlgo::outputOptions( globals.get(), renderer.get() );
+		RendererAlgo::outputOutputs( globals.get(), renderer.get() );
+		RendererAlgo::outputCameras( scene, globals.get(), renderer.get() );
+		RendererAlgo::outputClippingPlanes( scene, globals.get(), renderer.get() );
 		{
 			WorldBlock world( renderer );
 
-			outputGlobalAttributes( globals.get(), renderer.get() );
-			outputCoordinateSystems( scene, globals.get(), renderer.get() );
-			outputLights( scene, globals.get(), renderer.get() );
+			RendererAlgo::outputGlobalAttributes( globals.get(), renderer.get() );
+			RendererAlgo::outputCoordinateSystems( scene, globals.get(), renderer.get() );
+			RendererAlgo::outputLights( scene, globals.get(), renderer.get() );
 			outputWorldProcedural( scene, renderer.get() );
-		}
-	}
-
-	std::string systemCommand = command();
-	if( systemCommand.size() )
-	{
-		int result = system( systemCommand.c_str() );
-		if( result )
-		{
-			throw Exception( "System command failed" );
 		}
 	}
 }
@@ -149,9 +139,4 @@ void ExecutableRender::execute() const
 void ExecutableRender::outputWorldProcedural( const ScenePlug *scene, IECore::Renderer *renderer ) const
 {
 	renderer->procedural( new SceneProcedural( scene, Context::current() ) );
-}
-
-std::string ExecutableRender::command() const
-{
-	return "";
 }

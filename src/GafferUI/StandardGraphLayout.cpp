@@ -43,12 +43,13 @@
 
 #include "IECore/BoundedKDTree.h"
 #include "IECore/BoxAlgo.h"
+#include "IECore/MessageHandler.h"
 
 #include "Gaffer/Plug.h"
-#include "Gaffer/PlugIterator.h"
 #include "Gaffer/DependencyNode.h"
 #include "Gaffer/StandardSet.h"
 #include "Gaffer/Dot.h"
+#include "Gaffer/Switch.h"
 
 #include "GafferUI/StandardGraphLayout.h"
 #include "GafferUI/GraphGadget.h"
@@ -191,7 +192,7 @@ class LayoutEngine
 			// Build a map from node to vertex so we can use it to lookup nodes
 			// when inserting edges.
 
-			for( NodeIterator it( graphGadget->getRoot() ); it != it.end(); ++it )
+			for( NodeIterator it( graphGadget->getRoot() ); !it.done(); ++it )
 			{
 				Node *node = it->get();
 				const NodeGadget *nodeGadget = graphGadget->nodeGadget( node );
@@ -215,7 +216,7 @@ class LayoutEngine
 
 			for( NodesToVertices::const_iterator it = m_nodesToVertices.begin(), eIt = m_nodesToVertices.end(); it != eIt; ++it )
 			{
-				for( RecursiveInputPlugIterator pIt( it->first ); pIt != pIt.end(); ++pIt )
+				for( RecursiveInputPlugIterator pIt( it->first ); !pIt.done(); ++pIt )
 				{
 					ConnectionGadget *connection = graphGadget->connectionGadget( pIt->get() );
 					if( !connection || connection->getMinimised() )
@@ -527,9 +528,17 @@ class LayoutEngine
 			for( VertexIterator it = v.first; it != v.second; ++it )
 			{
 				const Vertex &v = m_graph[*it];
-				if( v.node )
+				if( !v.pinned && v.node )
 				{
-					m_graphGadget->setNodePosition( v.node, v.position );
+					if( !isnan( v.position.x ) && !isnan( v.position.y ) && !isinf( v.position.x ) && !isinf( v.position.y ) )
+					{
+						m_graphGadget->setNodePosition( v.node, v.position );
+					}
+					else
+					{
+						IECore::msg( IECore::Msg::Warning, "LayoutEngine::applyPositions", "Layout algorithm failed to produce valid position for " + v.node->getName().string() );
+
+					}
 				}
 			}
 		}
@@ -937,7 +946,7 @@ bool StandardGraphLayout::connectNodes( GraphGadget *graph, Gaffer::Set *nodes, 
 		}
 
 		bool hasInputs = false;
-		for( RecursiveInputPlugIterator it( node ); it != it.end(); ++it )
+		for( RecursiveInputPlugIterator it( node ); !it.done(); ++it )
 		{
 			if( (*it)->getInput<Plug>() && nodeGadget->nodule( it->get() ) )
 			{
@@ -1037,12 +1046,19 @@ bool StandardGraphLayout::connectNodeInternal( GraphGadget *graph, Gaffer::Node 
 		return false;
 	}
 
-	// if we're trying to connect a dot, then we may need to give it plugs first
+	// if we're trying to connect a dot or switch, then we may need to give it plugs first
 	if( Dot *dot = runTimeCast<Dot>( node ) )
 	{
 		if( !dot->inPlug<Plug>() )
 		{
 			dot->setup( outputPlugs.front() );
+		}
+	}
+	else if( SwitchComputeNode *switchNode = runTimeCast<SwitchComputeNode>( node ) )
+	{
+		if( !switchNode->getChild<Plug>( "in" ) )
+		{
+			switchNode->setup( outputPlugs.front() );
 		}
 	}
 
@@ -1125,7 +1141,7 @@ bool StandardGraphLayout::connectNodeInternal( GraphGadget *graph, Gaffer::Node 
 
 size_t StandardGraphLayout::outputPlugs( NodeGadget *nodeGadget, std::vector<Gaffer::Plug *> &plugs ) const
 {
-	for( RecursiveOutputPlugIterator it( nodeGadget->node() ); it != it.end(); it++ )
+	for( RecursiveOutputPlugIterator it( nodeGadget->node() ); !it.done(); it++ )
 	{
 		if( nodeGadget->nodule( it->get() ) )
 		{
@@ -1156,7 +1172,7 @@ size_t StandardGraphLayout::outputPlugs( GraphGadget *graph, Gaffer::Set *nodes,
 size_t StandardGraphLayout::unconnectedInputPlugs( NodeGadget *nodeGadget, std::vector<Plug *> &plugs ) const
 {
 	plugs.clear();
-	for( RecursiveInputPlugIterator it( nodeGadget->node() ); it != it.end(); it++ )
+	for( RecursiveInputPlugIterator it( nodeGadget->node() ); !it.done(); it++ )
 	{
 		if( (*it)->getInput<Plug>() == 0 and nodeGadget->nodule( it->get() ) )
 		{
@@ -1177,7 +1193,7 @@ Gaffer::Plug *StandardGraphLayout::correspondingOutput( const Gaffer::Plug *inpu
 		return 0;
 	}
 
-	for( RecursiveOutputPlugIterator it( dependencyNode ); it != it.end(); ++it )
+	for( RecursiveOutputPlugIterator it( dependencyNode ); !it.done(); ++it )
 	{
 		if( dependencyNode->correspondingInput( it->get() ) == input )
 		{

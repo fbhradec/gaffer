@@ -37,8 +37,6 @@
 
 from __future__ import with_statement
 
-import os
-import time
 import warnings
 
 import IECore
@@ -184,18 +182,6 @@ class PathListingWidget( GafferUI.Widget ) :
 			return None
 
 		return self.__pathForIndex( index )
-
-	## \deprecated Use setPathExpanded() instead.
-	def setPathCollapsed( self, path, collapsed ) :
-
-		warnings.warn( "PathListingWidget.setPathCollapsed() is deprecated, use PathListingWidget.setPathExpanded() instead.", DeprecationWarning, 2 )
-		self.setPathExpanded( self, path, not collapsed )
-
-	## \deprecated Use getPathExpanded() instead.
-	def getPathCollapsed( self, path ) :
-
-		warnings.warn( "PathListingWidget.getPathCollapsed() is deprecated, use PathListingWidget.getPathExpanded() instead.", DeprecationWarning, 2 )
-		return not self.getPathExpaned( self, path )
 
 	def setPathExpanded( self, path, expanded ) :
 
@@ -747,4 +733,3 @@ class _TreeView( QtGui.QTreeView ) :
 
 			self.collapsed.connect( self.__collapsed )
 			self.expanded.connect( self.__expanded )
-

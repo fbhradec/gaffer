@@ -35,7 +35,9 @@
 #
 ##########################################################################
 
+import re
 import ast
+import functools
 
 import IECore
 
@@ -43,43 +45,33 @@ import Gaffer
 
 class PythonExpressionEngine( Gaffer.Expression.Engine ) :
 
-	def __init__( self, expression ) :
+	def __init__( self ) :
 
 		Gaffer.Expression.Engine.__init__( self )
 
-		self.__expression = expression
+	def parse( self, node, expression, inPlugs, outPlugs, contextNames ) :
 
 		parser = _Parser( expression )
-		if not parser.plugWrites :
-			raise Exception( "Expression does not write to a plug" )
 
-		self.__inPlugs = list( parser.plugReads )
-		self.__outPlugs = list( parser.plugWrites )
-		self.__contextNames = list( parser.contextReads )
+		self.__expression = expression
+		self.__inPlugPaths = list( parser.plugReads )
+		self.__outPlugPaths = list( parser.plugWrites )
 
-	def outPlugs( self ) :
-
-		return self.__outPlugs
-
-	def inPlugs( self ) :
-
-		return self.__inPlugs
-
-	def contextNames( self ) :
-
-		return self.__contextNames
+		inPlugs.extend( [ self.__plug( node, p ) for p in self.__inPlugPaths ] )
+		outPlugs.extend( [ self.__plug( node, p ) for p in self.__outPlugPaths ] )
+		contextNames.extend( parser.contextReads )
 
 	def execute( self, context, inputs ) :
 
 		plugDict = {}
-		for plugPath, plug in zip( self.__inPlugs, inputs ) :
+		for plugPath, plug in zip( self.__inPlugPaths, inputs ) :
 			parentDict = plugDict
 			plugPathSplit = plugPath.split( "." )
 			for p in plugPathSplit[:-1] :
 				parentDict = parentDict.setdefault( p, {} )
 			parentDict[plugPathSplit[-1]] = plug.getValue()
 
-		for plugPath in self.__outPlugs :
+		for plugPath in self.__outPlugPaths :
 			parentDict = plugDict
 			for p in plugPath.split( "." )[:-1] :
 				parentDict = parentDict.setdefault( p, {} )
@@ -89,7 +81,7 @@ class PythonExpressionEngine( Gaffer.Expression.Engine ) :
 		exec( self.__expression, executionDict, executionDict )
 
 		result = IECore.ObjectVector()
-		for plugPath in self.__outPlugs :
+		for plugPath in self.__outPlugPaths :
 			parentDict = plugDict
 			plugPathSplit = plugPath.split( "." )
 			for p in plugPathSplit[:-1] :
@@ -98,9 +90,122 @@ class PythonExpressionEngine( Gaffer.Expression.Engine ) :
 
 		return result
 
-	def setPlugValue( self, plug, value ) :
+	def apply( self, proxyOutput, topLevelProxyOutput, value ) :
 
-		_setPlugValue( plug, value )
+		# NullObject signifies that the expression didn't
+		# provide a value at all - set the plug to its default.
+		if isinstance( value, IECore.NullObject ) :
+			proxyOutput.setToDefault()
+			return
+
+		value = _extractPlugValue( proxyOutput, topLevelProxyOutput, value )
+		if value is None :
+			raise TypeError( "Unsupported value type \"%s\"" % type( value ).__name__ )
+		else :
+			proxyOutput.setValue( value )
+
+	def identifier( self, node, plug ) :
+
+		if node.isAncestorOf( plug ) :
+			relativeName = plug.relativeName( node )
+		else :
+			relativeName = plug.relativeName( node.parent() )
+
+		return 'parent' + "".join( [ '["%s"]' % n for n in relativeName.split( "." ) ] )
+
+	def replace( self, node, expression, oldPlugs, newPlugs ) :
+
+		for oldPlug, newPlug in zip( oldPlugs, newPlugs ) :
+			if newPlug is not None :
+				replacement = self.identifier( node, newPlug )
+			else :
+				if oldPlug.direction() == Gaffer.Plug.Direction.In :
+					replacement = repr( oldPlug.defaultValue() )
+				else :
+					replacement = "__disconnected"
+
+			expression = self.__plugRegex( node, oldPlug ).sub(
+				replacement, expression
+			)
+
+		return expression
+
+	def defaultExpression( self, plug ) :
+
+		# If there's no parent scope, we can't make an expression.
+		parentNode = plug.node().ancestor( Gaffer.Node )
+		if parentNode is None :
+			return ""
+
+		# If we can't extract a value, we can't make an expression.
+		if not hasattr( plug, "getValue" ) :
+			return ""
+
+		# If we can't store the value in an ObjectVector, we can't
+		# return the value in execute().
+		value = plug.getValue()
+		objectVector = IECore.ObjectVector()
+		try :
+			objectVector.append( value )
+		except :
+			return ""
+
+		# If we can't extract the appropriate value for every leaf
+		# plug, we can't apply the value after execution.
+
+		def canExtractValue( plug, topLevelPlug, value ) :
+
+			if not len( plug ) :
+				# no children - must be able to extract
+				# a value for use in apply.
+				return _extractPlugValue( plug, topLevelPlug, value ) is not None
+			else :
+				# compound plug - check all children.
+				for child in plug.children() :
+					if not canExtractValue( child, topLevelPlug, value ) :
+						return False
+
+				return True
+
+		if not canExtractValue( plug, plug, objectVector[0] ) :
+			return ""
+
+		# Looks like we can support this plug, so make and return
+		# a suitable expression.
+
+		result = ""
+
+		modulePath = Gaffer.Serialisation.modulePath( value )
+		if modulePath not in ( "IECore", "" ) :
+			result += "import " + modulePath + "\n\n"
+
+		result += "parent[\""
+		result += plug.relativeName( parentNode ).replace( ".", "\"][\"" )
+		result += "\"] = "
+
+		result += repr( value )
+
+		return result
+
+	def __plug( self, node, plugPath ) :
+
+		plug = node.parent().descendant( plugPath )
+		if isinstance( plug, Gaffer.ValuePlug ) :
+			return plug
+
+		if plug is None :
+			raise RuntimeError( "\"%s\" does not exist" % plugPath )
+		else :
+			raise RuntimeError( "\"%s\" is not a ValuePlug" % plugPath )
+
+	def __plugRegex( self, node, plug ) :
+
+		identifier = self.identifier( node, plug )
+		regex = identifier.replace( "[", "\[" )
+		regex = regex.replace( "]", "\]" )
+		regex = regex.replace( '"', "['\"']" )
+
+		return re.compile( regex )
 
 Gaffer.Expression.Engine.registerEngine( "python", PythonExpressionEngine )
 
@@ -151,6 +256,11 @@ class _Parser( ast.NodeVisitor ) :
 					# it's a method call on the context
 					if node.func.attr == "getFrame" :
 						self.contextReads.add( "frame" )
+					elif node.func.attr == "getTime" :
+						self.contextReads.add( "frame" )
+						self.contextReads.add( "framesPerSecond" )
+					elif node.func.attr == "getFramesPerSecond" :
+						self.contextReads.add( "framesPerSecond" )
 					elif node.func.attr == "get" :
 						if not isinstance( node.args[0], ast.Str ) :
 							raise SyntaxError( "Context name must be a string" )
@@ -195,55 +305,68 @@ class _Parser( ast.NodeVisitor ) :
 # Functions for setting plug values.
 ##########################################################################
 
-def __simpleTypedDataSetter( plug, value ) :
+def __typedPlugValueExtractor( plug, topLevelPlug, value, converter = None ) :
 
-	plug.setValue( value.value )
+	if converter is not None :
+		return converter( value.value )
+	else :
+		return value.value
 
-def __compoundNumericDataSetter( plug, value ) :
+def __compoundNumericPlugValueExtractor( plug, topLevelPlug, value ) :
 
-	index = plug.parent().children().index( plug )
-	plug.setValue( value.value[index] )
+	index = topLevelPlug.children().index( plug )
+	return value.value[index]
 
-def __boxDataSetter( plug, value ) :
-
-	value = value.value
+def __boxPlugValueExtractor( plug, topLevelPlug, value ) :
 
 	vectorPlug = plug.parent()
-	boxPlug = vectorPlug.parent()
-
-	vector = value.min if vectorPlug.getName() == "min" else value.max
 	index = vectorPlug.children().index( plug )
 
-	plug.setValue( vector[index] )
+	vector = value.value.min if vectorPlug.getName() == "min" else value.value.max
 
-def __nullObjectSetter( plug, value ) :
+	return vector[index]
 
-	# NullObject signifies that the expression didn't
-	# provide a value at all - set the plug to its default.
-	plug.setToDefault()
+def __defaultValueExtractor( plug, topLevelPlug, value ) :
 
-def __defaultSetter( plug, value ) :
+	with IECore.IgnoredExceptions( AttributeError ) :
+		value = value.value
 
-	plug.setValue( value )
+	# Deal with the simple atomic plug case.
+	if plug.isSame( topLevelPlug ) :
+		return value
 
-_setters = {
-	IECore.IntData : __simpleTypedDataSetter,
-	IECore.FloatData : __simpleTypedDataSetter,
-	IECore.StringData : __simpleTypedDataSetter,
-	IECore.BoolData : __simpleTypedDataSetter,
-	IECore.V2fData : __compoundNumericDataSetter,
-	IECore.V2iData : __compoundNumericDataSetter,
-	IECore.V3fData : __compoundNumericDataSetter,
-	IECore.V3iData : __compoundNumericDataSetter,
-	IECore.Color3fData : __compoundNumericDataSetter,
-	IECore.Color4fData : __compoundNumericDataSetter,
-	IECore.Box2fData : __boxDataSetter,
-	IECore.Box2iData : __boxDataSetter,
-	IECore.Box3fData : __boxDataSetter,
-	IECore.Box3iData : __boxDataSetter,
-	IECore.NullObject : __nullObjectSetter,
+	# Plug must be a child of a compound of
+	# some sort. We need to try to extract
+	# the right part of the compound value.
+	for name in plug.relativeName( topLevelPlug ).split( "." ) :
+		try :
+			value = getattr( value, name )
+		except AttributeError :
+			accessor = getattr( value, "get" + name[0].upper() + name[1:], None )
+			if accessor is not None :
+				value = accessor()
+			else :
+				return None
+
+	return value
+
+_valueExtractors = {
+	Gaffer.IntPlug : functools.partial( __typedPlugValueExtractor, converter = int ),
+	Gaffer.FloatPlug : __typedPlugValueExtractor,
+	Gaffer.StringPlug : __typedPlugValueExtractor,
+	Gaffer.BoolPlug : __typedPlugValueExtractor,
+	Gaffer.V2fPlug : __compoundNumericPlugValueExtractor,
+	Gaffer.V2iPlug : __compoundNumericPlugValueExtractor,
+	Gaffer.V3fPlug : __compoundNumericPlugValueExtractor,
+	Gaffer.V3iPlug : __compoundNumericPlugValueExtractor,
+	Gaffer.Color3fPlug : __compoundNumericPlugValueExtractor,
+	Gaffer.Color4fPlug : __compoundNumericPlugValueExtractor,
+	Gaffer.Box2fPlug : __boxPlugValueExtractor,
+	Gaffer.Box2iPlug : __boxPlugValueExtractor,
+	Gaffer.Box3fPlug : __boxPlugValueExtractor,
+	Gaffer.Box3iPlug : __boxPlugValueExtractor,
 }
 
-def _setPlugValue( plug, value ) :
+def _extractPlugValue( plug, topLevelPlug, value ) :
 
-	_setters.get( type( value ), __defaultSetter )( plug, value )
+	return _valueExtractors.get( type( topLevelPlug ), __defaultValueExtractor )( plug, topLevelPlug, value )

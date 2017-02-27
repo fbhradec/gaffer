@@ -34,6 +34,7 @@
 #
 ##########################################################################
 
+import os
 import unittest
 
 import IECore
@@ -126,7 +127,7 @@ class UnionFilterTest( GafferSceneTest.SceneTestCase ) :
 		n["out"] = f["out"].createCounterpart( "out", Gaffer.Plug.Direction.Out )
 
 		u = GafferScene.UnionFilter()
-		self.assertFalse( u["in"][0].acceptsInput( n["out"] ) )
+		self.assertTrue( u["in"][0].acceptsInput( n["out"] ) )
 
 	def testSceneAffects( self ) :
 
@@ -191,6 +192,62 @@ class UnionFilterTest( GafferSceneTest.SceneTestCase ) :
 
 		dot2["in"].setInput( None )
 		self.assertTrue( uf["in"][0].acceptsInput( dot2["out"] ) )
+
+	def testReferencePromotedPlug( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["b"] = Gaffer.Box()
+		s["b"]["f"] = GafferScene.UnionFilter()
+		p = s["b"].promotePlug( s["b"]["f"]["in"][0] )
+		p.setName( "p" )
+
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		s["f"] = GafferScene.PathFilter()
+
+		s["r"]["p"].setInput( s["f"]["out"] )
+
+	def testFileCompatibilityWithVersion0_15( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( os.path.dirname( __file__ ) + "/scripts/unionFilterVersion-0.15.0.0.gfr" )
+		s.load()
+
+		self.assertTrue( s["UnionFilter"]["in"][0].getInput().isSame( s["PathFilter"]["out"] ) )
+		self.assertTrue( s["UnionFilter"]["in"][1].getInput().isSame( s["PathFilter1"]["out"] ) )
+		self.assertTrue( s["UnionFilter"]["in"][2].getInput().isSame( s["PathFilter2"]["out"] ) )
+
+	def testDisabling( self ) :
+
+		pathFilterA = GafferScene.PathFilter()
+		pathFilterB = GafferScene.PathFilter()
+
+		pathFilterA["paths"].setValue( IECore.StringVectorData( [ "/a" ] ) )
+		pathFilterB["paths"].setValue( IECore.StringVectorData( [ "/b" ] ) )
+
+		unionFilter = GafferScene.UnionFilter()
+		unionFilter["in"][0].setInput( pathFilterA["out"] )
+		unionFilter["in"][1].setInput( pathFilterB["out"] )
+
+		self.assertTrue( unionFilter.correspondingInput( unionFilter["out"] ).isSame( unionFilter["in"][0] ) )
+
+		with Gaffer.Context() as c :
+			c["scene:path"] = IECore.InternedStringVectorData( [ "a" ] )
+			self.assertEqual( unionFilter["out"].getValue(), unionFilter.Result.ExactMatch )
+			c["scene:path"] = IECore.InternedStringVectorData( [ "b" ] )
+			self.assertEqual( unionFilter["out"].getValue(), unionFilter.Result.ExactMatch )
+
+		unionFilter["enabled"].setValue( False )
+
+		with Gaffer.Context() as c :
+			c["scene:path"] = IECore.InternedStringVectorData( [ "a" ] )
+			self.assertEqual( unionFilter["out"].getValue(), unionFilter.Result.ExactMatch )
+			c["scene:path"] = IECore.InternedStringVectorData( [ "b" ] )
+			self.assertEqual( unionFilter["out"].getValue(), unionFilter.Result.NoMatch )
 
 if __name__ == "__main__":
 	unittest.main()

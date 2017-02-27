@@ -35,10 +35,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFER_SCENEPLUG_H
-#define GAFFER_SCENEPLUG_H
+#ifndef GAFFERSCENE_SCENEPLUG_H
+#define GAFFERSCENE_SCENEPLUG_H
 
-#include "Gaffer/CompoundPlug.h"
 #include "Gaffer/TypedObjectPlug.h"
 #include "Gaffer/TypedPlug.h"
 #include "Gaffer/BoxPlug.h"
@@ -51,7 +50,7 @@ namespace GafferScene
 
 /// The ScenePlug is used to pass scenegraphs between nodes in the gaffer graph. It is a compound
 /// type, with subplugs for different aspects of the scene.
-class ScenePlug : public Gaffer::CompoundPlug
+class ScenePlug : public Gaffer::ValuePlug
 {
 
 	public :
@@ -59,7 +58,7 @@ class ScenePlug : public Gaffer::CompoundPlug
 		ScenePlug( const std::string &name=defaultName<ScenePlug>(), Direction direction=In, unsigned flags=Default );
 		virtual ~ScenePlug();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ScenePlug, ScenePlugTypeId, CompoundPlug );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ScenePlug, ScenePlugTypeId, ValuePlug );
 
 		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
 		virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
@@ -145,6 +144,16 @@ class ScenePlug : public Gaffer::CompoundPlug
 		IECore::CompoundObjectPtr fullAttributes( const ScenePath &scenePath ) const;
 		IECore::ConstObjectPtr object( const ScenePath &scenePath ) const;
 		IECore::ConstInternedStringVectorDataPtr childNames( const ScenePath &scenePath ) const;
+		/// Prefer this to bare `globalsPlug()->getValue()` calls when
+		/// accessing globals from within a per-location computation. It
+		/// removes unnecessary context variables which could otherwise
+		/// lead to poor cache performance.
+		IECore::ConstCompoundObjectPtr globals() const;
+		/// Prefer this to bare `setNamesPlug()->getValue()` calls when
+		/// accessing set names from within a per-location computation. It
+		/// removes unnecessary context variables which could otherwise
+		/// lead to poor cache performance.
+		IECore::ConstInternedStringVectorDataPtr setNames() const;
 		ConstPathMatcherDataPtr set( const IECore::InternedString &setName ) const;
 
 		IECore::MurmurHash boundHash( const ScenePath &scenePath ) const;
@@ -154,6 +163,10 @@ class ScenePlug : public Gaffer::CompoundPlug
 		IECore::MurmurHash fullAttributesHash( const ScenePath &scenePath ) const;
 		IECore::MurmurHash objectHash( const ScenePath &scenePath ) const;
 		IECore::MurmurHash childNamesHash( const ScenePath &scenePath ) const;
+		/// See comments for `globals()` method.
+		IECore::MurmurHash globalsHash() const;
+		/// See comments for `setNames()` method.
+		IECore::MurmurHash setNamesHash() const;
 		IECore::MurmurHash setHash( const IECore::InternedString &setName ) const;
 		//@}
 
@@ -179,4 +192,4 @@ typedef Gaffer::FilteredRecursiveChildIterator<Gaffer::PlugPredicate<Gaffer::Plu
 
 std::ostream &operator << ( std::ostream &o, const GafferScene::ScenePlug::ScenePath &path );
 
-#endif // GAFFER_SCENEPLUG_H
+#endif // GAFFERSCENE_SCENEPLUG_H

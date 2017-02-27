@@ -45,12 +45,6 @@ import GafferSceneUI
 # Metadata
 ##########################################################################
 
-## \todo This is getting used in a few places now - maybe put it in one
-# place? Maybe a static method on NumericWidget?
-def __floatToString( f ) :
-
-	return ( "%.4f" % f ).rstrip( '0' ).rstrip( '.' )
-
 def __cameraSummary( plug ) :
 
 	info = []
@@ -61,13 +55,13 @@ def __cameraSummary( plug ) :
 		info.append( "%dx%d" % ( resolution[0], resolution[1] ) )
 	if plug["pixelAspectRatio"]["enabled"].getValue() :
 		pixelAspectRatio = plug["pixelAspectRatio"]["value"].getValue()
-		info.append( "Aspect %s" % __floatToString( pixelAspectRatio ) )
+		info.append( "Aspect %s" % GafferUI.NumericWidget.valueToString( pixelAspectRatio ) )
 	if plug["resolutionMultiplier"]["enabled"].getValue() :
 		resolutionMultiplier = plug["resolutionMultiplier"]["value"].getValue()
-		info.append( "Mult %s" % __floatToString( resolutionMultiplier ) )
+		info.append( "Mult %s" % GafferUI.NumericWidget.valueToString( resolutionMultiplier ) )
 	if plug["renderCropWindow"]["enabled"].getValue() :
 		crop = plug["renderCropWindow"]["value"].getValue()
-		info.append( "Crop %s,%s-%s,%s" % tuple( __floatToString( x ) for x in ( crop.min.x, crop.min.y, crop.max.x, crop.max.y ) ) )
+		info.append( "Crop %s,%s-%s,%s" % tuple( GafferUI.NumericWidget.valueToString( x ) for x in ( crop.min.x, crop.min.y, crop.max.x, crop.max.y ) ) )
 	if plug["overscan"]["enabled"].getValue() :
 		info.append( "Overscan %s" % ( "On" if plug["overscan"]["value"].getValue() else "Off" ) )
 
@@ -87,6 +81,14 @@ def __motionBlurSummary( plug ) :
 
 	return ", ".join( info )
 
+def __statisticsSummary( plug ) :
+
+	info = []
+	if plug["performanceMonitor"]["enabled"].getValue() :
+		info.append( "Performance Monitor " + ( "On" if plug["performanceMonitor"]["value"].getValue() else "Off" ) )
+
+	return ", ".join( info )
+
 Gaffer.Metadata.registerNode(
 
 	GafferScene.StandardOptions,
@@ -99,16 +101,17 @@ Gaffer.Metadata.registerNode(
 
 	plugs = {
 
-		# section summaries
+		# Section summaries
 
 		"options" : [
 
 			"layout:section:Camera:summary", __cameraSummary,
 			"layout:section:Motion Blur:summary", __motionBlurSummary,
+			"layout:section:Statistics:summary", __statisticsSummary,
 
 		],
 
-		# camera plugs
+		# Camera plugs
 
 		"options.renderCamera" : [
 
@@ -121,6 +124,15 @@ Gaffer.Metadata.registerNode(
 
 			"layout:section", "Camera",
 			"label", "Camera",
+
+		],
+
+		"options.renderCamera.value" : [
+
+			"plugValueWidget:type", "GafferSceneUI.ScenePathPlugValueWidget",
+			"pathPlugValueWidget:valid", True,
+			"scenePathPlugValueWidget:setNames", IECore.StringVectorData( [ "__cameras" ] ),
+			"scenePathPlugValueWidget:setsLabel", "Show only cameras",
 
 		],
 
@@ -241,7 +253,7 @@ Gaffer.Metadata.registerNode(
 
 		],
 
-		# motion blur plugs
+		# Motion blur plugs
 
 		"options.cameraBlur" : [
 
@@ -303,28 +315,34 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"options.sampleMotion" : [
+
+			"description",
+			"""
+			Whether to actually render motion blur.  Disabling this
+			setting while motion blur is set up produces a render where
+			there is no blur, but there is accurate motion information.
+			Useful for rendering motion vector passes.
+			""",
+
+			"layout:section", "Motion Blur",
+
+		],
+
+		# Statistics plugs
+
+		"options.performanceMonitor" : [
+
+			"description",
+			"""
+			Enables a performance monitor and uses it to output
+			statistics about scene generation performance.
+			""",
+
+			"layout:section", "Statistics",
+
+		],
+
 	}
 
-)
-
-##########################################################################
-# PlugValueWidgets
-##########################################################################
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.StandardOptions,
-	"options.renderCamera.value",
-	GafferSceneUI.ScenePathPlugValueWidget
-)
-
-Gaffer.Metadata.registerPlugValue(
-	GafferScene.StandardOptions,
-	"options.renderCamera.value",
-	"scenePathPlugValueWidget:setNames", IECore.StringVectorData( [ "__cameras" ] )
-)
-
-Gaffer.Metadata.registerPlugValue(
-	GafferScene.StandardOptions,
-	"options.renderCamera.value",
-	"scenePathPlugValueWidget:setsLabel", "Show only cameras"
 )

@@ -34,17 +34,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-
 #include "Gaffer/TypedPlug.h"
 #include "Gaffer/BoxPlug.h"
-#include "Gaffer/Context.h"
 #include "Gaffer/ScriptNode.h"
 
 #include "GafferImage/ImageStats.h"
 #include "GafferImage/Sampler.h"
 #include "GafferImage/ChannelMaskPlug.h"
-#include "GafferImage/Format.h"
+#include "GafferImage/FormatPlug.h"
+#include "GafferImage/ImageAlgo.h"
 
 using namespace GafferImage;
 using namespace Gaffer;
@@ -70,7 +68,6 @@ ImageStats::ImageStats( const std::string &name )
 	addChild( new Color4fPlug( "average", Gaffer::Plug::Out ) );
 	addChild( new Color4fPlug( "min", Gaffer::Plug::Out ) );
 	addChild( new Color4fPlug( "max", Gaffer::Plug::Out ) );
-	plugInputChangedSignal().connect( boost::bind( &ImageStats::inputChanged, this, ::_1 ) );
 }
 
 ImageStats::~ImageStats()
@@ -137,37 +134,22 @@ const Color4fPlug *ImageStats::maxPlug() const
 	return getChild<Color4fPlug>( g_firstPlugIndex + 5 );
 }
 
-void ImageStats::inputChanged( Gaffer::Plug *plug )
-{
-	const Imath::Box2i regionOfInterest( regionOfInterestPlug()->getValue() );
-	if( plug->isInstanceOf( ImagePlug::staticTypeId() ) && regionOfInterest.isEmpty() )
-	{
-		Imath::Box2i box( inPlug()->formatPlug()->getValue().getDisplayWindow() );
-		if( box.isEmpty() )
-		{
-			Gaffer::ScriptNode *s( scriptNode() );
-			if( s )
-			{
-				box = GafferImage::Format::getDefaultFormat( s ).getDisplayWindow();
-			}
-		}
-		regionOfInterestPlug()->setValue( box );
-	}
-}
-
 void ImageStats::parentChanging( Gaffer::GraphComponent *newParent )
 {
-	// Initialise the default format and setup any format knobs that are on this node.
-	if( newParent )
+	ComputeNode::parentChanging( newParent );
+
+	// Set up the default format plug.
+	Node *parentNode = IECore::runTimeCast<Node>( newParent );
+	if( !parentNode )
 	{
-		if ( static_cast<Gaffer::TypeId>(newParent->typeId()) == ScriptNodeTypeId )
-		{
-			ScriptNode *scriptNode =  static_cast<Gaffer::ScriptNode*>( newParent );
-			Format::addDefaultFormatPlug( scriptNode );
-		}
+		return;
 	}
 
-	ComputeNode::parentChanging( newParent );
+	ScriptNode *scriptNode = parentNode->scriptNode();
+	if( scriptNode )
+	{
+		FormatPlug::acquireDefaultFormatPlug( scriptNode );
+	}
 }
 
 void ImageStats::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
@@ -273,7 +255,7 @@ void ImageStats::channelNameFromOutput( const ValuePlug *output, std::string &ch
 		{
 			for( std::vector<std::string>::iterator it( uniqueChannels.begin() ); it != uniqueChannels.end(); ++it )
 			{
-				if ( GafferImage::ChannelMaskPlug::channelIndex( *it ) == channelIndex )
+				if( ImageAlgo::colorIndex( *it ) == channelIndex )
 				{
 					channelName = *it;
 					return;
@@ -317,24 +299,20 @@ void ImageStats::compute( ValuePlug *output, const Context *context ) const
 		return;
 	}
 
-	int channelIndex = GafferImage::ChannelMaskPlug::channelIndex( channelName );
-
-	// Set up the execution context.
-	ContextPtr tmpContext = new Context( *context, Context::Borrowed );
-	tmpContext->set( ImagePlug::channelNameContextName, channelName );
-	Context::Scope scopedContext( tmpContext.get() );
+	const int channelIndex = ImageAlgo::colorIndex( channelName );
 
 	// Loop over the ROI and compute the min, max and average channel values and then set our outputs.
 	Sampler s( inPlug(), channelName, regionOfInterest );
 
-	float min = std::numeric_limits<float>::max();
-	float max = std::numeric_limits<float>::min();
+	float min = Imath::limits<float>::max();
+	float max = Imath::limits<float>::min();
+
 	float average = 0.f;
 
 	double sum = 0.;
-	for( int y = regionOfInterest.min.y; y <= regionOfInterest.max.y; ++y )
+	for( int y = regionOfInterest.min.y; y < regionOfInterest.max.y; ++y )
 	{
-		for( int x = regionOfInterest.min.x; x <= regionOfInterest.max.x; ++x )
+		for( int x = regionOfInterest.min.x; x < regionOfInterest.max.x; ++x )
 		{
 			float v = s.sample( x, y );
 			min = std::min( v, min );
@@ -342,7 +320,7 @@ void ImageStats::compute( ValuePlug *output, const Context *context ) const
 			sum += v;
 		}
 	}
-	average = sum / double( (regionOfInterest.size().x+1) * (regionOfInterest.size().y+1) );
+	average = sum / double( (regionOfInterest.size().x) * (regionOfInterest.size().y) );
 
 	if ( minPlug()->getChild( channelIndex ) == output )
 	{
@@ -361,4 +339,3 @@ void ImageStats::compute( ValuePlug *output, const Context *context ) const
 		static_cast<FloatPlug *>( output )->setValue( 0 );
 	}
 }
-

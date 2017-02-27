@@ -45,16 +45,14 @@ class SwitchTest( GafferTest.TestCase ) :
 	def intSwitch( self ) :
 
 		result = Gaffer.SwitchComputeNode()
-		result["in"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		result["out"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic  )
+		result.setup( Gaffer.IntPlug() )
 
 		return result
 
 	def colorSwitch( self ) :
 
 		result = Gaffer.SwitchComputeNode()
-		result["in"] = Gaffer.Color3fPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-		result["out"] = Gaffer.Color3fPlug( direction = Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		result.setup( Gaffer.Color3fPlug() )
 
 		return result
 
@@ -83,57 +81,57 @@ class SwitchTest( GafferTest.TestCase ) :
 	def test( self ) :
 
 		n = self.intSwitch()
-		n["in"].setInput( self.intPlug( 0 ) )
-		n["in1"].setInput( self.intPlug( 1 ) )
-		n["in2"].setInput( self.intPlug( 2 ) )
+		n["in"][0].setInput( self.intPlug( 0 ) )
+		n["in"][1].setInput( self.intPlug( 1 ) )
+		n["in"][2].setInput( self.intPlug( 2 ) )
 
 		n["index"].setValue( 0 )
-		self.assertEqual( n["out"].hash(), n["in"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][0].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][0].getValue() )
 
 		n["index"].setValue( 1 )
-		self.assertEqual( n["out"].hash(), n["in1"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in1"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][1].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][1].getValue() )
 
 		n["index"].setValue( 2 )
-		self.assertEqual( n["out"].hash(), n["in2"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in2"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][2].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][2].getValue() )
 
 	def testCorrespondingInput( self ) :
 
 		n = self.intSwitch()
-		self.assertTrue( n.correspondingInput( n["out"] ).isSame( n["in"] ) )
+		self.assertTrue( n.correspondingInput( n["out"] ).isSame( n["in"][0] ) )
 
 	def testDisabling( self ) :
 
 		n = self.intSwitch()
-		n["in"].setInput( self.intPlug( 0 ) )
-		n["in1"].setInput( self.intPlug( 1 ) )
+		n["in"][0].setInput( self.intPlug( 0 ) )
+		n["in"][1].setInput( self.intPlug( 1 ) )
 
 		n["index"].setValue( 1 )
-		self.assertEqual( n["out"].hash(), n["in1"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in1"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][1].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][1].getValue() )
 
 		n["enabled"].setValue( False )
 
-		self.assertEqual( n["out"].hash(), n["in"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][0].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][0].getValue() )
 
 		n["enabled"].setValue( True )
 
-		self.assertEqual( n["out"].hash(), n["in1"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in1"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][1].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][1].getValue() )
 
 		self.assertTrue( n["enabled"].isSame( n.enabledPlug() ) )
 
 	def testAffects( self ) :
 
 		n = self.intSwitch()
-		n["in"].setInput( self.intPlug( 0 ) )
-		n["in1"].setInput( self.intPlug( 0 ) )
+		n["in"][0].setInput( self.intPlug( 0 ) )
+		n["in"][1].setInput( self.intPlug( 0 ) )
 
-		for name in [ "enabled", "index", "in", "in1" ] :
-			a = n.affects( n[name] )
+		for plug in [ n["enabled"], n["index"], n["in"][0], n["in"][1] ] :
+			a = n.affects( plug )
 			self.assertEqual( len( a ), 1 )
 			self.assertTrue( a[0].isSame( n["out"] ) )
 
@@ -142,27 +140,27 @@ class SwitchTest( GafferTest.TestCase ) :
 	def testOutOfRangeIndex( self ) :
 
 		n = self.intSwitch()
-		n["in"].setInput( self.intPlug( 0 ) )
-		n["in1"].setInput( self.intPlug( 1 ) )
-		n["in2"].setInput( self.intPlug( 2 ) )
+		n["in"][0].setInput( self.intPlug( 0 ) )
+		n["in"][1].setInput( self.intPlug( 1 ) )
+		n["in"][2].setInput( self.intPlug( 2 ) )
 
 		n["index"].setValue( 2 )
-		self.assertEqual( n["out"].hash(), n["in2"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in2"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][2].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][2].getValue() )
 
 		# wrap around if the index is out of range
 
 		n["index"].setValue( 3 )
-		self.assertEqual( n["out"].hash(), n["in"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][0].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][0].getValue() )
 
 		n["index"].setValue( 4 )
-		self.assertEqual( n["out"].hash(), n["in1"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in1"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][1].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][1].getValue() )
 
 		n["index"].setValue( 5 )
-		self.assertEqual( n["out"].hash(), n["in2"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in2"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][2].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][2].getValue() )
 
 	def testAffectsIgnoresAdditionalPlugs( self ) :
 
@@ -177,21 +175,21 @@ class SwitchTest( GafferTest.TestCase ) :
 	def testCompoundPlugs( self ) :
 
 		n = self.colorSwitch()
-		n["in"].setInput( self.colorPlug( IECore.Color3f( 0, 0.1, 0.2 ) ) )
-		n["in1"].setInput( self.colorPlug( IECore.Color3f( 1, 1.1, 1.2 ) ) )
-		n["in2"].setInput( self.colorPlug( IECore.Color3f( 2, 2.1, 2.2 ) ) )
+		n["in"][0].setInput( self.colorPlug( IECore.Color3f( 0, 0.1, 0.2 ) ) )
+		n["in"][1].setInput( self.colorPlug( IECore.Color3f( 1, 1.1, 1.2 ) ) )
+		n["in"][2].setInput( self.colorPlug( IECore.Color3f( 2, 2.1, 2.2 ) ) )
 
 		n["index"].setValue( 0 )
-		self.assertEqual( n["out"].hash(), n["in"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][0].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][0].getValue() )
 
 		n["index"].setValue( 1 )
-		self.assertEqual( n["out"].hash(), n["in1"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in1"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][1].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][1].getValue() )
 
 		n["index"].setValue( 2 )
-		self.assertEqual( n["out"].hash(), n["in2"].hash() )
-		self.assertEqual( n["out"].getValue(), n["in2"].getValue() )
+		self.assertEqual( n["out"].hash(), n["in"][2].hash() )
+		self.assertEqual( n["out"].getValue(), n["in"][2].getValue() )
 
 	def testSerialisation( self ) :
 
@@ -201,16 +199,13 @@ class SwitchTest( GafferTest.TestCase ) :
 		script["a2"] = GafferTest.AddNode()
 		script["a1"]["op1"].setValue( 1 )
 		script["a2"]["op2"].setValue( 2 )
-		script["s"]["in"].setInput( script["a1"]["sum"] )
-		script["s"]["in1"].setInput( script["a2"]["sum"] )
+		script["s"]["in"][0].setInput( script["a1"]["sum"] )
+		script["s"]["in"][1].setInput( script["a2"]["sum"] )
 
 		script2 = Gaffer.ScriptNode()
 		script2.execute( script.serialise() )
 
-		self.assertTrue( "in" in script2["s"] )
-		self.assertTrue( "in1" in script2["s"] )
-		self.assertTrue( "in2" in script2["s"] )
-		self.assertFalse( "in3" in script2["s"] )
+		self.assertEqual( len( script2["s"]["in"] ), 3 )
 
 		self.assertEqual( script2["s"]["out"].getValue(), 1 )
 		script2["s"]["index"].setValue( 1 )
@@ -224,15 +219,14 @@ class SwitchTest( GafferTest.TestCase ) :
 		script["a2"] = GafferTest.AddNode()
 		script["a1"]["op1"].setValue( 1 )
 		script["a2"]["op2"].setValue( 2 )
-		script["s"]["in"].setInput( script["a1"]["sum"] )
-		script["s"]["in1"].setInput( script["a2"]["sum"] )
+		script["s"]["in"][0].setInput( script["a1"]["sum"] )
+		script["s"]["in"][1].setInput( script["a2"]["sum"] )
 
 		# Should be using an internal connection for speed
 		self.assertTrue( script["s"]["out"].getInput() is not None )
 
 		script["expression"] = Gaffer.Expression()
-		script["expression"]["engine"].setValue( "python" )
-		script["expression"]["expression"].setValue( 'parent["s"]["index"] = int( context.getFrame() )' )
+		script["expression"].setExpression( 'parent["s"]["index"] = int( context.getFrame() )' )
 
 		# Should not be using an internal connection, because the result
 		# varies with context.
@@ -253,19 +247,19 @@ class SwitchTest( GafferTest.TestCase ) :
 	def testDependencyNodeSwitch( self ) :
 
 		n = Gaffer.SwitchDependencyNode()
-		n["in"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["in"] = Gaffer.ArrayPlug( element = Gaffer.Plug(), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 		n["out"] = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic  )
 
-		self.assertTrue( n["out"].source().isSame( n["in"] ) )
+		self.assertTrue( n["out"].source().isSame( n["in"][0] ) )
 
 		input0 = Gaffer.Plug()
 		input1 = Gaffer.Plug()
 		input2 = Gaffer.Plug()
 
-		n["in"].setInput( input0 )
+		n["in"][0].setInput( input0 )
 		self.assertTrue( n["out"].source().isSame( input0 ) )
 
-		n["in1"].setInput( input1 )
+		n["in"][1].setInput( input1 )
 		self.assertTrue( n["out"].source().isSame( input0 ) )
 
 		n["index"].setValue( 1 )
@@ -274,7 +268,7 @@ class SwitchTest( GafferTest.TestCase ) :
 		n["enabled"].setValue( False )
 		self.assertTrue( n["out"].source().isSame( input0 ) )
 
-		n["in2"].setInput( input2 )
+		n["in"][2].setInput( input2 )
 		self.assertTrue( n["out"].source().isSame( input0 ) )
 
 		n["enabled"].setValue( True )
@@ -307,16 +301,16 @@ class SwitchTest( GafferTest.TestCase ) :
 	def testDependencyNodeConnectedIndex( self ) :
 
 		n = Gaffer.SwitchDependencyNode()
-		n["in"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["in"] = Gaffer.ArrayPlug( element = Gaffer.Plug(), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 		n["out"] = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic  )
 
 		input0 = Gaffer.Plug()
 		input1 = Gaffer.Plug()
 		input2 = Gaffer.Plug()
 
-		n["in"].setInput( input0 )
-		n["in1"].setInput( input1 )
-		n["in2"].setInput( input2 )
+		n["in"][0].setInput( input0 )
+		n["in"][1].setInput( input1 )
+		n["in"][2].setInput( input2 )
 
 		self.assertTrue( n["out"].source().isSame( input0 ) )
 
@@ -338,6 +332,108 @@ class SwitchTest( GafferTest.TestCase ) :
 		n = Gaffer.SwitchDependencyNode()
 		self.assertTrue( n["enabled"].acceptsInput( None ) )
 		self.assertTrue( n["index"].acceptsInput( None ) )
+
+	def testIndirectInputsToIndex( self ) :
+
+		n = Gaffer.SwitchDependencyNode()
+		n["in"] = Gaffer.ArrayPlug( element = Gaffer.Plug(), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["out"] = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic  )
+
+		input0 = Gaffer.Plug()
+		input1 = Gaffer.Plug()
+		input2 = Gaffer.Plug()
+
+		n["in"][0].setInput( input0 )
+		n["in"][1].setInput( input1 )
+		n["in"][2].setInput( input2 )
+
+		self.assertTrue( n["out"].source().isSame( input0 ) )
+
+		indexInput = Gaffer.IntPlug()
+		n["index"].setInput( indexInput )
+		self.assertTrue( n["out"].source().isSame( input0 ) )
+
+		indirectIndexInput1 = Gaffer.IntPlug( defaultValue = 1 )
+		indirectIndexInput2 = Gaffer.IntPlug( defaultValue = 2 )
+
+		indexInput.setInput( indirectIndexInput1 )
+		self.assertTrue( n["out"].source().isSame( input1 ) )
+
+		indexInput.setInput( indirectIndexInput2 )
+		self.assertTrue( n["out"].source().isSame( input2 ) )
+
+	def testAcceptsInputPerformance( self ) :
+
+		s1 = GafferTest.AddNode()
+		lastPlug = s1["sum"]
+
+		switches = []
+		for i in range( 0, 8 ) :
+			switch = self.intSwitch()
+			for i in range( 0, 9 ) :
+				switch["in"][i].setInput( lastPlug )
+			switches.append( switch )
+			lastPlug = switch["out"]
+
+		s2 = GafferTest.AddNode()
+		self.assertTrue( switches[0]["in"][0].acceptsInput( s2["sum"] ) )
+
+	def testActiveInPlug( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["a1"] = GafferTest.AddNode()
+		s["a2"] = GafferTest.AddNode()
+
+		s["switch"] = self.intSwitch()
+		s["switch"]["in"][0].setInput( s["a1"]["sum"] )
+		s["switch"]["in"][1].setInput( s["a2"]["sum"] )
+
+		self.assertTrue( s["switch"].activeInPlug().isSame( s["switch"]["in"][0] ) )
+
+		s["switch"]["index"].setValue( 1 )
+		self.assertTrue( s["switch"].activeInPlug().isSame( s["switch"]["in"][1] ) )
+
+		s["switch"]["enabled"].setValue( False )
+		self.assertTrue( s["switch"].activeInPlug().isSame( s["switch"]["in"][0] ) )
+
+		s["switch"]["enabled"].setValue( True )
+		self.assertTrue( s["switch"].activeInPlug().isSame( s["switch"]["in"][1] ) )
+
+		s["expression"] = Gaffer.Expression()
+		s["expression"].setExpression( 'parent["switch"]["index"] = context.getFrame()' )
+
+		with Gaffer.Context() as c :
+
+			c.setFrame( 0 )
+			self.assertTrue( s["switch"].activeInPlug().isSame( s["switch"]["in"][0] ) )
+
+			c.setFrame( 1 )
+			self.assertTrue( s["switch"].activeInPlug().isSame( s["switch"]["in"][1] ) )
+
+			c.setFrame( 2 )
+			self.assertTrue( s["switch"].activeInPlug().isSame( s["switch"]["in"][0] ) )
+
+	def testSetupFromNonSerialisablePlug( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n1"] = GafferTest.AddNode()
+		s["n2"] = GafferTest.AddNode()
+
+		s["n1"]["sum"].setFlags( Gaffer.Plug.Flags.Serialisable, False )
+
+		s["switch"] = Gaffer.SwitchComputeNode()
+		s["switch"].setup( s["n1"]["sum"] )
+
+		s["switch"]["in"][0].setInput( s["n1"]["sum"] )
+		s["n2"]["op1"].setInput( s["switch"]["out"] )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		self.assertTrue( s2["n2"]["op1"].getInput().isSame( s2["switch"]["out"] ) )
+		self.assertTrue( s2["switch"]["in"][0].getInput().isSame( s2["n1"]["sum"] ) )
 
 	def setUp( self ) :
 

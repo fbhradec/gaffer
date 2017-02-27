@@ -44,7 +44,7 @@ class WeakMethodTest( GafferTest.TestCase ) :
 
 	def test( self ) :
 
-		class A() :
+		class A( object ) :
 
 			def f( self ) :
 
@@ -73,7 +73,7 @@ class WeakMethodTest( GafferTest.TestCase ) :
 
 	def testFallbackResult( self ) :
 
-		class A() :
+		class A( object ) :
 
 			def f( self ) :
 
@@ -90,4 +90,3 @@ class WeakMethodTest( GafferTest.TestCase ) :
 
 if __name__ == "__main__":
 	unittest.main()
-

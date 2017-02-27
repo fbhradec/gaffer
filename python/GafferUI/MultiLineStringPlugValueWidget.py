@@ -40,9 +40,13 @@ from __future__ import with_statement
 import Gaffer
 import GafferUI
 
+## Supported Metadata :
+#
+# - "multiLineStringPlugValueWidget:continuousUpdate"
+# - "multiLineStringPlugValueWidget:role"
 class MultiLineStringPlugValueWidget( GafferUI.PlugValueWidget ) :
 
-	def __init__( self, plug, continuousUpdate=False, **kw ) :
+	def __init__( self, plug, **kw ) :
 
 		self.__textWidget = GafferUI.MultiLineTextWidget()
 
@@ -53,8 +57,7 @@ class MultiLineStringPlugValueWidget( GafferUI.PlugValueWidget ) :
 		self.__keyPressConnection = self.__textWidget.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
 		self.__activatedConnection = self.__textWidget.activatedSignal().connect( Gaffer.WeakMethod( self.__setPlugValue ) )
 		self.__editingFinishedConnection = self.__textWidget.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__setPlugValue ) )
-		if continuousUpdate :
-			self.__textChangedConnection = self.__textWidget.textChangedSignal().connect( Gaffer.WeakMethod( self.__setPlugValue ) )
+		self.__textChangedConnection = self.__textWidget.textChangedSignal().connect( Gaffer.WeakMethod( self.__setPlugValue ) )
 
 		self._updateFromPlug()
 
@@ -66,10 +69,26 @@ class MultiLineStringPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		if self.getPlug() is not None :
 			with self.getContext() :
-				self.__textWidget.setText( self.getPlug().getValue() )
-				
-			fixedLineHeight = Gaffer.Metadata.plugValue( self.getPlug(), "fixedLineHeight" )
+				try :
+					value = self.getPlug().getValue()
+				except :
+					value = None
+
+			if value is not None :
+				self.__textWidget.setText( value )
+
+			self.__textWidget.setErrored( value is None )
+
+			fixedLineHeight = Gaffer.Metadata.value( self.getPlug(), "fixedLineHeight" )
 			self.__textWidget.setFixedLineHeight( fixedLineHeight )
+
+			role = Gaffer.Metadata.value( self.getPlug(), "multiLineStringPlugValueWidget:role" )
+			role = getattr( self.__textWidget.Role, role.capitalize() ) if role else self.__textWidget.Role.Text
+			self.__textWidget.setRole( role )
+
+			self.__textChangedConnection.block(
+				not Gaffer.Metadata.value( self.getPlug(), "multiLineStringPlugValueWidget:continuousUpdate" )
+			)
 
 		self.__textWidget.setEditable( self._editable() )
 

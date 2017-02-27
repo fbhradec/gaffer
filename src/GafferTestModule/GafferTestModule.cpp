@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2012, John Haddon. All rights reserved.
-//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2013-2015, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -45,6 +45,7 @@
 #include "GafferTest/MetadataTest.h"
 #include "GafferTest/ContextTest.h"
 #include "GafferTest/ComputeNodeTest.h"
+#include "GafferTest/DownstreamIteratorTest.h"
 
 using namespace boost::python;
 using namespace GafferTest;
@@ -66,6 +67,8 @@ BOOST_PYTHON_MODULE( _GafferTest )
 	def( "testManyContexts", &testManyContexts );
 	def( "testManySubstitutions", &testManySubstitutions );
 	def( "testManyEnvironmentSubstitutions", &testManyEnvironmentSubstitutions );
+	def( "testScopingNullContext", &testScopingNullContext );
 	def( "testComputeNodeThreading", &testComputeNodeThreading );
+	def( "testDownstreamIterator", &testDownstreamIterator );
 
 }

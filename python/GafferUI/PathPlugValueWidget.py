@@ -37,27 +37,25 @@
 
 from __future__ import with_statement
 
-import os
-
 import IECore
 
 import Gaffer
 import GafferUI
 
+## Supported plug metadata - used to provide arguments to a
+# PathChooserDialogue :
+#
+# - "pathPlugValueWidget:leaf"
+# - "pathPlugValueWidget:valid"
+# - "pathPlugValueWidget:bookmarks"
 class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	## path should be an instance of Gaffer.Path, optionally with
 	# filters applied. It will be updated with the contents of the plug.
 	#
-	# The pathChooserDialogueKeywords are passed to the PathChooserDialogue
-	# that is opened when the user wishes to browse for a new path - they can
-	# be specified to customise the path chooser appropriately. They may be
-	# passed either as a dictionary, or as a callable which returns a dictionary -
-	# in the latter case the callable will be evaluated just prior to opening
-	# the dialogue each time.
-	#
-	# \todo Migrate the uses of pathChooserDialogueKeywords into Metadata.
-	def __init__( self, plug, path=None, pathChooserDialogueKeywords={}, **kw ) :
+	# \deprecated The pathChooserDialogueKeywords argument will be removed
+	# in a future version - use metadata instead.
+	def __init__( self, plug, path=None, pathChooserDialogueKeywords=None, **kw ) :
 
 		self.__row = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 )
 
@@ -79,6 +77,10 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		self._updateFromPlug()
 
+	def path( self ) :
+
+		return self.__path
+
 	## Returns the PathWidget used to display the path.
 	def pathWidget( self ) :
 
@@ -93,10 +95,10 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		result = GafferUI.PlugValueWidget.getToolTip( self )
 
-		result += "<ul>"
+		result += "\n\n<ul>"
 		result += "<li>Tab to auto-complete</li>"
 		result += "<li>Cursor down to list</li>"
-		result += "<ul>"
+		result += "</ul>"
 
 		return result
 
@@ -110,12 +112,24 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 		pathCopy = self.__path.copy()
 
 		# get the keywords for the dialogue constructor
-		pathChooserDialogueKeywords = self.__pathChooserDialogueKeywords
-		if callable( pathChooserDialogueKeywords ) :
-			pathChooserDialogueKeywords = pathChooserDialogueKeywords()
+		# from the plug metadata.
+		pathChooserDialogueKeywords = {}
+		pathChooserDialogueKeywords["leaf"] = Gaffer.Metadata.value( self.getPlug(), "pathPlugValueWidget:leaf" )
+		pathChooserDialogueKeywords["valid"] = Gaffer.Metadata.value( self.getPlug(), "pathPlugValueWidget:valid" )
 
+		bookmarks = Gaffer.Metadata.value( self.getPlug(), "pathPlugValueWidget:bookmarks" )
+		if bookmarks is not None :
+			pathChooserDialogueKeywords["bookmarks"] = GafferUI.Bookmarks.acquire( self.getPlug(), type( pathCopy ), bookmarks )
+
+		# support deprecated keywords passed to our constructor
+		if self.__pathChooserDialogueKeywords is not None :
+			if callable( self.__pathChooserDialogueKeywords ) :
+				pathChooserDialogueKeywords.update( self.__pathChooserDialogueKeywords() )
+			else :
+				pathChooserDialogueKeywords.update( self.__pathChooserDialogueKeywords )
+
+		# choose a sensible starting location if the path is empty.
 		if pathCopy.isEmpty() :
-			# choose a sensible starting location if the path is empty.
 			bookmarks = pathChooserDialogueKeywords.get( "bookmarks", None )
 			if bookmarks is not None :
 				pathCopy.setFromString( bookmarks.getDefault() )
@@ -133,13 +147,17 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 		self.pathWidget().setEditable( self._editable() )
 		self.__row[1].setEnabled( self._editable() ) # button
 
+	def _setPlugFromPath( self, path ) :
+
+		self.getPlug().setValue( str( self.__path ) )
+
 	def __setPlugValue( self, *args ) :
 
 		if not self._editable() :
 			return
 
 		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
-			self.getPlug().setValue( str( self.__path ) )
+			self._setPlugFromPath( self.__path )
 
 		# now we've transferred the text changes to the global undo queue, we remove them
 		# from the widget's private text editing undo queue. it will then ignore undo shortcuts,

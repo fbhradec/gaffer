@@ -41,12 +41,11 @@
 #include "Gaffer/GraphComponent.h"
 #include "Gaffer/FilteredChildIterator.h"
 #include "Gaffer/FilteredRecursiveChildIterator.h"
-#include "Gaffer/TypedPlug.h"
 
 namespace Gaffer
 {
 
-IE_CORE_FORWARDDECLARE( CompoundPlug )
+IE_CORE_FORWARDDECLARE( Plug )
 IE_CORE_FORWARDDECLARE( ScriptNode )
 
 /// The primary class from which node graphs are constructed. Nodes may
@@ -84,8 +83,9 @@ class Node : public GraphComponent
 		/// \note Passive observers of the plug value should use plugDirtiedSignal()
 		/// rather than plugSetSignal().
 		UnaryPlugSignal &plugSetSignal();
-		/// Emitted immediately when the input changes on a plug of this node.
-		/// As with plugSetSignal(), it is acceptable for slots connected to
+		/// Emitted immediately when a plug's input is changed. Also emitted
+		/// for all outputs of such plugs, as in effect their input is being changed
+		/// too. As with plugSetSignal(), it is acceptable for slots connected to
 		/// this signal to rewire the node graph.
 		UnaryPlugSignal &plugInputChangedSignal();
 		/// Emitted when a plug of this node is dirtied - this signifies that any
@@ -113,16 +113,16 @@ class Node : public GraphComponent
 		/// It's common for users to want to create their own plugs on
 		/// nodes for the purposes of driving expressions and suchlike.
 		/// So that there is no danger of name clashes between such plugs
-		/// and plugs Gaffer itself might add in the future, this CompoundPlug
+		/// and plugs Gaffer itself might add in the future, this plug
 		/// is provided, under which users may add any plugs they want. Plugs
 		/// added to the user plug will need the Plug::Dynamic flag to be set
 		/// so that they can be saved and loaded successfully.
-		Gaffer::CompoundPlug *userPlug();
-		const Gaffer::CompoundPlug *userPlug() const;
+		Gaffer::Plug *userPlug();
+		const Gaffer::Plug *userPlug() const;
 
-		/// Convenience function which simply returns ancestor<ScriptNode>()
+		/// Convenience function which returns the script this node belongs to,
+		/// or the node itself if it is a ScriptNode.
 		ScriptNode *scriptNode();
-		/// Convenience function which simply returns ancestor<ScriptNode>()
 		const ScriptNode *scriptNode() const;
 
 		/// Accepts only Nodes and Plugs.

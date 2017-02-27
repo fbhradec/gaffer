@@ -45,6 +45,7 @@
 #include "Gaffer/SplinePlug.h"
 #include "Gaffer/BoxPlug.h"
 #include "Gaffer/StringPlug.h"
+#include "Gaffer/TransformPlug.h"
 
 using namespace Imath;
 using namespace IECore;
@@ -57,7 +58,7 @@ using namespace Gaffer;
 IE_CORE_DEFINERUNTIMETYPED( CompoundDataPlug::MemberPlug );
 
 CompoundDataPlug::MemberPlug::MemberPlug( const std::string &name, Direction direction, unsigned flags )
-	:	CompoundPlug( name, direction, flags )
+	:	ValuePlug( name, direction, flags )
 {
 }
 
@@ -83,7 +84,7 @@ const BoolPlug *CompoundDataPlug::MemberPlug::enabledPlug() const
 
 bool CompoundDataPlug::MemberPlug::acceptsChild( const Gaffer::GraphComponent *potentialChild ) const
 {
-	if( !CompoundPlug::acceptsChild( potentialChild ) )
+	if( !ValuePlug::acceptsChild( potentialChild ) )
 	{
 		return false;
 	}
@@ -119,7 +120,7 @@ bool CompoundDataPlug::MemberPlug::acceptsChild( const Gaffer::GraphComponent *p
 PlugPtr CompoundDataPlug::MemberPlug::createCounterpart( const std::string &name, Direction direction ) const
 {
 	PlugPtr result = new MemberPlug( name, direction, getFlags() );
-	for( PlugIterator it( this ); it != it.end(); it++ )
+	for( PlugIterator it( this ); !it.done(); ++it )
 	{
 		result->addChild( (*it)->createCounterpart( (*it)->getName(), direction ) );
 	}
@@ -133,7 +134,7 @@ PlugPtr CompoundDataPlug::MemberPlug::createCounterpart( const std::string &name
 IE_CORE_DEFINERUNTIMETYPED( CompoundDataPlug )
 
 CompoundDataPlug::CompoundDataPlug( const std::string &name, Direction direction, unsigned flags )
-	:	CompoundPlug( name, direction, flags )
+	:	ValuePlug( name, direction, flags )
 {
 }
 
@@ -143,7 +144,7 @@ CompoundDataPlug::~CompoundDataPlug()
 
 bool CompoundDataPlug::acceptsChild( const GraphComponent *potentialChild ) const
 {
-	if( !CompoundPlug::acceptsChild( potentialChild ) )
+	if( !ValuePlug::acceptsChild( potentialChild ) )
 	{
 		return false;
 	}
@@ -154,7 +155,7 @@ bool CompoundDataPlug::acceptsChild( const GraphComponent *potentialChild ) cons
 PlugPtr CompoundDataPlug::createCounterpart( const std::string &name, Direction direction ) const
 {
 	CompoundDataPlugPtr result = new CompoundDataPlug( name, direction, getFlags() );
-	for( PlugIterator it( this ); it != it.end(); it++ )
+	for( PlugIterator it( this ); !it.done(); ++it )
 	{
 		result->addChild( (*it)->createCounterpart( (*it)->getName(), direction ) );
 	}
@@ -212,7 +213,7 @@ void CompoundDataPlug::addMembers( const IECore::CompoundData *parameters, bool 
 void CompoundDataPlug::fillCompoundData( IECore::CompoundDataMap &compoundDataMap ) const
 {
 	std::string name;
-	for( MemberPlugIterator it( this ); it != it.end(); it++ )
+	for( MemberPlugIterator it( this ); !it.done(); ++it )
 	{
 		IECore::DataPtr data = memberDataAndName( it->get(), name );
 		if( data )
@@ -225,7 +226,7 @@ void CompoundDataPlug::fillCompoundData( IECore::CompoundDataMap &compoundDataMa
 IECore::MurmurHash CompoundDataPlug::hash() const
 {
 	IECore::MurmurHash h;
-	for( MemberPlugIterator it( this ); it != it.end(); ++it )
+	for( MemberPlugIterator it( this ); !it.done(); ++it )
 	{
 		const MemberPlug *plug = it->get();
 		bool active = true;
@@ -250,7 +251,7 @@ void CompoundDataPlug::hash( IECore::MurmurHash &h ) const
 void CompoundDataPlug::fillCompoundObject( IECore::CompoundObject::ObjectMap &compoundObjectMap ) const
 {
 	std::string name;
-	for( MemberPlugIterator it( this ); it != it.end(); it++ )
+	for( MemberPlugIterator it( this ); !it.done(); ++it )
 	{
 		IECore::DataPtr data = memberDataAndName( it->get(), name );
 		if( data )
@@ -338,19 +339,19 @@ ValuePlugPtr CompoundDataPlug::createPlugFromData( const std::string &name, Plug
 		}
 		case V2iDataTypeId :
 		{
-			return compoundNumericValuePlug( name, direction, flags, static_cast<const V2iData *>( value ) );
+			return geometricCompoundNumericValuePlug( name, direction, flags, static_cast<const V2iData *>( value ) );
 		}
 		case V3iDataTypeId :
 		{
-			return compoundNumericValuePlug( name, direction, flags, static_cast<const V3iData *>( value ) );
+			return geometricCompoundNumericValuePlug( name, direction, flags, static_cast<const V3iData *>( value ) );
 		}
 		case V2fDataTypeId :
 		{
-			return compoundNumericValuePlug( name, direction, flags, static_cast<const V2fData *>( value ) );
+			return geometricCompoundNumericValuePlug( name, direction, flags, static_cast<const V2fData *>( value ) );
 		}
 		case V3fDataTypeId :
 		{
-			return compoundNumericValuePlug( name, direction, flags, static_cast<const V3fData *>( value ) );
+			return geometricCompoundNumericValuePlug( name, direction, flags, static_cast<const V3fData *>( value ) );
 		}
 		case Color3fDataTypeId :
 		{
@@ -376,6 +377,15 @@ ValuePlugPtr CompoundDataPlug::createPlugFromData( const std::string &name, Plug
 		{
 			return boxValuePlug( name, direction, flags, static_cast<const Box3iData *>( value ) );
 		}
+		case M44fDataTypeId :
+		{
+			M44fPlugPtr valuePlug = new M44fPlug(
+				name,
+				direction,
+				static_cast<const M44fData *>( value )->readable(),
+				flags
+			);
+		}
 		case FloatVectorDataTypeId :
 		{
 			return typedObjectValuePlug( name, direction, flags, static_cast<const FloatVectorData *>( value ) );
@@ -388,6 +398,10 @@ ValuePlugPtr CompoundDataPlug::createPlugFromData( const std::string &name, Plug
 		{
 			return typedObjectValuePlug( name, direction, flags, static_cast<const StringVectorData *>( value ) );
 		}
+		case BoolVectorDataTypeId :
+		{
+			return typedObjectValuePlug( name, direction, flags, static_cast<const BoolVectorData *>( value ) );
+		}
 		case V3fVectorDataTypeId :
 		{
 			return typedObjectValuePlug( name, direction, flags, static_cast<const V3fVectorData *>( value ) );
@@ -395,6 +409,10 @@ ValuePlugPtr CompoundDataPlug::createPlugFromData( const std::string &name, Plug
 		case Color3fVectorDataTypeId :
 		{
 			return typedObjectValuePlug( name, direction, flags, static_cast<const Color3fVectorData *>( value ) );
+		}
+		case M44fVectorDataTypeId :
+		{
+			return typedObjectValuePlug( name, direction, flags, static_cast<const M44fVectorData *>( value ) );
 		}
 		default :
 			throw IECore::Exception(
@@ -434,6 +452,26 @@ ValuePlugPtr CompoundDataPlug::compoundNumericValuePlug( const std::string &name
 }
 
 template<typename T>
+ValuePlugPtr CompoundDataPlug::geometricCompoundNumericValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value )
+{
+	typedef typename T::ValueType ValueType;
+	typedef typename ValueType::BaseType BaseType;
+	typedef CompoundNumericPlug<ValueType> PlugType;
+
+	typename PlugType::Ptr result = new PlugType(
+		name,
+		direction,
+		value->readable(),
+		ValueType( Imath::limits<BaseType>::min() ),
+		ValueType( Imath::limits<BaseType>::max() ),
+		flags,
+		value->getInterpretation()
+	);
+
+	return result;
+}
+
+template<typename T>
 ValuePlugPtr CompoundDataPlug::typedObjectValuePlug( const std::string &name, Plug::Direction direction, unsigned flags, const T *value )
 {
 	typename TypedObjectPlug<T>::Ptr result = new TypedObjectPlug<T>(
@@ -459,13 +497,33 @@ IECore::DataPtr CompoundDataPlug::extractDataFromPlug( const ValuePlug *plug )
 		case BoolPlugTypeId :
 			return new BoolData( static_cast<const BoolPlug *>( plug )->getValue() );
 		case V2iPlugTypeId :
-			return new V2iData( static_cast<const V2iPlug *>( plug )->getValue() );
+		{
+			const V2iPlug *v2iPlug = static_cast<const V2iPlug *>( plug );
+			V2iDataPtr data = new V2iData( v2iPlug->getValue() );
+			data->setInterpretation( v2iPlug->interpretation() );
+			return data;
+		}
 		case V3iPlugTypeId :
-			return new V3iData( static_cast<const V3iPlug *>( plug )->getValue() );
+		{
+			const V3iPlug *v3iPlug = static_cast<const V3iPlug *>( plug );
+			V3iDataPtr data = new V3iData( v3iPlug->getValue() );
+			data->setInterpretation( v3iPlug->interpretation() );
+			return data;
+		}
 		case V2fPlugTypeId :
-			return new V2fData( static_cast<const V2fPlug *>( plug )->getValue() );
+		{
+			const V2fPlug *v2fPlug = static_cast<const V2fPlug *>( plug );
+			V2fDataPtr data = new V2fData( v2fPlug->getValue() );
+			data->setInterpretation( v2fPlug->interpretation() );
+			return data;
+		}
 		case V3fPlugTypeId :
-			return new V3fData( static_cast<const V3fPlug *>( plug )->getValue() );
+		{
+			const V3fPlug *v3fPlug = static_cast<const V3fPlug *>( plug );
+			V3fDataPtr data = new V3fData( v3fPlug->getValue() );
+			data->setInterpretation( v3fPlug->interpretation() );
+			return data;
+		}
 		case Color3fPlugTypeId :
 			return new Color3fData( static_cast<const Color3fPlug *>( plug )->getValue() );
 		case Color4fPlugTypeId :
@@ -484,14 +542,22 @@ IECore::DataPtr CompoundDataPlug::extractDataFromPlug( const ValuePlug *plug )
 			return static_cast<const IntVectorDataPlug *>( plug )->getValue()->copy();
 		case StringVectorDataPlugTypeId :
 			return static_cast<const StringVectorDataPlug *>( plug )->getValue()->copy();
+		case BoolVectorDataPlugTypeId :
+			return static_cast<const BoolVectorDataPlug *>( plug )->getValue()->copy();
 		case V3fVectorDataPlugTypeId :
 			return static_cast<const V3fVectorDataPlug *>( plug )->getValue()->copy();
 		case Color3fVectorDataPlugTypeId :
 			return static_cast<const Color3fVectorDataPlug *>( plug )->getValue()->copy();
+		case M44fVectorDataPlugTypeId :
+			return static_cast<const M44fVectorDataPlug *>( plug )->getValue()->copy();
 		case SplineffPlugTypeId :
 			return new SplineffData( static_cast<const SplineffPlug *>( plug )->getValue() );
 		case SplinefColor3fPlugTypeId :
 			return new SplinefColor3fData( static_cast<const SplinefColor3fPlug *>( plug )->getValue() );
+		case TransformPlugTypeId :
+			return new M44fData( static_cast<const TransformPlug *>( plug )->matrix() );
+		case M44fPlugTypeId :
+			return new M44fData( static_cast<const M44fPlug *>( plug )->getValue() );
 		default :
 			throw IECore::Exception(
 				boost::str( boost::format( "Plug \"%s\" has unsupported type \"%s\"" ) % plug->getName().string() % plug->typeName() )
@@ -499,4 +565,3 @@ IECore::DataPtr CompoundDataPlug::extractDataFromPlug( const ValuePlug *plug )
 	}
 
 }
-

@@ -50,7 +50,7 @@ class SceneGadgetTest( GafferUITest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["p"] = GafferScene.Plane()
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["p"]["out"] )
+		s["g"]["in"][0].setInput( s["p"]["out"] )
 		s["g"]["transform"]["translate"]["x"].setValue( 2 )
 
 		sg = GafferSceneUI.SceneGadget()
@@ -92,7 +92,7 @@ class SceneGadgetTest( GafferUITest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["s"] = GafferScene.Sphere()
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["s"]["out"] )
+		s["g"]["in"][0].setInput( s["s"]["out"] )
 		s["a"] = GafferScene.StandardAttributes()
 		s["a"]["in"].setInput( s["g"]["out"] )
 
@@ -125,7 +125,7 @@ class SceneGadgetTest( GafferUITest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["s"] = GafferScene.Sphere()
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["s"]["out"] )
+		s["g"]["in"][0].setInput( s["s"]["out"] )
 		s["a"] = GafferScene.StandardAttributes()
 		s["a"]["in"].setInput( s["g"]["out"] )
 
@@ -158,13 +158,12 @@ class SceneGadgetTest( GafferUITest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["p"] = GafferScene.Plane()
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["p"]["out"] )
-		s["g"]["in1"].setInput( s["p"]["out"] )
-		s["g"]["in2"].setInput( s["p"]["out"] )
+		s["g"]["in"][0].setInput( s["p"]["out"] )
+		s["g"]["in"][1].setInput( s["p"]["out"] )
+		s["g"]["in"][2].setInput( s["p"]["out"] )
 
 		s["e"] = Gaffer.Expression()
-		s["e"]["engine"].setValue( "python" )
-		s["e"]["expression"].setValue( "parent['p']['dimensions']['x'] = 1 + context.getFrame() * 0.1" )
+		s["e"].setExpression( "parent['p']['dimensions']['x'] = 1 + context.getFrame() * 0.1" )
 
 		g = GafferSceneUI.SceneGadget()
 		g.setScene( s["g"]["out"] )
@@ -175,10 +174,10 @@ class SceneGadgetTest( GafferUITest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s["p"] = GafferScene.Plane()
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["p"]["out"] )
-		s["g"]["in1"].setInput( s["p"]["out"] )
-		s["g"]["in2"].setInput( s["p"]["out"] )
-		s["g"]["in3"].setInput( s["p"]["out"] )
+		s["g"]["in"][0].setInput( s["p"]["out"] )
+		s["g"]["in"][1].setInput( s["p"]["out"] )
+		s["g"]["in"][2].setInput( s["p"]["out"] )
+		s["g"]["in"][3].setInput( s["p"]["out"] )
 
 		sg = GafferSceneUI.SceneGadget()
 		sg.setScene( s["g"]["out"] )
@@ -224,8 +223,7 @@ class SceneGadgetTest( GafferUITest.TestCase ) :
 		s["a"]["attributes"]["doubleSided"]["enabled"].setValue( True )
 
 		s["e"] = Gaffer.Expression()
-		s["e"]["engine"].setValue( "python" )
-		s["e"]["expression"].setValue( 'parent["a"]["attributes"]["doubleSided"]["value"] = context["nonexistent"]' )
+		s["e"].setExpression( 'parent["a"]["attributes"]["doubleSided"]["value"] = context["nonexistent"]' )
 
 		s["f"] = GafferScene.PathFilter()
 		s["f"]["paths"].setValue( IECore.StringVectorData( [ "/bigSphere/littleSphere" ] ) )

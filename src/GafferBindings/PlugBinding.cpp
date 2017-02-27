@@ -39,7 +39,6 @@
 
 #include "Gaffer/Plug.h"
 #include "Gaffer/Node.h"
-#include "Gaffer/Reference.h"
 
 #include "GafferBindings/PlugBinding.h"
 #include "GafferBindings/MetadataBinding.h"
@@ -89,10 +88,10 @@ static NodePtr node( Plug &p )
 	return p.node();
 }
 
-void PlugSerialiser::moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules ) const
+void PlugSerialiser::moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const
 {
-	Serialiser::moduleDependencies( graphComponent, modules );
-	modules.insert( "IECore" ); // for the metadata calls
+	Serialiser::moduleDependencies( graphComponent, modules, serialisation );
+	metadataModuleDependencies( static_cast<const Plug *>( graphComponent ), modules );
 }
 
 std::string PlugSerialiser::constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const
@@ -116,20 +115,14 @@ std::string PlugSerialiser::postHierarchy( const Gaffer::GraphComponent *graphCo
 			result += identifier + ".setFlags( Gaffer.Plug.Flags.ReadOnly, True )\n";
 		}
 
-		if( !plug->ancestor<Reference>() )
-		{
-			/// \todo Perhaps we need some sort of plug flag the Reference node can
-			/// set to influence the metadata serialisation, so that the PlugBinding
-			/// doesn't need to know about References at all?
-			result += metadataSerialisation( plug, identifier );
-		}
+		result += metadataSerialisation( plug, identifier );
 
 		return result;
 	}
 	return "";
 }
 
-bool PlugSerialiser::childNeedsConstruction( const Gaffer::GraphComponent *child ) const
+bool PlugSerialiser::childNeedsConstruction( const Gaffer::GraphComponent *child, const Serialisation &serialisation ) const
 {
 	// cast is safe because of constraints maintained by Plug::acceptsChild().
 	const Plug *childPlug = static_cast<const Plug *>( child );
@@ -151,8 +144,8 @@ std::string PlugSerialiser::directionRepr( Plug::Direction direction )
 
 std::string PlugSerialiser::flagsRepr( unsigned flags )
 {
-	static const Plug::Flags values[] = { Plug::Dynamic, Plug::Serialisable, Plug::AcceptsInputs, Plug::PerformsSubstitutions, Plug::Cacheable, Plug::ReadOnly, Plug::None };
-	static const char *names[] = { "Dynamic", "Serialisable", "AcceptsInputs", "PerformsSubstitutions", "Cacheable", "ReadOnly", 0 };
+	static const Plug::Flags values[] = { Plug::Dynamic, Plug::Serialisable, Plug::AcceptsInputs, Plug::PerformsSubstitutions, Plug::Cacheable, Plug::ReadOnly, Plug::AcceptsDependencyCycles, Plug::None };
+	static const char *names[] = { "Dynamic", "Serialisable", "AcceptsInputs", "PerformsSubstitutions", "Cacheable", "ReadOnly", "AcceptsDependencyCycles", 0 };
 
 	int defaultButOffCount = 0;
 	std::string defaultButOff;
@@ -238,6 +231,7 @@ void GafferBindings::bindPlug()
 			.value( "PerformsSubstitutions", Plug::PerformsSubstitutions )
 			.value( "Cacheable", Plug::Cacheable )
 			.value( "ReadOnly", Plug::ReadOnly )
+			.value( "AcceptsDependencyCycles", Plug::AcceptsDependencyCycles )
 			.value( "Default", Plug::Default )
 			.value( "All", Plug::All )
 		;

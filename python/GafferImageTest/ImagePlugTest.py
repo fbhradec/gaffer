@@ -35,6 +35,7 @@
 #
 ##########################################################################
 
+import os
 import unittest
 
 import IECore
@@ -43,7 +44,7 @@ import GafferTest
 import GafferImage
 import GafferImageTest
 
-class ImagePlugTest( GafferTest.TestCase ) :
+class ImagePlugTest( GafferImageTest.ImageTestCase ) :
 
 	def testTileOrigin( self ) :
 
@@ -65,26 +66,6 @@ class ImagePlugTest( GafferTest.TestCase ) :
 				GafferImage.ImagePlug.tileOrigin( input ),
 				expectedResult
 			)
-
-	def testTileStaticMethod( self ) :
-
-		tileSize = GafferImage.ImagePlug.tileSize()
-
-		self.assertEqual(
-			GafferImage.ImagePlug.tileBound( IECore.V2i( 0 ) ),
-			IECore.Box2i(
-				IECore.V2i( 0, 0 ),
-				IECore.V2i( tileSize - 1, tileSize - 1 )
-			)
-		)
-
-		self.assertEqual(
-			GafferImage.ImagePlug.tileBound( IECore.V2i( 0, 1 ) ),
-			IECore.Box2i(
-				IECore.V2i( 0, tileSize ),
-				IECore.V2i( tileSize - 1, tileSize * 2 - 1 )
-			)
-		)
 
 	def testDefaultChannelNamesMethod( self ) :
 
@@ -141,6 +122,32 @@ class ImagePlugTest( GafferTest.TestCase ) :
 
 		self.assertDefaultNamesAreCorrect( GafferImage )
 		self.assertDefaultNamesAreCorrect( GafferImageTest )
+
+	def testImageHash( self ) :
+
+		r = GafferImage.ImageReader()
+		r['fileName'].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" ) )
+
+		h = r['out'].imageHash()
+
+		for i in range( 20 ) :
+			self.assertEqual( h, r['out'].imageHash() )
+
+		r['refreshCount'].setValue( 2 )
+
+		self.assertNotEqual( h, r['out'].imageHash() )
+
+	def testDefaultFormatForImage( self ) :
+
+		constant = GafferImage.Constant()
+
+		with Gaffer.Context() as c :
+
+			GafferImage.FormatPlug.setDefaultFormat( c, GafferImage.Format( 100, 200 ) )
+			self.assertEqual( constant["out"].image().displayWindow, IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 99, 199 ) ) )
+
+			GafferImage.FormatPlug.setDefaultFormat( c, GafferImage.Format( 200, 300 ) )
+			self.assertEqual( constant["out"].image().displayWindow, IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 199, 299 ) ) )
 
 if __name__ == "__main__":
 	unittest.main()

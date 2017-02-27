@@ -36,7 +36,9 @@
 
 #include "Gaffer/TypedObjectPlug.h"
 
+#include "GafferImage/ImagePlug.h"
 #include "GafferImage/ChannelMaskPlug.h"
+#include "GafferImage/ImageAlgo.h"
 
 using namespace GafferImage;
 using namespace IECore;
@@ -84,11 +86,11 @@ void ChannelMaskPlug::removeDuplicateIndices( std::vector<std::string> &inChanne
 		std::vector<std::string>::iterator cIt( inChannels.begin() );
 		while ( cIt != inChannels.end() )
 		{
-			int idx = channelIndex( *cIt );
+			int idx = ImageAlgo::colorIndex( *cIt );
 			std::vector<std::string>::iterator duplicateIt( cIt + 1 );
 			while ( duplicateIt != inChannels.end() )
 			{
-				if ( channelIndex( *duplicateIt ) == idx )
+				if( ImageAlgo::colorIndex( *duplicateIt ) == idx )
 				{
 					inChannels.erase( duplicateIt );
 					duplicateIt = cIt + 1;
@@ -102,22 +104,3 @@ void ChannelMaskPlug::removeDuplicateIndices( std::vector<std::string> &inChanne
 		}
 	}
 }
-
-int ChannelMaskPlug::channelIndex( std::string channel )
-{
-	// Strip from the channel string any layer information...
-	size_t pos = channel.find_last_of(".");
-	if ( pos != std::string::npos )
-	{
-		channel.erase( channel.begin(), channel.begin()+pos+1 );
-	}
-
-	///\todo: Replace this temporary code below with a lookup into a table of channels and their indexes
-	if ( channel == "R") return 0;
-	if ( channel == "G") return 1;
-	if ( channel == "B") return 2;
-	if ( channel == "A") return 3;
-
-	return 0;
-}
-

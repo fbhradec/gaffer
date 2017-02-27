@@ -38,10 +38,15 @@
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
 
+#include "OpenEXR/ImathFun.h"
+#include "OpenEXR/ImathBoxAlgo.h"
+
 #include "Gaffer/UndoContext.h"
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/StandardSet.h"
 #include "Gaffer/Metadata.h"
+#include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/Dot.h"
 
 #include "GafferUI/StandardConnectionGadget.h"
 #include "GafferUI/Style.h"
@@ -62,13 +67,14 @@ static IECore::InternedString g_colorKey( "connectionGadget:color" );
 StandardConnectionGadget::StandardConnectionGadget( GafferUI::NodulePtr srcNodule, GafferUI::NodulePtr dstNodule )
 	:	ConnectionGadget( srcNodule, dstNodule ), m_dragEnd( Gaffer::Plug::Invalid ), m_hovering( false )
 {
-	enterSignal().connect( boost::bind( &StandardConnectionGadget::enter, this, ::_1, ::_2 ) );
-	leaveSignal().connect( boost::bind( &StandardConnectionGadget::leave, this, ::_1, ::_2 ) );
-	buttonPressSignal().connect( boost::bind( &StandardConnectionGadget::buttonPress, this, ::_1,  ::_2 ) );
-	dragBeginSignal().connect( boost::bind( &StandardConnectionGadget::dragBegin, this, ::_1, ::_2 ) );
-	dragEnterSignal().connect( boost::bind( &StandardConnectionGadget::dragEnter, this, ::_1, ::_2 ) );
-	dragMoveSignal().connect( boost::bind( &StandardConnectionGadget::dragMove, this, ::_1, ::_2 ) );
-	dragEndSignal().connect( boost::bind( &StandardConnectionGadget::dragEnd, this, ::_1, ::_2 ) );
+	enterSignal().connect( boost::bind( &StandardConnectionGadget::enter, this, ::_2 ) );
+	mouseMoveSignal().connect( boost::bind( &StandardConnectionGadget::mouseMove, this, ::_2 ) );
+	leaveSignal().connect( boost::bind( &StandardConnectionGadget::leave, this, ::_2 ) );
+	buttonPressSignal().connect( boost::bind( &StandardConnectionGadget::buttonPress, this,  ::_2 ) );
+	dragBeginSignal().connect( boost::bind( &StandardConnectionGadget::dragBegin, this, ::_2 ) );
+	dragEnterSignal().connect( boost::bind( &StandardConnectionGadget::dragEnter, this, ::_2 ) );
+	dragMoveSignal().connect( boost::bind( &StandardConnectionGadget::dragMove, this, ::_2 ) );
+	dragEndSignal().connect( boost::bind( &StandardConnectionGadget::dragEnd, this, ::_2 ) );
 
 	Metadata::plugValueChangedSignal().connect( boost::bind( &StandardConnectionGadget::plugMetadataChanged, this, ::_1, ::_2, ::_3, ::_4 ) );
 
@@ -174,7 +180,7 @@ void StandardConnectionGadget::doRender( const Style *style ) const
 {
 	const_cast<StandardConnectionGadget *>( this )->setPositionsFromNodules();
 
-	Style::State state = m_hovering ? Style::HighlightedState : Style::NormalState;
+	Style::State state = ( m_hovering || m_dragEnd ) ? Style::HighlightedState : Style::NormalState;
 	if( state != Style::HighlightedState )
 	{
 		if( nodeSelected( srcNodule() ) || nodeSelected( dstNodule() ) )
@@ -194,45 +200,93 @@ void StandardConnectionGadget::doRender( const Style *style ) const
 	style->renderConnection( adjustedSrcPos, adjustedSrcTangent, m_dstPos, m_dstTangent, state, m_userColor.get_ptr() );
 }
 
-
-bool StandardConnectionGadget::buttonPress( GadgetPtr gadget, const ButtonEvent &event )
+float StandardConnectionGadget::distanceToNodeGadget( const IECore::LineSegment3f &line, const Nodule *nodule ) const
 {
-	if( event.buttons==ButtonEvent::Left )
+	const NodeGadget *nodeGadget = nodule ? nodule->ancestor<NodeGadget>() : NULL;
+	if( !nodeGadget )
 	{
-		// we have to accept button presses so we can initiate dragging
-		return true;
+		return Imath::limits<float>::max();
 	}
-	return false;
+
+	const M44f relativeTransform = fullTransform() * nodeGadget->fullTransform().inverse();
+	V3f p0 = line.p0 * relativeTransform; p0.z = 0;
+	const V3f p1 = closestPointOnBox( p0, nodeGadget->bound() );
+
+	return (p0 - p1).length();
 }
 
-IECore::RunTimeTypedPtr StandardConnectionGadget::dragBegin( GadgetPtr gadget, const DragDropEvent &event )
+Gaffer::Plug::Direction StandardConnectionGadget::endAt( const IECore::LineSegment3f &line ) const
 {
-	setPositionsFromNodules();
-	float length = ( m_srcPos - m_dstPos ).length();
+	// Connections are only sensitive to hovering and dragging close
+	// to their ends, since it is confusing to accidentally pick up
+	// a connection in the middle, and some graphs use very long
+	// connections. The sensitive section is proportional to the
+	// length of the connection, with some sensible minimum and
+	// maximum limits.
+	const float length = ( m_srcPos - m_dstPos ).length();
+	const float threshold = clamp( length / 4.0f, 2.5f, 25.0f );
 
-	float dSrc = event.line.distanceTo( m_srcPos );
-	float dDst = event.line.distanceTo( m_dstPos );
+	float dSrc = line.distanceTo( m_srcPos );
+	float dDst = line.distanceTo( m_dstPos );
 
-	float dMin = min( dSrc, dDst );
-	if( dMin < length / 3.0f )
+	if( min( dSrc, dDst ) >= threshold )
+	{
+		// If connections go backwards, the grabbable region of the
+		// connection may be hidden behind the node it connects to.
+		// In this case  we also consider a point to be grabbable if
+		// it is less than the threshold distance from the node, rather
+		// than from the endpoint.
+		dSrc = distanceToNodeGadget( line, srcNodule() );
+		dDst = distanceToNodeGadget( line, dstNodule() );
+	}
+
+	if( min( dSrc, dDst ) < threshold )
 	{
 		// close enough to the ends to consider
 		if( dSrc < dDst )
 		{
-			m_dragEnd = Gaffer::Plug::Out;
-			return dstNodule()->plug();
+			return Gaffer::Plug::Out;
 		}
 		else
 		{
-			m_dragEnd = Gaffer::Plug::In;
-			return dstNodule()->plug()->getInput<Gaffer::Plug>();
+			return Gaffer::Plug::In;
 		}
 	}
 
-	return 0;
+	return Gaffer::Plug::Invalid;
+
 }
 
-bool StandardConnectionGadget::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
+bool StandardConnectionGadget::buttonPress( const ButtonEvent &event )
+{
+	// We have to accept button presses so we can initiate dragging.
+	return event.buttons==ButtonEvent::Left && m_hovering;
+}
+
+IECore::RunTimeTypedPtr StandardConnectionGadget::dragBegin( const DragDropEvent &event )
+{
+	if(
+		MetadataAlgo::readOnly( dstNodule()->plug() ) ||
+		( srcNodule() && MetadataAlgo::readOnly( srcNodule()->plug() ) )
+	)
+	{
+		return NULL;
+	}
+
+	setPositionsFromNodules();
+	m_dragEnd = endAt( event.line );
+	switch( m_dragEnd )
+	{
+		case Gaffer::Plug::Out :
+			return dstNodule()->plug();
+		case Gaffer::Plug::In :
+			return dstNodule()->plug()->getInput<Gaffer::Plug>();
+		default :
+			return NULL;
+	}
+}
+
+bool StandardConnectionGadget::dragEnter( const DragDropEvent &event )
 {
 	if( event.sourceGadget == this )
 	{
@@ -241,19 +295,19 @@ bool StandardConnectionGadget::dragEnter( GadgetPtr gadget, const DragDropEvent 
 	return false;
 }
 
-bool StandardConnectionGadget::dragMove( GadgetPtr gadget, const DragDropEvent &event )
+bool StandardConnectionGadget::dragMove( const DragDropEvent &event )
 {
 	updateDragEndPoint( event.line.p0, V3f( 0 ) );
 	return true;
 }
 
-bool StandardConnectionGadget::dragEnd( GadgetPtr gadget, const DragDropEvent &event )
+bool StandardConnectionGadget::dragEnd( const DragDropEvent &event )
 {
 	if( !event.destinationGadget || event.destinationGadget == this )
 	{
 		// noone wanted the drop so we'll disconnect
 		Gaffer::UndoContext undoEnabler( dstNodule()->plug()->ancestor<Gaffer::ScriptNode>() );
-		dstNodule()->plug()->setInput( 0 );
+		dstNodule()->plug()->setInput( NULL );
 	}
 	else
 	{
@@ -279,7 +333,27 @@ std::string StandardConnectionGadget::getToolTip( const IECore::LineSegment3f &l
 	}
 
 	const Gaffer::Plug *dstPlug = dstNodule()->plug();
+
+	int numSkippedDots = 0;
 	const Gaffer::Plug *srcPlug = dstPlug->getInput<Gaffer::Plug>();
+	while( const Dot *dot = IECore::runTimeCast<const Gaffer::Dot>( srcPlug->node() ) )
+	{
+		const Gaffer::Plug *inPlug = srcPlug->getInput<Gaffer::Plug>();
+		if(
+			srcPlug == dot->outPlug<Gaffer::Plug>() &&
+			inPlug == dot->inPlug<Gaffer::Plug>() &&
+			inPlug->getInput<Gaffer::Plug>()
+		)
+		{
+			srcPlug = inPlug->getInput<Gaffer::Plug>();
+			numSkippedDots += 1;
+		}
+		else
+		{
+			break;
+		}
+	}
+
 	const Gaffer::GraphComponent *ancestor = srcPlug->commonAncestor<Gaffer::GraphComponent>( dstPlug );
 
 	std::string srcName;
@@ -295,19 +369,33 @@ std::string StandardConnectionGadget::getToolTip( const IECore::LineSegment3f &l
 		dstName = dstPlug->fullName();
 	}
 
-	return srcName + " -> " + dstName;
+	result = srcName + " -> " + dstName;
+	if( numSkippedDots )
+	{
+		result += boost::str(
+			boost::format( " (via %d dot%s)" ) % numSkippedDots % ( numSkippedDots > 1 ? "s" : "" )
+		);
+	}
+	return result;
 }
 
-void StandardConnectionGadget::enter( GadgetPtr gadget, const ButtonEvent &event )
+void StandardConnectionGadget::enter( const ButtonEvent &event )
 {
-	m_hovering = true;
- 	requestRender();
+	m_hovering = endAt( event.line ) != Plug::Invalid;
+	requestRender();
 }
 
-void StandardConnectionGadget::leave( GadgetPtr gadget, const ButtonEvent &event )
+bool StandardConnectionGadget::mouseMove( const ButtonEvent &event )
+{
+	m_hovering = endAt( event.line ) != Plug::Invalid;
+ 	requestRender();
+	return false;
+}
+
+void StandardConnectionGadget::leave( const ButtonEvent &event )
 {
 	m_hovering = false;
- 	requestRender();
+	requestRender();
 }
 
 bool StandardConnectionGadget::nodeSelected( const Nodule *nodule ) const
@@ -327,20 +415,9 @@ bool StandardConnectionGadget::nodeSelected( const Nodule *nodule ) const
 	return script && script->selection()->contains( node );
 }
 
-void StandardConnectionGadget::plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
+void StandardConnectionGadget::plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
 {
-	const Plug *dstPlug = dstNodule()->plug();
-	if( plug && plug != dstPlug )
-	{
-		return;
-	}
-
-	const Node *node = dstPlug->node();
-	if(
-		key != g_colorKey ||
-		!node->isInstanceOf( nodeTypeId ) ||
-		!match( dstPlug->relativeName( node ), plugPath )
-	)
+	if( key != g_colorKey || !MetadataAlgo::affectedByChange( dstNodule()->plug(), nodeTypeId, plugPath, plug ) )
 	{
 		return;
 	}
@@ -354,7 +431,7 @@ void StandardConnectionGadget::plugMetadataChanged( IECore::TypeId nodeTypeId, c
 bool StandardConnectionGadget::updateUserColor()
 {
 	boost::optional<Color3f> c;
-	if( IECore::ConstColor3fDataPtr d = Metadata::plugValue<IECore::Color3fData>( dstNodule()->plug(), g_colorKey ) )
+	if( IECore::ConstColor3fDataPtr d = Metadata::value<IECore::Color3fData>( dstNodule()->plug(), g_colorKey ) )
 	{
 		c = d->readable();
 	}

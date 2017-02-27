@@ -113,21 +113,46 @@ class MultiLineTextWidgetTest( GafferUITest.TestCase ) :
 		widget = GafferUI.MultiLineTextWidget()
 		window.addChild( widget )
 		window.setVisible( True )
-		
+
 		# initial value
 		widget.setFixedLineHeight( 5 )
-		
+
 		oldHeight = widget.size().y
-		
-		# changing initial value		
+
+		# changing initial value
 		widget.setFixedLineHeight( 2 )
-		
+
 		self.waitForIdle()
-		
+
 		newHeight = widget.size().y
-		
+
 		# checking if the geometry has been updated for the new line height
 		self.assertEqual( newHeight == oldHeight, False )
+
+	def testErrored( self ) :
+
+		w = GafferUI.MultiLineTextWidget()
+		self.assertEqual( w.getErrored(), False )
+
+		w.setErrored( True )
+		self.assertEqual( w.getErrored(), True )
+
+		w.setErrored( False )
+		self.assertEqual( w.getErrored(), False )
+
+	def testRole( self ) :
+
+		w = GafferUI.MultiLineTextWidget()
+		self.assertEqual( w.getRole(), w.Role.Text )
+
+		w.setRole( w.Role.Code )
+		self.assertEqual( w.getRole(), w.Role.Code )
+
+		w.setRole( w.Role.Text )
+		self.assertEqual( w.getRole(), w.Role.Text )
+
+		w = GafferUI.MultiLineTextWidget( role = w.Role.Code)
+		self.assertEqual( w.getRole(), w.Role.Code )
 
 if __name__ == "__main__":
 	unittest.main()

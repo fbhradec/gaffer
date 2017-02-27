@@ -40,12 +40,11 @@
 
 #include "IECore/ImagePrimitive.h"
 
-#include "Gaffer/CompoundPlug.h"
 #include "Gaffer/TypedObjectPlug.h"
 #include "Gaffer/TypedPlug.h"
 
 #include "GafferImage/TypeIds.h"
-#include "GafferImage/FormatPlug.h"
+#include "GafferImage/AtomicFormatPlug.h"
 
 namespace GafferImage
 {
@@ -72,11 +71,11 @@ namespace GafferImage
 /// will modify the metadata are the Metadata specific nodes. Other image processing may occur which
 /// causes the implied meaning of certain metadata entries to become invalid (such as oiio:ColorSpace)
 /// but those nodes will not alter the metadata, nor behave differently based on its value.
-/// 
+///
 /// Some notes on color space:
 /// GafferImage nodes expect to operate in linear space, with associated alpha. Users are responsible
 /// for meeting that expectation (or knowing what they're doing when they don't).
-class ImagePlug : public Gaffer::CompoundPlug
+class ImagePlug : public Gaffer::ValuePlug
 {
 
 	public :
@@ -84,7 +83,7 @@ class ImagePlug : public Gaffer::CompoundPlug
 		ImagePlug( const std::string &name=defaultName<ImagePlug>(), Direction direction=In, unsigned flags=Default );
 		virtual ~ImagePlug();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImagePlug, ImagePlugTypeId, CompoundPlug );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImagePlug, ImagePlugTypeId, ValuePlug );
 
 		virtual bool acceptsChild( const Gaffer::GraphComponent *potentialChild ) const;
 		virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
@@ -96,8 +95,8 @@ class ImagePlug : public Gaffer::CompoundPlug
 		/// child plugs.
 		////////////////////////////////////////////////////////////////////
 		//@{
-		GafferImage::FormatPlug *formatPlug();
-		const GafferImage::FormatPlug *formatPlug() const;
+		GafferImage::AtomicFormatPlug *formatPlug();
+		const GafferImage::AtomicFormatPlug *formatPlug() const;
 		Gaffer::AtomicBox2iPlug *dataWindowPlug();
 		const Gaffer::AtomicBox2iPlug *dataWindowPlug() const;
 		Gaffer::CompoundObjectPlug *metadataPlug();
@@ -137,7 +136,6 @@ class ImagePlug : public Gaffer::CompoundPlug
 		//@}
 
 		static int tileSize() { return 64; };
-		static Imath::Box2i tileBound( const Imath::V2i &tileOrigin ) { return Imath::Box2i( tileOrigin * tileSize(), ( tileOrigin + Imath::V2i( 1 ) ) * tileSize() - Imath::V2i( 1 ) ); }
 		static const IECore::FloatVectorData *blackTile();
 		static const IECore::FloatVectorData *whiteTile();
 
@@ -153,7 +151,7 @@ class ImagePlug : public Gaffer::CompoundPlug
 	private :
 
 		static void compoundObjectToCompoundData( const IECore::CompoundObject *object, IECore::CompoundData *data );
-		
+
 		static size_t g_firstPlugIndex;
 };
 

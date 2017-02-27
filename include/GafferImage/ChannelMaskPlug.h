@@ -44,6 +44,10 @@
 namespace GafferImage
 {
 
+/// \todo Consider removing this plug type entirely. It seems to add
+/// little over StringVectorDataPlug, and what it does add likely
+/// needs rethinking and moving to something like ImageAlgo or
+/// ChannelAlgo anyway.
 class ChannelMaskPlug : public Gaffer::StringVectorDataPlug
 {
 	public:
@@ -61,9 +65,6 @@ class ChannelMaskPlug : public Gaffer::StringVectorDataPlug
 
 		/// Performs an in-place intersection of inChannels and the channels held within the StringVectorDataPlug.
 		void maskChannels( std::vector<std::string> &inChannels ) const;
-
-		/// Returns the index of a channel within it's layer.
-		static int channelIndex( std::string channel );
 
 		/// Removes channels that have the same channelIndex as another so that the list only contains channels with a unique index.
 		static void removeDuplicateIndices( std::vector<std::string> &inChannels );

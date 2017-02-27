@@ -80,6 +80,9 @@ class TypedObjectPlugTest( GafferTest.TestCase ) :
 		p = Gaffer.ObjectPlug( "p", defaultValue = IECore.IntVectorData( [ 1, 2, 3 ] ) )
 		self.assertEqual( p.defaultValue(), IECore.IntVectorData( [ 1, 2, 3 ] ) )
 
+		self.assertFalse( p.defaultValue().isSame( p.defaultValue() ) )
+		self.assertTrue( p.defaultValue( _copy = False ).isSame( p.defaultValue( _copy = False ) ) )
+
 	def testRunTimeTyped( self ) :
 
 		self.assertEqual( IECore.RunTimeTyped.baseTypeId( Gaffer.ObjectPlug.staticTypeId() ), Gaffer.ValuePlug.staticTypeId() )
@@ -198,6 +201,8 @@ class TypedObjectPlugTest( GafferTest.TestCase ) :
 		self.failUnless( Gaffer.FloatVectorDataPlug.ValueType is IECore.FloatVectorData )
 		self.failUnless( Gaffer.StringVectorDataPlug.ValueType is IECore.StringVectorData )
 		self.failUnless( Gaffer.V3fVectorDataPlug.ValueType is IECore.V3fVectorData )
+		self.failUnless( Gaffer.Color3fVectorDataPlug.ValueType is IECore.Color3fVectorData )
+		self.failUnless( Gaffer.M44fVectorDataPlug.ValueType is IECore.M44fVectorData )
 		self.failUnless( Gaffer.ObjectVectorPlug.ValueType is IECore.ObjectVector )
 
 	def testReadOnlySetValueRaises( self ) :
@@ -237,4 +242,3 @@ class TypedObjectPlugTest( GafferTest.TestCase ) :
 
 if __name__ == "__main__":
 	unittest.main()
-

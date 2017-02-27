@@ -1,7 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2011-2012, John Haddon. All rights reserved.
-//  Copyright (c) 2011-2014, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2011-2015, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -40,7 +40,7 @@
 #include "Gaffer/TimeWarp.h"
 #include "Gaffer/ContextVariables.h"
 #include "Gaffer/Backdrop.h"
-#include "Gaffer/Switch.h"
+#include "Gaffer/Loop.h"
 
 #include "GafferBindings/ConnectionBinding.h"
 #include "GafferBindings/SignalBinding.h"
@@ -73,8 +73,6 @@
 #include "GafferBindings/ComputeNodeBinding.h"
 #include "GafferBindings/BoxBinding.h"
 #include "GafferBindings/ActionBinding.h"
-#include "GafferBindings/ExecutableNodeBinding.h"
-#include "GafferBindings/DispatcherBinding.h"
 #include "GafferBindings/ReferenceBinding.h"
 #include "GafferBindings/BehaviourBinding.h"
 #include "GafferBindings/ArrayPlugBinding.h"
@@ -89,6 +87,11 @@
 #include "GafferBindings/LeafPathFilterBinding.h"
 #include "GafferBindings/MatchPatternPathFilterBinding.h"
 #include "GafferBindings/FileSystemPathBinding.h"
+#include "GafferBindings/FileSequencePathFilterBinding.h"
+#include "GafferBindings/AnimationBinding.h"
+#include "GafferBindings/MonitorBinding.h"
+#include "GafferBindings/MetadataAlgoBinding.h"
+#include "GafferBindings/SwitchBinding.h"
 
 using namespace boost::python;
 using namespace Gaffer;
@@ -143,7 +146,6 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindNode();
 	bindDependencyNode();
 	bindComputeNode();
-	bindExecutableNode();
 	bindPlug();
 	bindValuePlug();
 	bindNumericPlug();
@@ -169,7 +171,6 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindSubGraph();
 	bindBox();
 	bindAction();
-	bindDispatcher();
 	bindReference();
 	bindArrayPlug();
 	bindSerialisation();
@@ -182,14 +183,18 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindLeafPathFilter();
 	bindMatchPatternPathFilter();
 	bindFileSystemPath();
+	bindFileSequencePathFilter();
+	bindAnimation();
+	bindMonitor();
+	bindMetadataAlgo();
+	bindSwitch();
 
 	NodeClass<Backdrop>();
 
 	DependencyNodeClass<ContextProcessorComputeNode>();
 	DependencyNodeClass<TimeWarpComputeNode>();
 	DependencyNodeClass<ContextVariablesComputeNode>();
-	DependencyNodeClass<SwitchDependencyNode>();
-	DependencyNodeClass<SwitchComputeNode>();
+	DependencyNodeClass<LoopComputeNode>();
 
 	object tsi = class_<TaskSchedulerInitWrapper, boost::noncopyable>( "_tbb_task_scheduler_init", no_init )
 		.def( init<int>( arg( "max_threads" ) = int( tbb::task_scheduler_init::automatic ) ) )

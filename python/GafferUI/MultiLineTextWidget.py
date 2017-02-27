@@ -46,8 +46,9 @@ QtCore = GafferUI._qtImport( "QtCore" )
 class MultiLineTextWidget( GafferUI.Widget ) :
 
 	WrapMode = IECore.Enum.create( "None", "Word", "Character", "WordOrCharacter" )
+	Role = IECore.Enum.create( "Text", "Code" )
 
-	def __init__( self, text="", editable=True, wrapMode=WrapMode.WordOrCharacter, fixedLineHeight=None, **kw ) :
+	def __init__( self, text="", editable=True, wrapMode=WrapMode.WordOrCharacter, fixedLineHeight=None, role=Role.Text, **kw ) :
 
 		GafferUI.Widget.__init__( self, _PlainTextEdit(), **kw )
 
@@ -69,11 +70,12 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 		self.setEditable( editable )
 		self.setWrapMode( wrapMode )
 		self.setFixedLineHeight( fixedLineHeight )
+		self.setRole( role )
 
- 		self.__dragEnterConnection = self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
- 		self.__dragMoveConnection = self.dragMoveSignal().connect( Gaffer.WeakMethod( self.__dragMove ) )
- 		self.__dragLeaveConnection = self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ) )
- 		self.__dropConnection = self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ) )
+		self.__dragEnterConnection = self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
+		self.__dragMoveConnection = self.dragMoveSignal().connect( Gaffer.WeakMethod( self.__dragMove ) )
+		self.__dragLeaveConnection = self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ) )
+		self.__dropConnection = self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ) )
 
 		self._qtWidget().setTabStopWidth( 20 ) # pixels
 
@@ -136,10 +138,22 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 	def setFixedLineHeight( self, fixedLineHeight ) :
 
 		self._qtWidget().setFixedLineHeight( fixedLineHeight )
-		
+
 	def getFixedLineHeight( self ) :
 
 		return self._qtWidget().getFixedLineHeight()
+
+	def setErrored( self, errored ) :
+
+		if errored == self.getErrored() :
+			return
+
+		self._qtWidget().setProperty( "gafferError", GafferUI._Variant.toVariant( bool( errored ) ) )
+		self._repolish()
+
+	def getErrored( self ) :
+
+		return GafferUI._Variant.fromVariant( self._qtWidget().property( "gafferError" ) ) or False
 
 	def setCursorPosition( self, position ) :
 
@@ -202,6 +216,22 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 	def getFocussed( self ) :
 
 		return self._qtWidget().hasFocus()
+
+	def setRole( self, role ) :
+
+		if role == self.getRole() :
+			return
+
+		self._qtWidget().setProperty( "gafferRole", GafferUI._Variant.toVariant( str( role ) ) )
+		self._repolish()
+
+	def getRole( self ) :
+
+		role = GafferUI._Variant.fromVariant( self._qtWidget().property( "gafferRole" ) )
+		if role is None :
+			return self.Role.Text
+
+		return getattr( self.Role, role )
 
 	## A signal emitted when the widget loses focus.
 	def editingFinishedSignal( self ) :
@@ -331,51 +361,51 @@ class _PlainTextEdit( QtGui.QPlainTextEdit ) :
 		QtGui.QPlainTextEdit.__init__( self, parent )
 		self.__fixedLineHeight = None
 		self.__widgetFullyBuilt = False
-		
+
 	def setFixedLineHeight( self, fixedLineHeight ) :
-		
+
 		self.__fixedLineHeight = fixedLineHeight
 
 		self.setSizePolicy(
 			self.sizePolicy().horizontalPolicy(),
 			QtGui.QSizePolicy.Expanding if self.__fixedLineHeight is None else QtGui.QSizePolicy.Fixed
 		)
-		
+
 		self.updateGeometry()
 
 	def getFixedLineHeight( self ) :
 
 		return self.__fixedLineHeight
-	
+
 	def __computeHeight( self, size ) :
-		
+
 		fixedLineHeight = self.getFixedLineHeight()
-		
+
 		# when the multiline is displaying fixed lines
 		if fixedLineHeight is not None :
 
 			# computing the font metrics based on the number of lines
 			height = self.fontMetrics().boundingRect( "M" ).height() * fixedLineHeight
-			
-			# also, we need to compute the widget margins to frame the fixed lines nicely 
+
+			# also, we need to compute the widget margins to frame the fixed lines nicely
 			margin = self.contentsMargins().top() + self.contentsMargins().bottom() + self.document().documentMargin()
-			
+
 			height += margin
-			
+
 			size.setHeight(height)
-			
+
 		return size
-			
+
 	def sizeHint( self ) :
 
 		size = QtGui.QPlainTextEdit.sizeHint( self )
-			
+
 		return self.__computeHeight( size )
-	
+
 	def minimumSizeHint( self ) :
-		
+
 		size = QtGui.QPlainTextEdit.minimumSizeHint( self )
-		
+
 		return self.__computeHeight( size )
 
 	def event( self, event ) :

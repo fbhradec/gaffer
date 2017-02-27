@@ -35,6 +35,7 @@
 ##########################################################################
 
 import Gaffer
+import GafferUI
 import GafferImage
 
 Gaffer.Metadata.registerNode(

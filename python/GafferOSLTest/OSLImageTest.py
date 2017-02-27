@@ -76,7 +76,7 @@ class OSLImageTest( GafferOSLTest.OSLTestCase ) :
 		imageShader["parameters"]["in0"].setInput( outRGB["out"]["layer"] )
 
 		reader = GafferImage.ImageReader()
-		reader["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/rgb.100x100.exr" ) )
+		reader["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/rgb.100x100.exr" ) )
 
 		image = GafferOSL.OSLImage()
 		image["in"].setInput( reader["out"] )
@@ -181,7 +181,7 @@ class OSLImageTest( GafferOSLTest.OSLTestCase ) :
 		imageShader["parameters"]["in0"].setInput( outR["out"]["channel"] )
 
 		reader = GafferImage.ImageReader()
-		reader["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/rgb.100x100.exr" ) )
+		reader["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/rgb.100x100.exr" ) )
 
 		image = GafferOSL.OSLImage()
 		image["in"].setInput( reader["out"] )
@@ -195,7 +195,7 @@ class OSLImageTest( GafferOSLTest.OSLTestCase ) :
 		self.assertEqual( outputImage["B"].data, inputImage["B"].data )
 
 	def testPassThrough( self ) :
-		
+
 		outR = GafferOSL.OSLShader()
 		outR.loadShader( "ImageProcessing/OutChannel" )
 		outR["parameters"]["channelName"].setValue( "R" )
@@ -206,19 +206,49 @@ class OSLImageTest( GafferOSLTest.OSLTestCase ) :
 		imageShader["parameters"]["in0"].setInput( outR["out"]["channel"] )
 
 		reader = GafferImage.ImageReader()
-		reader["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/rgb.100x100.exr" ) )
+		reader["fileName"].setValue( os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/rgb.100x100.exr" ) )
 
 		image = GafferOSL.OSLImage()
 		image["in"].setInput( reader["out"] )
 		image["shader"].setInput( imageShader["out"] )
-		
+
 		self.assertEqual( image["out"]["format"].hash(), reader["out"]["format"].hash() )
 		self.assertEqual( image["out"]["dataWindow"].hash(), reader["out"]["dataWindow"].hash() )
 		self.assertEqual( image["out"]["metadata"].hash(), reader["out"]["metadata"].hash() )
-		
+
 		self.assertEqual( image["out"]["format"].getValue(), reader["out"]["format"].getValue() )
 		self.assertEqual( image["out"]["dataWindow"].getValue(), reader["out"]["dataWindow"].getValue() )
 		self.assertEqual( image["out"]["metadata"].getValue(), reader["out"]["metadata"].getValue() )
+
+	def testReferencePromotedPlug( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["b"] = Gaffer.Box()
+		s["b"]["i"] = GafferOSL.OSLImage()
+		p = s["b"].promotePlug( s["b"]["i"]["shader"] )
+		p.setName( "p" )
+
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		s["s"] = GafferOSL.OSLShader()
+		s["s"].loadShader( "ImageProcessing/OutImage" )
+
+		s["r"]["p"].setInput( s["s"]["out"] )
+
+	def testDirtyPropagation( self ) :
+
+		c = GafferImage.Constant()
+		o = GafferOSL.OSLImage()
+		o["in"].setInput( c["out"] )
+
+		cs = GafferTest.CapturingSlot( o.plugDirtiedSignal() )
+
+		c["color"]["r"].setValue( 1 )
+		self.assertTrue( o["out"]["channelData"] in set( x[0] for x in cs ) )
 
 if __name__ == "__main__":
 	unittest.main()

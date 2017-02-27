@@ -38,6 +38,13 @@ from ArnoldShaderTest import ArnoldShaderTest
 from ArnoldRenderTest import ArnoldRenderTest
 from ArnoldOptionsTest import ArnoldOptionsTest
 from ArnoldAttributesTest import ArnoldAttributesTest
+from ArnoldVDBTest import ArnoldVDBTest
+from ArnoldLightTest import ArnoldLightTest
+from ArnoldMeshLightTest import ArnoldMeshLightTest
+from InteractiveArnoldRenderTest import InteractiveArnoldRenderTest
+from ArnoldDisplacementTest import ArnoldDisplacementTest
+from LightToCameraTest import LightToCameraTest
+from IECoreArnoldPreviewTest import *
 
 if __name__ == "__main__":
 	import unittest

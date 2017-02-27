@@ -72,6 +72,8 @@ Gaffer.Metadata.registerNode(
 			The outputs defined by this node.
 			""",
 
+			"plugValueWidget:type", "GafferSceneUI.OutputsUI.OutputsPlugValueWidget",
+
 		],
 
 		"outputs.*.parameters.quantize.value" : [
@@ -85,6 +87,21 @@ Gaffer.Metadata.registerNode(
 			"preset:16 bit", IECore.IntVectorData( [ 0, 65535, 0, 65535 ] ),
 			"preset:Float", IECore.IntVectorData( [ 0, 0, 0, 0 ] ),
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
+		],
+
+		"outputs.*.fileName" : [
+
+			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
+			"pathPlugValueWidget:bookmarks", "image",
+			"pathPlugValueWidget:leaf", True,
+
+		],
+
+		"outputs.*.active" : [
+
+			"boolPlugValueWidget:displayMode", "switch",
 
 		],
 
@@ -183,7 +200,7 @@ class _ChildPlugWidget( GafferUI.PlugValueWidget ) :
 				GafferUI.PlugWidget( self.__fileNamePlug() )
 				GafferUI.PlugWidget( childPlug["type"] )
 				GafferUI.PlugWidget( childPlug["data"] )
-				GafferUI.CompoundDataPlugValueWidget( childPlug["parameters"], collapsed=None )
+				GafferUI.CompoundDataPlugValueWidget( childPlug["parameters"] )
 
 				GafferUI.Divider( GafferUI.Divider.Orientation.Horizontal )
 
@@ -237,39 +254,8 @@ class _ChildPlugWidget( GafferUI.PlugValueWidget ) :
 		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			self.getPlug().parent().removeChild( self.getPlug() )
 
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Outputs, "outputs", OutputsPlugValueWidget )
-
 ## \todo This regex is an interesting case to be considered during the string matching unification for #707. Once that
 # is done, intuitively we want to use an "outputs.*" glob expression, but because the "*" will match anything
 # at all, including ".", it will match the children of what we want too. We might want to prevent wildcards from
 # matching "." when we come to use them in this context.
 GafferUI.PlugValueWidget.registerCreator( GafferScene.Outputs, re.compile( "outputs\.[^\.]+$" ), _ChildPlugWidget )
-
-##########################################################################
-# Simple PlugValueWidget registrations for child plugs of outputs
-##########################################################################
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.Outputs,
-	"outputs.*.active",
-	GafferUI.BoolPlugValueWidget,
-	displayMode = GafferUI.BoolWidget.DisplayMode.Switch,
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.Outputs,
-	re.compile( "outputs.*.parameters.quantize" ),
-	GafferUI.PresetsPlugValueWidget
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.Outputs,
-	"outputs.*.name",
-	lambda plug : GafferUI.PathPlugValueWidget( plug,
-		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter() ),
-		pathChooserDialogueKeywords = {
-			"bookmarks" : GafferUI.Bookmarks.acquire( plug, category = "image" ),
-			"leaf" : True,
-		},
-	)
-)

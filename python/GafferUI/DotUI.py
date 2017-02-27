@@ -57,16 +57,73 @@ def connect( applicationRoot ) :
 # Metadata
 ##########################################################################
 
-Gaffer.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNode(
 
-Gaffer.Dot,
+	Gaffer.Dot,
 
-"""A utility node which can be used for organising large graphs.""",
+	"description",
+	"""
+	A utility node which can be used for organising large graphs.
+	""",
+
+	"nodeGadget:minWidth", 0.0,
+	"nodeGadget:padding", 0.5,
+
+	"layout:activator:labelTypeIsCustom", lambda node : node["labelType"].getValue() == node.LabelType.Custom,
+
+	plugs = {
+
+		"in" : [
+
+			"plugValueWidget:type", ""
+
+		],
+
+		"out" : [
+
+			"plugValueWidget:type", ""
+
+		],
+
+		"labelType" : [
+
+			"description",
+			"""
+			The method used to apply an optional label
+			to the dot. Using a node name is recommended,
+			because it encourages the use of descriptive node
+			names, and updates automatically when nodes are
+			renamed or upstream connections change. The custom
+			label does however provide more flexibility, since
+			node names are restricted in the characters they
+			can use.
+			""",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+			"nodule:type", "",
+
+			"preset:None", Gaffer.Dot.LabelType.None,
+			"preset:Node Name", Gaffer.Dot.LabelType.NodeName,
+			"preset:Upstream Node Name", Gaffer.Dot.LabelType.UpstreamNodeName,
+			"preset:Custom", Gaffer.Dot.LabelType.Custom,
+
+		],
+
+		"label" : [
+
+			"description",
+			"""
+			The label displayed when the type is set to custom.
+			""",
+
+			"nodule:type", "",
+			"layout:activator", "labelTypeIsCustom",
+
+		],
+
+	},
 
 )
-
-Gaffer.Metadata.registerNodeValue( Gaffer.Dot, "nodeGadget:minWidth", 0.0 )
-Gaffer.Metadata.registerNodeValue( Gaffer.Dot, "nodeGadget:padding", 0.5 )
 
 ##########################################################################
 # NodeGraph menus
@@ -112,15 +169,35 @@ def __connectionContextMenu( nodeGraph, destinationPlug, menuDefinition ) :
 		"/Insert Dot",
 		{
 			"command" : functools.partial( __insertDot, destinationPlug = destinationPlug ),
-			"active" : not destinationPlug.getFlags( Gaffer.Plug.Flags.ReadOnly ),
+			"active" : not destinationPlug.getFlags( Gaffer.Plug.Flags.ReadOnly ) and not Gaffer.MetadataAlgo.readOnly( destinationPlug ),
 		}
 	)
 
 __connectionContextMenuConnection = GafferUI.NodeGraph.connectionContextMenuSignal().connect( __connectionContextMenu )
 
-##########################################################################
-# PlugValueWidget registrations
-##########################################################################
+def __setPlugMetadata( plug, key, value ) :
 
-GafferUI.PlugValueWidget.registerCreator( Gaffer.Dot, "in", None )
-GafferUI.PlugValueWidget.registerCreator( Gaffer.Dot, "out", None )
+	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+		Gaffer.Metadata.registerValue( plug, key, value )
+
+def __nodeGraphPlugContextMenu( nodeGraph, plug, menuDefinition ) :
+
+	if isinstance( plug.node(), Gaffer.Dot ) :
+
+		## \todo This duplicates functionality from BoxUI. Is there some way
+		# we could share it?
+		currentEdge = Gaffer.Metadata.value( plug, "noduleLayout:section" )
+		if not currentEdge :
+			currentEdge = "top" if plug.direction() == plug.Direction.In else "bottom"
+
+		readOnly = Gaffer.MetadataAlgo.readOnly( plug )
+		for edge in ( "top", "bottom", "left", "right" ) :
+			menuDefinition.append(
+				"/Move To/" + edge.capitalize(),
+				{
+					"command" : functools.partial( __setPlugMetadata, plug, "noduleLayout:section", edge ),
+					"active" : edge != currentEdge and not readOnly,
+				}
+			)
+
+__nodeGraphPlugContextMenuConnection = GafferUI.NodeGraph.plugContextMenuSignal().connect( __nodeGraphPlugContextMenu )

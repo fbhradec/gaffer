@@ -65,6 +65,9 @@ class Options : public GlobalsProcessor
 		virtual void hashProcessedGlobals( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual IECore::ConstCompoundObjectPtr computeProcessedGlobals( const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputGlobals ) const;
 
+		virtual void hashPrefix( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		virtual std::string computePrefix( const Gaffer::Context *context ) const;
+
 	private :
 
 		static size_t g_firstPlugIndex;

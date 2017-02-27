@@ -35,7 +35,7 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
+import functools
 
 import IECore
 
@@ -66,6 +66,7 @@ class NodeGraph( GafferUI.EditorWidget ) :
 		self.__buttonDoubleClickConnection = self.__gadgetWidget.buttonDoubleClickSignal().connect( Gaffer.WeakMethod( self.__buttonDoubleClick ) )
 		self.__dragEnterConnection = self.__gadgetWidget.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
 		self.__dropConnection = self.__gadgetWidget.dropSignal().connect( Gaffer.WeakMethod( self.__drop ) )
+		self.__preRenderConnection = self.__gadgetWidget.getViewportGadget().preRenderSignal().connect( Gaffer.WeakMethod( self.__preRender ) )
 
 		self.__nodeMenu = None
 
@@ -146,15 +147,15 @@ class NodeGraph( GafferUI.EditorWidget ) :
 		menuDefinition.append(
 			"/Show Input Connections",
 			{
-				"checkBox" : IECore.curry( cls.__getNodeInputConnectionsVisible, nodeGraph.graphGadget(), node ),
-				"command" : IECore.curry( cls.__setNodeInputConnectionsVisible, nodeGraph.graphGadget(), node )
+				"checkBox" : functools.partial( cls.__getNodeInputConnectionsVisible, nodeGraph.graphGadget(), node ),
+				"command" : functools.partial( cls.__setNodeInputConnectionsVisible, nodeGraph.graphGadget(), node )
 			}
 		)
 		menuDefinition.append(
 			"/Show Output Connections",
 			{
-				"checkBox" : IECore.curry( cls.__getNodeOutputConnectionsVisible, nodeGraph.graphGadget(), node ),
-				"command" : IECore.curry( cls.__setNodeOutputConnectionsVisible, nodeGraph.graphGadget(), node )
+				"checkBox" : functools.partial( cls.__getNodeOutputConnectionsVisible, nodeGraph.graphGadget(), node ),
+				"command" : functools.partial( cls.__setNodeOutputConnectionsVisible, nodeGraph.graphGadget(), node )
 			}
 		)
 
@@ -169,11 +170,20 @@ class NodeGraph( GafferUI.EditorWidget ) :
 			menuDefinition.append(
 				"/Enabled",
 				{
-					"command" : IECore.curry( cls.__setEnabled, node ),
+					"command" : functools.partial( cls.__setEnabled, node ),
 					"checkBox" : enabledPlug.getValue(),
-					"active" : enabledPlug.settable()
+					"active" : enabledPlug.settable() and not Gaffer.MetadataAlgo.readOnly( enabledPlug )
 				}
 			)
+
+	@classmethod
+	def appendContentsMenuDefinitions( cls, nodeGraph, node, menuDefinition ) :
+
+		if not Gaffer.Metadata.value( node, "nodeGraph:childrenViewable" ) :
+			return
+
+		menuDefinition.append( "/ContentsDivider", { "divider" : True } )
+		menuDefinition.append( "/Show Contents...", { "command" : functools.partial( cls.acquire, node ) } )
 
 	__nodeDoubleClickSignal = Gaffer.Signal2()
 	## Returns a signal which is emitted whenever a node is double clicked.
@@ -264,9 +274,9 @@ class NodeGraph( GafferUI.EditorWidget ) :
 					self._m.popup( self )
 					return True
 
-			self._nodeMenu().popup( self )
-
-			return True
+			if not isinstance( self.graphGadget().getRoot(), Gaffer.Reference ) :
+				self._nodeMenu().popup( self )
+				return True
 
 		return False
 
@@ -278,19 +288,17 @@ class NodeGraph( GafferUI.EditorWidget ) :
 
 	def __keyPress( self, widget, event ) :
 
-		if event.key == "F" :
+		if event.key == "F" and not event.modifiers :
 			self.__frame( self.scriptNode().selection() )
 			return True
-		## \todo This cursor key navigation might not make sense for all applications,
-		# so we should move it into BoxUI and load it in a config file that the gui app uses.
-		# I think this implies that every Widget.*Signal() method should have a
-		# Widget.static*Signal() method to allow global handlers to be registered by widget type.
-		# We already have a mix of static/nonstatic signals for menus, so that might make a nice
-		# generalisation.
 		elif event.key == "Down" :
 			selection = self.scriptNode().selection()
 			if selection.size() :
-				if isinstance( selection[0], Gaffer.Box ) or event.modifiers == event.modifiers.Shift | event.modifiers.Control :
+				needsModifiers = not Gaffer.Metadata.value( selection[0], "nodeGraph:childrenViewable" )
+				if (
+					( needsModifiers and event.modifiers == event.modifiers.Shift | event.modifiers.Control ) or
+					( not needsModifiers and event.modifiers == event.modifiers.None )
+				) :
 					self.graphGadget().setRoot( selection[0] )
 					return True
 		elif event.key == "Up" :
@@ -299,8 +307,9 @@ class NodeGraph( GafferUI.EditorWidget ) :
 				self.graphGadget().setRoot( root.parent() )
 				return True
 		elif event.key == "Tab" :
-			self._nodeMenu().popup( self )
-			return True
+			if not isinstance( self.graphGadget().getRoot(), Gaffer.Reference ) :
+				self._nodeMenu().popup( self )
+				return True
 
 		return False
 
@@ -405,21 +414,10 @@ class NodeGraph( GafferUI.EditorWidget ) :
 		# save/restore the current framing so jumping in
 		# and out of Boxes isn't a confusing experience.
 
-		def __framePlug( node, createIfMissing = False ) :
+		Gaffer.Metadata.registerValue( previousRoot, "ui:nodeGraph:framing", self.__currentFrame(), persistent = False )
 
-			plugName = "__nodeGraphFraming%d" % id( self )
-			result = node.getChild( plugName )
-			if result is None and createIfMissing :
-				result = Gaffer.Box2fPlug( plugName, flags = Gaffer.Plug.Flags.Default & ( ~Gaffer.Plug.Flags.Serialisable ) )
-				node.addChild( result )
-
-			return result
-
-		__framePlug( previousRoot, True ).setValue( self.__currentFrame() )
-
-		newFramePlug = __framePlug( self.graphGadget().getRoot() )
-		if newFramePlug is not None :
-			frame = newFramePlug.getValue()
+		frame = Gaffer.Metadata.value( self.graphGadget().getRoot(), "ui:nodeGraph:framing" )
+		if frame is not None :
 			self.graphGadgetWidget().getViewportGadget().frame(
 				IECore.Box3f( IECore.V3f( frame.min.x, frame.min.y, 0 ), IECore.V3f( frame.max.x, frame.max.y, 0 ) )
 			)
@@ -448,6 +446,34 @@ class NodeGraph( GafferUI.EditorWidget ) :
 		# Perhaps we should just signal that we're not valid in some way and the CompoundEditor should
 		# remove us? Consider how this relates to NodeEditor.__deleteWindow() too.
 		self.parent().removeChild( self )
+
+	def __preRender( self, viewportGadget ) :
+
+		# Find all unpositioned nodes.
+
+		graphGadget = self.graphGadget()
+		nodes = [ g.node() for g in graphGadget.unpositionedNodeGadgets() ]
+		if not nodes :
+			return
+
+		nodes = Gaffer.StandardSet( nodes )
+
+		# Lay them out somewhere near the centre of frame.
+
+		gadgetWidget = self.graphGadgetWidget()
+		fallbackPosition = gadgetWidget.getViewportGadget().rasterToGadgetSpace(
+			IECore.V2f( gadgetWidget.size() ) / 2.0,
+			gadget = graphGadget
+		).p0
+		fallbackPosition = IECore.V2f( fallbackPosition.x, fallbackPosition.y )
+
+		graphGadget.getLayout().positionNodes( graphGadget, nodes, fallbackPosition )
+		graphGadget.getLayout().layoutNodes( graphGadget, nodes )
+
+		# And then extend the frame to include them, in case the
+		# layout has gone off screen.
+
+		self.frame( nodes, extend = True )
 
 	@classmethod
 	def __getNodeInputConnectionsVisible( cls, graphGadget, node ) :

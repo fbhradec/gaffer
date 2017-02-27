@@ -41,6 +41,7 @@
 #include "renderer/api/light.h"
 
 #include "IECore/Exception.h"
+#include "IECore/Shader.h"
 
 #include "Gaffer/CompoundDataPlug.h"
 #include "Gaffer/StringPlug.h"
@@ -92,23 +93,39 @@ void AppleseedLight::loadShader( const std::string &shaderName )
 	}
 
 	setupPlugs( shaderName, metadata );
-	getChild<StringPlug>( "__model" )->setValue( shaderName );
+	modelPlug()->setValue( shaderName );
 }
 
 void AppleseedLight::hashLight( const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	parametersPlug()->hash( h );
-	getChild<StringPlug>( "__model" )->hash( h );
+	for( ValuePlugIterator it( parametersPlug() ); !it.done(); ++it )
+	{
+		(*it)->hash( h );
+	}
+	modelPlug()->hash( h );
 }
 
-IECore::LightPtr AppleseedLight::computeLight( const Gaffer::Context *context ) const
+IECore::ObjectVectorPtr AppleseedLight::computeLight( const Gaffer::Context *context ) const
 {
-	IECore::LightPtr result = new IECore::Light( getChild<StringPlug>( "__model" )->getValue() );
-	for( InputValuePlugIterator it( parametersPlug() ); it!=it.end(); it++ )
+	IECore::ShaderPtr result = new IECore::Shader( modelPlug()->getValue(), "as:light" );
+	for( InputValuePlugIterator it( parametersPlug() ); !it.done(); ++it )
 	{
 		result->parameters()[(*it)->getName()] = CompoundDataPlug::extractDataFromPlug( it->get() );
 	}
-	return result;
+
+	IECore::ObjectVectorPtr resultVector = new IECore::ObjectVector();
+	resultVector->members().push_back( result );
+	return resultVector;
+}
+
+Gaffer::StringPlug *AppleseedLight::modelPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex );
+}
+
+const Gaffer::StringPlug *AppleseedLight::modelPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
 void AppleseedLight::setupPlugs( const std::string &shaderName, const asf::DictionaryArray &metadata )
@@ -140,8 +157,13 @@ void AppleseedLight::setupPlugs( const std::string &shaderName, const asf::Dicti
 			}
 			else if( inputType == "colormap" )
 			{
+				// override the plug type for the exposure param (usually it's a color in appleseed).
+				if ( inputName == "exposure" )
+				{
+					plug = new Gaffer::FloatPlug( inputName, Gaffer::Plug::In, 0.0f );
+				}
 				// multiplier inputs make more sense in Gaffer as float plugs.
-				if( inputName.find( "multiplier" ) != std::string::npos )
+				else if( inputName.find( "multiplier" ) != std::string::npos )
 				{
 					plug = new Gaffer::FloatPlug( inputName, Gaffer::Plug::In, 1.0f, 0.0f );
 				}

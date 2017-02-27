@@ -203,9 +203,21 @@ _styleSheet = string.Template(
 
 	}
 
-	QLineEdit[gafferError="true"] {
+	QLineEdit[gafferError="true"], QPlainTextEdit[gafferError="true"] {
 
 		background-color: $errorColor;
+
+	}
+
+	QLineEdit[gafferAnimated="true"] {
+
+		background-color: $animatedColor;
+
+	}
+
+	QPlainTextEdit[gafferRole="Code"] {
+
+		font-family: monospace;
 
 	}
 
@@ -502,6 +514,19 @@ _styleSheet = string.Template(
 	QCheckBox#gafferCollapsibleToggle {
 
 		font-weight: bold;
+	}
+
+	QWidget#gafferCollapsible QWidget#gafferCollapsible > QCheckBox#gafferCollapsibleToggle {
+
+		margin-left: 12px;
+		font-weight: normal;
+
+	}
+
+	QCheckBox#gafferCollapsibleToggle:disabled {
+
+		color: $foregroundFaded;
+
 	}
 
 	QCheckBox#gafferCollapsibleToggle::indicator {
@@ -952,6 +977,14 @@ _styleSheet = string.Template(
 
 	}
 
+	QFrame#gafferDarker {
+
+		background: solid rgba( 0, 0, 0, 80 );
+		border-radius: 2px;
+		padding: 2px;
+
+	}
+
 	QFrame[gafferHighlighted=\"true\"]#gafferDiffA, QFrame[gafferHighlighted=\"true\"]#gafferDiffB, QFrame[gafferHighlighted=\"true\"]#gafferDiffCommon {
 		background-color: $brightColor;
 	}
@@ -1007,5 +1040,6 @@ _styleSheet = string.Template(
 	"foregroundFaded" : "#999999",
 	"alternateColor" : "#454545",
 	"errorColor" : "#ff5555",
+	"animatedColor" : "#80985e",
 
 } )

@@ -64,8 +64,24 @@ class ComputeNodeWrapper : public DependencyNodeWrapper<WrappedType>
 		{
 		}
 
+		template<typename Arg1, typename Arg2>
+		ComputeNodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2 )
+			:	DependencyNodeWrapper<WrappedType>( self, arg1, arg2 )
+		{
+		}
+
+		template<typename Arg1, typename Arg2, typename Arg3>
+		ComputeNodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2, Arg3 arg3 )
+			:	DependencyNodeWrapper<WrappedType>( self, arg1, arg2, arg3 )
+		{
+		}
+
 		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 		{
+			/// \todo Stop calling the base class unconditionally - if an override
+			/// exists then the override should call the base class explicitly itself
+			/// if required. Having a disparity between the python bindings and the
+			/// C++ form here does us no favours.
 			WrappedType::hash( output, context, h );
 			if( this->isSubclassed() )
 			{
@@ -86,7 +102,7 @@ class ComputeNodeWrapper : public DependencyNodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					translatePythonException();
+					ExceptionAlgo::translatePythonException();
 				}
 			}
 		}
@@ -107,7 +123,7 @@ class ComputeNodeWrapper : public DependencyNodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					translatePythonException();
+					ExceptionAlgo::translatePythonException();
 				}
 			}
 			WrappedType::compute( output, context );

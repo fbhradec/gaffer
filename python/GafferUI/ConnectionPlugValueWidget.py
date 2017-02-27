@@ -45,7 +45,7 @@ class ConnectionPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, **kw ) :
 
-		self.__frame = GafferUI.Frame( borderWidth = 2, formatter = self.__labelFormatter )
+		self.__frame = GafferUI.Frame( borderWidth = 2 )
 
 		GafferUI.PlugValueWidget.__init__( self, self.__frame, plug, **kw )
 

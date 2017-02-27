@@ -39,7 +39,7 @@
 
 #include "IECore/Renderer.h"
 
-#include "Gaffer/ExecutableNode.h"
+#include "GafferDispatch/TaskNode.h"
 
 #include "GafferScene/TypeIds.h"
 
@@ -50,7 +50,9 @@ IE_CORE_FORWARDDECLARE( ScenePlug )
 
 /// Base class for executable nodes which perform a render of some sort
 /// in the execute() method.
-class ExecutableRender : public Gaffer::ExecutableNode
+/// Note that this is in the process of being replaced by the
+/// GafferScene::Preview::Render node.
+class ExecutableRender : public GafferDispatch::TaskNode
 {
 
 	public :
@@ -58,7 +60,7 @@ class ExecutableRender : public Gaffer::ExecutableNode
 		ExecutableRender( const std::string &name=defaultName<ExecutableRender>() );
 		virtual ~ExecutableRender();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ExecutableRender, ExecutableRenderTypeId, Gaffer::ExecutableNode );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::ExecutableRender, ExecutableRenderTypeId, GafferDispatch::TaskNode );
 
 		/// The scene to be rendered.
 		ScenePlug *inPlug();
@@ -83,10 +85,6 @@ class ExecutableRender : public Gaffer::ExecutableNode
 		/// generating just such a file. The default implementation just outputs a SceneProcedural
 		/// which is suitable for immediate mode rendering.
 		virtual void outputWorldProcedural( const ScenePlug *scene, IECore::Renderer *renderer ) const;
-		/// May be implemented to return a shell command which should be run after doing the "render".
-		/// This can be useful for nodes which wish to render in two stages by creating a scene file
-		/// with the createRenderer() and then rendering it with a command.
-		virtual std::string command() const;
 
 	private :
 

@@ -76,7 +76,7 @@ class About :
 	@staticmethod
 	def copyright() :
 
-		return "Copyright (c) 2011-2014 John Haddon, Copyright (c) 2011-2014 Image Engine Design Inc."
+		return "Copyright (c) 2011-2016 John Haddon, Copyright (c) 2011-2016 Image Engine Design Inc."
 
 	@staticmethod
 	def license() :
@@ -202,6 +202,12 @@ class About :
 				"name" : "OpenShadingLanguage",
 				"url" : "https://github.com/imageworks/OpenShadingLanguage/",
 				"license" : "$GAFFER_ROOT/doc/licenses/osl",
+			},
+
+			{
+				"name" : "OpenVDB",
+				"url" : "http://www.openvdb.org//",
+				"license" : "$GAFFER_ROOT/doc/licenses/openvdb",
 			},
 
 			{

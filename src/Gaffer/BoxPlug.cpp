@@ -49,7 +49,7 @@ BoxPlug<T>::BoxPlug(
 	T defaultValue,
 	unsigned flags
 )
-	:	CompoundPlug( name, direction, flags )
+	:	ValuePlug( name, direction, flags )
 {
 	const unsigned childFlags = flags & ~Dynamic;
 	addChild(
@@ -82,7 +82,7 @@ BoxPlug<T>::BoxPlug(
 	const PointType &maxValue,
 	unsigned flags
 )
-	:	CompoundPlug( name, direction, flags )
+	:	ValuePlug( name, direction, flags )
 {
 	const unsigned childFlags = flags & ~Dynamic;
 	addChild(
@@ -201,11 +201,12 @@ IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::Box3iPlug, Box3iPlugTy
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::Box2fPlug, Box2fPlugTypeId )
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::Box3fPlug, Box3fPlugTypeId )
 
-}
-
 // explicit instantiations
 
 template class BoxPlug<Imath::Box2i>;
 template class BoxPlug<Imath::Box3i>;
 template class BoxPlug<Imath::Box2f>;
 template class BoxPlug<Imath::Box3f>;
+
+}
+

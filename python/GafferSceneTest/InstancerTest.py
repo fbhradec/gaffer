@@ -39,6 +39,7 @@ import IECore
 
 import Gaffer
 import GafferTest
+import GafferDispatch
 import GafferScene
 import GafferSceneTest
 
@@ -267,32 +268,31 @@ class InstancerTest( GafferSceneTest.SceneTestCase ) :
 		self.assertTrue( instancer["out"]["transform"] in dirtiedPlugs )
 
 	def testPythonExpressionAndGIL( self ) :
-	
+
 		script = Gaffer.ScriptNode()
-		
+
 		script["plane"] = GafferScene.Plane()
 		script["plane"]["divisions"].setValue( IECore.V2i( 20 ) )
-		
+
 		script["sphere"] = GafferScene.Sphere()
-		
+
 		script["expression"] = Gaffer.Expression()
-		script["expression"]["engine"].setValue( "python" )
-		script["expression"]["expression"].setValue( "parent['sphere']['radius'] = context.getFrame() + float( context['instancer:id'] )" )
-		
+		script["expression"].setExpression( "parent['sphere']['radius'] = context.getFrame() + float( context['instancer:id'] )" )
+
 		script["instancer"] = GafferScene.Instancer()
 		script["instancer"]["in"].setInput( script["plane"]["out"] )
 		script["instancer"]["instance"].setInput( script["sphere"]["out"] )
 		script["instancer"]["parent"].setValue( "/plane" )
-		
+
 		# The Instancer spawns its own threads, so if we don't release the GIL
 		# when invoking it, and an upstream node enters Python, we'll end up
 		# with a deadlock. Test that isn't the case. We increment the frame
 		# between each test to ensure the expression result is not cached and
 		# we do truly enter python.
 		with Gaffer.Context() as c :
-		
+
 			c["scene:path"] = IECore.InternedStringVectorData( [ "plane" ] )
-			
+
 			c.setFrame( 1 )
 			script["instancer"]["out"]["globals"].getValue()
 			c.setFrame( 2 )
@@ -306,7 +306,7 @@ class InstancerTest( GafferSceneTest.SceneTestCase ) :
 			c.setFrame( 6 )
 			script["instancer"]["out"]["childNames"].getValue()
 			c.setFrame( 7 )
-			
+
 			c.setFrame( 101 )
 			script["instancer"]["out"]["globals"].hash()
 			c.setFrame( 102 )
@@ -320,9 +320,9 @@ class InstancerTest( GafferSceneTest.SceneTestCase ) :
 			c.setFrame( 106 )
 			script["instancer"]["out"]["childNames"].hash()
 			c.setFrame( 107 )
-			
-			# The same applies for the higher level helper functions on ScenePlug	
-			
+
+			# The same applies for the higher level helper functions on ScenePlug
+
 			c.setFrame( 200 )
 			script["instancer"]["out"].bound( "/plane" )
 			c.setFrame( 201 )
@@ -354,6 +354,197 @@ class InstancerTest( GafferSceneTest.SceneTestCase ) :
 			c.setFrame( 306 )
 			script["instancer"]["out"].childNamesHash( "/plane" )
 			c.setFrame( 307 )
+
+	def testDynamicPlugsAndGIL( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["plane"] = GafferScene.Plane()
+		script["plane"]["divisions"].setValue( IECore.V2i( 20 ) )
+
+		script["sphere"] = GafferScene.Sphere()
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( "parent['sphere']['radius'] = context.getFrame() + float( context['instancer:id'] )" )
+
+		script["instancer"] = GafferScene.Instancer()
+		script["instancer"]["in"].setInput( script["plane"]["out"] )
+		script["instancer"]["instance"].setInput( script["sphere"]["out"] )
+		script["instancer"]["parent"].setValue( "/plane" )
+
+		script["attributes"] = GafferScene.CustomAttributes()
+		script["attributes"]["in"].setInput( script["instancer"]["out"] )
+
+		script["outputs"] = GafferScene.Outputs()
+		script["outputs"]["in"].setInput( script["attributes"]["out"] )
+
+		# Simulate an InteractiveRender or Viewer traversal of the scene
+		# every time it is dirtied. If the GIL isn't released when dirtiness
+		# is signalled, we'll end up with a deadlock as the traversal enters
+		# python on another thread to evaluate the expression. We increment the frame
+		# between each test to ensure the expression result is not cached and
+		# we do truly enter python.
+		traverseConnection = Gaffer.ScopedConnection( GafferSceneTest.connectTraverseSceneToPlugDirtiedSignal( script["outputs"]["out"] ) )
+		with Gaffer.Context() as c :
+
+			c.setFrame( 1 )
+			script["attributes"]["attributes"].addMember( "test1", IECore.IntData( 10 ) )
+
+			c.setFrame( 2 )
+			script["attributes"]["attributes"].addOptionalMember( "test2", IECore.IntData( 20 ) )
+
+			c.setFrame( 3 )
+			script["attributes"]["attributes"].addMembers(
+				IECore.CompoundData( {
+					"test3" : 30,
+					"test4" : 40,
+				} )
+			)
+
+			c.setFrame( 4 )
+			p = script["attributes"]["attributes"][0]
+			del script["attributes"]["attributes"][p.getName()]
+
+			c.setFrame( 5 )
+			script["attributes"]["attributes"].addChild( p )
+
+			c.setFrame( 6 )
+			script["attributes"]["attributes"].removeChild( p )
+
+			c.setFrame( 7 )
+			script["attributes"]["attributes"].setChild( p.getName(), p )
+
+			c.setFrame( 8 )
+			script["attributes"]["attributes"].removeChild( p )
+
+			c.setFrame( 9 )
+			script["attributes"]["attributes"][p.getName()] = p
+
+			c.setFrame( 10 )
+			script["outputs"].addOutput( "test", IECore.Display( "beauty.exr", "exr", "rgba" ) )
+
+	def testLoadReferenceAndGIL( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["plane"] = GafferScene.Plane()
+		script["plane"]["divisions"].setValue( IECore.V2i( 20 ) )
+
+		script["sphere"] = GafferScene.Sphere()
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( "parent['sphere']['radius'] = 0.1 + context.getFrame() + float( context['instancer:id'] )" )
+
+		script["instancer"] = GafferScene.Instancer()
+		script["instancer"]["in"].setInput( script["plane"]["out"] )
+		script["instancer"]["instance"].setInput( script["sphere"]["out"] )
+		script["instancer"]["parent"].setValue( "/plane" )
+
+		script["box"] = Gaffer.Box()
+		script["box"]["in"] = GafferScene.ScenePlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		script["box"]["out"] = GafferScene.ScenePlug( direction = Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		script["box"]["out"].setInput( script["box"]["in"] )
+		script["box"].exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		script["reference"] = Gaffer.Reference()
+		script["reference"].load( self.temporaryDirectory() + "/test.grf" )
+		script["reference"]["in"].setInput( script["instancer"]["out"] )
+
+		script["attributes"] = GafferScene.CustomAttributes()
+		script["attributes"]["in"].setInput( script["reference"]["out"] )
+
+		traverseConnection = Gaffer.ScopedConnection( GafferSceneTest.connectTraverseSceneToPlugDirtiedSignal( script["attributes"]["out"] ) )
+		with Gaffer.Context() as c :
+
+			script["reference"].load( self.temporaryDirectory() + "/test.grf" )
+
+	def testContextChangedAndGIL( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["plane"] = GafferScene.Plane()
+		script["plane"]["divisions"].setValue( IECore.V2i( 20 ) )
+
+		script["sphere"] = GafferScene.Sphere()
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( "parent['sphere']['radius'] = context.get( 'minRadius', 0.1 ) + context.getFrame() + float( context['instancer:id'] )" )
+
+		script["instancer"] = GafferScene.Instancer()
+		script["instancer"]["in"].setInput( script["plane"]["out"] )
+		script["instancer"]["instance"].setInput( script["sphere"]["out"] )
+		script["instancer"]["parent"].setValue( "/plane" )
+
+		context = Gaffer.Context()
+		traverseConnection = Gaffer.ScopedConnection( GafferSceneTest.connectTraverseSceneToContextChangedSignal( script["instancer"]["out"], context ) )
+		with context :
+
+			context.setFrame( 10 )
+			context.setFramesPerSecond( 50 )
+			context.setTime( 1 )
+
+			context.set( "a", 1 )
+			context.set( "a", 2.0 )
+			context.set( "a", "a" )
+			context.set( "a", IECore.V2i() )
+			context.set( "a", IECore.V3i() )
+			context.set( "a", IECore.V2f() )
+			context.set( "a", IECore.V3f() )
+			context.set( "a", IECore.Color3f() )
+			context.set( "a", IECore.BoolData( True ) )
+
+			context["b"] = 1
+			context["b"] = 2.0
+			context["b"] = "b"
+			context["b"] = IECore.V2i()
+			context["b"] = IECore.V3i()
+			context["b"] = IECore.V2f()
+			context["b"] = IECore.V3f()
+			context["b"] = IECore.Color3f()
+			context["b"] = IECore.BoolData( True )
+
+			with Gaffer.BlockedConnection( traverseConnection ) :
+				# Must add it with the connection disabled, otherwise
+				# the addition causes a traversal, and then remove() gets
+				# all its results from the cache.
+				context["minRadius"] = 0.2
+
+			context.remove( "minRadius" )
+
+			with Gaffer.BlockedConnection( traverseConnection ) :
+				context["minRadius"] = 0.3
+
+			del context["minRadius"]
+
+	def testDispatchAndGIL( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["plane"] = GafferScene.Plane()
+		script["plane"]["divisions"].setValue( IECore.V2i( 20 ) )
+
+		script["sphere"] = GafferScene.Sphere()
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( "parent['sphere']['radius'] = context.get( 'minRadius', 0.1 ) + context.getFrame() + float( context['instancer:id'] )" )
+
+		script["instancer"] = GafferScene.Instancer()
+		script["instancer"]["in"].setInput( script["plane"]["out"] )
+		script["instancer"]["instance"].setInput( script["sphere"]["out"] )
+		script["instancer"]["parent"].setValue( "/plane" )
+
+		script["pythonCommand"] = GafferDispatch.PythonCommand()
+		script["pythonCommand"]["command"].setValue( "pass" )
+
+		traverseConnection = Gaffer.ScopedConnection( GafferSceneTest.connectTraverseSceneToPreDispatchSignal( script["instancer"]["out"] ) )
+
+		dispatcher = GafferDispatch.LocalDispatcher()
+		dispatcher["jobsDirectory"].setValue( self.temporaryDirectory() )
+
+		with Gaffer.Context() as c :
+			for i in range( 1, 10 ) :
+				c.setFrame( i )
+				dispatcher.dispatch( [ script["pythonCommand"] ] )
 
 if __name__ == "__main__":
 	unittest.main()

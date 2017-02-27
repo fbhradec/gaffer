@@ -39,8 +39,6 @@
 
 #include "boost/utility/enable_if.hpp"
 
-#include "Gaffer/Behaviours/InputGenerator.h"
-
 #include "Gaffer/ComputeNode.h"
 #include "Gaffer/NumericPlug.h"
 
@@ -49,23 +47,19 @@ namespace Gaffer
 
 /// The Switch provides a generic base class to implement nodes which choose
 /// between many input branches, feeding only one of them to the output.
-/// The series of input branches are represented by plugs of identical type
-/// and called "in", "in1", "in2" etc, and the output is a plug of the same
-/// type named "out".
+/// The series of input branches are represented by an ArrayPlug called "in",
+/// and the output is a plug named "out".
 ///
 /// Switches can be instantiated in either of two ways :
 ///
 /// - By instantiating Switch<BaseType> where BaseType creates an "in" and
-/// and "out" plug during construction. This is the method used to create
-/// the SceneSwitch and ImageSwitch.
+///   and "out" plug during construction. This is the method used to create
+///   the SceneSwitch and ImageSwitch.
 ///
-/// - By adding dynamic "in" and "out" plugs to a generic Switch node after
-/// construction. This method can be seen in the GafferTest.SwitchTest
-/// test cases.
-///
-/// \todo It would be better to use an ArrayPlug for the inputs, but because
-/// this class must be useable with the SceneProcessor and ImageProcessor classes
-/// we must wait until those classes themselves use ArrayPlugs.
+/// - By adding "in" and "out" plugs to a generic Switch node after
+///   construction, using the `Switch::setup()`. This method can be seen
+///   in the GafferTest.SwitchTest
+///   test cases.
 template<typename BaseType>
 class Switch : public BaseType
 {
@@ -76,6 +70,20 @@ class Switch : public BaseType
 
 		Switch( const std::string &name=GraphComponent::defaultName<Switch>() );
 		virtual ~Switch();
+
+		/// Sets up a SwitchComputeNode or SwitchDependencyNode
+		/// to work with the specified plug type. The passed plug
+		/// is used as a template, but will not be referenced by the
+		/// Switch itself - typically you will pass a plug
+		/// which you will connect to the Switch after calling
+		/// setup().
+		/// \undoable
+		void setup( const Plug *plug );
+
+		/// Returns the input plug which will be passed through
+		/// by the switch in the current context.
+		Plug *activeInPlug();
+		const Plug *activeInPlug() const;
 
 		IntPlug *indexPlug();
 		const IntPlug *indexPlug() const;
@@ -104,6 +112,8 @@ class Switch : public BaseType
 
 	private :
 
+		void init( bool expectBaseClassPlugs );
+
 		// The internal implementation for hash(). Does nothing when BaseType is not a ComputeNode,
 		// and passes through the hash from the appropriate input when it is.
 		template<typename T>
@@ -121,7 +131,8 @@ class Switch : public BaseType
 		void childAdded( GraphComponent *child );
 		void plugSet( Plug *plug );
 		void plugInputChanged( Plug *plug );
-		size_t inputIndex() const;
+		size_t inputIndex( const Context *context = NULL ) const;
+
 		// Returns the input corresponding to the output and vice versa. Returns NULL
 		// if plug is not meaningful to the switching process.
 		const Plug *oppositePlug( const Plug *plug, size_t inputIndex = 0 ) const;
@@ -130,10 +141,28 @@ class Switch : public BaseType
 
 		void updateInternalConnection();
 
-		boost::shared_ptr<Gaffer::Behaviours::InputGenerator<Plug> > m_inputGenerator;
-
 		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( Switch<BaseType> );
 		static size_t g_firstPlugIndex;
+
+};
+
+namespace Detail
+{
+
+struct IdentityContext;
+
+} // namespace Detail
+
+/// May be specialised to control the behaviour of
+/// Switch<BaseType>.
+template<typename BaseType>
+struct SwitchTraits
+{
+
+	/// A class which will be instantiated as
+	/// `IndexContext indexContext( Context::current() )`
+	/// to modify the context when evaluating the switch index.
+	typedef Detail::IdentityContext IndexContext;
 
 };
 

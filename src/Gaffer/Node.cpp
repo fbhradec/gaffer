@@ -36,10 +36,10 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/Node.h"
-#include "Gaffer/CompoundPlug.h"
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/Metadata.h"
 
+using namespace std;
 using namespace Gaffer;
 
 size_t Node::g_firstPlugIndex;
@@ -50,7 +50,7 @@ Node::Node( const std::string &name )
 	:	GraphComponent( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
-	addChild( new CompoundPlug( "user" ) );
+	addChild( new Plug( "user", Plug::In, Plug::Default & ~Plug::AcceptsInputs ) );
 }
 
 Node::~Node()
@@ -78,24 +78,26 @@ Node::UnaryPlugSignal &Node::plugDirtiedSignal()
 	return m_plugDirtiedSignal;
 }
 
-Gaffer::CompoundPlug *Node::userPlug()
+Gaffer::Plug *Node::userPlug()
 {
-	return getChild<CompoundPlug>( g_firstPlugIndex );
+	return getChild<Plug>( g_firstPlugIndex );
 }
 
-const Gaffer::CompoundPlug *Node::userPlug() const
+const Gaffer::Plug *Node::userPlug() const
 {
-	return getChild<CompoundPlug>( g_firstPlugIndex );
+	return getChild<Plug>( g_firstPlugIndex );
 }
 
 ScriptNode *Node::scriptNode()
 {
-	return ancestor<ScriptNode>();
+	ScriptNode *s = IECore::runTimeCast<ScriptNode>( this );
+	return s ? s : ancestor<ScriptNode>();
 }
 
 const ScriptNode *Node::scriptNode() const
 {
-	return ancestor<ScriptNode>();
+	const ScriptNode *s = IECore::runTimeCast<const ScriptNode>( this );
+	return s ? s : ancestor<ScriptNode>();
 }
 
 bool Node::acceptsChild( const GraphComponent *potentialChild ) const
@@ -133,30 +135,39 @@ bool Node::acceptsInput( const Plug *plug, const Plug *inputPlug ) const
 
 void Node::parentChanging( Gaffer::GraphComponent *newParent )
 {
-	// if we're losing our parent then remove all connections first.
-	// this must be done here rather than from parentChangedSignal()
+	// If we're losing our parent then remove all external connections
+	// first. This must be done here rather than from parentChangedSignal()
 	// because we need a current parent for the operation to be
 	// undoable.
 
 	if( !newParent )
 	{
-		// because the InputGenerator code removes plugs when inputs
-		// are removed, we have to take a copy of the current children
-		// and iterate over that - otherwise our iterators are invalidated
-		// and we get crashes. if we see further problems caused by the
-		// InputGenerator creating plugs whenever it sees fit, we should
-		// consider an API where they are instead asked for explicitly
-		// when needed.
-		ChildContainer frozenChildren = children();
-		for( InputPlugIterator it( frozenChildren ); it!=it.end(); it++ )
+		// Because disconnecting a plug might cause graph changes
+		// via Node::plugInputChangedSignal(), we use a two phase
+		// process to avoid such changes invalidating our
+		// iterators.
+		vector<PlugPtr> toDisconnect;
+		for( RecursivePlugIterator it( this ); !it.done(); ++it )
 		{
-			(*it)->setInput( 0 );
+			if( Plug *input = (*it)->getInput<Plug>() )
+			{
+				if( !this->isAncestorOf( input ) )
+				{
+					toDisconnect.push_back( *it );
+				}
+			}
+			for( Plug::OutputContainer::const_iterator oIt = (*it)->outputs().begin(), oeIt = (*it)->outputs().end(); oIt != oeIt; ++oIt )
+			{
+				if( !this->isAncestorOf( *oIt ) )
+				{
+					toDisconnect.push_back( *oIt );
+				}
+			}
 		}
 
-		for( OutputPlugIterator it( frozenChildren ); it!=it.end(); it++ )
+		for( vector<PlugPtr>::const_iterator it = toDisconnect.begin(), eIt = toDisconnect.end(); it != eIt; ++it )
 		{
-			(*it)->removeOutputs();
+			(*it)->setInput( NULL );
 		}
 	}
 }
-

@@ -60,17 +60,11 @@ class MetadataProcessor : public ImageProcessor
 
 	protected :
 
-		// Reimplemented to assign directly from the input. Format cannot be a direct connection
-		// because it needs to update when the default format changes.
-		/// \todo: make this a direct pass-through once FormatPlug supports it.
-		virtual void hashFormat( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const;
-		
 		// Reimplemented to call hashProcessedMetadata()
 		virtual void hashMetadata( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		// Reimplemented to call computeProcessedMetadata()
 		virtual IECore::ConstCompoundObjectPtr computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const;
-		
+
 		/// Must be implemented by derived classes to compute the hash for the work done in computeProcessedMetadata().
 		virtual void hashProcessedMetadata( const Gaffer::Context *context, IECore::MurmurHash &h ) const = 0;
 		/// Must be implemented by derived classes to process the incoming metadata.

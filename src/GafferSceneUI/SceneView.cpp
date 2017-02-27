@@ -42,10 +42,13 @@
 #include "IECore/ParameterisedProcedural.h"
 #include "IECore/VectorTypedData.h"
 #include "IECore/MatrixTransform.h"
+#include "IECore/AngleConversion.h"
 
 #include "IECoreGL/GL.h"
 #include "IECoreGL/State.h"
 #include "IECoreGL/Camera.h"
+#include "IECoreGL/Primitive.h"
+#include "IECoreGL/CurvesPrimitive.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/BlockedConnection.h"
@@ -54,13 +57,14 @@
 #include "GafferUI/Style.h"
 #include "GafferUI/Pointer.h"
 
-#include "GafferScene/SceneProcedural.h"
 #include "GafferScene/PathMatcherData.h"
 #include "GafferScene/StandardAttributes.h"
 #include "GafferScene/PathFilter.h"
+#include "GafferScene/SetFilter.h"
 #include "GafferScene/Grid.h"
 #include "GafferScene/SceneAlgo.h"
 #include "GafferScene/StandardOptions.h"
+#include "GafferScene/LightToCamera.h"
 
 #include "GafferSceneUI/SceneView.h"
 
@@ -73,10 +77,134 @@ using namespace GafferScene;
 using namespace GafferSceneUI;
 
 //////////////////////////////////////////////////////////////////////////
+// SceneView::DrawingMode implementation
+//////////////////////////////////////////////////////////////////////////
+
+class SceneView::DrawingMode : public boost::signals::trackable
+{
+
+	public :
+
+		DrawingMode( SceneView *view )
+			:	m_view( view )
+		{
+			ValuePlugPtr drawingMode = new ValuePlug( "drawingMode" );
+			m_view->addChild( drawingMode );
+
+			ValuePlugPtr solid = new ValuePlug( "solid" );
+			drawingMode->addChild( solid );
+			solid->addChild( new BoolPlug( "enabled", Plug::In, true ) );
+			solid->addChild( new BoolPlug( "override" ) );
+
+			ValuePlugPtr wireframe = new ValuePlug( "wireframe" );
+			drawingMode->addChild( wireframe );
+			wireframe->addChild( new BoolPlug( "enabled" ) );
+			wireframe->addChild( new BoolPlug( "override" ) );
+
+			ValuePlugPtr points = new ValuePlug( "points" );
+			drawingMode->addChild( points );
+			points->addChild( new BoolPlug( "enabled" ) );
+			points->addChild( new BoolPlug( "override" ) );
+
+			ValuePlugPtr bound = new ValuePlug( "bound" );
+			drawingMode->addChild( bound );
+			bound->addChild( new BoolPlug( "enabled" ) );
+			bound->addChild( new BoolPlug( "override" ) );
+
+			ValuePlugPtr curves = new ValuePlug( "curves" );
+			drawingMode->addChild( curves );
+
+			ValuePlugPtr curvesUseGLLines = new ValuePlug( "useGLLines" );
+			curves->addChild( curvesUseGLLines );
+			curvesUseGLLines->addChild( new BoolPlug( "enabled", Plug::In, /* defaultValue = */ true ) );
+			curvesUseGLLines->addChild( new BoolPlug( "override" ) );
+
+			ValuePlugPtr curvesInterpolate = new ValuePlug( "interpolate" );
+			curves->addChild( curvesInterpolate );
+			curvesInterpolate->addChild( new BoolPlug( "enabled" ) );
+			curvesInterpolate->addChild( new BoolPlug( "override" ) );
+
+			updateBaseState();
+
+			view->plugSetSignal().connect( boost::bind( &DrawingMode::plugSet, this, ::_1 ) );
+		}
+
+	private :
+
+		Gaffer::Plug *drawingModePlug()
+		{
+			return m_view->getChild<Plug>( "drawingMode" );
+		}
+
+		SceneGadget *sceneGadget()
+		{
+			return static_cast<SceneGadget *>( m_view->viewportGadget()->getPrimaryChild() );
+		}
+
+		void plugSet( const Plug *plug )
+		{
+			if( plug == drawingModePlug() )
+			{
+				updateBaseState();
+			}
+		}
+
+		void updateBaseState()
+		{
+			IECoreGL::State *baseState = sceneGadget()->baseState();
+
+			const ValuePlug *solid = drawingModePlug()->getChild<ValuePlug>( "solid" );
+			baseState->add(
+				new IECoreGL::Primitive::DrawSolid( solid->getChild<BoolPlug>( "enabled" )->getValue() ),
+				solid->getChild<BoolPlug>( "override" )->getValue()
+			);
+
+			const ValuePlug *wireframe = drawingModePlug()->getChild<ValuePlug>( "wireframe" );
+			baseState->add(
+				new IECoreGL::Primitive::DrawWireframe( wireframe->getChild<BoolPlug>( "enabled" )->getValue() ),
+				wireframe->getChild<BoolPlug>( "override" )->getValue()
+			);
+
+			const ValuePlug *points = drawingModePlug()->getChild<ValuePlug>( "points" );
+			baseState->add(
+				new IECoreGL::Primitive::DrawPoints( points->getChild<BoolPlug>( "enabled" )->getValue() ),
+				points->getChild<BoolPlug>( "override" )->getValue()
+			);
+
+			const ValuePlug *bound = drawingModePlug()->getChild<ValuePlug>( "bound" );
+			baseState->add(
+				new IECoreGL::Primitive::DrawBound( bound->getChild<BoolPlug>( "enabled" )->getValue() ),
+				bound->getChild<BoolPlug>( "override" )->getValue()
+			);
+
+			const ValuePlug *curves = drawingModePlug()->getChild<ValuePlug>( "curves" );
+			const ValuePlug *curvesUseGLLines = curves->getChild<ValuePlug>( "useGLLines" );
+			baseState->add(
+				new IECoreGL::CurvesPrimitive::UseGLLines( curvesUseGLLines->getChild<BoolPlug>( "enabled" )->getValue() ),
+				curvesUseGLLines->getChild<BoolPlug>( "override" )->getValue()
+			);
+
+			const ValuePlug *curvesInterpolate = curves->getChild<ValuePlug>( "interpolate" );
+			baseState->add(
+				/// \todo As a general rule we strive for a one-to-one mapping between cortex/gaffer/ui,
+				/// but in this case IgnoreBasis is far too technical a term. Consider changing the name
+				/// in Cortex.
+				new IECoreGL::CurvesPrimitive::IgnoreBasis( !curvesInterpolate->getChild<BoolPlug>( "enabled" )->getValue() ),
+				curvesInterpolate->getChild<BoolPlug>( "override" )->getValue()
+			);
+
+			sceneGadget()->renderRequestSignal()( sceneGadget() );
+		}
+
+		SceneView *m_view;
+
+};
+
+//////////////////////////////////////////////////////////////////////////
 // SceneView::ShadingMode implementation
 //////////////////////////////////////////////////////////////////////////
 
-class SceneView::ShadingMode
+class SceneView::ShadingMode : public boost::signals::trackable
 {
 
 	public :
@@ -189,7 +317,7 @@ class SceneView::ShadingMode
 // SceneView::Grid implementation
 //////////////////////////////////////////////////////////////////////////
 
-class SceneView::Grid
+class SceneView::Grid : public boost::signals::trackable
 {
 
 	public :
@@ -199,7 +327,7 @@ class SceneView::Grid
 		{
 			m_node->transformPlug()->rotatePlug()->setValue( V3f( 90, 0, 0 ) );
 
-			CompoundPlugPtr plug = new CompoundPlug( "grid" );
+			ValuePlugPtr plug = new ValuePlug( "grid" );
 			view->addChild( plug );
 
 			plug->addChild( new BoolPlug( "visible", Plug::In, true ) );
@@ -223,14 +351,14 @@ class SceneView::Grid
 			update();
 		}
 
-		Gaffer::CompoundPlug *plug()
+		Gaffer::ValuePlug *plug()
 		{
-			return m_view->getChild<Gaffer::CompoundPlug>( "grid" );
+			return m_view->getChild<Gaffer::ValuePlug>( "grid" );
 		}
 
-		const Gaffer::CompoundPlug *plug() const
+		const Gaffer::ValuePlug *plug() const
 		{
-			return m_view->getChild<Gaffer::CompoundPlug>( "grid" );
+			return m_view->getChild<Gaffer::ValuePlug>( "grid" );
 		}
 
 		Gadget *gadget()
@@ -398,7 +526,7 @@ class GnomonGadget : public GafferUI::Gadget
 
 } // namespace
 
-class SceneView::Gnomon
+class SceneView::Gnomon : public boost::signals::trackable
 {
 
 	public :
@@ -406,7 +534,7 @@ class SceneView::Gnomon
 		Gnomon( SceneView *view )
 			:	m_view( view ), m_gadget( new GnomonGadget() )
 		{
-			CompoundPlugPtr plug = new CompoundPlug( "gnomon" );
+			ValuePlugPtr plug = new ValuePlug( "gnomon" );
 			view->addChild( plug );
 
 			plug->addChild( new BoolPlug( "visible", Plug::In, true ) );
@@ -433,14 +561,14 @@ class SceneView::Gnomon
 			update();
 		}
 
-		Gaffer::CompoundPlug *plug()
+		Gaffer::ValuePlug *plug()
 		{
-			return m_view->getChild<Gaffer::CompoundPlug>( "gnomon" );
+			return m_view->getChild<Gaffer::ValuePlug>( "gnomon" );
 		}
 
-		const Gaffer::CompoundPlug *plug() const
+		const Gaffer::ValuePlug *plug() const
 		{
-			return m_view->getChild<Gaffer::CompoundPlug>( "gnomon" );
+			return m_view->getChild<Gaffer::ValuePlug>( "gnomon" );
 		}
 
 		Gadget *gadget()
@@ -632,7 +760,7 @@ IE_CORE_DECLAREPTR( CameraOverlay )
 
 } // namespace
 
-class SceneView::LookThrough
+class SceneView::LookThrough : public boost::signals::trackable
 {
 
 	public :
@@ -650,19 +778,32 @@ class SceneView::LookThrough
 
 			// Set up our plugs
 
-			CompoundPlugPtr lookThrough = new CompoundPlug( "lookThrough", Plug::In, Plug::Default & ~Plug::AcceptsInputs );
+			ValuePlugPtr lookThrough = new ValuePlug( "lookThrough", Plug::In, Plug::Default & ~Plug::AcceptsInputs );
 			lookThrough->addChild( new BoolPlug( "enabled", Plug::In, false, Plug::Default & ~Plug::AcceptsInputs ) );
 			lookThrough->addChild( new StringPlug( "camera", Plug::In, "", Plug::Default & ~Plug::AcceptsInputs ) );
 			view->addChild( lookThrough );
 
-			// Set up our nodes. We use a standard options node to disable camera motion blur
+			// Set up our nodes.
+			// We use a LightToCamera node filtered to all lights to create camera standins so that we can
+			// look through lights
+			SetFilterPtr lightFilter = new SetFilter;
+			lightFilter->setPlug()->setValue( "__lights" );
+
+			LightToCameraPtr lightConverter = new LightToCamera;
+			lightConverter->inPlug()->setInput( view->inPlug<ScenePlug>() );
+			lightConverter->filterPlug()->setInput( lightFilter->outPlug() );
+
+			m_internalNodes.push_back( lightFilter );
+			m_internalNodes.push_back( lightConverter );
+
+			// We use a standard options node to disable camera motion blur
 			// and overscan because we don't want them applied to the cameras we retrieve with SceneAlgo.
 			// We also must disable transform blur and deformation blur, because if either of those is
 			// on, the shutter range becomes non-zero and the SceneAlgo transform() method will evaluate the
 			// camera at the shutter start rather than the current time, even though its only evaluating a
 			// single time sample.
 
-			m_standardOptions->inPlug()->setInput( view->inPlug<ScenePlug>() );
+			m_standardOptions->inPlug()->setInput( lightConverter->outPlug() );
 			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "cameraBlur" )->enabledPlug()->setValue( true );
 			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "cameraBlur" )->valuePlug<BoolPlug>()->setValue( false );
 			m_standardOptions->optionsPlug()->getChild<CompoundDataPlug::MemberPlug>( "transformBlur" )->enabledPlug()->setValue( true );
@@ -689,14 +830,14 @@ class SceneView::LookThrough
 
 		}
 
-		Gaffer::CompoundPlug *plug()
+		Gaffer::ValuePlug *plug()
 		{
-			return m_view->getChild<Gaffer::CompoundPlug>( "lookThrough" );
+			return m_view->getChild<Gaffer::ValuePlug>( "lookThrough" );
 		}
 
-		const Gaffer::CompoundPlug *plug() const
+		const Gaffer::ValuePlug *plug() const
 		{
-			return m_view->getChild<Gaffer::CompoundPlug>( "lookThrough" );
+			return m_view->getChild<Gaffer::ValuePlug>( "lookThrough" );
 		}
 
 		const Imath::Box2f &resolutionGate() const
@@ -732,12 +873,21 @@ class SceneView::LookThrough
 		{
 			if( !boost::starts_with( name.value(), "ui:" ) )
 			{
-				m_lookThroughCameraDirty = m_viewportCameraDirty = true;
+				if( enabledPlug()->getValue() )
+				{
+					m_lookThroughCameraDirty = m_viewportCameraDirty = true;
+				}
 			}
 		}
 
 		void plugDirtied( Gaffer::Plug *plug )
 		{
+			if( plug != enabledPlug() && !enabledPlug()->getValue() )
+			{
+				// No need to do anything if we're turned off.
+				return;
+			}
+
 			if(
 				plug == scenePlug()->childNamesPlug() ||
 				plug == scenePlug()->globalsPlug() ||
@@ -750,7 +900,7 @@ class SceneView::LookThrough
 				m_lookThroughCameraDirty = m_viewportCameraDirty = true;
 				if( plug == enabledPlug() && enabledPlug()->getValue() )
 				{
-					m_originalCamera = m_view->viewportGadget()->getCamera();
+					m_originalCamera = m_view->viewportGadget()->getCamera()->copy();
 				}
 				m_view->viewportGadget()->renderRequestSignal()( m_view->viewportGadget() );
 			}
@@ -803,13 +953,13 @@ class SceneView::LookThrough
 				const string cameraPathString = cameraPlug()->getValue();
 				if( cameraPathString.empty() )
 				{
-					m_lookThroughCamera = GafferScene::camera( scenePlug() ); // primary render camera
+					m_lookThroughCamera = GafferScene::SceneAlgo::camera( scenePlug() ); // primary render camera
 				}
 				else
 				{
 					ScenePlug::ScenePath cameraPath;
 					ScenePlug::stringToPath( cameraPathString, cameraPath );
-					m_lookThroughCamera = GafferScene::camera( scenePlug(), cameraPath );
+					m_lookThroughCamera = GafferScene::SceneAlgo::camera( scenePlug(), cameraPath );
 				}
 			}
 			catch( ... )
@@ -823,7 +973,16 @@ class SceneView::LookThrough
 			if( m_lookThroughCamera )
 			{
 				StringVectorDataPtr invisiblePaths = new StringVectorData();
-				invisiblePaths->writable().push_back( m_lookThroughCamera->getName() );
+
+				// When looking through a camera, we hide the camera, since the overlay
+				// tells us everything we need to know about the camera.
+				// If looking through something else, such as a light, we may want to
+				// see the viewport visualisation of what we're looking through
+				if( m_view->inPlug<ScenePlug>()->set( "__cameras" )->readable().match(
+					m_lookThroughCamera->getName() ) )
+				{
+					invisiblePaths->writable().push_back( m_lookThroughCamera->getName() );
+				}
 				m_view->hideFilter()->pathsPlug()->setValue( invisiblePaths );
 			}
 			else
@@ -906,6 +1065,11 @@ class SceneView::LookThrough
 
 		StandardOptionsPtr m_standardOptions;
 
+		/// Nodes used in an internal processing network.
+		/// Don't need to do anything with them once their set up, but need to hold onto a pointer
+		/// so they don't get destroyed
+		std::vector< Gaffer::ConstNodePtr > m_internalNodes;
+
 		boost::signals::scoped_connection m_contextChangedConnection;
 
 		/// The default viewport camera - we store this so we can
@@ -935,9 +1099,23 @@ size_t SceneView::g_firstPlugIndex = 0;
 SceneView::ViewDescription<SceneView> SceneView::g_viewDescription( GafferScene::ScenePlug::staticTypeId() );
 
 SceneView::SceneView( const std::string &name )
-	:	View3D( name, new GafferScene::ScenePlug() ),
+	:	View( name, new GafferScene::ScenePlug() ),
 		m_sceneGadget( new SceneGadget )
 {
+
+	// set up a sensible default camera
+
+	IECore::CameraPtr camera = new IECore::Camera();
+
+	camera->parameters()["projection"] = new IECore::StringData( "perspective" );
+	camera->parameters()["projection:fov"] = new IECore::FloatData( 54.43 ); // 35 mm focal length
+
+	M44f matrix;
+	matrix.translate( V3f( 0, 0, 1 ) );
+	matrix.rotate( IECore::degreesToRadians( V3f( -25, 45, 0 ) ) );
+	camera->setTransform( new IECore::MatrixTransform( matrix ) );
+
+	viewportGadget()->setCamera( camera.get() );
 
 	// add plugs and signal handling for them
 
@@ -950,17 +1128,15 @@ SceneView::SceneView( const std::string &name )
 	// set up our gadgets
 
 	viewportGadget()->setPrimaryChild( m_sceneGadget );
-
 	viewportGadget()->keyPressSignal().connect( boost::bind( &SceneView::keyPress, this, ::_1, ::_2 ) );
 
-	m_sceneGadget->baseState()->add( const_cast<IECoreGL::State *>( baseState() ) );
 	m_sceneGadget->setContext( getContext() );
-	baseStateChangedSignal().connect( boost::bind( &SceneView::baseStateChanged, this ) );
 
-	m_lookThrough = boost::shared_ptr<LookThrough>( new LookThrough( this ) );
-	m_grid = boost::shared_ptr<Grid>( new Grid( this ) );
-	m_gnomon = boost::shared_ptr<Gnomon>( new Gnomon( this ) );
-	m_shadingMode = boost::shared_ptr<ShadingMode>( new ShadingMode( this ) );
+	m_drawingMode = boost::make_shared<DrawingMode>( this );
+	m_shadingMode = boost::make_shared<ShadingMode>( this );
+	m_lookThrough = boost::make_shared<LookThrough>( this );
+	m_grid = boost::make_shared<Grid>( this );
+	m_gnomon = boost::make_shared<Gnomon>( this );
 
 	//////////////////////////////////////////////////////////////////////////
 	// add a preprocessor which monkeys with the scene before it is displayed.
@@ -973,8 +1149,8 @@ SceneView::SceneView( const std::string &name )
 	// add a node for hiding things
 
 	StandardAttributesPtr hide = new StandardAttributes( "hide" );
-	hide->attributesPlug()->getChild<CompoundPlug>( "visibility" )->getChild<BoolPlug>( "enabled" )->setValue( true );
-	hide->attributesPlug()->getChild<CompoundPlug>( "visibility" )->getChild<BoolPlug>( "value" )->setValue( false );
+	hide->attributesPlug()->getChild<ValuePlug>( "visibility" )->getChild<BoolPlug>( "enabled" )->setValue( true );
+	hide->attributesPlug()->getChild<ValuePlug>( "visibility" )->getChild<BoolPlug>( "value" )->setValue( false );
 
 	preprocessor->addChild( hide );
 	hide->inPlug()->setInput( preprocessorInput );
@@ -1016,32 +1192,32 @@ const Gaffer::IntPlug *SceneView::minimumExpansionDepthPlug() const
 	return getChild<IntPlug>( g_firstPlugIndex );
 }
 
-Gaffer::CompoundPlug *SceneView::lookThroughPlug()
+Gaffer::ValuePlug *SceneView::lookThroughPlug()
 {
 	return m_lookThrough->plug();
 }
 
-const Gaffer::CompoundPlug *SceneView::lookThroughPlug() const
+const Gaffer::ValuePlug *SceneView::lookThroughPlug() const
 {
 	return m_lookThrough->plug();
 }
 
-Gaffer::CompoundPlug *SceneView::gridPlug()
+Gaffer::ValuePlug *SceneView::gridPlug()
 {
 	return m_grid->plug();
 }
 
-const Gaffer::CompoundPlug *SceneView::gridPlug() const
+const Gaffer::ValuePlug *SceneView::gridPlug() const
 {
 	return m_grid->plug();
 }
 
-Gaffer::CompoundPlug *SceneView::gnomonPlug()
+Gaffer::ValuePlug *SceneView::gnomonPlug()
 {
 	return m_gnomon->plug();
 }
 
-const Gaffer::CompoundPlug *SceneView::gnomonPlug() const
+const Gaffer::ValuePlug *SceneView::gnomonPlug() const
 {
 	return m_gnomon->plug();
 }
@@ -1058,7 +1234,7 @@ const GafferScene::PathFilter *SceneView::hideFilter() const
 
 void SceneView::setContext( Gaffer::ContextPtr context )
 {
-	View3D::setContext( context );
+	View::setContext( context );
 	m_sceneGadget->setContext( context );
 }
 
@@ -1112,7 +1288,7 @@ Imath::Box3f SceneView::framingBound() const
 		return b;
 	}
 
-	b = View3D::framingBound();
+	b = View::framingBound();
 	if( m_grid->gadget()->getVisible() )
 	{
 		b.extendBy( m_grid->gadget()->bound() );
@@ -1275,13 +1451,6 @@ GafferScene::PathMatcherData *SceneView::expandedPaths()
 		m = getContext()->get<GafferScene::PathMatcherData>( "ui:scene:expandedPaths", 0 );
 	}
 	return const_cast<GafferScene::PathMatcherData *>( m );
-}
-
-void SceneView::baseStateChanged()
-{
-	/// \todo This isn't transferring the override state properly. Probably an IECoreGL problem.
-	m_sceneGadget->baseState()->add( const_cast<IECoreGL::State *>( baseState() ) );
-	viewportGadget()->renderRequestSignal()( viewportGadget() );
 }
 
 void SceneView::plugSet( Gaffer::Plug *plug )

@@ -34,6 +34,8 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "IECore/Shader.h"
+
 #include "Gaffer/CompoundDataPlug.h"
 #include "Gaffer/StringPlug.h"
 
@@ -62,21 +64,38 @@ void RenderManLight::loadShader( const std::string &shaderName )
 {
 	IECore::ConstShaderPtr shader = IECore::runTimeCast<const IECore::Shader>( RenderManShader::shaderLoader()->read( shaderName + ".sdl" ) );
 	RenderManShader::loadShaderParameters( shader.get(), parametersPlug() );
-	getChild<StringPlug>( "__shaderName" )->setValue( shaderName );
+	shaderNamePlug()->setValue( shaderName );
 }
 
 void RenderManLight::hashLight( const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	parametersPlug()->hash( h );
-	getChild<StringPlug>( "__shaderName" )->hash( h );
+	for( ValuePlugIterator it( parametersPlug() ); !it.done(); ++it )
+	{
+		(*it)->hash( h );
+	}
+	shaderNamePlug()->hash( h );
 }
 
-IECore::LightPtr RenderManLight::computeLight( const Gaffer::Context *context ) const
+IECore::ObjectVectorPtr RenderManLight::computeLight( const Gaffer::Context *context ) const
 {
-	IECore::LightPtr result = new IECore::Light( getChild<StringPlug>( "__shaderName" )->getValue() );
-	for( InputValuePlugIterator it( parametersPlug() ); it!=it.end(); it++ )
+	IECore::ShaderPtr result = new IECore::Shader( shaderNamePlug()->getValue(), "ri:light" );
+	for( InputValuePlugIterator it( parametersPlug() ); !it.done(); ++it )
 	{
 		result->parameters()[(*it)->getName()] = CompoundDataPlug::extractDataFromPlug( it->get() );
 	}
-	return result;
+
+	IECore::ObjectVectorPtr resultVector = new IECore::ObjectVector();
+	resultVector->members().push_back( result );
+	return resultVector;
+}
+
+
+Gaffer::StringPlug *RenderManLight::shaderNamePlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex );
+}
+
+const Gaffer::StringPlug *RenderManLight::shaderNamePlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex );
 }

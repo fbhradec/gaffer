@@ -42,20 +42,24 @@ import IECore
 import Gaffer
 import GafferScene
 import GafferRenderMan
+import GafferRenderManTest
 
-class RenderManLightTest( unittest.TestCase ) :
+class RenderManLightTest( GafferRenderManTest.RenderManTestCase ) :
 
 	def test( self ) :
 
 		n = GafferRenderMan.RenderManLight()
 		n.loadShader( "pointlight" )
 
-		light = n["out"].object( "/light" )
-		self.assertTrue( isinstance( light, IECore.Light ) )
+		lightObject = n["out"].object( "/light" )
+		self.assertTrue( isinstance( lightObject, IECore.NullObject ) )
+
+		light = n["out"].attributes( "/light" )["ri:light"][-1]
+		self.assertTrue( isinstance( light, IECore.Shader ) )
 		self.assertEqual( light.parameters["intensity"].value, 1 )
 
 		n["parameters"]["intensity"].setValue( 10 )
-		light = n["out"].object( "/light" )
+		light = n["out"].attributes( "/light" )["ri:light"][-1]
 		self.assertEqual( light.parameters["intensity"].value, 10 )
 
 	@unittest.skipIf( "TRAVIS" in os.environ, "No license available on Travis" )
@@ -74,9 +78,9 @@ class RenderManLightTest( unittest.TestCase ) :
 		s["c"]["transform"]["translate"]["z"].setValue( 1 )
 
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["l"]["out"] )
-		s["g"]["in1"].setInput( s["p"]["out"] )
-		s["g"]["in2"].setInput( s["c"]["out"] )
+		s["g"]["in"][0].setInput( s["l"]["out"] )
+		s["g"]["in"][1].setInput( s["p"]["out"] )
+		s["g"]["in"][2].setInput( s["c"]["out"] )
 
 		s["s"] = GafferRenderMan.RenderManShader()
 		s["s"].loadShader( "matte" )
@@ -85,7 +89,7 @@ class RenderManLightTest( unittest.TestCase ) :
 		s["a"]["shader"].setInput( s["s"]["out"] )
 
 		s["d"] = GafferScene.Outputs()
-		s["d"].addOutput( "beauty", IECore.Display( "/tmp/testRenderManLight.exr", "exr", "rgba", { "quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ) } ) )
+		s["d"].addOutput( "beauty", IECore.Display( self.temporaryDirectory() + "/testRenderManLight.exr", "exr", "rgba", { "quantize" : IECore.FloatVectorData( [ 0, 0, 0, 0 ] ) } ) )
 		s["d"]["in"].setInput( s["a"]["out"] )
 
 		s["o"] = GafferScene.StandardOptions()
@@ -94,19 +98,19 @@ class RenderManLightTest( unittest.TestCase ) :
 		s["o"]["in"].setInput( s["d"]["out"] )
 
 		s["r"] = GafferRenderMan.RenderManRender()
-		s["r"]["ribFileName"].setValue( "/tmp/testRenderManLight.rib" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/testRenderManLight.rib" )
 		s["r"]["in"].setInput( s["o"]["out"] )
 
 		# must save the script for the procedural to load it
 		# in the render process. if we were using a dispatcher,
 		# that would have saved the script for us, but we're
 		# calling execute() directly so it is our responsibility.
-		s["fileName"].setValue( "/tmp/testRenderManLight.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/testRenderManLight.gfr" )
 		s.save()
 
 		s["r"].execute()
 
-		i = IECore.EXRImageReader( "/tmp/testRenderManLight.exr" ).read()
+		i = IECore.EXRImageReader( self.temporaryDirectory() + "/testRenderManLight.exr" ).read()
 		e = IECore.ImagePrimitiveEvaluator( i )
 		r = e.createResult()
 		e.pointAtUV( IECore.V2f( 0.5 ), r )
@@ -114,16 +118,6 @@ class RenderManLightTest( unittest.TestCase ) :
 		self.assertEqual( r.floatPrimVar( e.R() ), 1 )
 		self.assertEqual( r.floatPrimVar( e.G() ), 0.5 )
 		self.assertEqual( r.floatPrimVar( e.B() ), 0.25 )
-
-	def tearDown( self ) :
-
-		for f in [
-			"/tmp/testRenderManLight.gfr",
-			"/tmp/testRenderManLight.exr",
-			"/tmp/testRenderManLight.rib",
-		] :
-			if os.path.exists( f ) :
-				os.remove( f )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -37,8 +37,6 @@
 
 import weakref
 
-import IECore
-
 import Gaffer
 import GafferUI
 
@@ -209,4 +207,3 @@ class _ColorPlugValueDialogue( GafferUI.ColorChooserDialogue ) :
 
 		self.parent().removeChild( self )
 		return False # to remove idle callback
-

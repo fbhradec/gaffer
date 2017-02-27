@@ -38,12 +38,14 @@
 #ifndef GAFFERUI_GRAPHGADGET_H
 #define GAFFERUI_GRAPHGADGET_H
 
+#include "Gaffer/Plug.h"
+#include "Gaffer/CompoundNumericPlug.h"
+
 #include "GafferUI/ContainerGadget.h"
 
 namespace Gaffer
 {
 IE_CORE_FORWARDDECLARE( Node );
-IE_CORE_FORWARDDECLARE( Plug );
 IE_CORE_FORWARDDECLARE( ScriptNode );
 IE_CORE_FORWARDDECLARE( Set );
 }
@@ -65,7 +67,7 @@ class GraphGadget : public ContainerGadget
 		/// Creates a graph showing the children of root, optionally
 		/// filtered by the specified set. Nodes are only displayed if
 		/// they are both a child of root and a member of filter.
-		GraphGadget( Gaffer::NodePtr root, Gaffer::SetPtr filter = 0 );
+		GraphGadget( Gaffer::NodePtr root, Gaffer::SetPtr filter = NULL );
 
 		virtual ~GraphGadget();
 
@@ -73,24 +75,24 @@ class GraphGadget : public ContainerGadget
 
 		Gaffer::Node *getRoot();
 		const Gaffer::Node *getRoot() const;
-		void setRoot( Gaffer::NodePtr root, Gaffer::SetPtr filter = 0 );
+		void setRoot( Gaffer::NodePtr root, Gaffer::SetPtr filter = NULL );
 		typedef boost::signal<void ( GraphGadget *, Gaffer::Node * )> RootChangedSignal;
 		/// A signal emitted when the root has been changed - the signature
 		/// of the signal is ( graphGadget, previousRoot ).
 		RootChangedSignal &rootChangedSignal();
 
-		/// May return 0 if no filter has been specified.
+		/// May return NULL if no filter has been specified.
 		Gaffer::Set *getFilter();
 		const Gaffer::Set *getFilter() const;
 		void setFilter( Gaffer::SetPtr filter );
 
-		/// Returns the NodeGadget representing the specified node or 0
+		/// Returns the NodeGadget representing the specified node or NULL
 		/// if none exists.
 		NodeGadget *nodeGadget( const Gaffer::Node *node );
 		const NodeGadget *nodeGadget( const Gaffer::Node *node ) const;
 
 		/// Returns the ConnectionGadget representing the specified
-		/// destination Plug or 0 if none exists.
+		/// destination Plug or NULL if none exists.
 		ConnectionGadget *connectionGadget( const Gaffer::Plug *dstPlug );
 		const ConnectionGadget *connectionGadget( const Gaffer::Plug *dstPlug ) const;
 
@@ -98,15 +100,15 @@ class GraphGadget : public ContainerGadget
 		/// to the specified plug and appends them to the connections vector.
 		/// Returns the new size of the vector. If excludedNodes is specified,
 		/// then connections to any nodes it contains will be ignored.
-		size_t connectionGadgets( const Gaffer::Plug *plug, std::vector<ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = 0 );
-		size_t connectionGadgets( const Gaffer::Plug *plug, std::vector<const ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = 0 ) const;
+		size_t connectionGadgets( const Gaffer::Plug *plug, std::vector<ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = NULL );
+		size_t connectionGadgets( const Gaffer::Plug *plug, std::vector<const ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = NULL ) const;
 
 		/// Finds all the ConnectionGadgets connected to the specified node and
 		/// appends them to the connections vector. Returns the new size of the
 		/// vector. If excludedNodes is specified, then connections to any
 		/// nodes it contains will be ignored.
-		size_t connectionGadgets( const Gaffer::Node *node, std::vector<ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = 0 );
-		size_t connectionGadgets( const Gaffer::Node *node, std::vector<const ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = 0 ) const;
+		size_t connectionGadgets( const Gaffer::Node *node, std::vector<ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = NULL );
+		size_t connectionGadgets( const Gaffer::Node *node, std::vector<const ConnectionGadget *> &connections, const Gaffer::Set *excludedNodes = NULL ) const;
 
 		/// Finds all the upstream NodeGadgets connected to the specified node
 		/// and appends them to the specified vector. Returns the new size of the vector.
@@ -132,6 +134,10 @@ class GraphGadget : public ContainerGadget
 		size_t connectedNodeGadgets( const Gaffer::Node *node, std::vector<NodeGadget *> &connectedNodeGadgets, Gaffer::Plug::Direction direction = Gaffer::Plug::Invalid, size_t degreesOfSeparation = Imath::limits<size_t>::max() );
 		size_t connectedNodeGadgets( const Gaffer::Node *node, std::vector<const NodeGadget *> &connectedNodeGadgets, Gaffer::Plug::Direction direction = Gaffer::Plug::Invalid, size_t degreesOfSeparation = Imath::limits<size_t>::max() ) const;
 
+		/// Finds all the NodeGadgets which haven't been given an explicit position
+		/// using setNodePosition().
+		size_t unpositionedNodeGadgets( std::vector<NodeGadget *> &nodeGadgets ) const;
+
 		/// Sets the position of the specified node within the graph. This
 		/// method may be used even when the node currently has no NodeGadget
 		/// associated with it, and the position will be used if and when a NodeGadget
@@ -141,6 +147,7 @@ class GraphGadget : public ContainerGadget
 		/// \undoable
 		void setNodePosition( Gaffer::Node *node, const Imath::V2f &position );
 		Imath::V2f getNodePosition( const Gaffer::Node *node ) const;
+		bool hasNodePosition( const Gaffer::Node *node ) const;
 
 		/// May be used to minimise the input connections for a particular node.
 		/// \undoable
@@ -170,6 +177,9 @@ class GraphGadget : public ContainerGadget
 
 	private :
 
+		const Gaffer::V2fPlug *nodePositionPlug( const Gaffer::Node *node ) const;
+		Gaffer::V2fPlug *nodePositionPlug( Gaffer::Node *node, bool createIfMissing ) const;
+
 		void rootChildAdded( Gaffer::GraphComponent *root, Gaffer::GraphComponent *child );
 		void rootChildRemoved( Gaffer::GraphComponent *root, Gaffer::GraphComponent *child );
 		void selectionMemberAdded( Gaffer::Set *set, IECore::RunTimeTyped *member );
@@ -178,6 +188,8 @@ class GraphGadget : public ContainerGadget
 		void filterMemberRemoved( Gaffer::Set *set, IECore::RunTimeTyped *member );
 		void inputChanged( Gaffer::Plug *dstPlug );
 		void plugSet( Gaffer::Plug *plug );
+		void noduleAdded( Nodule *nodule );
+		void noduleRemoved( Nodule *nodule );
 
 		bool keyPressed( GadgetPtr gadget, const KeyEvent &event );
 
@@ -200,13 +212,18 @@ class GraphGadget : public ContainerGadget
 		NodeGadget *findNodeGadget( const Gaffer::Node *node ) const;
 		void updateNodeGadgetTransform( NodeGadget *nodeGadget );
 
-		void addConnectionGadgets( Gaffer::GraphComponent *plugParent );
-		void addConnectionGadget( Gaffer::Plug *dstPlug );
-		void removeConnectionGadgets( const Gaffer::GraphComponent *plugParent );
-		void removeConnectionGadget( const Gaffer::Plug *dstPlug );
+		Nodule *findNodule( const Gaffer::Plug *plug ) const;
+
+		void addConnectionGadgets( NodeGadget *nodeGadget );
+		void addConnectionGadgets( Nodule *nodule );
+		void addConnectionGadget( Nodule *dstNodule );
+		void removeConnectionGadgets( const NodeGadget *nodeGadget );
+		void removeConnectionGadgets( const Nodule *nodule );
+		void removeConnectionGadget( const Nodule *dstNodule );
+		ConnectionGadget *findConnectionGadget( const Nodule *dstNodule ) const;
 		ConnectionGadget *findConnectionGadget( const Gaffer::Plug *dstPlug ) const;
 		void updateConnectionGadgetMinimisation( ConnectionGadget *gadget );
-		ConnectionGadget *reconnectionGadgetAt( NodeGadget *gadget, const IECore::LineSegment3f &lineInGadgetSpace ) const;
+		ConnectionGadget *reconnectionGadgetAt( const NodeGadget *gadget, const IECore::LineSegment3f &lineInGadgetSpace ) const;
 		void updateDragReconnectCandidate( const DragDropEvent &event );
 
 		void connectedNodeGadgetsWalk( NodeGadget *gadget, std::set<NodeGadget *> &connectedGadgets, Gaffer::Plug::Direction direction, size_t degreesOfSeparation );
@@ -228,11 +245,13 @@ class GraphGadget : public ContainerGadget
 			NodeGadget *gadget;
 			boost::signals::scoped_connection inputChangedConnection;
 			boost::signals::scoped_connection plugSetConnection;
+			boost::signals::scoped_connection noduleAddedConnection;
+			boost::signals::scoped_connection noduleRemovedConnection;
 		};
 		typedef std::map<const Gaffer::Node *, NodeGadgetEntry> NodeGadgetMap;
 		NodeGadgetMap m_nodeGadgets;
 
-		typedef std::map<const Gaffer::Plug *, ConnectionGadget *> ConnectionGadgetMap;
+		typedef std::map<const Nodule *, ConnectionGadget *> ConnectionGadgetMap;
 		ConnectionGadgetMap m_connectionGadgets;
 
 		enum DragMode

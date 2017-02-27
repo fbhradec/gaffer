@@ -47,9 +47,12 @@ IE_CORE_DEFINERUNTIMETYPED( TransformPlug );
 size_t TransformPlug::g_firstPlugIndex = 0;
 
 TransformPlug::TransformPlug( const std::string &name, Direction direction, unsigned flags )
-	:	CompoundPlug( name, direction, flags )
+	:	ValuePlug( name, direction, flags )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
+
+	// We create our children automatically, so they should never be created dynamically
+	unsigned childFlags = flags & ~Plug::Dynamic;
 
 	addChild(
 		new V3fPlug(
@@ -58,7 +61,7 @@ TransformPlug::TransformPlug( const std::string &name, Direction direction, unsi
 			V3f( 0 ),
 			V3f( limits<float>::min() ),
 			V3f( limits<float>::max() ),
-			flags
+			childFlags
 		)
 	);
 
@@ -69,7 +72,7 @@ TransformPlug::TransformPlug( const std::string &name, Direction direction, unsi
 			V3f( 0 ),
 			V3f( limits<float>::min() ),
 			V3f( limits<float>::max() ),
-			flags
+			childFlags
 		)
 	);
 
@@ -80,7 +83,7 @@ TransformPlug::TransformPlug( const std::string &name, Direction direction, unsi
 			V3f( 1 ),
 			V3f( limits<float>::min() ),
 			V3f( limits<float>::max() ),
-			flags
+			childFlags
 		)
 	);
 
@@ -91,7 +94,7 @@ TransformPlug::TransformPlug( const std::string &name, Direction direction, unsi
 			V3f( 0 ),
 			V3f( limits<float>::min() ),
 			V3f( limits<float>::max() ),
-			flags
+			childFlags
 		)
 	);
 }

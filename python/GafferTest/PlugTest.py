@@ -694,6 +694,105 @@ class PlugTest( GafferTest.TestCase ) :
 
 		assertPostconditions()
 
+	def testMixedInputsAndOutputsAsChildren( self ) :
+
+		p = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default & ~Gaffer.Plug.Flags.AcceptsInputs )
+		p["in"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.In )
+		p["out"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
+
+	def testUndoSetFlags( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n"] = Gaffer.Node()
+		s["n"]["user"]["p"] = Gaffer.IntPlug()
+
+		self.assertFalse( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+
+		cs = GafferTest.CapturingSlot( s["n"].plugFlagsChangedSignal() )
+		with Gaffer.UndoContext( s["n"]["user"]["p"].ancestor( Gaffer.ScriptNode ) ) :
+			s["n"]["user"]["p"].setFlags( Gaffer.Plug.Flags.ReadOnly, True )
+			self.assertTrue( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+			self.assertEqual( len( cs ), 1 )
+
+		s.undo()
+		self.assertFalse( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertEqual( len( cs ), 2 )
+
+		s.redo()
+		self.assertTrue( s["n"]["user"]["p"].getFlags( Gaffer.Plug.Flags.ReadOnly ) )
+		self.assertEqual( len( cs ), 3 )
+
+	def testParentConnectionIgnoresOutOfOrderChildConnections( self ) :
+
+		p1 = Gaffer.V2fPlug()
+		p2 = Gaffer.V2fPlug()
+
+		# p1.x -> p2.x, p1.y -> p2.y
+		#
+		# The parent should connect automatically too, because
+		# the equivalent child connections have been performed
+		# manually. By equivalent, we mean the same connections
+		# which would have been made had we connected p1 -> p2.
+		p2["x"].setInput( p1["x"] )
+		p2["y"].setInput( p1["y"] )
+		self.assertTrue( p2.getInput().isSame( p1 ) )
+
+		p2.setInput( None )
+
+		# p1.x -> p2.x, p1.x ->p2.y
+		#
+		# The parent should not connect automatically. Although
+		# both children of p2 are driven from a child of p1,
+		# they are not driven by the same plugs a call to
+		# p2.setInput( p1 ) would have made.
+		p2["x"].setInput( p1["x"] )
+		p2["y"].setInput( p1["x"] )
+		self.assertTrue( p2.getInput() is None )
+
+		# p1.y -> p2.x, p1.x ->p2.y
+		#
+		# As above, parent should not connect automatically, because
+		# the child connections are not equivalent to those which
+		# would have been made by connecting the parent (order is wrong).
+		p2["x"].setInput( p1["y"] )
+		p2["y"].setInput( p1["x"] )
+		self.assertTrue( p2.getInput() is None )
+
+	def testIndirectInputChangedSignal( self ) :
+
+		n = Gaffer.Node()
+		n["p1"] = Gaffer.Plug()
+		n["p2"] = Gaffer.Plug()
+		n["p3"] = Gaffer.Plug()
+		n["p4"] = Gaffer.Plug()
+
+		cs = GafferTest.CapturingSlot( n.plugInputChangedSignal() )
+
+		n["p4"].setInput( n["p3"] )
+		self.assertEqual( len( cs ), 1 )
+		self.assertEqual( cs[0], ( n["p4"], ) )
+
+		del cs[:]
+
+		# When the input to the input of a plug
+		# changes, we emit inputChangedSignal()
+		# for the whole chain, because the
+		# effective source for all downstream
+		# plugs has changed.
+
+		n["p3"].setInput( n["p2"] )
+		self.assertEqual( len( cs ), 2 )
+		self.assertEqual( cs[0], ( n["p3"], ) )
+		self.assertEqual( cs[1], ( n["p4"], ) )
+
+		del cs[:]
+
+		n["p2"].setInput( n["p1"] )
+		self.assertEqual( len( cs ), 3 )
+		self.assertEqual( cs[0], ( n["p2"], ) )
+		self.assertEqual( cs[1], ( n["p3"], ) )
+		self.assertEqual( cs[2], ( n["p4"], ) )
+
 if __name__ == "__main__":
 	unittest.main()
-

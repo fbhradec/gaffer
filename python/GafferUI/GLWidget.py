@@ -35,8 +35,6 @@
 #
 ##########################################################################
 
-import os
-import ctypes
 import logging
 
 # the OpenGL module loves spewing things into logs, and for some reason
@@ -48,6 +46,7 @@ import IECore
 
 import Gaffer
 import GafferUI
+import _GafferUI
 
 # import lazily to improve startup of apps which don't use GL functionality
 GL = Gaffer.lazyImport( "OpenGL.GL" )
@@ -90,18 +89,39 @@ class GLWidget( GafferUI.Widget ) :
 
 		GafferUI.Widget.__init__( self, graphicsView, **kw )
 
-	## Adds a Widget as an overlay.
-	## \todo Support more than one overlay, and provide grid-based
-	# placement options. Perhaps GLWidget should also derive from Container
-	# to support auto-parenting and appropriate removeChild() behaviour.
-	def addOverlay( self, overlay ) :
+		self.__overlay = None
 
-		assert( overlay.parent() is None )
+	## Specifies a widget to be overlaid on top of the GL rendering,
+	# stretched to fill the frame. To add multiple widgets and/or gain
+	# more control over the layout, use a Container as the overlay and
+	# use it to layout multiple child widgets.
+	def setOverlay( self, overlay ) :
+
+		if overlay is self.__overlay :
+			return
+
+		if self.__overlay is not None :
+			self.removeChild( self.__overlay )
+
+		if overlay is not None :
+			oldParent = overlay.parent()
+			if oldParent is not None :
+				oldParent.removeChild( child )
 
 		self.__overlay = overlay
 		self.__overlay._setStyleSheet()
 
-		item = self.__graphicsScene.addWidget( self.__overlay._qtWidget() )
+		self.__graphicsScene.setOverlay( self.__overlay )
+
+	def getOverlay( self ) :
+
+		return self.__overlay
+
+	def removeChild( self, child ) :
+
+		assert( child is self.__overlay )
+		self.__overlay = None
+		self.__graphicsScene.setOverlay( None )
 
 	## Called whenever the widget is resized. May be reimplemented by derived
 	# classes if necessary. The appropriate OpenGL context will already be current
@@ -163,6 +183,8 @@ class GLWidget( GafferUI.Widget ) :
 		# created, and this seems like the only place that is guaranteed.
 		# calling it here does mean we call init() way more than needed,
 		# but it's safe.
+		## \todo: this might be removable if we can prove resizeEvent
+		# is always called first.
 		IECoreGL.init( True )
 
 		self._draw()
@@ -220,6 +242,18 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 				pass
 
 			owner._makeCurrent()
+
+			# We need to call the init method after a GL context has been
+			# created, but before any events requiring GL have been triggered.
+			# We had been doing this from GLWidget.__draw(), but it was still
+			# possible to trigger mouseMove events prior to drawing by hovering
+			# over top of an about-to-become-visible GLWidget. resizeEvent
+			# seems to always be triggered prior to both draw and mouseMove,
+			# ensuring GL is initialized in time for those other events.
+			# Calling it here does mean we call init() more than needed,
+			# but it's safe.
+			IECoreGL.init( True )
+
 			owner._resize( IECore.V2i( event.size().width(), event.size().height() ) )
 
 	def keyPressEvent( self, event ) :
@@ -262,73 +296,20 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 		return QtOpenGL.QGLWidget( format, shareWidget = cls.__shareWidget )
 
 	@classmethod
-	def __createHostedQGLWidget( cls, format, hostContextActivator ) :
+	def __createHostedQGLWidget( cls, format ) :
 
 		# When running Gaffer embedded in a host application such as Maya
 		# or Houdini, we want to be able to share OpenGL resources between
 		# gaffer uis and host viewport uis, because IECoreGL will be used
 		# in both. So we implement our own QGLContext class which creates a
-		# context which shares with the host.
-
-		import OpenGL.GLX
-
-		# This is our custom context class which allows us to share gl
-		# resources with the hosts's contexts. We define it in here rather than
-		# at the top level because we want to import QtOpenGL lazily and
-		# don't want to trigger a full import until the last minute.
-		## \todo Call glXDestroyContext appropriately, although as far as I
-		# can tell this is impossible. The base class implementation calls it
-		# in reset(), but that's not virtual, and we can't store it in d->cx
-		# (which is what the base class destroys) because that's entirely
-		# on the C++ side of things.
-		class HostedGLContext( QtOpenGL.QGLContext ) :
-
-			def __init__( self, format, paintDevice, hostContextActivator ) :
-
-				QtOpenGL.QGLContext.__init__( self, format, paintDevice )
-
-				self.__paintDevice = paintDevice
-				self.__context = None
-				self.__hostContextActivator = hostContextActivator
-
-			def chooseContext( self, shareContext ) :
-
-				assert( self.__context is None )
-
-				# We have to call this to get d->vi set in the base class, because
-				# QGLWidget::setContext() accesses it directly, and will crash if we don't.
-				QtOpenGL.QGLContext.chooseContext( self, shareContext )
-
-				# Get the host's main OpenGL context. It is the responsibility
-				# of the hostContextActivator passed to __init__ to make the host
-				# context current so we can access it.
-				self.__hostContextActivator()
-				hostContext = OpenGL.GLX.glXGetCurrentContext()
-				self.__display = OpenGL.GLX.glXGetCurrentDisplay()
-
-				# Get a visual - we let the base class figure this out, but then we need
-				# to convert it from the form given by the qt bindings into the ctypes form
-				# needed by PyOpenGL.
-				visual = self.chooseVisual()
-				visual = ctypes.cast( int( visual ), ctypes.POINTER( OpenGL.raw._GLX.XVisualInfo ) )
-
-				# Make our context.
-				self.__context = OpenGL.GLX.glXCreateContext(
-					self.__display[0],
-					visual,
-					hostContext,
-					True
-				)
-
-				return True
-
-			def makeCurrent( self ) :
-
-				success = OpenGL.GLX.glXMakeCurrent( self.__display, self.__paintDevice.effectiveWinId(), self.__context )
-				assert( success )
+		# context which shares with the host. The custom QGLContext is
+		# implemented in GLWidgetBinding.cpp, and automatically shares with
+		# the context which is current at the time of its creation. The host
+		# context should therefore be made current before calling this
+		# method.
 
 		result = QtOpenGL.QGLWidget()
-		result.setContext( HostedGLContext( format, result, hostContextActivator ) )
+		_GafferUI._glWidgetSetHostedContext( GafferUI._qtAddress( result ), GafferUI._qtAddress( format ) )
 		return result
 
 	@classmethod
@@ -342,7 +323,8 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 			return None
 
 		mayaRenderer = maya.OpenMayaRender.MHardwareRenderer.theRenderer()
-		return cls.__createHostedQGLWidget( format, IECore.curry( mayaRenderer.makeResourceContextCurrent, mayaRenderer.backEndString() ) )
+		mayaRenderer.makeResourceContextCurrent( mayaRenderer.backEndString() )
+		return cls.__createHostedQGLWidget( format )
 
 	@classmethod
 	def __createHoudiniQGLWidget( cls, format ) :
@@ -355,16 +337,17 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 			return None
 
 		import IECoreHoudini
-		
+
 		# Prior to Houdini 14 we are running embedded on the hou.ui idle loop,
 		# so we needed to force the Houdini GL context to be current, and share
 		# it, similar to how we do this in Maya.
 		if hou.applicationVersion()[0] < 14 :
-			return cls.__createHostedQGLWidget( format, IECoreHoudini.makeMainGLContextCurrent )
-		
+			IECoreHoudini.makeMainGLContextCurrent()
+			return cls.__createHostedQGLWidget( format )
+
 		# In Houdini 14 and beyond, Qt is the native UI, and we can access
 		# Houdini's shared QGLWidget directly, provided we are using a recent
-		# Cortex version.		
+		# Cortex version.
 		return QtOpenGL.QGLWidget( format, shareWidget = GafferUI._qtObject( IECoreHoudini.sharedGLWidget(), QtOpenGL.QGLWidget ) )
 
 class _GLGraphicsScene( QtGui.QGraphicsScene ) :
@@ -376,28 +359,63 @@ class _GLGraphicsScene( QtGui.QGraphicsScene ) :
 		self.__backgroundDrawFunction = backgroundDrawFunction
 		self.sceneRectChanged.connect( self.__sceneRectChanged )
 
-	def addWidget( self, widget ) :
+		self.__overlay = None # Stores the GafferUI.Widget
+		self.__overlayProxy = None # Stores the _OverlayProxyWidget
 
-		if widget.layout() is not None :
+	def setOverlay( self, widget ) :
+
+		if self.__overlay is not None :
+			self.__overlayProxy.setWidget( None )
+			self.removeItem( self.__overlayProxy )
+			self.__overlay = None
+			self.__overlayProxy = None
+
+		if widget is None :
+			return
+
+		self.__overlay = widget
+		if widget._qtWidget().layout() is not None :
 			# removing the size constraint is necessary to keep the widget the
 			# size we tell it to be in __updateItemGeometry.
-			widget.layout().setSizeConstraint( QtGui.QLayout.SetNoConstraint )
+			widget._qtWidget().layout().setSizeConstraint( QtGui.QLayout.SetNoConstraint )
 
-		item = QtGui.QGraphicsScene.addWidget( self, widget )
-		self.__updateItemGeometry( item, self.sceneRect() )
+		self.__overlayProxy = _OverlayProxyWidget()
+		self.__overlayProxy.setWidget( self.__overlay._qtWidget() )
 
-		return item
+		self.addItem( self.__overlayProxy )
+		self.__updateItemGeometry( self.__overlayProxy, self.sceneRect() )
 
 	def drawBackground( self, painter, rect ) :
 
 		self.__backgroundDrawFunction()
 
+		# Reset pixel store setting back to the default. IECoreGL
+		# (and the ImageGadget) meddle with this, and it throws off
+		# the QGraphicsEffects.
+		GL.glPixelStorei( GL.GL_UNPACK_ALIGNMENT, 4 );
+
 	def __sceneRectChanged( self, sceneRect ) :
 
-		for item in self.items() :
-			self.__updateItemGeometry( item, sceneRect )
+		if self.__overlayProxy is not None :
+			self.__updateItemGeometry( self.__overlayProxy, sceneRect )
 
 	def __updateItemGeometry( self, item, sceneRect ) :
 
 		geometry = item.widget().geometry()
-		item.widget().setGeometry( QtCore.QRect( 0, 0, sceneRect.width(), item.widget().sizeHint().height() ) )
+		item.widget().setGeometry( QtCore.QRect( 0, 0, sceneRect.width(), sceneRect.height() ) )
+
+## A QGraphicsProxyWidget whose shape is composed from the
+# bounds of its child widgets. This allows our overlays to
+# pass through events in the regions where there isn't a
+# child widget.
+class _OverlayProxyWidget( QtGui.QGraphicsProxyWidget ) :
+
+	def __init__( self ) :
+
+		QtGui.QGraphicsProxyWidget.__init__( self )
+
+	def shape( self ) :
+
+		path = QtGui.QPainterPath()
+		path.addRegion( self.widget().childrenRegion() )
+		return path

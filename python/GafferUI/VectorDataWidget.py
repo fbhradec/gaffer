@@ -183,11 +183,11 @@ class VectorDataWidget( GafferUI.Widget ) :
 		GafferUI.Widget.setHighlighted( self, highlighted )
 
 	def addButton( self ) :
-	
+
 		return self.__buttonRow[0]
-		
+
 	def removeButton( self ) :
-	
+
 		return self.__buttonRow[1]
 
 	def setData( self, data ) :
@@ -918,7 +918,7 @@ class _Model( QtCore.QAbstractTableModel ) :
 
 # The _DataAccessor classes are responsible for converting from the Cortex data representation to the
 # Qt (QVariant) representation.
-class _DataAccessor() :
+class _DataAccessor( object ) :
 
 	def __init__( self, data ) :
 

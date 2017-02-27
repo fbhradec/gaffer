@@ -42,11 +42,7 @@ import traceback
 import IECore
 
 import Gaffer
-from Gaffer import ScriptNode
 import GafferUI
-from Menu import Menu
-from Widget import Widget
-from EditorWidget import EditorWidget
 
 QtGui = GafferUI._qtImport( "QtGui" )
 QtCore = GafferUI._qtImport( "QtCore" )
@@ -63,8 +59,15 @@ class ScriptEditor( GafferUI.EditorWidget ) :
 
 		GafferUI.EditorWidget.__init__( self, self.__splittable, scriptNode, **kw )
 
-		self.__outputWidget = GafferUI.MultiLineTextWidget( editable = False, wrapMode = GafferUI.MultiLineTextWidget.WrapMode.None )
-		self.__inputWidget = GafferUI.MultiLineTextWidget( wrapMode = GafferUI.MultiLineTextWidget.WrapMode.None )
+		self.__outputWidget = GafferUI.MultiLineTextWidget(
+			editable = False,
+			wrapMode = GafferUI.MultiLineTextWidget.WrapMode.None,
+			role = GafferUI.MultiLineTextWidget.Role.Code,
+		)
+		self.__inputWidget = GafferUI.MultiLineTextWidget(
+			wrapMode = GafferUI.MultiLineTextWidget.WrapMode.None,
+			role = GafferUI.MultiLineTextWidget.Role.Code,
+		)
 
 		self.__splittable.append( self.__outputWidget )
 		self.__splittable.append( self.__inputWidget )
@@ -80,18 +83,18 @@ class ScriptEditor( GafferUI.EditorWidget ) :
 			"parent" : scriptNode
 		}
 
-	def __repr__( self ) :
+	def inputWidget( self ) :
 
-		return "GafferUI.ScriptEditor( scriptNode )"
+		return self.__inputWidget
 
-	def __activated( self, widget ) :
+	def execute( self ) :
 
 		# decide what to execute
 		haveSelection = True
-		toExecute = widget.selectedText()
+		toExecute = self.__inputWidget.selectedText()
 		if not toExecute :
 			haveSelection = False
-			toExecute = widget.getText()
+			toExecute = self.__inputWidget.getText()
 
 		# parse it first. this lets us give better error formatting
 		# for syntax errors, and also figure out whether we can eval()
@@ -118,10 +121,17 @@ class ScriptEditor( GafferUI.EditorWidget ) :
 							else :
 								exec( toExecute, self.__executionDict, self.__executionDict )
 							if not haveSelection :
-								widget.setText( "" )
+								self.__inputWidget.setText( "" )
 						except Exception, e :
 							self.__outputWidget.appendHTML( self.__exceptionToHTML() )
 
+	def __repr__( self ) :
+
+		return "GafferUI.ScriptEditor( scriptNode )"
+
+	def __activated( self, widget ) :
+
+		self.execute()
 		return True
 
 	def __dropText( self, widget, dragData ) :

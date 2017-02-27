@@ -57,8 +57,9 @@ ChannelDataProcessor::ChannelDataProcessor( const std::string &name )
 			~(Gaffer::Plug::Dynamic | Gaffer::Plug::ReadOnly)
 		)
 	);
-	
+
 	// We don't ever want to change these, so we make pass-through connections.
+	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 	outPlug()->channelNamesPlug()->setInput( inPlug()->channelNamesPlug() );
@@ -82,12 +83,10 @@ void ChannelDataProcessor::affects( const Gaffer::Plug *input, AffectedPlugsCont
 {
 	ImageProcessor::affects( input, outputs );
 
-	const ImagePlug *in = inPlug();
-	if ( input->parent<ImagePlug>() == in && input != in->channelDataPlug() )
-	{
-		outputs.push_back( outPlug()->getChild<ValuePlug>( input->getName() ) );
-	}
-	else if ( input == channelMaskPlug() )
+	if(
+		input == inPlug()->channelDataPlug() ||
+		input == channelMaskPlug()
+	)
 	{
 		outputs.push_back( outPlug()->channelDataPlug() );
 	}
@@ -110,14 +109,4 @@ IECore::ConstFloatVectorDataPtr ChannelDataProcessor::computeChannelData( const 
 	IECore::FloatVectorDataPtr outData = inPlug()->channelData( channelName, tileOrigin )->copy();
 	processChannelData( context, parent, channelName, outData );
 	return outData;
-}
-
-void ChannelDataProcessor::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	h = inPlug()->formatPlug()->hash();
-}
-
-GafferImage::Format ChannelDataProcessor::computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const
-{
-	return inPlug()->formatPlug()->getValue();
 }

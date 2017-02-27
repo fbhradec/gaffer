@@ -48,8 +48,6 @@ def __visibilitySummary( plug ) :
 		( "camera", "Camera" ),
 		( "light", "Light" ),
 		( "shadow", "Shadow" ),
-		( "transparency", "Transparency" ),
-		( "probe", "Probe" ),
 		( "diffuse", "Diffuse" ),
 		( "specular", "Specular" ),
 		( "glossy", "Glossy" ),
@@ -67,6 +65,7 @@ def __shadingSummary( plug ) :
 	info = []
 	if plug["shadingSamples"]["enabled"].getValue() :
 		info.append( "Shading Samples %d" % plug["shadingSamples"]["value"].getValue() )
+		info.append( "Medium Priority %d" % plug["mediumPriority"]["value"].getValue() )
 
 	return ", ".join( info )
 
@@ -78,18 +77,27 @@ def __alphaMapSummary( plug ) :
 
 	return ", ".join( info )
 
-def __photonsSummary( plug ) :
+def __meshSummary( plug ) :
 
 	info = []
-	if plug["photonTarget"]["enabled"].getValue() :
-		if plug["photonTarget"]["value"].getValue() :
-			info.append( "Photon Target" )
+
+	if plug["smoothNormals"]["enabled"].getValue() :
+		info.append( "Smooth Normals %s" % plug["smoothNormals"]["value"].getValue() )
+
+	if plug["smoothTangents"]["enabled"].getValue() :
+		info.append( "Smooth Tangents %s" % plug["smoothTangents"]["value"].getValue() )
 
 	return ", ".join( info )
 
 Gaffer.Metadata.registerNode(
 
 	GafferAppleseed.AppleseedAttributes,
+
+	"description",
+	"""
+	Applies appleseed attributes to objects
+	in the scene.
+	""",
 
 	plugs = {
 
@@ -100,13 +108,21 @@ Gaffer.Metadata.registerNode(
 			"layout:section:Visibility:summary", __visibilitySummary,
 			"layout:section:Shading:summary", __shadingSummary,
 			"layout:section:Alpha Map:summary", __alphaMapSummary,
-			"layout:section:Photons:summary", __photonsSummary,
+			"layout:section:Mesh :summary", __meshSummary,
 
 		],
 
 		# Visibility
 
 		"attributes.cameraVisibility" : [
+
+			"description",
+			"""
+			Whether or not the object is visible to camera
+			rays. To hide an object completely, use the
+			visibility settings on the StandardAttributes
+			node instead.
+			""",
 
 			"layout:section", "Visibility",
 			"label", "Camera",
@@ -115,6 +131,12 @@ Gaffer.Metadata.registerNode(
 
 		"attributes.lightVisibility" : [
 
+			"description",
+			"""
+			Whether or not the object is visible to light
+			rays (whether or not it is visible to photons).
+			""",
+
 			"layout:section", "Visibility",
 			"label", "Light",
 
@@ -122,26 +144,24 @@ Gaffer.Metadata.registerNode(
 
 		"attributes.shadowVisibility" : [
 
+			"description",
+			"""
+			Whether or not the object is visible to shadow
+			rays (whether or not it casts shadows).
+			""",
+
 			"layout:section", "Visibility",
 			"label", "Shadow",
 
 		],
 
-		"attributes.transparencyVisibility" : [
-
-			"layout:section", "Visibility",
-			"label", "Transparency",
-
-		],
-
-		"attributes.probeVisibility" : [
-
-			"layout:section", "Visibility",
-			"label", "Probe",
-
-		],
-
 		"attributes.diffuseVisibility" : [
+
+			"description",
+			"""
+			Whether or not the object is visible to diffuse
+			rays - whether it casts bounce light or not.
+			""",
 
 			"layout:section", "Visibility",
 			"label", "Diffuse",
@@ -150,12 +170,24 @@ Gaffer.Metadata.registerNode(
 
 		"attributes.specularVisibility" : [
 
+			"description",
+			"""
+			Whether or not the object is visible in
+			tight mirror reflections and refractions.
+			""",
+
 			"layout:section", "Visibility",
 			"label", "Specular",
 
 		],
 
 		"attributes.glossyVisibility" : [
+
+			"description",
+			"""
+			Whether or not the object is visible in
+			soft specular reflections and refractions.
+			""",
 
 			"layout:section", "Visibility",
 			"label", "Glossy",
@@ -166,6 +198,25 @@ Gaffer.Metadata.registerNode(
 
 		"attributes.shadingSamples" : [
 
+			"description",
+			"""
+			Number of samples to use when computing shading for the object.
+			""",
+
+			"layout:section", "Shading",
+
+		],
+
+		"attributes.mediumPriority" : [
+
+			"description",
+			"""
+			Specify the object medium priority.
+			When multiple objects share the same volume, appleseed will consider
+			only the highest priority one for intersections and shading.
+			Sometimes called nested dielectrics in other renderers.
+			""",
+
 			"layout:section", "Shading",
 
 		],
@@ -174,30 +225,48 @@ Gaffer.Metadata.registerNode(
 
 		"attributes.alphaMap" : [
 
+			"description",
+			"""
+			Specifies a grayscale texture than can be used to efficiently discard
+			unwanted parts of the surface of the object while computing ray intersections.
+			""",
+
 			"layout:section", "Alpha Map",
 
 		],
 
-		# Photons
+		"attributes.alphaMap.value" : [
 
-		"attributes.photonTarget" : [
+			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
+			"pathPlugValueWidget:leaf", True,
+			"pathPlugValueWidget:bookmarks", "texture",
 
-			"layout:section", "Photons",
+		],
+
+		"attributes.smoothNormals" : [
+
+		"description",
+		"""
+		Compute smooth normals.
+		""",
+
+		"layout:section", "Mesh",
+		"label", "Smooth Normals",
+
+		],
+
+		"attributes.smoothTangents" : [
+
+		"description",
+		"""
+		Compute smooth tangents.
+		""",
+
+		"layout:section", "Mesh",
+		"label", "Smooth Tangents",
 
 		],
 
 	}
 
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedAttributes,
-	"attributes.alphaMap.value",
-	lambda plug : GafferUI.PathPlugValueWidget( plug,
-		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter() ),
-		pathChooserDialogueKeywords = {
-			"bookmarks" : GafferUI.Bookmarks.acquire( plug, category = "appleseed" ),
-			"leaf" : True,
-		},
-	),
 )

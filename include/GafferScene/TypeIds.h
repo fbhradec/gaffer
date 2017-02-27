@@ -45,7 +45,7 @@ enum TypeId
 {
 	ScenePlugTypeId = 110501,
 	SceneNodeTypeId = 110502,
-	FileSourceTypeId = 110503, // obsolete, available for reuse
+	FilterProcessorTypeId = 110503,
 	SetFilterTypeId = 110504,
 	SceneProcessorTypeId = 110505,
 	SceneElementProcessorTypeId = 110506,
@@ -53,7 +53,7 @@ enum TypeId
 	PrimitiveVariableProcessorTypeId = 110508,
 	DeletePrimitiveVariablesTypeId = 110509,
 	GroupTypeId = 110510,
-	SceneMixinBaseTypeId = 110511,
+	ShaderPlugTypeId = 110511,
 	SceneContextProcessorTypeId = 110512,
 	SceneTimeWarpTypeId = 110513,
 	ObjectSourceTypeId = 110514,
@@ -119,13 +119,23 @@ enum TypeId
 	DeleteOutputsTypeId = 110574,
 	ExternalProceduralTypeId = 110575,
 	ScenePathTypeId = 110576,
-	FilterMixinBaseTypeId = 110577,
+	MeshToPointsTypeId = 110577,
 	FilterSwitchTypeId = 110578,
 	DeleteSetsTypeId = 110579,
 	ParametersTypeId = 110580,
 	SceneFilterPathFilterTypeId = 110581,
 	PathMatcherDataPlugTypeId = 110582,
 	AttributeVisualiserTypeId = 110583,
+	SceneLoopTypeId = 110584,
+	RenderTypeId = 110585,
+	FilterPlugTypeId = 110586,
+	LightTweaksTypeId = 110587,
+	LightTweaksTweakPlugTypeId = 110588,
+	CopyOptionsTypeId = 110589,
+	LightToCameraTypeId = 110590,
+	FilterResultsTypeId = 110591,
+
+	PreviewInteractiveRenderTypeId = 110649,
 
 	LastTypeId = 110650
 };

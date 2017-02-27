@@ -39,8 +39,9 @@ import unittest
 import Gaffer
 import GafferTest
 import GafferImage
+import GafferImageTest
 
-class ImageTimeWarpTest( GafferTest.TestCase ) :
+class ImageTimeWarpTest( GafferImageTest.ImageTestCase ) :
 
 	def testDefaultName( self ) :
 
@@ -79,8 +80,7 @@ class ImageTimeWarpTest( GafferTest.TestCase ) :
 		script["constant"] = GafferImage.Constant()
 
 		script["expression"] = Gaffer.Expression()
-		script["expression"]["engine"].setValue( "python" )
-		script["expression"]["expression"].setValue( 'parent["constant"]["color"]["r"] = context["frame"]' )
+		script["expression"].setExpression( 'parent["constant"]["color"]["r"] = context["frame"]' )
 
 		script["timeWarp"] = GafferImage.ImageTimeWarp()
 		script["timeWarp"]["offset"].setValue( 1 )
@@ -111,8 +111,7 @@ class ImageTimeWarpTest( GafferTest.TestCase ) :
 		script["constant"] = GafferImage.Constant()
 
 		script["expression"] = Gaffer.Expression()
-		script["expression"]["engine"].setValue( "python" )
-		script["expression"]["expression"].setValue( 'parent["constant"]["color"]["r"] = context["frame"]' )
+		script["expression"].setExpression( 'parent["constant"]["color"]["r"] = context["frame"]' )
 
 		script["timeWarp"] = GafferImage.ImageTimeWarp()
 		script["timeWarp"]["offset"].setValue( 1 )

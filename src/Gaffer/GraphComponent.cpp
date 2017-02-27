@@ -47,6 +47,7 @@
 #include "Gaffer/GraphComponent.h"
 #include "Gaffer/StringAlgo.h"
 #include "Gaffer/Action.h"
+#include "Gaffer/DirtyPropagationScope.h"
 
 using namespace Gaffer;
 using namespace IECore;
@@ -61,6 +62,8 @@ GraphComponent::GraphComponent( const std::string &name )
 
 GraphComponent::~GraphComponent()
 {
+	DirtyPropagationScope dirtyPropagationScope;
+
 	// notify all the children that the parent is gone.
 	// we don't call removeChild to achieve this, as that would also emit
 	// childRemoved signals for this object, which is undesirable as it's dying.
@@ -101,7 +104,7 @@ const IECore::InternedString &GraphComponent::setName( const IECore::InternedStr
 			// split name into a prefix and a numeric suffix. if no suffix
 			// exists then it defaults to 1.
 			std::string prefix;
-			int suffix = numericSuffix( newName.value(), 1, &prefix );
+			int suffix = StringAlgo::numericSuffix( newName.value(), 1, &prefix );
 
 			// iterate over all the siblings to find the minimum value for the suffix which
 			// will be greater than any existing suffix.

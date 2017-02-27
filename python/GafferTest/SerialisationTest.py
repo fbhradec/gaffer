@@ -58,7 +58,7 @@ class SerialisationTest( GafferTest.TestCase ) :
 
 		class CustomSerialiser( Gaffer.Serialisation.Serialiser ) :
 
-			def moduleDependencies( self, node ) :
+			def moduleDependencies( self, node, serialisation ) :
 
 				return ( "GafferTest", )
 
@@ -78,7 +78,7 @@ class SerialisationTest( GafferTest.TestCase ) :
 
 				return identifier + ".postScriptWasHere = True\n"
 
-			def childNeedsSerialisation( self, child ) :
+			def childNeedsSerialisation( self, child, serialisation ) :
 
 				if isinstance( child, Gaffer.Node ) :
 					return child.getName() == "childNodeNeedingSerialisation"
@@ -87,7 +87,7 @@ class SerialisationTest( GafferTest.TestCase ) :
 
 				return False
 
-			def childNeedsConstruction( self, child ) :
+			def childNeedsConstruction( self, child, serialisation ) :
 
 				if isinstance( child, Gaffer.Node ) :
 					return False
@@ -143,6 +143,19 @@ class SerialisationTest( GafferTest.TestCase ) :
 		self.assertEqual( Gaffer.Serialisation.modulePath( GafferTest.SphereNode() ), "GafferTest" )
 		self.assertEqual( Gaffer.Serialisation.modulePath( GafferTest.SphereNode ), "GafferTest" )
 
+	def testIncludeParentMetadataWhenExcludingChildren( self ) :
+
+		n1 = Gaffer.Node()
+		Gaffer.Metadata.registerValue( n1, "test", IECore.Color3f( 1, 2, 3 ) )
+
+		with Gaffer.Context() as c :
+			c["serialiser:includeParentMetadata"] = IECore.BoolData( True )
+			s = Gaffer.Serialisation( n1, filter = Gaffer.StandardSet() )
+
+		scope = { "parent" : Gaffer.Node() }
+		exec( s.result(), scope, scope )
+
+		self.assertEqual( Gaffer.Metadata.value( scope["parent"], "test" ), IECore.Color3f( 1, 2, 3 ) )
+
 if __name__ == "__main__":
 	unittest.main()
-

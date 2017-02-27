@@ -39,6 +39,7 @@
 #define GAFFERIMAGEUI_IMAGEVIEW_H
 
 #include "Gaffer/NumericPlug.h"
+#include "Gaffer/TypedPlug.h"
 
 #include "GafferUI/View.h"
 
@@ -67,15 +68,11 @@ IE_CORE_FORWARDDECLARE( ImageSampler )
 namespace GafferImageUI
 {
 
+IE_CORE_FORWARDDECLARE( ImageGadget )
+
 /// \todo Refactor this into smaller components, along the lines of the SceneView class.
 /// Consider redesigning the View/Tool classes so that view functionality can be built up
-/// by adding tools like samplers etc. A good starting point for this refactoring would be
-/// to create an ImageGadget analogous to the SceneGadget. This could offer much improved
-/// performance over the existing implementation by drawing the image with many small tiles
-/// each corresponding to a single tile from the ImagePlug. This would mean that nodes like
-/// the Display node which are continuously updating isolated regions of the image could
-/// be displayed much more efficiently - just updating the few tiles which had changed rather
-/// than the whole image.
+/// by adding tools like samplers etc.
 class ImageView : public GafferUI::View
 {
 
@@ -99,6 +96,8 @@ class ImageView : public GafferUI::View
 		Gaffer::StringPlug *displayTransformPlug();
 		const Gaffer::StringPlug *displayTransformPlug() const;
 
+		virtual void setContext( Gaffer::ContextPtr context );
+
 		typedef boost::function<GafferImage::ImageProcessorPtr ()> DisplayTransformCreator;
 
 		static void registerDisplayTransform( const std::string &name, DisplayTransformCreator creator );
@@ -116,15 +115,7 @@ class ImageView : public GafferUI::View
 		/// preprocessor is managed by the ImageView base class.
 		void insertConverter( Gaffer::NodePtr converter );
 
-		virtual void update();
-
-	private:
-
-		GafferImage::ImageStats *imageStatsNode();
-		const GafferImage::ImageStats *imageStatsNode() const;
-
-		GafferImage::ImageSampler *imageSamplerNode();
-		const GafferImage::ImageSampler *imageSamplerNode() const;
+	private :
 
 		GafferImage::Clamp *clampNode();
 		const GafferImage::Clamp *clampNode() const;
@@ -136,17 +127,21 @@ class ImageView : public GafferUI::View
 		const GafferImage::ImageProcessor *displayTransformNode() const;
 
 		void plugSet( Gaffer::Plug *plug );
+		bool keyPress( const GafferUI::KeyEvent &event );
+		void preRender();
+
 		void insertDisplayTransform();
 
 		typedef std::map<std::string, GafferImage::ImageProcessorPtr> DisplayTransformMap;
 		DisplayTransformMap m_displayTransforms;
 
-		int m_channelToView;
-		Imath::V2f m_mousePos;
-		Imath::Color4f m_sampleColor;
-		Imath::Color4f m_minColor;
-		Imath::Color4f m_maxColor;
-		Imath::Color4f m_averageColor;
+		ImageGadgetPtr m_imageGadget;
+		bool m_framed;
+
+		class ChannelChooser;
+		boost::shared_ptr<ChannelChooser> m_channelChooser;
+		class ColorInspector;
+		boost::shared_ptr<ColorInspector> m_colorInspector;
 
 		typedef std::map<std::string, DisplayTransformCreator> DisplayTransformCreatorMap;
 		static DisplayTransformCreatorMap &displayTransformCreators();

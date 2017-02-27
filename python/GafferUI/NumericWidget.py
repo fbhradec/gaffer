@@ -62,6 +62,7 @@ class NumericWidget( GafferUI.TextWidget ) :
 		self.__dragEnterConnection = self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
 		self.__dragMoveConnection = self.dragMoveSignal().connect( Gaffer.WeakMethod( self.__dragMove ) )
 		self.__dragEndConnection = self.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ) )
+		self.__editingFinishedConnection = self.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__editingFinished ) )
 
 		self.__numericType = None
 		self.setValue( value )
@@ -83,7 +84,6 @@ class NumericWidget( GafferUI.TextWidget ) :
 			return self.__valueChangedSignal
 		except AttributeError :
 			self.__valueChangedSignal = Gaffer.Signal2()
-			self.__editingFinishedConnection = self.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__editingFinished ) )
 
 		return self.__valueChangedSignal
 
@@ -104,13 +104,18 @@ class NumericWidget( GafferUI.TextWidget ) :
 			( cls.ValueChangedReason.Increment, cls.ValueChangedReason.Increment ),
 		)
 
-	def __valueToText( self, value ) :
+	## Returns the string used to display the given value.
+	@staticmethod
+	def valueToString( value ) :
 
-		value = self.__numericType( value )
-		if self.__numericType is int :
+		if type( value ) is int :
 			return str( value )
 		else :
 			return ( "%.4f" % value ).rstrip( '0' ).rstrip( '.' )
+
+	def __valueToString( self, value ) :
+
+		return self.valueToString( self.__numericType( value ) )
 
 	def __keyPress( self, widget, event ) :
 
@@ -145,8 +150,28 @@ class NumericWidget( GafferUI.TextWidget ) :
 
 		self.__setValueInternal( value, self.ValueChangedReason.Increment )
 
-		# adjust the cursor position to be in the same column as before
 		newText = self.getText()
+
+		# add any required leading or trailing 0 to ensure that
+		# keyboard increments are consistent
+
+		oldLengthBefore, oldHasPeriod, oldLengthAfter = [ len( item ) for item in text.lstrip( "-" ).partition( "." ) ]
+		newLengthBefore, newHasPeriod, newLengthAfter = [ len( item ) for item in newText.lstrip( "-" ).partition( "." ) ]
+
+		headPadding = "0" * max(0, oldLengthBefore - newLengthBefore )
+		tailPadding = "0" * max(0, oldLengthAfter - newLengthAfter )
+
+		if not newHasPeriod and tailPadding :
+			tailPadding = "." + tailPadding
+
+		if newText[0] == "-" :
+			newText = "-" + headPadding + newText[1:] + tailPadding
+		else:
+			newText = headPadding + newText + tailPadding
+
+		self.setText( newText )
+
+		# adjust the cursor position to be in the same column as before
 		if '.' in newText :
 			newDecimalIndex = newText.find( "." )
 			newIndex = newDecimalIndex - powIndex
@@ -222,6 +247,12 @@ class NumericWidget( GafferUI.TextWidget ) :
 
 		assert( widget is self )
 
+		# In __incrementIndex we temporarily pad with leading
+		# zeroes in order to achieve consistent editing. Revert
+		# back to our standard form now so we don't leave it in
+		# this state.
+		self.setText( self.__valueToString( self.getValue() ) )
+
 		self.__emitValueChanged( self.ValueChangedReason.Edit )
 
 	def __setValueInternal( self, value, reason ) :
@@ -243,7 +274,7 @@ class NumericWidget( GafferUI.TextWidget ) :
 			self._qtWidget().setValidator( validator )
 
 		# update our textual value
-		text = self.__valueToText( value )
+		text = self.__valueToString( value )
 		dragBeginOrEnd = reason in ( self.ValueChangedReason.DragBegin, self.ValueChangedReason.DragEnd )
 
 		if text == self.getText() and not dragBeginOrEnd :

@@ -37,32 +37,23 @@
 #ifndef GAFFERIMAGE_FORMAT_H
 #define GAFFERIMAGE_FORMAT_H
 
-#include "boost/signals.hpp"
+#include <string>
+#include <vector>
 
 #include "OpenEXR/ImathBox.h"
-
-#include "IECore/InternedString.h"
-
-namespace Gaffer
-{
-
-class ScriptNode;
-class Plug;
-
-} // namespace Gaffer
 
 namespace GafferImage
 {
 
+/// Basic maths class to represent the format of an image -
+/// its display window and pixel aspect ratio.
 class Format
 {
 
 	public :
 
-		typedef boost::signal<void (const std::string&)> UnaryFormatSignal;
-
 		inline Format();
-		inline explicit Format( const Imath::Box2i &displayWindow, double pixelAspect = 1. );
+		inline explicit Format( const Imath::Box2i &displayWindow, double pixelAspect = 1., bool fromEXRSpace = false );
 		inline Format( int width, int height, double pixelAspect = 1. );
 
 		inline const Imath::Box2i &getDisplayWindow() const;
@@ -79,86 +70,58 @@ class Format
 
 		/// @name Coordinate system conversions.
 		/// The image coordinate system used by Gaffer has the origin at the
-		/// bottom, with increasing Y coordinates going up. The Cortex and OpenEXR
-		/// coordinate systems have the origin at the top with increasing Y
-		/// coordinates going down. These methods assist in converting between
-		/// the two coordinate systems. They assume that the format has been
-		/// constructed using exactly the same display window as is being
-		/// used in the corresponding Y-down space - note that this means it
-		/// is not necessary to perform any conversion on the display window
-		/// itself.
+		/// bottom, with increasing Y coordinates going up. It also considers
+		/// image bounds to be exclusive at the max end.
+		///
+		/// The Cortex and OpenEXR coordinate systems have the origin at the
+		/// top with increasing Y coordinates going down. They use inclusive
+		/// image bounds.
+		///
+		/// These methods assist in converting between the two coordinate
+		/// systems.
 		////////////////////////////////////////////////////////////////////
 		//@{
-		/// Converts from the Y-down coordinate space to the Y-up space of
+		/// Converts from the EXR coordinate space to the internal space of
 		/// the Format.
-		inline int yDownToFormatSpace( int yDown ) const;
-		inline Imath::V2i yDownToFormatSpace( const Imath::V2i &yDown ) const;
-		inline Imath::Box2i yDownToFormatSpace( const Imath::Box2i &yDown ) const;
-		/// Converts from the Y-up space of the format to the Y-down
+		inline int fromEXRSpace( int exrSpace ) const;
+		inline Imath::V2i fromEXRSpace( const Imath::V2i &exrSpace ) const;
+		inline Imath::Box2i fromEXRSpace( const Imath::Box2i &exrSpace ) const;
+		/// Converts from the internal space of the format to the EXR
 		/// coordinate space.
-		inline int formatToYDownSpace( int yUp ) const;
-		inline Imath::V2i formatToYDownSpace( const Imath::V2i &yUp ) const;
-		inline Imath::Box2i formatToYDownSpace( const Imath::Box2i &yUp ) const;
+		inline int toEXRSpace( int internalSpace ) const;
+		inline Imath::V2i toEXRSpace( const Imath::V2i &internalSpace ) const;
+		inline Imath::Box2i toEXRSpace( const Imath::Box2i &internalSpace ) const;
 		//@}
 
-		/// @name Default Format methods
-		/// These functions are used to create, set and get the formatPlug
-		/// which resides on the script node. When a GafferImage node is created
-		/// addDefaultFormatPlug() is called from the "parentChanged" signal. This
-		/// initializes the default format which is held as a plug on the script node.
-		/// The Script Node's plugSetSignal() is connected to the addFormatToContext()
-		/// slot which updates an entry on the context every time that the plug is changed.
-		/// This causes the hash of the context to change which triggers the viewer to
-		/// recalculate it's output image.
-		/// \todo The Format should just be a basic class like Box or Vec -
-		/// keep the named format registry here but move all the stuff related
-		/// to nodes and plugs and contexts into FormatPlug.
+		/// @name Format registry
+		/// Maintains a list of named formats which may be registered
+		/// by config files, and made available to the user via the UI.
 		////////////////////////////////////////////////////////////////////
 		//@{
-		static void setDefaultFormat( Gaffer::ScriptNode *scriptNode, const Format &format );
-		static void setDefaultFormat( Gaffer::ScriptNode *scriptNode, const std::string &name );
-		static const Format getDefaultFormat( Gaffer::ScriptNode *scriptNode );
-
-		/// Accessors and creators for the format list.
-		static const Format &registerFormat( const Format &format, const std::string &name );
-		static const Format &registerFormat( const Format &format );
-
-		static void removeFormat( const Format &format );
-		static void removeFormat( const std::string &name );
-		static void removeAllFormats();
-
-		static int formatCount();
-		static const Format &getFormat( const std::string &name );
-		static std::string formatName( const Format &format );
-		static void formatNames( std::vector< std::string > &names );
-		static void addFormatToContext( Gaffer::Plug *defaultFormatPlug );
-
-		static UnaryFormatSignal &formatAddedSignal();
-		static UnaryFormatSignal &formatRemovedSignal();
+		/// Registers a format with the specified name.
+		static void registerFormat( const std::string &name, const Format &format );
+		/// Removes a previously registered format.
+		static void deregisterFormat( const std::string &name );
+		/// Lists all currently registered formats.
+		static void registeredFormats( std::vector<std::string> &names );
+		/// Returns the format registered with the specified name, or
+		/// an empty format if the name is not registered.
+		static Format format( const std::string &name );
+		/// Returns a name registered for the specific format, or
+		/// the empty string if the format has not been registered.
+		/// Note that this is unrelated to the ostream operator.
+		static std::string name( const Format &format );
 		//@}
-
-		/// Called by the Node class to setup the format plug on the script node.
-		static void addDefaultFormatPlug( Gaffer::ScriptNode *scriptNode );
-
-		static const IECore::InternedString defaultFormatContextName;
-		static const IECore::InternedString defaultFormatPlugName;
 
 	private :
-
-		typedef std::pair< std::string, Format > FormatEntry;
-		typedef std::map< std::string, Format > FormatMap;
-
-		/// Method to return a static instance of the format mappings
-		inline static FormatMap &formatMap();
-
-		/// Generates a name for a given format. The result is returned in place.
-		static void generateFormatName( std::string &name, const Format &format);
 
 		Imath::Box2i m_displayWindow;
 		double m_pixelAspect;
 
 };
 
+/// Outputs a numeric description of the format, omitting default information
+/// where possible. Note that this is unrelated to Format::name().
 std::ostream & operator << ( std::ostream &os, const GafferImage::Format &format );
 
 } // namespace GafferImage

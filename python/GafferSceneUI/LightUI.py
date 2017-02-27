@@ -39,15 +39,44 @@ import GafferUI
 
 import GafferScene
 
-Gaffer.Metadata.registerNodeDescription(
+Gaffer.Metadata.registerNode(
 
-GafferScene.Light,
+	GafferScene.Light,
 
-"""Creates a scene with a single light in it.""",
+	"description",
+	"""
+	Creates a scene with a single light in it.
+	""",
 
-"parameters",
-"""The parameters of the light shader - these will vary based on the light type.""",
+	plugs = {
+
+		"parameters" : [
+
+			"description",
+			"""
+			The parameters of the light shader - these will vary based on the light type.
+			""",
+
+			"plugValueWidget:type", "GafferUI.LayoutPlugValueWidget",
+			"nodule:type", "GafferUI::CompoundNodule",
+			"noduleLayout:section", "left",
+			"noduleLayout:spacing", 0.2,
+
+
+		],
+
+		"parameters.*" : [
+
+			# Although the parameters plug is positioned
+			# as we want above, we must also register
+			# appropriate values for each individual parameter,
+			# for the case where they get promoted to a box
+			# individually.
+			"noduleLayout:section", "left",
+			"nodule:type", "",
+
+		],
+
+	}
 
 )
-
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Light, "parameters", GafferUI.LayoutPlugValueWidget )

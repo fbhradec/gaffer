@@ -37,8 +37,9 @@
 #ifndef GAFFER_ARRAYPLUG_H
 #define GAFFER_ARRAYPLUG_H
 
-#include "Gaffer/CompoundPlug.h"
-#include "Gaffer/Behaviours/InputGenerator.h"
+#include "OpenEXR/ImathLimits.h"
+
+#include "Gaffer/Plug.h"
 
 namespace Gaffer
 {
@@ -46,9 +47,7 @@ namespace Gaffer
 /// The ArrayPlug maintains a sequence of identically-typed child
 /// plugs, automatically adding new plugs when all existing plugs
 /// have connections.
-/// \todo Consider using this everywhere in preference to
-/// InputGenerator, and removing the InputGenerator class.
-class ArrayPlug : public CompoundPlug
+class ArrayPlug : public Plug
 {
 
 	public :
@@ -71,9 +70,10 @@ class ArrayPlug : public CompoundPlug
 
 		virtual ~ArrayPlug();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::ArrayPlug, ArrayPlugTypeId, CompoundPlug );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::ArrayPlug, ArrayPlugTypeId, Plug );
 
 		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
+		virtual void setInput( PlugPtr input );
 		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
 
 		size_t minSize() const;
@@ -81,15 +81,13 @@ class ArrayPlug : public CompoundPlug
 
 	private :
 
-		void childAdded();
 		void parentChanged();
+		void inputChanged( Gaffer::Plug *plug );
 
 		size_t m_minSize;
 		size_t m_maxSize;
 
-		typedef Behaviours::InputGenerator<Plug> InputGenerator;
-		typedef boost::shared_ptr<InputGenerator> InputGeneratorPtr;
-		InputGeneratorPtr m_inputGenerator;
+		boost::signals::scoped_connection m_inputChangedConnection;
 
 };
 

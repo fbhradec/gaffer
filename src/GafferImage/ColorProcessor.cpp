@@ -66,8 +66,9 @@ ColorProcessor::ColorProcessor( const std::string &name )
 	// just copying data out of our intermediate colorDataPlug(), it is
 	// actually quicker not to cache the result.
 	outPlug()->channelDataPlug()->setFlags( Plug::Cacheable, false );
-	
+
 	// We don't ever want to change the these, so we make pass-through connections.
+	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
 	outPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 	outPlug()->channelNamesPlug()->setInput( inPlug()->channelNamesPlug() );
@@ -104,16 +105,6 @@ void ColorProcessor::affects( const Gaffer::Plug *input, AffectedPlugsContainer 
 	{
 		outputs.push_back( outPlug()->getChild<ValuePlug>( input->getName() ) );
 	}
-}
-
-bool ColorProcessor::channelEnabled( const std::string &channel ) const
-{
-	if( !ImageProcessor::channelEnabled( channel ) )
-	{
-		return false;
-	}
-
-	return channel == "R" || channel == "G" || channel == "B";
 }
 
 void ColorProcessor::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -156,21 +147,21 @@ void ColorProcessor::compute( Gaffer::ValuePlug *output, const Gaffer::Context *
 	ImageProcessor::compute( output, context );
 }
 
-void ColorProcessor::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
-{
-	h = inPlug()->formatPlug()->hash();
-}
-
-GafferImage::Format ColorProcessor::computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const
-{
-	return inPlug()->formatPlug()->getValue();
-}
-
 void ColorProcessor::hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashChannelData( output, context, h );
-	h.append( context->get<std::string>( ImagePlug::channelNameContextName ) );
-	colorDataPlug()->hash( h );
+	const std::string &channel = context->get<std::string>( ImagePlug::channelNameContextName );
+	if( channel == "R" || channel == "G" || channel == "B" )
+	{
+		ImageProcessor::hashChannelData( output, context, h );
+		h.append( channel );
+		colorDataPlug()->hash( h );
+	}
+	else
+	{
+		// ColorProcessor only handles RGB values at present
+		// so we just return the input hash otherwise.
+		h = inPlug()->channelDataPlug()->hash();
+	}
 }
 
 IECore::ConstFloatVectorDataPtr ColorProcessor::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -188,9 +179,10 @@ IECore::ConstFloatVectorDataPtr ColorProcessor::computeChannelData( const std::s
 	{
 		return boost::static_pointer_cast<const FloatVectorData>( colorData->members()[2] );
 	}
-	// We're not allowed to return NULL, but we should never get here because channelEnabled()
-	// should be preventing it.
-	return NULL;
+
+	// ColorProcessor only handles RGB values at present
+	// so we just return the input value otherwise.
+	return inPlug()->channelDataPlug()->getValue();
 }
 
 bool ColorProcessor::affectsColorData( const Gaffer::Plug *input ) const

@@ -36,24 +36,8 @@
 
 __import__( "GafferScene" )
 
-def __setupEnvironment() :
-
-	import os
-
-	def prependToPath( envVar, prefix ) :
-
-		e = os.environ.get( envVar, "" )
-		if e :
-			e = ":" + e
-		e = prefix + e
-		os.environ[envVar] = os.path.expandvars( e )
-
-	prependToPath( "APPLESEED_SEARCHPATH", "$GAFFER_ROOT/appleseed/displays" )
-
-__setupEnvironment()
-
 from _GafferAppleseed import *
 
-from AppleseedRender import AppleseedRender
+from AppleseedShaderBall import AppleseedShaderBall
 
 __import__( "IECore" ).loadConfig( "GAFFER_STARTUP_PATHS", {}, subdirectory = "GafferAppleseed" )

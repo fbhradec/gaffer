@@ -42,44 +42,67 @@ import IECore
 import Gaffer
 import GafferUI
 
-## \todo Refactor to derive from LayoutPlugValueWidget. Before we can do this we need
-# to stop relying on the _label() and _childPlugWidget() methods to define labels - this
-# is currently overridden in SectionedCompoundDataPlugValueWidget, but we can use metadata
-# to define labels instead.
-class CompoundDataPlugValueWidget( GafferUI.CompoundPlugValueWidget ) :
+## Supported plug metadata :
+#
+# "compoundDataPlugValueWidget:editable"
+class CompoundDataPlugValueWidget( GafferUI.PlugValueWidget ) :
 
-	def __init__( self, plug, collapsed=True, label=None, summary=None, editable=True, **kw ) :
+	def __init__( self, plug, **kw ) :
 
-		GafferUI.CompoundPlugValueWidget.__init__( self, plug, collapsed, label, summary, **kw )
+		self.__column = GafferUI.ListContainer( spacing = 6 )
 
-		self.__editable = True
-		self.__footerWidget = None
+		GafferUI.PlugValueWidget.__init__( self, self.__column, plug, **kw )
 
-	def _childPlugWidget( self, childPlug ) :
+		with self.__column :
 
-		return _MemberPlugValueWidget( childPlug, self._label( childPlug ) )
+			self.__layout = GafferUI.PlugLayout( plug )
 
-	def _footerWidget( self ) :
+			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal ) as self.__editRow :
 
-		if self.__footerWidget is not None :
-			return self.__footerWidget
+				GafferUI.Spacer( IECore.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) )
 
-		if self.__class__ is CompoundDataPlugValueWidget : # slight hack so that SectionedCompoundDataPlugValueWidget doesn't get a plus button
-			self.__footerWidget = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal )
-			self.__footerWidget.append( GafferUI.Spacer( IECore.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) ) )
-			self.__footerWidget.append(
-				GafferUI.MenuButton( image="plus.png", hasFrame=False, menu=GafferUI.Menu( self.__addMenuDefinition() ) )
-			)
-			self.__footerWidget.append( GafferUI.Spacer( IECore.V2i( 1 ), IECore.V2i( 999999, 1 ) ), expand = True )
+				GafferUI.MenuButton(
+					image = "plus.png",
+					hasFrame = False,
+					menu = GafferUI.Menu( Gaffer.WeakMethod( self.__addMenuDefinition ) )
+				)
 
-		return self.__footerWidget
+				GafferUI.Spacer( IECore.V2i( 1 ), IECore.V2i( 999999, 1 ), parenting = { "expand" : True } )
 
-	def _label( self, childPlug ) :
+		self._updateFromPlug()
 
-		if not childPlug.getFlags( Gaffer.Plug.Flags.Dynamic ) :
-			return childPlug["name"].getValue()
+	def hasLabel( self ) :
 
-		return None
+		return True
+
+	def setPlug( self, plug ) :
+
+		GafferUI.PlugValueWidget.setPlug( self, plug )
+
+		self.__layout = GafferUI.PlugLayout( plug )
+		self.__column[0] = self.__layout
+
+	def setReadOnly( self, readOnly ) :
+
+		if readOnly == self.getReadOnly() :
+			return
+
+		GafferUI.PlugValueWidget.setReadOnly( self, readOnly )
+
+		self.__layout.setReadOnly( readOnly )
+
+	def childPlugValueWidget( self, childPlug, lazy=True ) :
+
+		return self.__layout.plugValueWidget( childPlug, lazy )
+
+	def _updateFromPlug( self ) :
+
+		editable = True
+		if self.getPlug() is not None :
+			editable = Gaffer.Metadata.value( self.getPlug(), "compoundDataPlugValueWidget:editable" )
+			editable = editable if editable is not None else True
+
+		self.__editRow.setVisible( editable )
 
 	def __addMenuDefinition( self ) :
 
@@ -92,10 +115,22 @@ class CompoundDataPlugValueWidget( GafferUI.CompoundPlugValueWidget ) :
 		result.append( "/Add/String", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.StringData( "" ) ) } )
 		result.append( "/Add/StringDivider", { "divider" : True } )
 
-		result.append( "/Add/V2i", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V2iData( IECore.V2i( 0 ) ) ) } )
-		result.append( "/Add/V3i", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V3iData( IECore.V3i( 0 ) ) ) } )
-		result.append( "/Add/V2f", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V2fData( IECore.V2f( 0 ) ) ) } )
-		result.append( "/Add/V3f", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V3fData( IECore.V3f( 0 ) ) ) } )
+		result.append( "/Add/V2i/Vector", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V2iData( IECore.V2i( 0 ), IECore.GeometricData.Interpretation.Vector ) ) } )
+		result.append( "/Add/V2i/Normal", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V2iData( IECore.V2i( 0 ), IECore.GeometricData.Interpretation.Normal ) ) } )
+		result.append( "/Add/V2i/Point", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V2iData( IECore.V2i( 0 ), IECore.GeometricData.Interpretation.Point ) ) } )
+
+		result.append( "/Add/V3i/Vector", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V3iData( IECore.V3i( 0 ), IECore.GeometricData.Interpretation.Vector ) ) } )
+		result.append( "/Add/V3i/Normal", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V3iData( IECore.V3i( 0 ), IECore.GeometricData.Interpretation.Normal ) ) } )
+		result.append( "/Add/V3i/Point", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V3iData( IECore.V3i( 0 ), IECore.GeometricData.Interpretation.Point ) ) } )
+
+		result.append( "/Add/V2f/Vector", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V2fData( IECore.V2f( 0 ), IECore.GeometricData.Interpretation.Vector ) ) } )
+		result.append( "/Add/V2f/Normal", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V2fData( IECore.V2f( 0 ), IECore.GeometricData.Interpretation.Normal ) ) } )
+		result.append( "/Add/V2f/Point", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V2fData( IECore.V2f( 0 ), IECore.GeometricData.Interpretation.Point ) ) } )
+
+		result.append( "/Add/V3f/Vector", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V3fData( IECore.V3f( 0 ), IECore.GeometricData.Interpretation.Vector ) ) } )
+		result.append( "/Add/V3f/Normal", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V3fData( IECore.V3f( 0 ), IECore.GeometricData.Interpretation.Normal ) ) } )
+		result.append( "/Add/V3f/Point", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.V3fData( IECore.V3f( 0 ), IECore.GeometricData.Interpretation.Point ) ) } )
+
 		result.append( "/Add/VectorDivider", { "divider" : True } )
 
 		result.append( "/Add/Color3f", { "command" : IECore.curry( Gaffer.WeakMethod( self.__addItem ), "", IECore.Color3fData( IECore.Color3f( 0 ) ) ) } )
@@ -110,20 +145,18 @@ class CompoundDataPlugValueWidget( GafferUI.CompoundPlugValueWidget ) :
 
 class _MemberPlugValueWidget( GafferUI.PlugValueWidget ) :
 
-	def __init__( self, childPlug, label=None ) :
+	def __init__( self, childPlug ) :
 
 		self.__row = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 )
 
 		GafferUI.PlugValueWidget.__init__( self, self.__row, childPlug )
 
-		if label is not None or not childPlug.getFlags( Gaffer.Plug.Flags.Dynamic ) :
+		if not childPlug.getFlags( Gaffer.Plug.Flags.Dynamic ) :
 			nameWidget = GafferUI.LabelPlugValueWidget(
 				childPlug,
 				horizontalAlignment = GafferUI.Label.HorizontalAlignment.Right,
 				verticalAlignment = GafferUI.Label.VerticalAlignment.Center,
 			)
-			if label is not None :
-				nameWidget.label().setText( label )
 			nameWidget.label()._qtWidget().setFixedWidth( GafferUI.PlugWidget.labelWidth() )
 			# cheat to get the height of the label to match the height of a line edit
 			# so the label and plug widgets align nicely. ideally we'd get the stylesheet
@@ -223,6 +256,12 @@ def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 		return
 
 	menuDefinition.append( "/DeleteDivider", { "divider" : True } )
-	menuDefinition.append( "/Delete", { "command" : IECore.curry( __deletePlug, memberPlug ), "active" : not plugValueWidget.getReadOnly() } )
+	menuDefinition.append(
+		"/Delete",
+		{
+			"command" : IECore.curry( __deletePlug, memberPlug ),
+			"active" : not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( memberPlug ),
+		}
+	)
 
 __plugPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu )

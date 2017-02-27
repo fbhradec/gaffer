@@ -114,11 +114,11 @@ class ColorChooser( GafferUI.Widget ) :
 
 	ColorChangedReason = IECore.Enum.create( "Invalid", "SetColor", "Reset" )
 
-	def __init__( self, color=IECore.Color3f( 1 ), useDisplayTransform = True ) :
+	def __init__( self, color=IECore.Color3f( 1 ), useDisplayTransform = True, **kw ) :
 
 		self.__column = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing = 4 )
 
-		GafferUI.Widget.__init__( self, self.__column )
+		GafferUI.Widget.__init__( self, self.__column, **kw )
 
 		self.__color = color
 		self.__defaultColor = color

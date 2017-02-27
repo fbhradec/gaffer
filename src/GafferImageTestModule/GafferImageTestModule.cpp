@@ -36,13 +36,25 @@
 
 #include "boost/python.hpp"
 
+#include "IECorePython/ScopedGILRelease.h"
+
+#include "GafferImage/ImagePlug.h"
+
+#include "GafferImageTest/ProcessTiles.h"
 #include "GafferImageTest/ImageReaderTest.h"
 
 using namespace boost::python;
 using namespace GafferImageTest;
 
+static void processTilesWrapper( GafferImage::ImagePlug *imagePlug )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	processTiles( imagePlug );
+}
+
 BOOST_PYTHON_MODULE( _GafferImageTest )
 {
+	def( "processTiles", &processTilesWrapper );
 	def( "testOIIOJpgRead", &testOIIOJpgRead );
 	def( "testOIIOExrRead", &testOIIOExrRead );
 }

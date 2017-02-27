@@ -41,6 +41,7 @@ import sys
 import glob
 import shutil
 import fnmatch
+import platform
 import py_compile
 import subprocess
 
@@ -49,7 +50,7 @@ import subprocess
 ###############################################################################################
 
 gafferMilestoneVersion = 0 # for announcing major milestones - may contain all of the below
-gafferMajorVersion = 14 # backwards-incompatible changes
+gafferMajorVersion = 31 # backwards-incompatible changes
 gafferMinorVersion = 0 # new backwards-compatible features
 gafferPatchVersion = 0 # bug fixes
 
@@ -78,13 +79,23 @@ options = Variables( optionsFile, ARGUMENTS )
 options.Add(
 	"CXX",
 	"The C++ compiler.",
-	"g++",
+	"clang++" if sys.platform == "darwin" else "g++",
 )
 
 options.Add(
 	"CXXFLAGS",
 	"The extra flags to pass to the C++ compiler during compilation.",
-	[ "-pipe", "-Wall", "-Werror", "-O3", "-DNDEBUG", "-DBOOST_DISABLE_ASSERTS" ]
+	[ "-pipe", "-Wall", "-Werror", "-O3" ]
+)
+
+options.Add(
+	BoolVariable( "DEBUG", "Make a debug build", False )
+)
+
+options.Add(
+	"CXXSTD",
+	"The C++ standard to build against.",
+	"c++98",
 )
 
 options.Add(
@@ -131,21 +142,21 @@ options.Add(
 	"",
 )
 
-options.Add(
-	"APPLESEED_INCLUDE_PATH",
-	"The path to the appleseed include directory. Used to build Gafferseed",
-	"$BUILD_DIR/appleseed/include",
-)
-
-options.Add(
-	"APPLESEED_LIB_PATH",
-	"The path to the appleseed lib directory. Used to build Gafferseed",
-	"$BUILD_DIR/appleseed/lib",
-)
-
-# variables to be used when making a build which will use dependencies previously
+# Variables to be used when making a build which will use dependencies previously
 # installed in some central location, rather than using the precompiled dependencies
-# provided by the gafferDependencies project.
+# provided by the GafferHQ/dependencies project.
+
+options.Add(
+	"APPLESEED_ROOT",
+	"The directory in which Appleseed is installed. Used to build Gafferseed",
+	"$BUILD_DIR/appleseed",
+)
+
+options.Add(
+	"OSLHOME",
+	"The directory in which OpenShadingLanguage is installed.",
+	"$BUILD_DIR",
+)
 
 options.Add(
 	"LOCATE_DEPENDENCY_CPPPATH",
@@ -165,6 +176,27 @@ options.Add(
 	"LOCATE_DEPENDENCY_LIBPATH",
 	"The locations on which to search for libraries for "
 	"the dependencies.",
+	"",
+)
+
+options.Add(
+	"LOCATE_DEPENDENCY_PYTHONPATH",
+	"The locations on which to search for python modules for "
+	"the dependencies.",
+	"",
+)
+
+options.Add(
+	"LOCATE_DEPENDENCY_RESOURCESPATH",
+	"The path to the resources provided by the gafferResources project. "
+	"If you follow the build instructions using the precompiled "
+	"dependencies then you will not need this option.",
+	"",
+)
+
+options.Add(
+	"LOCATE_DEPENDENCY_APPLESEED_SEARCHPATH",
+	"The paths in which Appleseed resources are installed.",
 	"",
 )
 
@@ -228,15 +260,23 @@ options.Add(
 )
 
 options.Add(
-	"DOXYGEN",
-	"Where to find the doxygen binary",
-	"doxygen",
-)
-
-options.Add(
 	"INKSCAPE",
 	"Where to find the inkscape binary",
 	"inkscape",
+)
+
+options.Add(
+	"SPHINX",
+	"Where to find the sphinx-build program",
+	"sphinx-build",
+)
+
+options.Add(
+	"INSTALL_POST_COMMAND",
+	"A command which is run following a successful install process. "
+	"This could be used to customise installation further for a "
+	"particular site.",
+	"",
 )
 
 ###############################################################################################
@@ -261,42 +301,113 @@ env = Environment(
 
 )
 
-for e in env["ENV_VARS_TO_IMPORT"].split() :
+env["BUILD_DIR"] = os.path.abspath( env["BUILD_DIR"] )
+
+# DISPLAY and HOME are essential for running gaffer when generating
+# the documentation.
+for e in env["ENV_VARS_TO_IMPORT"].split() + [ "DISPLAY", "HOME" ] :
 	if e in os.environ :
 		env["ENV"][e] = os.environ[e]
 
 if env["PLATFORM"] == "darwin" :
 
-	env["ENV"]["MACOSX_DEPLOYMENT_TARGET"] = "10.4"
 	env.Append( CXXFLAGS = [ "-D__USE_ISOC99" ] )
 	env["GAFFER_PLATFORM"] = "osx"
 
+	osxVersion = [ int( v ) for v in platform.mac_ver()[0].split( "." ) ]
+	if osxVersion[0] == 10 and osxVersion[1] > 7 :
+		# Fix problems with Boost 1.55 and recent versions of Clang.
+		env.Append( CXXFLAGS = [ "-DBOOST_HAS_INT128", "-Wno-unused-local-typedef" ] )
+
 elif env["PLATFORM"] == "posix" :
 
-	# gcc 4.1.2 in conjunction with boost::flat_map produces crashes when
-	# using the -fstrict-aliasing optimisation (which defaults to on with -O2),
-	# so we turn the optimisation off here, only for that specific gcc version.
 	if "g++" in os.path.basename( env["CXX"] ) :
+
 		gccVersion = subprocess.Popen( [ env["CXX"], "-dumpversion" ], env=env["ENV"], stdout=subprocess.PIPE ).stdout.read().strip()
-		if gccVersion == "4.1.2" :
+		gccVersion = [ int( v ) for v in gccVersion.split( "." ) ]
+
+		# GCC 4.1.2 in conjunction with boost::flat_map produces crashes when
+		# using the -fstrict-aliasing optimisation (which defaults to on with -O2),
+		# so we turn the optimisation off here, only for that specific GCC version.
+		if gccVersion == [ 4, 1, 2 ] :
 			env.Append( CXXFLAGS = [ "-fno-strict-aliasing" ] )
 
+		# GCC emits spurious "assuming signed overflow does not occur"
+		# warnings, typically triggered by the comparisons in Box3f::isEmpty().
+		# Downgrade these back to warning status.
+		if gccVersion >= [ 4, 2 ] :
+			env.Append( CXXFLAGS = [ "-Wno-error=strict-overflow" ] )
+
 	env["GAFFER_PLATFORM"] = "linux"
+
+env.Append( CXXFLAGS = [ "-std=$CXXSTD" ] )
+
+if env["DEBUG"] :
+	env.Append( CXXFLAGS = [ "-g" ] )
+else :
+	env.Append( CXXFLAGS = [ "-DNDEBUG", "-DBOOST_DISABLE_ASSERTS" ] )
 
 if env["BUILD_CACHEDIR"] != "" :
 	CacheDir( env["BUILD_CACHEDIR"] )
 
 ###############################################################################################
+# Check for inkscape and sphinx
+###############################################################################################
+
+def findOnPath( file, path ) :
+
+	if os.path.isabs( file ) :
+		return file if os.path.exists( file ) else None
+	else :
+		if isinstance( path, basestring ) :
+			path = path.split( os.pathsep )
+		for p in path :
+			f = os.path.join( p, file )
+			if os.path.exists( f ) :
+				return f
+
+	return None
+
+def checkInkscape(context):
+	context.Message('Checking for Inkscape... ')
+	result = bool( findOnPath( context.sconf.env['INKSCAPE'], os.environ["PATH"] ) )
+	context.Result(result)
+	return result
+
+def checkSphinx( context ) :
+
+	context.Message( "Checking for Sphinx..." )
+	result = bool( findOnPath( context.sconf.env["SPHINX"], context.sconf.env["ENV"]["PATH"] ) )
+	context.Result( result )
+	return result
+
+conf = Configure( env, custom_tests = { "checkInkscape" : checkInkscape, "checkSphinx" : checkSphinx } )
+
+haveInkscape = conf.checkInkscape()
+if not haveInkscape and env["INKSCAPE"] != "disableGraphics" :
+	print 'Inkscape is not installed!'
+	Exit(1)
+
+###############################################################################################
 # An environment for running commands with access to the applications we've built
 ###############################################################################################
+
+def split( stringOrList, separator = ":" ) :
+
+	if isinstance( stringOrList, list ) :
+		return stringOrList
+	else :
+		return stringOrList.split( separator )
 
 commandEnv = env.Clone()
 commandEnv["ENV"]["PATH"] = commandEnv.subst( "$BUILD_DIR/bin:" ) + commandEnv["ENV"]["PATH"]
 
 if commandEnv["PLATFORM"]=="darwin" :
-	commandEnv["ENV"]["DYLD_LIBRARY_PATH"] = commandEnv.subst( "$BUILD_DIR/lib" )
+	commandEnv["ENV"]["DYLD_LIBRARY_PATH"] = commandEnv.subst( ":".join( [ "$BUILD_DIR/lib" ] + split( commandEnv["LOCATE_DEPENDENCY_LIBPATH"] ) ) )
 else :
-	commandEnv["ENV"]["LD_LIBRARY_PATH"] = commandEnv.subst( "$BUILD_DIR/lib" )
+	commandEnv["ENV"]["LD_LIBRARY_PATH"] = commandEnv.subst( ":".join( [ "$BUILD_DIR/lib" ] + split( commandEnv["LOCATE_DEPENDENCY_LIBPATH"] ) ) )
+
+commandEnv["ENV"]["PYTHONPATH"] = commandEnv.subst( ":".join( split( commandEnv["LOCATE_DEPENDENCY_PYTHONPATH"] ) ) )
 
 def runCommand( command ) :
 
@@ -327,6 +438,7 @@ baseLibEnv.Append(
 
 	CPPFLAGS = [
 		"-DBOOST_FILESYSTEM_VERSION=3",
+		"-DBOOST_FILESYSTEM_NO_DEPRECATED",
 		"-DBOOST_SIGNALS_NO_DEPRECATION_WARNING",
 	],
 
@@ -345,6 +457,7 @@ baseLibEnv.Append(
 		"boost_wave$BOOST_LIB_SUFFIX",
 		"boost_regex$BOOST_LIB_SUFFIX",
 		"boost_system$BOOST_LIB_SUFFIX",
+		"boost_chrono$BOOST_LIB_SUFFIX",
 		"tbb",
 		"Imath$OPENEXR_LIB_SUFFIX",
 		"IlmImf$OPENEXR_LIB_SUFFIX",
@@ -435,17 +548,36 @@ libraries = {
 
 	"GafferUITest" : {},
 
-	"GafferCortex" : {
+	"GafferDispatch" : {
 		"envAppends" : {
 			"LIBS" : [ "Gaffer" ],
 		},
 		"pythonEnvAppends" : {
-			"LIBS" : [ "GafferBindings", "GafferCortex" ],
+			"LIBS" : [ "GafferBindings", "GafferDispatch" ],
+		},
+	},
+
+	"GafferDispatchTest" : {
+
+		"additionalFiles" : glob.glob( "python/GafferDispatchTest/*/*" ) + glob.glob( "python/GafferDispatchTest/*/*/*" ),
+
+	},
+
+	"GafferDispatchUI" : {},
+
+	"GafferDispatchUITest" : {},
+
+	"GafferCortex" : {
+		"envAppends" : {
+			"LIBS" : [ "Gaffer", "GafferDispatch" ],
+		},
+		"pythonEnvAppends" : {
+			"LIBS" : [ "GafferBindings", "GafferCortex", "GafferDispatch" ],
 		},
 	},
 
 	"GafferCortexTest" : {
-		"additionalFiles" : glob.glob( "python/GafferTest/*/*" ) + glob.glob( "python/GafferCortexTest/*/*/*" ),
+		"additionalFiles" : glob.glob( "python/GafferCortexTest/*/*" ) + glob.glob( "python/GafferCortexTest/*/*/*" ) + glob.glob( "python/GafferCortexTest/images/*" ),
 	},
 
 	"GafferCortexUI" : {},
@@ -454,10 +586,10 @@ libraries = {
 
 	"GafferScene" : {
 		"envAppends" : {
-			"LIBS" : [ "Gaffer", "Iex$OPENEXR_LIB_SUFFIX", "IECoreGL$CORTEX_LIB_SUFFIX", "IECoreAlembic$CORTEX_LIB_SUFFIX", "GafferImage" ],
+			"LIBS" : [ "Gaffer", "Iex$OPENEXR_LIB_SUFFIX", "IECoreGL$CORTEX_LIB_SUFFIX", "IECoreAlembic$CORTEX_LIB_SUFFIX", "GafferImage", "GafferDispatch" ],
 		},
 		"pythonEnvAppends" : {
-			"LIBS" : [ "GafferBindings", "GafferScene" ],
+			"LIBS" : [ "GafferBindings", "GafferScene", "GafferDispatch" ],
 		},
 		"classStubs" : [
 			( "ScriptProcedural", "procedurals/gaffer/script" ),
@@ -467,20 +599,20 @@ libraries = {
 
 	"GafferSceneTest" : {
 		"envAppends" : {
-			"LIBS" : [ "Gaffer", "GafferScene" ],
+			"LIBS" : [ "Gaffer", "GafferDispatch", "GafferScene" ],
 		},
 		"pythonEnvAppends" : {
-			"LIBS" : [ "Gaffer", "GafferBindings", "GafferScene", "GafferSceneTest" ],
+			"LIBS" : [ "Gaffer", "GafferDispatch", "GafferBindings", "GafferScene", "GafferSceneTest" ],
 		},
 		"additionalFiles" : glob.glob( "python/GafferSceneTest/*/*" ),
 	},
 
 	"GafferSceneUI" : {
 		"envAppends" : {
-			"LIBS" : [ "Gaffer", "GafferUI", "GafferScene", "IECoreGL$CORTEX_LIB_SUFFIX", "GLEW$GLEW_LIB_SUFFIX" ],
+			"LIBS" : [ "Gaffer", "GafferUI", "GafferImage", "GafferImageUI", "GafferScene", "IECoreGL$CORTEX_LIB_SUFFIX", "GLEW$GLEW_LIB_SUFFIX" ],
 		},
 		"pythonEnvAppends" : {
-			"LIBS" : [ "IECoreGL$CORTEX_LIB_SUFFIX", "GafferScene", "GafferUI", "GafferSceneUI" ],
+			"LIBS" : [ "IECoreGL$CORTEX_LIB_SUFFIX", "GafferBindings", "GafferScene", "GafferUI", "GafferImageUI", "GafferSceneUI" ],
 		},
 	},
 
@@ -488,10 +620,11 @@ libraries = {
 
 	"GafferImage" : {
 		"envAppends" : {
-			"LIBS" : [ "Gaffer", "Iex$OPENEXR_LIB_SUFFIX", "OpenImageIO$OIIO_LIB_SUFFIX", "OpenColorIO$OCIO_LIB_SUFFIX" ],
+			"CPPPATH" : [ "$BUILD_DIR/include/freetype2" ],
+			"LIBS" : [ "Gaffer", "GafferDispatch", "Iex$OPENEXR_LIB_SUFFIX", "OpenImageIO$OIIO_LIB_SUFFIX", "OpenColorIO$OCIO_LIB_SUFFIX", "freetype" ],
 		},
 		"pythonEnvAppends" : {
-			"LIBS" : [ "GafferBindings", "GafferImage" ],
+			"LIBS" : [ "GafferBindings", "GafferImage", "GafferDispatch" ],
 		},
 	},
 
@@ -500,8 +633,9 @@ libraries = {
 			"LIBS" : [ "Gaffer", "GafferImage", "OpenImageIO$OIIO_LIB_SUFFIX",  ],
 		},
 		"pythonEnvAppends" : {
-			"LIBS" : [ "GafferImageTest", "GafferImageBindings" ],
+			"LIBS" : [ "GafferImageTest", "GafferImage", "GafferImageBindings" ],
 		},
+		"additionalFiles" : glob.glob( "python/GafferImageTest/scripts/*" ) + glob.glob( "python/GafferImageTest/images/*" ) + glob.glob( "python/GafferImageTest/luts/*" ),
 	},
 
 	"GafferImageUITest" : {},
@@ -511,7 +645,7 @@ libraries = {
 			"LIBS" : [ "IECoreGL$CORTEX_LIB_SUFFIX", "Gaffer", "GafferImage", "GafferUI", "GLEW$GLEW_LIB_SUFFIX" ],
 		},
 		"pythonEnvAppends" : {
-			"LIBS" : [ "GafferUI", "GafferImageUI" ],
+			"LIBS" : [ "GafferUI", "GafferImage", "GafferImageUI" ],
 		},
 	},
 
@@ -519,17 +653,20 @@ libraries = {
 		"envAppends" : {
 			"CPPPATH" : [ "$ARNOLD_ROOT/include" ],
 			"LIBPATH" : [ "$ARNOLD_ROOT/bin" ],
-			"LIBS" : [ "Gaffer", "GafferScene", "ai", "IECoreArnold$CORTEX_LIB_SUFFIX" ],
+			"LIBS" : [ "Gaffer", "GafferScene", "GafferDispatch", "ai", "openvdb", "IECoreArnold$CORTEX_LIB_SUFFIX" ],
 		},
 		"pythonEnvAppends" : {
 			"CPPPATH" : [ "$ARNOLD_ROOT/include" ],
 			"LIBPATH" : [ "$ARNOLD_ROOT/bin" ],
-			"LIBS" : [ "Gaffer", "GafferScene", "GafferBindings", "GafferArnold" ],
+			"LIBS" : [ "Gaffer", "GafferScene", "GafferBindings", "GafferDispatch", "GafferArnold" ],
 		},
 		"requiredOptions" : [ "ARNOLD_ROOT" ],
+		"additionalFiles" : [ "arnold/plugins/gaffer.mtd" ],
 	},
 
-	"GafferArnoldTest" : {},
+	"GafferArnoldTest" : {
+		"additionalFiles" : glob.glob( "python/GafferArnoldTest/volumes/*" ) + glob.glob( "python/GafferArnoldTest/metadata/*" ),
+	},
 
 	"GafferArnoldUI" : {},
 
@@ -557,12 +694,12 @@ libraries = {
 
 	"GafferOSL" : {
 		"envAppends" : {
-			"CPPPATH" : [ "$BUILD_DIR/include/OSL" ],
-			"LIBS" : [ "Gaffer", "GafferScene", "GafferImage", "OpenImageIO$OIIO_LIB_SUFFIX", "oslquery$OSL_LIB_SUFFIX", "oslexec$OSL_LIB_SUFFIX" ],
+			"CPPPATH" : [ "$OSLHOME/include/OSL" ],
+			"LIBS" : [ "Gaffer", "GafferScene", "GafferImage", "OpenImageIO$OIIO_LIB_SUFFIX", "oslquery$OSL_LIB_SUFFIX", "oslexec$OSL_LIB_SUFFIX", "Iex$OPENEXR_LIB_SUFFIX" ],
 		},
 		"pythonEnvAppends" : {
-			"CPPPATH" : [ "$BUILD_DIR/include/OSL" ],
-			"LIBS" : [ "GafferBindings", "GafferScene", "GafferImage", "GafferOSL" ],
+			"CPPPATH" : [ "$OSLHOME/include/OSL" ],
+			"LIBS" : [ "GafferBindings", "GafferScene", "GafferImage", "GafferOSL", "Iex$OPENEXR_LIB_SUFFIX" ],
 		},
 		"oslHeaders" : glob.glob( "shaders/*/*.h" ),
 		"oslShaders" : glob.glob( "shaders/*/*.osl" ),
@@ -578,21 +715,33 @@ libraries = {
 
 	"GafferAppleseed" : {
 		"envAppends" : {
-			"CPPPATH" : [ "$APPLESEED_INCLUDE_PATH" ],
-			"LIBPATH" : [ "$APPLESEED_LIB_PATH" ],
-			"LIBS" : [ "Gaffer", "GafferScene", "appleseed", "IECoreAppleseed$CORTEX_LIB_SUFFIX" ],
+			"CXXFLAGS" : [ "-isystem", "$APPLESEED_ROOT/include", "-DAPPLESEED_ENABLE_IMATH_INTEROP", "-DAPPLESEED_WITH_OIIO", "-DAPPLESEED_WITH_OSL", "-DAPPLESEED_USE_SSE" ],
+			"LIBPATH" : [ "$APPLESEED_ROOT/lib" ],
+			"LIBS" : [ "Gaffer", "GafferDispatch", "GafferScene", "appleseed", "IECoreAppleseed$CORTEX_LIB_SUFFIX", "OpenImageIO$OIIO_LIB_SUFFIX", "oslquery$OSL_LIB_SUFFIX" ],
 		},
 		"pythonEnvAppends" : {
-			"CPPPATH" : [ "$APPLESEED_INCLUDE_PATH" ],
-			"LIBPATH" : [ "$APPLESEED_LIB_PATH" ],
-			"LIBS" : [ "Gaffer", "GafferScene", "GafferBindings", "GafferAppleseed" ],
+			"CXXFLAGS" : [ "-isystem", "$APPLESEED_ROOT/include", "-DAPPLESEED_ENABLE_IMATH_INTEROP", "-DAPPLESEED_WITH_OIIO", "-DAPPLESEED_WITH_OSL", "-DAPPLESEED_USE_SSE" ],
+			"LIBPATH" : [ "$APPLESEED_ROOT/lib" ],
+			"LIBS" : [ "Gaffer", "GafferDispatch", "GafferScene", "GafferBindings", "GafferAppleseed" ],
 		},
-		"requiredOptions" : [ "APPLESEED_INCLUDE_PATH", "APPLESEED_LIB_PATH" ],
+		"requiredOptions" : [ "APPLESEED_ROOT" ],
 	},
 
-	"GafferAppleseedTest" : {},
+	"GafferAppleseedTest" : {
+		"additionalFiles" : glob.glob( "python/GafferAppleseedTest/*/*" ),
+	},
 
 	"GafferAppleseedUI" : {},
+
+	"GafferAppleseedUITest" : {},
+
+	"GafferTractor" : {},
+
+	"GafferTractorTest" : {},
+
+	"GafferTractorUI" : {},
+
+	"GafferTractorUITest" : {},
 
 	"apps" : {
 		"additionalFiles" : glob.glob( "apps/*/*-1.py" ),
@@ -676,10 +825,12 @@ for library in ( "GafferUI", ) :
 		libraries[library]["pythonEnvAppends"].setdefault( "FRAMEWORKPATH", [] ).append( "$BUILD_DIR/lib" )
 		libraries[library]["pythonEnvAppends"].setdefault( "FRAMEWORKS", [] ).append( "QtCore" )
 		libraries[library]["pythonEnvAppends"].setdefault( "FRAMEWORKS", [] ).append( "QtGui" )
+		libraries[library]["pythonEnvAppends"].setdefault( "FRAMEWORKS", [] ).append( "QtOpenGL" )
 	else :
 		libraries[library]["pythonEnvAppends"]["LIBS"].append( "QtCore" )
 		libraries[library]["pythonEnvAppends"]["LIBS"].append( "QtGui" )
-		
+		libraries[library]["pythonEnvAppends"]["LIBS"].append( "QtOpenGL" )
+
 
 ###############################################################################################
 # The stuff that actually builds the libraries and python modules
@@ -760,8 +911,20 @@ for libraryName, libraryDef in libraries.items() :
 		pythonModuleEnv = pythonEnv.Clone()
 		if bindingsSource :
 			pythonModuleEnv.Append( LIBS = [ libraryName + "Bindings" ] )
+
 		pythonModuleEnv["SHLIBPREFIX"] = ""
-		pythonModuleEnv["SHLIBSUFFIX"] = ".so"
+		if pythonModuleEnv["PLATFORM"] == "darwin" :
+			# On OSX, we must build Python modules with the ".so"
+			# prefix rather than the ".dylib" you might expect.
+			# This is done by changing the SHLIBSUFFIX variable.
+			# But this causes a problem with SCons' automatic
+			# scanning for the library dependencies of those modules,
+			# because by default it expects the libraries to end in
+			# "$SHLIBSUFFIX". So we must also explicitly add
+			# the original value of SHLIBSUFFIX (.dylib) to the
+			# LIBSUFFIXES variable used by the library scanner.
+			pythonModuleEnv["LIBSUFFIXES"].append( pythonModuleEnv.subst( "$SHLIBSUFFIX" ) )
+			pythonModuleEnv["SHLIBSUFFIX"] = ".so"
 
 		pythonModule = pythonModuleEnv.SharedLibrary( "python/" + libraryName + "/_" + libraryName, pythonModuleSource )
 		pythonModuleEnv.Default( pythonModule )
@@ -771,13 +934,16 @@ for libraryName, libraryDef in libraries.items() :
 
 	# python component of python module
 
-	for pythonFile in glob.glob( "python/" + libraryName + "/*.py" ) :
+	pythonFiles = glob.glob( "python/" + libraryName + "/*.py" ) + glob.glob( "python/" + libraryName + "/*/*.py" )
+	for pythonFile in pythonFiles :
 		pythonFileInstall = env.Command( "$BUILD_DIR/" + pythonFile, pythonFile, "sed \"" + sedSubstitutions + "\" $SOURCE > $TARGET" )
 		env.Alias( "build", pythonFileInstall )
 
 	# additional files
 
 	for additionalFile in libraryDef.get( "additionalFiles", [] ) :
+		if additionalFile in pythonFiles :
+			continue
 		additionalFileInstall = env.InstallAs( "$BUILD_DIR/" + additionalFile, additionalFile )
 		env.Alias( "build", additionalFileInstall )
 
@@ -790,10 +956,14 @@ for libraryName, libraryDef in libraries.items() :
 
 	# osl shaders
 
+	def buildOSL( target, source, env ) :
+
+		subprocess.check_call( [ "oslc", "-I./shaders", "-o", str( target[0] ), str( source[0] ) ], env = env["ENV"] )
+
 	for oslShader in libraryDef.get( "oslShaders", [] ) :
 		oslShaderInstall = env.InstallAs( "$BUILD_DIR/" + oslShader, oslShader )
 		env.Alias( "build", oslShader )
-		compiledFile = commandEnv.Command( os.path.splitext( str( oslShaderInstall[0] ) )[0] + ".oso", oslShader, "oslc -I./shaders -o $TARGET $SOURCE" )
+		compiledFile = commandEnv.Command( os.path.splitext( str( oslShaderInstall[0] ) )[0] + ".oso", oslShader, buildOSL )
 		env.Depends( compiledFile, "oslHeaders" )
 		env.Alias( "build", compiledFile )
 
@@ -826,287 +996,155 @@ for libraryName, libraryDef in libraries.items() :
 
 def buildGraphics( target, source, env ) :
 
-	dir = os.path.dirname( str( target[0] ) )
+	svgFileName = os.path.abspath( str( source[0] ) )
+
+	dir = os.path.dirname( os.path.abspath( str( target[0] ) ) )
 	if not os.path.isdir( dir ) :
 		os.makedirs( dir )
 
-	objects, stderr = subprocess.Popen( env["INKSCAPE"] + " --query-all " + str( source[0] ), stdout=subprocess.PIPE, shell=True ).communicate()
+	queryCommand = env["INKSCAPE"] + " --query-all \"" + svgFileName + "\""
+	inkscape = subprocess.Popen( queryCommand, stdout=subprocess.PIPE, shell=True )
+	objects, stderr = inkscape.communicate()
+	if inkscape.returncode :
+		raise subprocess.CalledProcessError( inkscape.returncode, queryCommand )
+
 	for object in objects.split( "\n" ) :
 		tokens = object.split( "," )
 		if tokens[0].startswith( "forExport:" ) :
-			os.system( env["INKSCAPE"] + " --export-png=%s/%s.png --export-id=%s --export-width=%d --export-height=%d %s --export-background-opacity=0" % (
+			subprocess.check_call(
+				env["INKSCAPE"] + " --export-png=%s/%s.png --export-id=%s --export-width=%d --export-height=%d %s --export-background-opacity=0" % (
 					dir,
 					tokens[0].split( ":" )[-1],
 					tokens[0],
 					int( round( float( tokens[3] ) ) ), int( round( float( tokens[4] ) ) ),
-					str( source[0] ),
-				)
+					svgFileName,
+				),
+				shell = True,
 			)
 
-for source, target in (
-	( "resources/graphics.svg", "arrowDown10.png" ),
-	( "resources/GafferLogo.svg", "GafferLogo.png" ),
-	( "resources/GafferLogoMini.svg", "GafferLogoMini.png" ),
-) :
+if haveInkscape :
 
-	graphicsBuild = env.Command( os.path.join( "$BUILD_DIR/graphics/", target ), source, buildGraphics )
-	env.NoCache( graphicsBuild )
-	env.Alias( "build", graphicsBuild )
+	for source, target in (
+		( "resources/graphics.svg", "arrowDown10.png" ),
+		( "resources/GafferLogo.svg", "GafferLogo.png" ),
+		( "resources/GafferLogoMini.svg", "GafferLogoMini.png" ),
+	) :
+
+		graphicsBuild = env.Command( os.path.join( "$BUILD_DIR/graphics/", target ), source, buildGraphics )
+		env.NoCache( graphicsBuild )
+		env.Alias( "build", graphicsBuild )
+
+else :
+
+	sys.stderr.write( "WARNING : Inkscape not found - not building graphics. Check INKSCAPE build variable.\n" )
+
+#########################################################################################################
+# Resources
+#########################################################################################################
+
+resources = None
+if commandEnv.subst( "$LOCATE_DEPENDENCY_RESOURCESPATH" ) :
+	resources = commandEnv.Install( "$BUILD_DIR", "$LOCATE_DEPENDENCY_RESOURCESPATH" )
+	commandEnv.NoCache( resources )
+	commandEnv.Alias( "build", resources )
 
 #########################################################################################################
 # Documentation
 #########################################################################################################
 
-def readLinesMinusLicense( f ) :
+def buildDocs( target, source, env ) :
 
-	if isinstance( f, basestring ) :
-		f = open( f, "r" )
+	# This is a little bit tricky. We need Gaffer itself to build the
+	# docs, because we autogenerate the node reference from the node metadata.
+	# And we also need sphinx, but `sphinx_build` starts with `#!/usr/bin/python`,
+	# which may not be compatible with Gaffer's built-in python. So, we locate
+	# the modules sphinx needs upfront, and make sure they're on the PYTHONPATH,
+	# then we use `gaffer env python` to launch Gaffer's python, and generate
+	# all the docs in that environment.
 
-	result = []
-	skippedLicense = False
-	for line in f.readlines() :
+	for module in ( "sphinx", "markupsafe", "CommonMark" ) :
+		if not findOnPath( module, env["ENV"]["PYTHONPATH"] ) :
+			try :
+				m = __import__( module )
+				env["ENV"]["PYTHONPATH"] = env["ENV"]["PYTHONPATH"] + ":" + os.path.dirname( m.__path__[0] )
+			except ImportError :
+				pass
 
-		if not line.startswith( "#" ) :
-			skippedLicense = True
-		if skippedLicense :
-			result.append( line )
+	# Ensure that Arnold, Appleseed and 3delight are available in the documentation
+	# environment.
 
-	return result
+	libraryPathEnvVar = "DYLD_LIBRARY_PATH" if commandEnv["PLATFORM"]=="darwin" else "LD_LIBRARY_PATH"
 
-# Builder action that munges a nicely organised python module into a much less nicely organised one
-# that doxygen will understand. Otherwise it puts every class implemented in its own file
-# into its own namespace and the docs get mighty confusing.
-def createDoxygenPython( target, source, env ) :
+	if env.subst( "$ARNOLD_ROOT" ) :
+		env["ENV"]["PATH"] += ":" + env.subst( "$ARNOLD_ROOT/bin" )
+		env["ENV"]["PYTHONPATH"] += ":" + env.subst( "$ARNOLD_ROOT/python" )
+		env["ENV"][libraryPathEnvVar] += ":" + env.subst( "$ARNOLD_ROOT/bin" )
 
-	target = str( target[0] )
-	source = str( source[0] )
+	if env.subst( "$RMAN_ROOT" ) :
+		env["ENV"]["PATH"] += ":" + env.subst( "$RMAN_ROOT/bin" )
+		env["ENV"][libraryPathEnvVar] += ":" + env.subst( "$RMAN_ROOT/lib" )
 
-	if not os.path.isdir( target ) :
-		os.makedirs( target )
+	if env.subst( "$APPLESEED_ROOT" ) and env["APPLESEED_ROOT"] != "$BUILD_DIR/appleseed" :
+		env["ENV"]["PATH"] += ":" + env.subst( "$APPLESEED_ROOT/bin" )
+		env["ENV"][libraryPathEnvVar] += ":" + env.subst( "$APPLESEED_ROOT/lib" )
+		env["ENV"]["OSLHOME"] = env.subst( "$OSLHOME" )
+		env["ENV"]["OSL_SHADER_PATHS"] = env.subst( "$APPLESEED_ROOT/shaders" )
+		env["ENV"]["APPLESEED_SEARCHPATH"] = env.subst( "$APPLESEED_ROOT/shaders:$LOCATE_DEPENDENCY_APPLESEED_SEARCHPATH" )
 
-	outFile = open( target + "/__init__.py", "w" )
+	# Run any python scripts we find in the document source tree. These are
+	# used to autogenerate source files for processing by sphinx.
 
-	for line in readLinesMinusLicense( source ) :
+	for root, dirs, files in os.walk( str( source[0] ) ) :
+		for f in files :
+			ext = os.path.splitext( f )[1]
+			command = []
+			if ext == ".py" :
+				command = [ "gaffer", "env", "python", f ]
+			elif ext == ".sh" :
+				command = [ "gaffer", "env", "./" + f ]
+			if command :
+				print "Running", os.path.join( root, f )
+				subprocess.check_call( command, cwd = root, env = env["ENV"] )
 
-		outFile.write( line )
+	# Run sphinx to generate the final documentation.
 
-		if line.startswith( "import" ) :
+	subprocess.check_call(
+		[
+			"gaffer", "env", "python",
+			findOnPath( env.subst( "$SPHINX" ), env["ENV"]["PATH"] ),
+			"-b", "html",
+			str( source[0] ), os.path.dirname( str( target[0] ) )
+		],
+		env = env["ENV"]
+	)
 
-			# copy source file over to target directory
-			words = line.split()
-			fileName = os.path.dirname( source ) + "/" + words[1] + ".py"
-			if os.path.isfile( fileName ) :
-				destFile = open( target + "/" + words[1] + ".py", "w" )
-				for l in readLinesMinusLicense( fileName ) :
-					destFile.write( l )
+if conf.checkSphinx() :
 
-		elif line.startswith( "from" ) :
+	docs = commandEnv.Command( "$BUILD_DIR/doc/gaffer/html/index.html", "doc/source", buildDocs )
+	commandEnv.Depends( docs, "build" )
+	if resources is not None :
+		commandEnv.Depends( docs, resources )
+	commandEnv.AlwaysBuild( docs )
+	commandEnv.NoCache( docs )
+	commandEnv.Alias( "docs", docs )
 
-			# cat source file directly into init file
-			words = line.split()
-			fileName = os.path.dirname( source ) + "/" + words[1] + ".py"
-			if os.path.isfile( fileName ) :
+else :
 
-				outFile.write( "\n" )
-
-				for line in readLinesMinusLicense( fileName ) :
-					outFile.write( line )
-
-				outFile.write( "\n" )
-
-docEnv = env.Clone()
-docEnv["ENV"]["PATH"] = os.environ["PATH"]
-for v in ( "BUILD_DIR", "GAFFER_MILESTONE_VERSION", "GAFFER_MAJOR_VERSION", "GAFFER_MINOR_VERSION", "GAFFER_PATCH_VERSION" ) :
-	docEnv["ENV"][v] = docEnv[v]
-
-docs = docEnv.Command( "doc/html/index.html", "doc/config/Doxyfile", "$DOXYGEN doc/config/Doxyfile" )
-env.NoCache( docs )
-
-for modulePath in ( "python/Gaffer", "python/GafferUI", "python/GafferScene", "python/GafferSceneUI" ) :
-
-	module = os.path.basename( modulePath )
-	mungedModule = docEnv.Command( "doc/python/" + module, modulePath + "/__init__.py", createDoxygenPython )
-	docEnv.Depends( mungedModule, glob.glob( modulePath + "/*.py" ) )
-	docEnv.Depends( docs, mungedModule )
-	docEnv.NoCache( mungedModule )
-
-docEnv.Depends( docs, glob.glob( "include/*/*.h" ) + glob.glob( "doc/doxygenPages/*.md" ) )
-
-docInstall = docEnv.Install( "$BUILD_DIR/doc/gaffer", "doc/html" )
-docEnv.Alias( "build", docInstall )
+	sys.stderr.write( "WARNING : Sphinx not found - not building docs. Check SPHINX build variable.\n" )
 
 #########################################################################################################
 # Installation
 #########################################################################################################
 
-## \todo I'm not convinced we need this manifest anymore. If everyone will be using
-# the gafferDependencies project to seed their builds, then BUILD_DIR will only contain
-# files from gafferDependencies (which has its own manifest) and files we explicitly
-# built and definitely want packaged.
-dependenciesManifest = [
-
-	"bin/python",
-	"bin/python*[0-9]", # get the versioned python binaries, but not python-config etc
-
-	"bin/maketx",
-	"bin/oslc",
-	"bin/oslinfo",
-
-	"lib/libboost_signals$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-	"lib/libboost_thread$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-	"lib/libboost_wave$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-	"lib/libboost_regex$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-	"lib/libboost_python$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-	"lib/libboost_date_time$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-	"lib/libboost_filesystem$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-	"lib/libboost_iostreams$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-	"lib/libboost_system$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-	"lib/libboost_chrono$BOOST_LIB_SUFFIX$SHLIBSUFFIX*",
-
-	"lib/libIECore*$SHLIBSUFFIX",
-
-	"lib/libIex*$SHLIBSUFFIX*",
-	"lib/libHalf*$SHLIBSUFFIX*",
-	"lib/libImath*$SHLIBSUFFIX*",
-	"lib/libIlmImf*$SHLIBSUFFIX*",
-	"lib/libIlmThread*$SHLIBSUFFIX*",
-
-	"lib/libtiff*$SHLIBSUFFIX*",
-	"lib/libfreetype*$SHLIBSUFFIX*",
-	"lib/libjpeg*$SHLIBSUFFIX*",
-	"lib/libpng*$SHLIBSUFFIX*",
-
-	"lib/libOpenImageIO*$SHLIBSUFFIX*",
-	"lib/libOpenColorIO*$SHLIBSUFFIX*",
-
-	"lib/libLLVM*$SHLIBSUFFIX*",
-	"lib/libosl*",
-
-	"lib/libpython*$SHLIBSUFFIX*",
-	"lib/Python.framework",
-	"lib/python$PYTHON_VERSION",
-
-	"lib/libGLEW*$SHLIBSUFFIX*",
-	"lib/libtbb*$SHLIBSUFFIX*",
-
-	"lib/libhdf5*$SHLIBSUFFIX*",
-
-	"lib/libpyside*$SHLIBSUFFIX*",
-	"lib/libshiboken*$SHLIBSUFFIX*",
-
-	"lib/libQtCore*",
-	"lib/libQtGui*",
-	"lib/libQtOpenGL*",
-	"lib/QtCore.framework",
-	"lib/QtGui.framework",
-	"lib/QtOpenGL.framework",
-
-	"lib/libxerces-c*$SHLIBSUFFIX",
-
-	"fonts",
-	"ops",
-	"procedurals",
-	"resources",
-	"shaders",
-
-	"openColorIO",
-
-	"glsl/IECoreGL",
-	"glsl/*.frag",
-	"glsl/*.vert",
-
-	"doc/licenses",
-	"doc/cortex/html",
-	"doc/osl*",
-
-	"python/IECore*",
-	"python/shiboken.so",
-	"python/PySide/*.py",
-	"python/PySide/QtCore.so",
-	"python/PySide/QtGui.so",
-	"python/PySide/QtOpenGL.so",
-	"python/sip.so",
-	"python/PyQt*",
-	"python/OpenGL",
-	"python/PyOpenColorIO*",
-
-	"include/IECore*",
-	"include/boost",
-	"include/GL",
-	"include/OpenEXR",
-	"include/python*",
-	"include/tbb",
-	"include/OSL",
-	"include/OpenImageIO",
-	"include/OpenColorIO",
-	"include/QtCore",
-	"include/QtGui",
-	"include/QtOpenGL",
-
-	"renderMan",
-	"arnold",
-	"appleseed",
-	"appleseedDisplays",
-
-]
-
-gafferManifest = dependenciesManifest + [
-
-	"bin/gaffer",
-	"bin/gaffer.py",
-
-	"LICENSE",
-
-	"apps/*/*-1.py",
-
-	"lib/libGaffer*$SHLIBSUFFIX",
-
-	"startup/*/*.py",
-
-	"graphics/*.png",
-
-	"doc/gaffer/html",
-
-	"python/Gaffer*",
-
-	"include/Gaffer*",
-
-]
-
 def installer( target, source, env ) :
 
-	def copyTree( src, dst, regex ) :
-
-		names = os.listdir( src )
-
-		for name in names:
-
-			srcName = os.path.join( src, name )
-			dstName = os.path.join( dst, name )
-
-			if os.path.isdir( srcName ) :
-				if regex.match( srcName ) :
-					copyTree( srcName, dstName, re.compile( ".*" ) )
-				else :
-					copyTree( srcName, dstName, regex )
-			else :
-				if regex.match( srcName ) :
-					dstDir = os.path.dirname( dstName )
-					if not os.path.isdir( dstDir ) :
-						os.makedirs( dstDir )
-					if os.path.islink( srcName ) :
-						os.symlink( os.readlink( srcName ), dstName )
-					else:
-						shutil.copy2( srcName, dstName )
-
-	regex = re.compile( "|".join( [ fnmatch.translate( os.path.normpath( env.subst( "$BUILD_DIR/" + m ) ) ) for m in env["MANIFEST"] ] ) )
-	copyTree( str( source[0] ), str( target[0] ), regex )
+	shutil.copytree( str( source[0] ), str( target[0] ), symlinks=True )
 
 if env.subst( "$PACKAGE_FILE" ).endswith( ".dmg" ) :
 
 	# if the packaging will make a disk image, then build an os x app bundle
 
-	install = env.Command( "$INSTALL_DIR/Gaffer.app/Contents/Resources", "$BUILD_DIR", installer, MANIFEST=gafferManifest )
+	install = env.Command( "$INSTALL_DIR/Gaffer.app/Contents/Resources", "$BUILD_DIR", installer )
 	env.AlwaysBuild( install )
 	env.NoCache( install )
 	env.Alias( "install", install )
@@ -1119,11 +1157,15 @@ if env.subst( "$PACKAGE_FILE" ).endswith( ".dmg" ) :
 
 else :
 
-	install = env.Command( "$INSTALL_DIR", "$BUILD_DIR", installer, MANIFEST=gafferManifest )
+	install = env.Command( "$INSTALL_DIR", "$BUILD_DIR", installer )
 	env.AlwaysBuild( install )
 	env.NoCache( install )
 
 	env.Alias( "install", install )
+
+	if env["INSTALL_POST_COMMAND"] != "" :
+		# this is the only way we could find to get a post action to run for an alias
+		env.Alias( "install", install, "$INSTALL_POST_COMMAND" )
 
 #########################################################################################################
 # Packaging

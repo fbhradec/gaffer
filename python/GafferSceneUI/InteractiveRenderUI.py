@@ -34,14 +34,130 @@
 #
 ##########################################################################
 
-import fnmatch
-
 import Gaffer
-import GafferUI
 import GafferScene
+import GafferUI
 
 ##########################################################################
-# Metadata
+# UI for the state plug that allows setting the state through buttons
+##########################################################################
+
+class _StatePlugValueWidget( GafferUI.PlugValueWidget ) :
+
+	def __init__( self, plug, *args, **kwargs) :
+
+		row = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal )
+		GafferUI.PlugValueWidget.__init__( self, row, plug )
+
+		with row :
+			self.__startPauseButton = GafferUI.Button( image = 'timelinePlay.png' )
+			self.__stopButton = GafferUI.Button( image = 'timelineStop.png' )
+
+			self.__startPauseClickedConnection = self.__startPauseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__startPauseClicked ) )
+			self.__pauseClickedConnection = self.__stopButton.clickedSignal().connect( Gaffer.WeakMethod( self.__stopClicked ) )
+
+		self._updateFromPlug()
+
+	def _updateFromPlug( self ) :
+
+		with self.getContext() :
+			state = self.getPlug().getValue()
+
+		if state == GafferScene.InteractiveRender.State.Running :
+			self.__startPauseButton.setImage( 'timelinePause.png' )
+			self.__stopButton.setEnabled( True )
+		elif state == GafferScene.InteractiveRender.State.Paused :
+			self.__startPauseButton.setImage( 'timelinePlay.png' )
+			self.__stopButton.setEnabled( True )
+		elif state == GafferScene.InteractiveRender.State.Stopped :
+			self.__startPauseButton.setImage( 'timelinePlay.png' )
+			self.__stopButton.setEnabled( False )
+
+	def __startPauseClicked( self, button ) :
+
+		with self.getContext() :
+			state = self.getPlug().getValue()
+
+		# When setting the plug value here, we deliberately don't use an UndoContext.
+		# Not enabling undo here is done so that users won't accidentally restart/stop their renderings.
+		if state != GafferScene.InteractiveRender.State.Running:
+			self.getPlug().setValue( GafferScene.InteractiveRender.State.Running )
+		else:
+			self.getPlug().setValue( GafferScene.InteractiveRender.State.Paused )
+
+	def __stopClicked( self, button ) :
+		self.getPlug().setValue( GafferScene.InteractiveRender.State.Stopped )
+
+##########################################################################
+# Metadata for GafferScene.Preview.InteractiveRender node. We intend
+# for this to entirely replace the GafferScene.InteractiveRender node
+# which is registered under this section.
+##########################################################################
+
+Gaffer.Metadata.registerNode(
+
+	GafferScene.Preview.InteractiveRender,
+
+	"description",
+	"""
+	Performs interactive renders, updating the render on the fly
+	whenever the input scene changes.
+	""",
+
+	plugs = {
+
+		"*" : [
+
+			"nodule:type", "",
+
+		],
+
+		"in" : [
+
+			"description",
+			"""
+			The scene to be rendered.
+			""",
+
+			"nodule:type", "GafferUI::StandardNodule",
+
+		],
+
+		"renderer" : [
+
+			"description",
+			"""
+			The renderer to use.
+			""",
+
+		],
+
+		"state" : [
+
+			"description",
+			"""
+			Turns the rendering on and off, or pauses it.
+			""",
+
+			"plugValueWidget:type", "GafferSceneUI.InteractiveRenderUI._StatePlugValueWidget",
+
+		],
+
+		"out" : [
+
+			"description",
+			"""
+			A direct pass-through of the input scene.
+			""",
+
+		],
+
+	}
+)
+
+##########################################################################
+# Metadata for original InteractiveRender node. We hope to phase this
+# node out over time.
 ##########################################################################
 
 Gaffer.Metadata.registerNode(
@@ -89,9 +205,7 @@ Gaffer.Metadata.registerNode(
 			The interactive state.
 			""",
 
-			"preset:Stopped", GafferScene.InteractiveRender.State.Stopped,
-			"preset:Running", GafferScene.InteractiveRender.State.Running,
-			"preset:Paused", GafferScene.InteractiveRender.State.Paused,
+			"plugValueWidget:type", "GafferSceneUI.InteractiveRenderUI._StatePlugValueWidget",
 
 		],
 
@@ -138,15 +252,4 @@ Gaffer.Metadata.registerNode(
 		],
 
 	}
-)
-
-##########################################################################
-# Widgets
-##########################################################################
-
-## \todo Make a custom UI with play/pause/stop/restart buttons.
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.InteractiveRender,
-	"state",
-	GafferUI.PresetsPlugValueWidget,
 )

@@ -36,10 +36,12 @@
 
 from OSLTestCase import OSLTestCase
 from OSLShaderTest import OSLShaderTest
-from OSLRendererTest import OSLRendererTest
+from ShadingEngineTest import ShadingEngineTest
 from OSLImageTest import OSLImageTest
 from OSLObjectTest import OSLObjectTest
+from OSLExpressionEngineTest import OSLExpressionEngineTest
 from ModuleTest import ModuleTest
+from OSLCodeTest import OSLCodeTest
 
 if __name__ == "__main__":
 	import unittest

@@ -65,6 +65,10 @@ Duplicate::Duplicate( const std::string &name )
 	parentPlug()->setFlags( Plug::ReadOnly, true );
 	parentPlug()->setFlags( Plug::Serialisable, false );
 
+	// Since we don't introduce any new sets, but just duplicate parts
+	// of existing ones, we can save the BranchCreator base class some
+	// trouble by making the setNamesPlug into a pass-through.
+	outPlug()->setNamesPlug()->setInput( inPlug()->setNamesPlug() );
 }
 
 Duplicate::~Duplicate()
@@ -215,7 +219,7 @@ void Duplicate::compute( ValuePlug *output, const Context *context ) const
 		// these from the name of the target.
 
 		std::string stem;
-		int suffix = numericSuffix( target.back(), 0, &stem );
+		int suffix = StringAlgo::numericSuffix( target.back(), 0, &stem );
 		suffix++;
 
 		const int copies = copiesPlug()->getValue();
@@ -227,7 +231,7 @@ void Duplicate::compute( ValuePlug *output, const Context *context ) const
 		if( name.size() )
 		{
 			std::string nameStem;
-			const int nameSuffix = numericSuffix( name, &nameStem );
+			const int nameSuffix = StringAlgo::numericSuffix( name, &nameStem );
 			stem = nameStem;
 			suffix = copies == 1 ? nameSuffix : max( nameSuffix, 1 );
 		}
@@ -363,6 +367,43 @@ IECore::ConstInternedStringVectorDataPtr Duplicate::computeBranchChildNames( con
 		sourcePath( branchPath, source );
 		return inPlug()->childNames( source );
 	}
+}
+
+void Duplicate::hashBranchSet( const ScenePath &parentPath, const IECore::InternedString &setName, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	h.append( inPlug()->setHash( setName ) );
+	targetPlug()->hash( h );
+	childNamesPlug()->hash( h );
+}
+
+GafferScene::ConstPathMatcherDataPtr Duplicate::computeBranchSet( const ScenePath &parentPath, const IECore::InternedString &setName, const Gaffer::Context *context ) const
+{
+	ConstPathMatcherDataPtr inputSetData = inPlug()->set( setName );
+	const PathMatcher &inputSet = inputSetData->readable();
+	if( inputSet.isEmpty() )
+	{
+		return outPlug()->setPlug()->defaultValue();
+	}
+
+	PathMatcher subTree = inputSet.subTree( targetPlug()->getValue() );
+	if( subTree.isEmpty() )
+	{
+		return outPlug()->setPlug()->defaultValue();
+	}
+
+	ConstInternedStringVectorDataPtr childNamesData = childNamesPlug()->getValue();
+	const vector<InternedString> &childNames = childNamesData->readable();
+
+	PathMatcherDataPtr resultData = new PathMatcherData;
+	PathMatcher &result = resultData->writable();
+	ScenePath prefix( 1 );
+	for( vector<InternedString>::const_iterator it = childNames.begin(), eIt = childNames.end(); it != eIt; ++it )
+	{
+		prefix.back() = *it;
+		result.addPaths( subTree, prefix );
+	}
+
+	return resultData;
 }
 
 void Duplicate::sourcePath( const ScenePath &branchPath, ScenePath &source ) const

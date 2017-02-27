@@ -39,9 +39,23 @@
 #include "boost/regex.hpp"
 
 #include "Gaffer/Switch.h"
+#include "Gaffer/ArrayPlug.h"
+#include "Gaffer/Context.h"
 
 namespace Gaffer
 {
+
+namespace Detail
+{
+
+struct IdentityContext
+{
+	IdentityContext( const Context *context )
+	{
+	}
+};
+
+};
 
 template<typename BaseType>
 const IECore::RunTimeTyped::TypeDescription<Switch<BaseType> > Switch<BaseType>::g_typeDescription;
@@ -50,8 +64,14 @@ template<typename BaseType>
 size_t Switch<BaseType>::g_firstPlugIndex = 0;
 
 template<typename BaseType>
-Switch<BaseType>::Switch( const std::string &name )
-	:	BaseType( name )
+Switch<BaseType>::Switch( const std::string &name)
+	:	BaseType( name, 1 ) // ArrayPlug version of *Processor constructor
+{
+	init( /* expectBaseClassPlugs = */ true );
+}
+
+template<typename BaseType>
+void Switch<BaseType>::init( bool expectBaseClassPlugs )
 {
 	BaseType::storeIndexOfNextChild( g_firstPlugIndex );
 	BaseType::addChild( new IntPlug( "index", Gaffer::Plug::In, 0, 0 ) );
@@ -62,20 +82,21 @@ Switch<BaseType>::Switch( const std::string &name )
 		BaseType::addChild( new BoolPlug( "enabled", Gaffer::Plug::In, true ) );
 	}
 
-	if( Plug *in = BaseType::template getChild<Plug>( "in" ) )
+	if( expectBaseClassPlugs )
 	{
-		// our BaseType provides an "in" plug - we use that to seed our InputGenerator.
-		m_inputGenerator = boost::shared_ptr<Gaffer::Behaviours::InputGenerator<Plug> >(
-			new Gaffer::Behaviours::InputGenerator<Plug>( this, in )
-		);
+		// We need to react to addition/removal of inputs, so connect to
+		// the childAdded signal on our input array.
+		ArrayPlug *inPlugs = BaseType::template getChild<ArrayPlug>( "in");
+		inPlugs->childAddedSignal().connect( boost::bind( &Switch::childAdded, this, ::_2 ) );
 	}
 	else
 	{
-		// our BaseType doesn't provide an "in" plug - not to worry though, we'll make
-		// our InputGenerator when an "in" plug gets added following construction.
+		// The input array doesn't exist yet, so connect to our own childAdded
+		// signal so that when it's added later, we can make the connection we
+		// would otherwise have made above.
+		BaseType::childAddedSignal().connect( boost::bind( &Switch::childAdded, this, ::_2 ) );
 	}
 
-	BaseType::childAddedSignal().connect( boost::bind( &Switch::childAdded, this, ::_2 ) );
 	BaseType::plugSetSignal().connect( boost::bind( &Switch::plugSet, this, ::_1 ) );
 	BaseType::plugInputChangedSignal().connect( boost::bind( &Switch::plugInputChanged, this, ::_1 ) );
 }
@@ -83,6 +104,52 @@ Switch<BaseType>::Switch( const std::string &name )
 template<typename BaseType>
 Switch<BaseType>::~Switch()
 {
+}
+
+template<typename BaseType>
+void Switch<BaseType>::setup( const Plug *plug )
+{
+	if( BaseType::template getChild<Plug>( "in") )
+	{
+		throw IECore::Exception( "Switch already has an \"in\" plug." );
+	}
+	if( BaseType::template getChild<Plug>( "out" ) )
+	{
+		throw IECore::Exception( "Switch already has an \"out\" plug." );
+	}
+
+	PlugPtr inElement = plug->createCounterpart( "in0", Plug::In );
+	inElement->setFlags( Plug::Dynamic | Plug::Serialisable, true );
+	ArrayPlugPtr in = new ArrayPlug(
+		"in",
+		Plug::In,
+		inElement,
+		0,
+		Imath::limits<size_t>::max(),
+		Plug::Default | Plug::Dynamic
+	);
+	BaseType::addChild( in );
+
+	PlugPtr out = plug->createCounterpart( "out", Plug::Out );
+	out->setFlags( Plug::Dynamic | Plug::Serialisable, true );
+	BaseType::addChild( out );
+}
+
+template<typename BaseType>
+Plug *Switch<BaseType>::activeInPlug()
+{
+	ArrayPlug *inputs = BaseType::template getChild<ArrayPlug>( "in" );
+	if( !inputs )
+	{
+		return NULL;
+	}
+	return inputs->getChild<Plug>( inputIndex( Context::current() ) );
+}
+
+template<typename BaseType>
+const Plug *Switch<BaseType>::activeInPlug() const
+{
+	return const_cast<Switch *>( this )->activeInPlug();
 }
 
 template<typename BaseType>
@@ -127,20 +194,22 @@ void Switch<BaseType>::affects( const Plug *input, DependencyNode::AffectedPlugs
 		input == indexPlug()
 	)
 	{
-		const Plug *out = BaseType::template getChild<Plug>( "out" );
-		if( out->children().size() )
+		if( const Plug *out = BaseType::template getChild<Plug>( "out" ) )
 		{
-			for( RecursiveOutputPlugIterator it( out ); it != it.end(); ++it )
+			if( out->children().size() )
 			{
-				if( !(*it)->children().size() )
+				for( RecursiveOutputPlugIterator it( out ); !it.done(); ++it )
 				{
-					outputs.push_back( it->get() );
+					if( !(*it)->children().size() )
+					{
+						outputs.push_back( it->get() );
+					}
 				}
 			}
-		}
-		else
-		{
-			outputs.push_back( out );
+			else
+			{
+				outputs.push_back( out );
+			}
 		}
 	}
 	else if( input->direction() == Plug::In )
@@ -155,17 +224,26 @@ void Switch<BaseType>::affects( const Plug *input, DependencyNode::AffectedPlugs
 template<typename BaseType>
 void Switch<BaseType>::childAdded( GraphComponent *child )
 {
-	if( child->getName() == "in" )
+	ArrayPlug *inPlugs = BaseType::template getChild<ArrayPlug>( "in" );
+	if( child->parent<Plug>() == inPlugs )
 	{
-		PlugPtr in = IECore::runTimeCast<Plug>( child );
-		if( in && !m_inputGenerator )
-		{
-			m_inputGenerator = boost::shared_ptr<Gaffer::Behaviours::InputGenerator<Plug> >(
-				new Gaffer::Behaviours::InputGenerator<Plug>( this, in )
-			);
-		}
+		// Because inputIndex() wraps on the number of children,
+		// the addition of a new one means we must update.
+		updateInternalConnection();
 	}
-	updateInternalConnection();
+	else if( child == inPlugs )
+	{
+		// Our "in" plug has just been added. Update our internal connection,
+		// and connect up so we can respond when extra inputs are added.
+		updateInternalConnection();
+		inPlugs->childAddedSignal().connect( boost::bind( &Switch::childAdded, this, ::_2 ) );
+	}
+	else if( child == BaseType::template getChild<Plug>( "out" ) )
+	{
+		// Our "out" plug has just been added. Make sure it has
+		// an appropriate internal connection.
+		updateInternalConnection();
+	}
 }
 
 template<typename BaseType>
@@ -228,7 +306,7 @@ template<typename BaseType>
 template<typename T>
 void Switch<BaseType>::hashInternal( const ValuePlug *output, const Context *context, IECore::MurmurHash &h, typename boost::enable_if<boost::is_base_of<ComputeNode, T> >::type *enabler ) const
 {
-	if( const ValuePlug *input = IECore::runTimeCast<const ValuePlug>( oppositePlug( output, inputIndex() ) ) )
+	if( const ValuePlug *input = IECore::runTimeCast<const ValuePlug>( oppositePlug( output, inputIndex( context ) ) ) )
 	{
 		h = input->hash();
 		return;
@@ -256,7 +334,7 @@ template<typename BaseType>
 template<typename T>
 void Switch<BaseType>::computeInternal( ValuePlug *output, const Context *context, typename boost::enable_if<boost::is_base_of<ComputeNode, T> >::type *enabler ) const
 {
-	if( const ValuePlug *input = IECore::runTimeCast<const ValuePlug>( oppositePlug( output, inputIndex() ) ) )
+	if( const ValuePlug *input = IECore::runTimeCast<const ValuePlug>( oppositePlug( output, inputIndex( context ) ) ) )
 	{
 		output->setFrom( input );
 		return;
@@ -291,11 +369,23 @@ void Switch<BaseType>::plugInputChanged( Plug *plug )
 }
 
 template<typename BaseType>
-size_t Switch<BaseType>::inputIndex() const
+size_t Switch<BaseType>::inputIndex( const Context *context ) const
 {
-	if( enabledPlug()->getValue() && m_inputGenerator->inputs().size() > 1 )
+	const ArrayPlug *inPlugs = BaseType::template getChild<ArrayPlug>( "in" );
+	if( enabledPlug()->getValue() && inPlugs && inPlugs->children().size() > 1 )
 	{
-		return indexPlug()->getValue() % (m_inputGenerator->inputs().size() - 1);
+		size_t index = 0;
+		const IntPlug *indexPlug = this->indexPlug();
+		if( variesWithContext( indexPlug ) )
+		{
+			typename SwitchTraits<BaseType>::IndexContext indexContext( context );
+			index = indexPlug->getValue();
+		}
+		else
+		{
+			index = indexPlug->getValue();
+		}
+		return index % (inPlugs->children().size() - 1);
 	}
 	else
 	{
@@ -306,15 +396,22 @@ size_t Switch<BaseType>::inputIndex() const
 template<typename BaseType>
 const Plug *Switch<BaseType>::oppositePlug( const Plug *plug, size_t inputIndex ) const
 {
-	// ancestorPlug will be the parent of plug (or plug itself) immediately under
-	// the node, and names will contain the names of the hierarchy
+	const ArrayPlug *inPlugs = BaseType::template getChild<ArrayPlug>( "in" );
+	const Plug *outPlug = BaseType::template getChild<Plug>( "out" );
+	if( !inPlugs || !outPlug )
+	{
+		return NULL;
+	}
+
+	// Find the ancestorPlug - this is either a child of inPlugs or it
+	// is outPlug. At the same time, fill names with the names of the hierarchy
 	// between plug and ancestorPlug.
 	const Plug *ancestorPlug = NULL;
 	std::vector<IECore::InternedString> names;
 	while( plug )
 	{
 		const GraphComponent *plugParent = plug->parent<GraphComponent>();
-		if( plugParent == this )
+		if( plugParent == inPlugs || plug == outPlug )
 		{
 			ancestorPlug = plug;
 			break;
@@ -331,27 +428,18 @@ const Plug *Switch<BaseType>::oppositePlug( const Plug *plug, size_t inputIndex 
 		return NULL;
 	}
 
-	// now we can find the opposite for this ancestor plug.
+	// Now we can find the opposite for this ancestor plug.
 	const Plug *oppositeAncestorPlug = NULL;
 	if( plug->direction() == Plug::Out )
 	{
-		oppositeAncestorPlug = m_inputGenerator->inputs()[inputIndex].get();
+		oppositeAncestorPlug = inPlugs->getChild<Plug>( inputIndex );
 	}
 	else
 	{
-		static boost::regex inPlugRegex( "^in[0-9]*$" );
-		if( boost::regex_match( ancestorPlug->getName().c_str(), inPlugRegex ) )
-		{
-			oppositeAncestorPlug = BaseType::template getChild<Plug>( "out" );
-		}
+		oppositeAncestorPlug = outPlug;
 	}
 
-	if( !oppositeAncestorPlug )
-	{
-		return NULL;
-	}
-
-	// and then find the opposite of plug by traversing down from the ancestor plug.
+	// And then find the opposite of plug by traversing down from the ancestor plug.
 	const Plug *result = oppositeAncestorPlug;
 	for( std::vector<IECore::InternedString>::const_iterator it = names.begin(), eIt = names.end(); it != eIt; ++it )
 	{

@@ -37,11 +37,14 @@
 
 from __future__ import with_statement
 
+import IECore
+
 import Gaffer
 import GafferUI
 
-QtGui = GafferUI._qtImport( "QtGui" )
-
+## Supported plug metadata :
+#
+# - "boolPlugValueWidget:displayMode", with a value of "checkBox" or "switch"
 class BoolPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, displayMode=GafferUI.BoolWidget.DisplayMode.CheckBox, **kw ) :
@@ -64,11 +67,25 @@ class BoolPlugValueWidget( GafferUI.PlugValueWidget ) :
 	def _updateFromPlug( self ) :
 
 		if self.getPlug() is not None :
-			with self.getContext() :
-				with Gaffer.BlockedConnection( self.__stateChangedConnection ) :
-					self.__boolWidget.setState( self.getPlug().getValue() )
 
-		self.__boolWidget.setEnabled( self._editable() )
+			value = None
+			with self.getContext() :
+				# Since BoolWidget doesn't yet have a way of
+				# displaying errors, we just ignore exceptions
+				# and leave UI components like GraphGadget to
+				# display them via Node.errorSignal().
+				with IECore.IgnoredExceptions( Exception ) :
+					value = self.getPlug().getValue()
+
+			if value is not None :
+				with Gaffer.BlockedConnection( self.__stateChangedConnection ) :
+					self.__boolWidget.setState( value )
+
+			displayMode = Gaffer.Metadata.value( self.getPlug(), "boolPlugValueWidget:displayMode" )
+			if displayMode is not None :
+				self.__boolWidget.setDisplayMode( self.__boolWidget.DisplayMode.Switch if displayMode == "switch" else self.__boolWidget.DisplayMode.CheckBox )
+
+		self.__boolWidget.setEnabled( self._editable( canEditAnimation = True ) )
 
 	def __stateChanged( self, widget ) :
 
@@ -80,6 +97,16 @@ class BoolPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 
-			self.getPlug().setValue( self.__boolWidget.getState() )
+			if Gaffer.Animation.isAnimated( self.getPlug() ) :
+				curve = Gaffer.Animation.acquire( self.getPlug() )
+				curve.addKey(
+					Gaffer.Animation.Key(
+						time = self.getContext().getTime(),
+						value = self.__boolWidget.getState(),
+						type = Gaffer.Animation.Type.Step
+					)
+				)
+			else :
+				self.getPlug().setValue( self.__boolWidget.getState() )
 
 GafferUI.PlugValueWidget.registerType( Gaffer.BoolPlug, BoolPlugValueWidget )

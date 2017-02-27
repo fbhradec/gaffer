@@ -41,11 +41,13 @@ namespace GafferAppleseed
 {
 
 enum TypeId
-{    
+{
 	AppleseedOptionsTypeId = 110451,
 	AppleseedAttributesTypeId = 110452,
 	AppleseedLightTypeId = 110453,
 	InteractiveAppleseedRenderTypeId = 110454,
+	AppleseedShaderAdaptorTypeId = 110455,
+	AppleseedRenderTypeId = 110456,
 
 	LastTypeId = 110500
 };

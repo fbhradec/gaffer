@@ -47,14 +47,42 @@ ArnoldOptions::ArnoldOptions( const std::string &name )
 {
 	Gaffer::CompoundDataPlug *options = optionsPlug();
 
-	// sampling parameters
+	// Rendering parameters
+
+	options->addOptionalMember( "ai:bucket_size", new IECore::IntData( 64 ), "bucketSize", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:bucket_scanning", new IECore::StringData( "spiral" ), "bucketScanning", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:threads", new IECore::IntData( 0 ), "threads", Gaffer::Plug::Default, false );
+
+	// Sampling parameters
 
 	options->addOptionalMember( "ai:AA_samples", new IECore::IntData( 3 ), "aaSamples", Gaffer::Plug::Default, false );
 	options->addOptionalMember( "ai:GI_diffuse_samples", new IECore::IntData( 2 ), "giDiffuseSamples", Gaffer::Plug::Default, false );
 	options->addOptionalMember( "ai:GI_glossy_samples", new IECore::IntData( 2 ), "giGlossySamples", Gaffer::Plug::Default, false );
 	options->addOptionalMember( "ai:GI_refraction_samples", new IECore::IntData( 2 ), "giRefractionSamples", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:GI_sss_samples", new IECore::IntData( 2 ), "giSSSSamples", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:GI_volume_samples", new IECore::IntData( 2 ), "giVolumeSamples", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:AA_seed", new IECore::IntData( 1 ), "aaSeed", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:AA_sample_clamp", new IECore::FloatData( 10 ), "aaSampleClamp", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:AA_sample_clamp_affects_aovs", new IECore::BoolData( false ), "aaSampleClampAffectsAOVs", Gaffer::Plug::Default, false );
 
-	// ignore parameters
+	// Ray depth parameters
+
+	options->addOptionalMember( "ai:GI_total_depth", new IECore::IntData( 10 ), "giTotalDepth", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:GI_diffuse_depth", new IECore::IntData( 2 ), "giDiffuseDepth", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:GI_glossy_depth", new IECore::IntData( 2 ), "giGlossyDepth", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:GI_reflection_depth", new IECore::IntData( 2 ), "giReflectionDepth", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:GI_refraction_depth", new IECore::IntData( 2 ), "giRefractionDepth", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:GI_volume_depth", new IECore::IntData( 0 ), "giVolumeDepth", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:auto_transparency_depth", new IECore::IntData( 10 ), "autoTransparencyDepth", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:auto_transparency_threshold", new IECore::FloatData( 0.99 ), "autoTransparencyThreshold", Gaffer::Plug::Default, false );
+
+	// Texturing parameters
+
+	options->addOptionalMember( "ai:texture_max_memory_MB", new IECore::FloatData( 2048 ), "textureMaxMemoryMB", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:texture_per_file_stats", new IECore::BoolData( false ), "texturePerFileStats", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:texture_max_sharpen", new IECore::FloatData( 1.5 ), "textureMaxSharpen", Gaffer::Plug::Default, false );
+
+	// Ignore parameters
 
 	options->addOptionalMember( "ai:ignore_textures", new IECore::BoolData( false ), "ignoreTextures", Gaffer::Plug::Default, false );
 	options->addOptionalMember( "ai:ignore_shaders", new IECore::BoolData( false ), "ignoreShaders", Gaffer::Plug::Default, false );
@@ -67,18 +95,55 @@ ArnoldOptions::ArnoldOptions( const std::string &name )
 	options->addOptionalMember( "ai:ignore_motion_blur", new IECore::BoolData( false ), "ignoreMotionBlur", Gaffer::Plug::Default, false );
 	options->addOptionalMember( "ai:ignore_sss", new IECore::BoolData( false ), "ignoreSSS", Gaffer::Plug::Default, false );
 
-	// searchpath parameters
+	// Searchpath parameters
 
 	options->addOptionalMember( "ai:texture_searchpath", new IECore::StringData( "" ), "textureSearchPath", Gaffer::Plug::Default, false );
 	options->addOptionalMember( "ai:procedural_searchpath", new IECore::StringData( "" ), "proceduralSearchPath", Gaffer::Plug::Default, false );
 	options->addOptionalMember( "ai:shader_searchpath", new IECore::StringData( "" ), "shaderSearchPath", Gaffer::Plug::Default, false );
 
-	// error colours
+	// Error colours
 
 	options->addOptionalMember( "ai:error_color_bad_texture", new IECore::Color3fData( Color3f( 1, 0, 0 ) ), "errorColorBadTexture", Gaffer::Plug::Default, false );
-	options->addOptionalMember( "ai:error_color_bad_mesh", new IECore::Color3fData( Color3f( 0, 1, 0 ) ), "errorColorBadMesh", Gaffer::Plug::Default, false );
 	options->addOptionalMember( "ai:error_color_bad_pixel", new IECore::Color3fData( Color3f( 0, 0, 1 ) ), "errorColorBadPixel", Gaffer::Plug::Default, false );
 	options->addOptionalMember( "ai:error_color_bad_shader", new IECore::Color3fData( Color3f( 1, 0, 1 ) ), "errorColorBadShader", Gaffer::Plug::Default, false );
+
+	// Logging
+
+	options->addOptionalMember( "ai:log:filename", new IECore::StringData( "" ), "logFileName", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:max_warnings", new IECore::IntData( 100 ), "logMaxWarnings", Gaffer::Plug::Default, false );
+
+	options->addOptionalMember( "ai:log:info", new IECore::BoolData( true ), "logInfo", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:warnings", new IECore::BoolData( true ), "logWarnings", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:errors", new IECore::BoolData( true ), "logErrors", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:debug", new IECore::BoolData( true ), "logDebug", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:ass_parse", new IECore::BoolData( true ), "logAssParse", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:plugins", new IECore::BoolData( true ), "logPlugins", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:progress", new IECore::BoolData( true ), "logProgress", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:nan", new IECore::BoolData( true ), "logNAN", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:timestamp", new IECore::BoolData( true ), "logTimestamp", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:stats", new IECore::BoolData( true ), "logStats", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:backtrace", new IECore::BoolData( true ), "logBacktrace", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:memory", new IECore::BoolData( true ), "logMemory", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:log:color", new IECore::BoolData( true ), "logColor", Gaffer::Plug::Default, false );
+
+	options->addOptionalMember( "ai:console:info", new IECore::BoolData( false ), "consoleInfo", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:warnings", new IECore::BoolData( true ), "consoleWarnings", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:errors", new IECore::BoolData( true ), "consoleErrors", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:debug", new IECore::BoolData( false ), "consoleDebug", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:ass_parse", new IECore::BoolData( false ), "consoleAssParse", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:plugins", new IECore::BoolData( false ), "consolePlugins", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:progress", new IECore::BoolData( false ), "consoleProgress", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:nan", new IECore::BoolData( false ), "consoleNAN", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:timestamp", new IECore::BoolData( true ), "consoleTimestamp", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:stats", new IECore::BoolData( false ), "consoleStats", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:backtrace", new IECore::BoolData( true ), "consoleBacktrace", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:memory", new IECore::BoolData( true ), "consoleMemory", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:console:color", new IECore::BoolData( true ), "consoleColor", Gaffer::Plug::Default, false );
+
+	// Licensing
+
+	options->addOptionalMember( "ai:abort_on_license_fail", new IECore::BoolData( false ), "abortOnLicenseFail", Gaffer::Plug::Default, false );
+	options->addOptionalMember( "ai:skip_license_check", new IECore::BoolData( false ), "skipLicenseCheck", Gaffer::Plug::Default, false );
 
 }
 

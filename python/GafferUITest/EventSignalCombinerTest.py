@@ -60,9 +60,10 @@ class EventSignalCombinerTest( GafferUITest.TestCase ) :
 
 		self.exceptionSlotCalled = True
 		raise Exception( "oops" )
-		return False
 
 	def setUp( self ) :
+
+		GafferUITest.TestCase.setUp( self )
 
 		self.falseSlotCalled = False
 		self.trueSlotCalled = False
@@ -122,4 +123,3 @@ class EventSignalCombinerTest( GafferUITest.TestCase ) :
 
 if __name__ == "__main__":
 	unittest.main()
-

@@ -41,13 +41,18 @@
 #include "IECore/Camera.h"
 #include "IECore/WorldBlock.h"
 #include "IECore/Light.h"
+#include "IECore/Shader.h"
 #include "IECore/AttributeBlock.h"
 #include "IECore/Display.h"
 #include "IECore/TransformBlock.h"
 #include "IECore/CoordinateSystem.h"
 #include "IECore/ClippingPlane.h"
+#include "IECore/VisibleRenderable.h"
+#include "IECore/Primitive.h"
+#include "IECore/MotionBlock.h"
 
 #include "Gaffer/Context.h"
+#include "Gaffer/Metadata.h"
 
 #include "GafferScene/RendererAlgo.h"
 #include "GafferScene/SceneProcedural.h"
@@ -59,7 +64,31 @@ using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
 
+//////////////////////////////////////////////////////////////////////////
+// Internal utilities
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+void motionTimes( size_t segments, const V2f &shutter, std::set<float> &times )
+{
+	for( size_t i = 0; i<segments + 1; ++i )
+	{
+		times.insert( lerp( shutter[0], shutter[1], (float)i / (float)segments ) );
+	}
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// RendererAlgo implementation
+//////////////////////////////////////////////////////////////////////////
+
 namespace GafferScene
+{
+
+namespace RendererAlgo
 {
 
 void outputScene( const ScenePlug *scene, IECore::Renderer *renderer )
@@ -113,9 +142,13 @@ void outputOptions( const IECore::CompoundObject *globals, IECore::Renderer *ren
 		{
 			renderer->setOption( it->first.c_str() + 7, d );
 		}
+		else if( const PreWorldRenderable *r = runTimeCast<PreWorldRenderable>( it->second.get() ) )
+		{
+			r->render( renderer );
+		}
 		else
 		{
-			throw IECore::Exception( "Global \"" + it->first.string() + "\" is not IECore::Data" );
+			throw IECore::Exception( "Global \"" + it->first.string() + "\" is not IECore::Data or an IECore::PreWorldRenderable" );
 		}
 	}
 }
@@ -149,13 +182,13 @@ void outputCameras( const ScenePlug *scene, const IECore::CompoundObject *global
 
 void outputCamera( const ScenePlug *scene, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
 {
-	IECore::CameraPtr camera = GafferScene::camera( scene, globals );
+	IECore::CameraPtr camera = SceneAlgo::camera( scene, globals );
 	camera->render( renderer );
 }
 
 void outputCamera( const ScenePlug *scene, const ScenePlug::ScenePath &cameraPath, const IECore::CompoundObject *globals, IECore::Renderer *renderer )
 {
-	IECore::CameraPtr camera = GafferScene::camera( scene, cameraPath, globals );
+	IECore::CameraPtr camera = SceneAlgo::camera( scene, cameraPath, globals );
 	camera->render( renderer );
 }
 
@@ -192,13 +225,7 @@ void outputLights( const ScenePlug *scene, const IECore::CompoundObject *globals
 
 bool outputLight( const ScenePlug *scene, const ScenePlug::ScenePath &path, IECore::Renderer *renderer )
 {
-	IECore::ConstLightPtr constLight = runTimeCast<const IECore::Light>( scene->object( path ) );
-	if( !constLight )
-	{
-		return false;
-	}
-
-	if( !visible( scene, path ) )
+	if( !SceneAlgo::visible( scene, path ) )
 	{
 		/// \todo Since both visible() and fullAttributes() perform similar work,
 		/// we may want to combine them into one query if we see this function
@@ -210,24 +237,108 @@ bool outputLight( const ScenePlug *scene, const ScenePlug::ScenePath &path, IECo
 	}
 
 	ConstCompoundObjectPtr attributes = scene->fullAttributes( path );
+	ConstObjectPtr object = scene->object( path );
 	const M44f transform = scene->fullTransform( path );
 
 	std::string lightHandle;
 	ScenePlug::pathToString( path, lightHandle );
-
-	LightPtr light = constLight->copy();
-	light->setHandle( lightHandle );
 
 	{
 		AttributeBlock attributeBlock( renderer );
 
 		renderer->setAttribute( "name", new StringData( lightHandle ) );
 		outputAttributes( attributes.get(), renderer );
-
 		renderer->concatTransform( transform );
 
-		light->render( renderer );
+
+		/// \todo Outputting a light object is now optional
+		/// We are currently setting up lights like shaders, as attributes instead of objects
+		/// Support for light objects is just for backwards compatibility with old light rig sccs,
+		/// and can be removed in the future.
+		IECore::ConstLightPtr lightObject = runTimeCast<const IECore::Light>( scene->object( path ) );
+		if( lightObject )
+		{
+			LightPtr light = lightObject->copy();
+			light->setHandle( lightHandle );
+			light->render( renderer );
+		}
+
+
+		for( IECore::CompoundObject::ObjectMap::const_iterator it = attributes->members().begin();
+			it != attributes->members().end(); it++ )
+		{
+			if( boost::ends_with( it->first.string(), ":light"  ) || it->first.string() == "light" )
+			{
+				const IECore::ObjectVector *lightShaders = runTimeCast<const IECore::ObjectVector>( it->second.get() );
+				if( !lightShaders || lightShaders->members().empty() )
+				{
+					continue;
+				}
+
+				LightPtr light;
+				if( const Light *constLight = runTimeCast<const Light >( lightShaders->members().back().get() ) )
+				{
+					light = constLight->copy();
+				}
+				else if( const Shader *constShader = runTimeCast<const Shader >( lightShaders->members().back().get() ) )
+				{
+					// In the past Gaffer used IECore::Light to represent lights, but has moved
+					// to simply using IECore::Shader now that lights are just shaders assigned
+					// to a location. The new renderer backends implemented in IECoreScene::Preview
+					// make no use of IECore::Light at all, but here in the legacy backend it's
+					// still easier to convert the shader back to the old IECore::Light form rather
+					// than rewrite the output code.
+					light = new Light( constShader->getName(), "", constShader->parameters() );
+				}
+
+				if( !light )
+				{
+					continue;
+				}
+
+				bool areaLight = false;
+				const BoolData *areaLightParm = light->parametersData()->member<BoolData>( "__areaLight" );
+				if( areaLightParm )
+				{
+					areaLight = areaLightParm->readable();
+				}
+
+				/// If this is a non-areaLight which could have orientation metadata,
+				/// add an extra attribute block to contain it
+				AttributeBlock attributeBlock( renderer, !areaLight );
+
+				if( !areaLight )
+				{
+					InternedString metadataTarget = "light:" + light->getName();
+					ConstM44fDataPtr orientation = Metadata::value<M44fData>( metadataTarget, "renderOrientation" );
+
+					if( orientation )
+					{
+						renderer->concatTransform( orientation->readable() );
+					}
+				}
+
+				for( unsigned int i = 0; i < lightShaders->members().size() - 1; i++ )
+				{
+					IECore::ConstStateRenderablePtr shader = runTimeCast< const IECore::StateRenderable >( lightShaders->members()[i] );
+					if( shader )
+					{
+						shader->render( renderer );
+					}
+				}
+
+				light->setHandle( lightHandle );
+
+				light->render( renderer );
+			}
+		}
+
+		if( const VisibleRenderable* renderable = runTimeCast< const VisibleRenderable >( object.get() ) )
+		{
+			renderable->render( renderer );
+		}
 	}
+
 
 	renderer->illuminate( lightHandle, true );
 
@@ -253,7 +364,7 @@ bool outputCoordinateSystem( const ScenePlug *scene, const ScenePlug::ScenePath 
 		return false;
 	}
 
-	if( !visible( scene, path ) )
+	if( !SceneAlgo::visible( scene, path ) )
 	{
 		return false;
 	}
@@ -294,7 +405,7 @@ bool outputClippingPlane( const ScenePlug *scene, const ScenePlug::ScenePath &pa
 		return false;
 	}
 
-	if( !visible( scene, path ) )
+	if( !SceneAlgo::visible( scene, path ) )
 	{
 		return false;
 	}
@@ -327,8 +438,25 @@ void createDisplayDirectories( const IECore::CompoundObject *globals )
 
 void outputAttributes( const IECore::CompoundObject *attributes, IECore::Renderer *renderer )
 {
+	// Output attributes before other state
+	// This covers a special case in 3delight:  when reading attributes in the construct() of a shader, they will only be visible
+	// if they are declared before the shader
 	for( CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; it++ )
 	{
+		if( const Data *d = runTimeCast<const Data>( it->second.get() ) )
+		{
+			renderer->setAttribute( it->first, d );
+		}
+	}
+
+	for( CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; it++ )
+	{
+		if( boost::ends_with( it->first.c_str(), ":light" ) || it->first == "light" )
+		{
+			// Currently lights are output in separate prepass
+			continue;
+		}
+
 		if( const StateRenderable *s = runTimeCast<const StateRenderable>( it->second.get() ) )
 		{
 			s->render( renderer );
@@ -344,11 +472,137 @@ void outputAttributes( const IECore::CompoundObject *attributes, IECore::Rendere
 				}
 			}
 		}
-		else if( const Data *d = runTimeCast<const Data>( it->second.get() ) )
-		{
-			renderer->setAttribute( it->first, d );
-		}
 	}
 }
+
+void transformSamples( const ScenePlug *scene, size_t segments, const Imath::V2f &shutter, std::vector<Imath::M44f> &samples, std::set<float> &sampleTimes )
+{
+	// Static case
+
+	if( !segments )
+	{
+		samples.push_back( scene->transformPlug()->getValue() );
+		return;
+	}
+
+	// Motion case
+
+	motionTimes( segments, shutter, sampleTimes );
+
+	ContextPtr timeContext = new Context( *Context::current(), Context::Borrowed );
+	Context::Scope scopedTimeContext( timeContext.get() );
+
+	bool moving = false;
+	samples.reserve( sampleTimes.size() );
+	for( std::set<float>::const_iterator it = sampleTimes.begin(), eIt = sampleTimes.end(); it != eIt; ++it )
+	{
+		timeContext->setFrame( *it );
+		const M44f m = scene->transformPlug()->getValue();
+		if( !moving && !samples.empty() && m != samples.front() )
+		{
+			moving = true;
+		}
+		samples.push_back( m );
+	}
+
+	if( !moving )
+	{
+		samples.resize( 1 );
+		sampleTimes.clear();
+	}
+}
+
+void outputTransform( const ScenePlug *scene, IECore::Renderer *renderer, size_t segments, const Imath::V2f &shutter )
+{
+	vector<M44f> samples;
+	set<float> sampleTimes;
+	transformSamples( scene, segments, shutter, samples, sampleTimes );
+
+	MotionBlock motionBlock( renderer, sampleTimes );
+	for( vector<M44f>::const_iterator it = samples.begin(), eIt = samples.end(); it != eIt; ++it )
+	{
+		renderer->concatTransform( *it );
+	}
+}
+
+void objectSamples( const ScenePlug *scene, size_t segments, const Imath::V2f &shutter, std::vector<IECore::ConstVisibleRenderablePtr> &samples, std::set<float> &sampleTimes )
+{
+
+	// Static case
+
+	if( !segments )
+	{
+		ConstObjectPtr object = scene->objectPlug()->getValue();
+		if( const VisibleRenderable *renderable = runTimeCast<const VisibleRenderable>( object.get() ) )
+		{
+			samples.push_back( renderable );
+		}
+		return;
+	}
+
+	// Motion case
+
+	motionTimes( segments, shutter, sampleTimes );
+
+	ContextPtr timeContext = new Context( *Context::current(), Context::Borrowed );
+	Context::Scope scopedTimeContext( timeContext.get() );
+
+	bool moving = false;
+	MurmurHash lastHash;
+	samples.reserve( sampleTimes.size() );
+	for( std::set<float>::const_iterator it = sampleTimes.begin(), eIt = sampleTimes.end(); it != eIt; ++it )
+	{
+		timeContext->setFrame( *it );
+
+		const MurmurHash objectHash = scene->objectPlug()->hash();
+		ConstObjectPtr object = scene->objectPlug()->getValue( &objectHash );
+
+		if( const Primitive *primitive = runTimeCast<const Primitive>( object.get() ) )
+		{
+			// We can support multiple samples for these, so check to see
+			// if we actually have something moving.
+			if( !moving && !samples.empty() && objectHash != lastHash )
+			{
+				moving = true;
+			}
+			samples.push_back( primitive );
+			lastHash = objectHash;
+		}
+		else if( const VisibleRenderable *renderable = runTimeCast< const VisibleRenderable >( object.get() ) )
+		{
+			// We can't motion blur these chappies, so just take the one
+			// sample.
+			samples.push_back( renderable );
+			break;
+		}
+		else
+		{
+			// We don't even know what these chappies are, so
+			// don't take any samples at all.
+			break;
+		}
+	}
+
+	if( !moving )
+	{
+		samples.resize( std::min<size_t>( samples.size(), 1 ) );
+		sampleTimes.clear();
+	}
+}
+
+void outputObject( const ScenePlug *scene, IECore::Renderer *renderer, size_t segments, const Imath::V2f &shutter )
+{
+	vector<ConstVisibleRenderablePtr> samples;
+	set<float> sampleTimes;
+	objectSamples( scene, segments, shutter, samples, sampleTimes );
+
+	MotionBlock motionBlock( renderer, sampleTimes );
+	for( vector<ConstVisibleRenderablePtr>::const_iterator it = samples.begin(), eIt = samples.end(); it != eIt; ++it )
+	{
+		(*it)->render( renderer );
+	}
+}
+
+} // namespace RendererAlgo
 
 } // namespace GafferScene

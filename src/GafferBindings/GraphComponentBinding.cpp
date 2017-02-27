@@ -36,6 +36,9 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/python.hpp"
+#include "boost/format.hpp"
+
+#include "IECorePython/ScopedGILRelease.h"
 
 #include "Gaffer/GraphComponent.h"
 
@@ -47,17 +50,20 @@ using namespace boost::python;
 using namespace GafferBindings;
 using namespace Gaffer;
 
-static const char *setName( GraphComponent &c, const char *name )
+namespace
+{
+
+const char *setName( GraphComponent &c, const char *name )
 {
 	return c.setName( name ).c_str();
 }
 
-static const char *getName( GraphComponent &c )
+const char *getName( GraphComponent &c )
 {
 	return c.getName().c_str();
 }
 
-static boost::python::list items( GraphComponent &c )
+boost::python::list items( GraphComponent &c )
 {
 	const GraphComponent::ChildContainer &ch = c.children();
 	boost::python::list l;
@@ -68,7 +74,7 @@ static boost::python::list items( GraphComponent &c )
 	return l;
 }
 
-static boost::python::list keys( GraphComponent &c )
+boost::python::list keys( GraphComponent &c )
 {
 	const GraphComponent::ChildContainer &ch = c.children();
 	boost::python::list l;
@@ -79,7 +85,7 @@ static boost::python::list keys( GraphComponent &c )
 	return l;
 }
 
-static boost::python::list values( GraphComponent &c )
+boost::python::list values( GraphComponent &c )
 {
 	const GraphComponent::ChildContainer &ch = c.children();
 	boost::python::list l;
@@ -90,7 +96,7 @@ static boost::python::list values( GraphComponent &c )
 	return l;
 }
 
-static boost::python::tuple children( GraphComponent &c, IECore::TypeId typeId )
+boost::python::tuple children( GraphComponent &c, IECore::TypeId typeId )
 {
 	const GraphComponent::ChildContainer &ch = c.children();
 	boost::python::list l;
@@ -104,17 +110,44 @@ static boost::python::tuple children( GraphComponent &c, IECore::TypeId typeId )
 	return boost::python::tuple( l );
 }
 
-static GraphComponentPtr getChild( GraphComponent &g, const char *n )
+void addChild( GraphComponent &g, GraphComponentPtr c )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	g.addChild( c );
+}
+
+void setChild( GraphComponent &g, const IECore::InternedString &n, GraphComponentPtr c )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	g.setChild( n, c );
+}
+
+void removeChild( GraphComponent &g, GraphComponentPtr c )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	g.removeChild( c );
+}
+
+GraphComponentPtr getChild( GraphComponent &g, const char *n )
 {
 	return g.getChild<GraphComponent>( n );
 }
 
-static GraphComponentPtr descendant( GraphComponent &g, const char *n )
+GraphComponentPtr descendant( GraphComponent &g, const char *n )
 {
 	return g.descendant<GraphComponent>( n );
 }
 
-static GraphComponentPtr getItem( GraphComponent &g, const char *n )
+void throwKeyError( const GraphComponent &g, const char *n )
+{
+	const std::string error = boost::str(
+		boost::format( "'%s' is not a child of '%s'" ) % n % g.getName()
+	);
+	PyErr_SetString( PyExc_KeyError, error.c_str() );
+	throw_error_already_set();
+}
+
+GraphComponentPtr getItem( GraphComponent &g, const char *n )
 {
 	GraphComponentPtr c = g.getChild<GraphComponent>( n );
 	if( c )
@@ -122,12 +155,11 @@ static GraphComponentPtr getItem( GraphComponent &g, const char *n )
 		return c;
 	}
 
-	PyErr_SetString( PyExc_KeyError, n );
-	throw_error_already_set();
+	throwKeyError( g, n );
 	return 0; // shouldn't get here
 }
 
-static GraphComponentPtr getItem( GraphComponent &g, long index )
+GraphComponentPtr getItem( GraphComponent &g, long index )
 {
 	long s = g.children().size();
 
@@ -145,50 +177,51 @@ static GraphComponentPtr getItem( GraphComponent &g, long index )
 	return g.getChild<GraphComponent>( index );
 }
 
-static void delItem( GraphComponent &g, const char *n )
+void delItem( GraphComponent &g, const char *n )
 {
-	GraphComponentPtr c = g.getChild<GraphComponent>( n );
-	if( c )
 	{
-		g.removeChild( c );
-		return;
+		IECorePython::ScopedGILRelease gilRelease;
+		if( GraphComponentPtr c = g.getChild<GraphComponent>( n ) )
+		{
+			g.removeChild( c );
+			return;
+		}
 	}
 
-	PyErr_SetString( PyExc_KeyError, n );
-	throw_error_already_set();
+	throwKeyError( g, n );
 }
 
-static int length( GraphComponent &g )
+int length( GraphComponent &g )
 {
 	return g.children().size();
 }
 
-static bool nonZero( GraphComponent &g )
+bool nonZero( GraphComponent &g )
 {
 	return true;
 }
 
-static bool contains( GraphComponent &g, const char *n )
+bool contains( GraphComponent &g, const char *n )
 {
 	return g.getChild<GraphComponent>( n );
 }
 
-static GraphComponentPtr parent( GraphComponent &g )
+GraphComponentPtr parent( GraphComponent &g )
 {
 	return g.parent<GraphComponent>();
 }
 
-static GraphComponentPtr ancestor( GraphComponent &g, IECore::TypeId t )
+GraphComponentPtr ancestor( GraphComponent &g, IECore::TypeId t )
 {
 	return g.ancestor( t );
 }
 
-static GraphComponentPtr commonAncestor( GraphComponent &g, const GraphComponent *other, IECore::TypeId t )
+GraphComponentPtr commonAncestor( GraphComponent &g, const GraphComponent *other, IECore::TypeId t )
 {
 	return g.commonAncestor( other, t );
 }
 
-static std::string repr( const GraphComponent *g )
+std::string repr( const GraphComponent *g )
 {
 	return Serialisation::classPath( g ) + "( \"" + g->getName().string() + "\" )";
 }
@@ -226,6 +259,8 @@ struct BinarySlotCaller
 	}
 };
 
+} // namespace
+
 void GafferBindings::bindGraphComponent()
 {
 	typedef GraphComponentWrapper<GraphComponent> Wrapper;
@@ -238,15 +273,15 @@ void GafferBindings::bindGraphComponent()
 		.def( "fullName", &GraphComponent::fullName )
 		.def( "relativeName", &GraphComponent::relativeName )
 		.def( "nameChangedSignal", &GraphComponent::nameChangedSignal, return_internal_reference<1>() )
-		.def( "addChild", &GraphComponent::addChild )
-		.def( "removeChild", &GraphComponent::removeChild )
+		.def( "addChild", &addChild )
+		.def( "removeChild", &removeChild )
 		.def( "clearChildren", &GraphComponent::clearChildren )
-		.def( "setChild", &GraphComponent::setChild )
+		.def( "setChild", &setChild )
 		.def( "getChild", &getChild )
 		.def( "descendant", &descendant )
 		.def( "__getitem__", (GraphComponentPtr (*)( GraphComponent &, const char * ))&getItem )
 		.def( "__getitem__", (GraphComponentPtr (*)( GraphComponent &, long ))&getItem )
-		.def( "__setitem__", &GraphComponent::setChild )
+		.def( "__setitem__", &setChild )
 		.def( "__delitem__", delItem )
 		.def( "__contains__", contains )
 		.def( "__len__", &length )

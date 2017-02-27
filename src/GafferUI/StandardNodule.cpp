@@ -46,12 +46,14 @@
 #include "Gaffer/UndoContext.h"
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/Metadata.h"
+#include "Gaffer/MetadataAlgo.h"
 
 #include "GafferUI/StandardNodule.h"
 #include "GafferUI/Style.h"
 #include "GafferUI/ConnectionGadget.h"
 #include "GafferUI/NodeGadget.h"
 #include "GafferUI/Pointer.h"
+#include "GafferUI/PlugAdder.h"
 
 using namespace std;
 using namespace Imath;
@@ -63,6 +65,7 @@ IE_CORE_DEFINERUNTIMETYPED( StandardNodule );
 Nodule::NoduleTypeDescription<StandardNodule> StandardNodule::g_noduleTypeDescription( Gaffer::Plug::staticTypeId() );
 
 static IECore::InternedString g_colorKey( "nodule:color" );
+static IECore::InternedString g_labelKey( "noduleLayout:label" );
 
 StandardNodule::StandardNodule( Gaffer::PlugPtr plug )
 	:	Nodule( plug ), m_labelVisible( false ), m_draggingConnection( false )
@@ -155,7 +158,16 @@ void StandardNodule::renderLabel( const Style *style ) const
 		return;
 	}
 
-	const std::string &label = plug()->getName().string();
+	const std::string *label = NULL;
+	IECore::ConstStringDataPtr labelData = Metadata::value<IECore::StringData>( plug(), g_labelKey );
+	if( labelData )
+	{
+		label = &labelData->readable();
+	}
+	else
+	{
+		label = &plug()->getName().string();
+	}
 
 	// we rotate the label based on the angle the connection exits the node at.
 	V3f tangent = nodeGadget->noduleTangent( this );
@@ -174,7 +186,7 @@ void StandardNodule::renderLabel( const Style *style ) const
 
 	// we also don't want the text to be upside down, so we correct the rotation
 	// if that would be the case.
-	Box3f labelBound = style->textBound( Style::LabelText, label );
+	Box3f labelBound = style->textBound( Style::LabelText, *label );
 	V2f anchor( labelBound.min.x - 1.0f, labelBound.center().y );
 
 	if( theta > 90.0f || theta < -90.0f )
@@ -193,7 +205,7 @@ void StandardNodule::renderLabel( const Style *style ) const
 	glRotatef( theta, 0, 0, 1.0f );
 	glTranslatef( -anchor.x, -anchor.y, 0.0f );
 
-	style->renderText( Style::LabelText, label );
+	style->renderText( Style::LabelText, *label );
 }
 
 void StandardNodule::enter( GadgetPtr gadget, const ButtonEvent &event )
@@ -230,6 +242,11 @@ IECore::RunTimeTypedPtr StandardNodule::dragBegin( GadgetPtr gadget, const Butto
 
 bool StandardNodule::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 {
+	if( MetadataAlgo::readOnly( plug() ) )
+	{
+		return false;
+	}
+
 	if( event.buttons != DragDropEvent::Left )
 	{
 		// we only accept drags with the left button, so as to
@@ -246,9 +263,21 @@ bool StandardNodule::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 		return true;
 	}
 
-	Gaffer::PlugPtr input, output;
-	connection( event, input, output );
-	if( input )
+	bool accept = false;
+	if( IECore::runTimeCast<Plug>( event.data ) )
+	{
+		Gaffer::PlugPtr input, output;
+		connection( event, input, output );
+		accept = static_cast<bool>( input );
+	}
+	else if( const PlugAdder *plugAdder = IECore::runTimeCast<PlugAdder>( event.sourceGadget.get() ) )
+	{
+		// We must accept the drag so that the PlugAdder gets
+		// a chance to do its thing.
+		accept = plugAdder->acceptsPlug( plug() );
+	}
+
+	if( accept )
 	{
 		setHighlighted( true );
 
@@ -271,6 +300,10 @@ bool StandardNodule::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 		{
 			sourceConnection->updateDragEndPoint( centre, tangent );
 		}
+		else if( PlugAdder *plugAdder = IECore::runTimeCast<PlugAdder>( event.sourceGadget.get() ) )
+		{
+			plugAdder->updateDragEndPoint( centre, tangent );
+		}
 
 		// show the labels of all compatible nodules on this node, if it doesn't
 		// look like the previous drag destination would have done so.
@@ -281,10 +314,9 @@ bool StandardNodule::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 		}
 
  		requestRender();
-		return true;
 	}
 
-	return false;
+	return accept;
 }
 
 bool StandardNodule::dragMove( GadgetPtr gadget, const DragDropEvent &event )
@@ -341,6 +373,12 @@ bool StandardNodule::drop( GadgetPtr gadget, const DragDropEvent &event )
 {
 	setHighlighted( false );
 	setCompatibleLabelsVisible( event, false );
+
+	if( PlugAdder *plugAdder = IECore::runTimeCast<PlugAdder>( event.sourceGadget.get() ) )
+	{
+		plugAdder->addPlug( plug() );
+		return true;
+	}
 
 	Gaffer::PlugPtr input, output;
 	connection( event, input, output );
@@ -409,44 +447,53 @@ void StandardNodule::setCompatibleLabelsVisible( const DragDropEvent &event, boo
 		return;
 	}
 
-	for( RecursiveStandardNoduleIterator it( nodeGadget ); it != it.end(); ++it )
+	for( RecursiveStandardNoduleIterator it( nodeGadget ); !it.done(); ++it )
 	{
-		Gaffer::PlugPtr input, output;
-		(*it)->connection( event, input, output );
-		if( input && output )
+		bool compatible = false;
+		if( IECore::runTimeCast<PlugAdder>( event.sourceGadget.get() ) )
+		{
+			compatible = true;
+		}
+		else
+		{
+			Gaffer::PlugPtr input, output;
+			(*it)->connection( event, input, output );
+			compatible = input && output;
+		}
+		if( compatible )
 		{
 			(*it)->setLabelVisible( visible );
 		}
 	}
 }
 
-void StandardNodule::plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
+void StandardNodule::plugMetadataChanged( IECore::TypeId nodeTypeId, const Gaffer::StringAlgo::MatchPattern &plugPath, IECore::InternedString key, const Gaffer::Plug *plug )
 {
-	if( plug && plug != this->plug() )
+	if( !MetadataAlgo::affectedByChange( this->plug(), nodeTypeId, plugPath, plug ) )
 	{
 		return;
 	}
 
-	const Node *node = this->plug()->node();
-	if(
-		key != g_colorKey ||
-		!node->isInstanceOf( nodeTypeId ) ||
-		!match( this->plug()->relativeName( node ), plugPath )
-	)
+	if( key == g_colorKey )
 	{
-		return;
+		if( updateUserColor() )
+		{
+			requestRender();
+		}
 	}
-
-	if( updateUserColor() )
+	else if( key == g_labelKey )
 	{
- 		requestRender();
+		if( m_labelVisible )
+		{
+			requestRender();
+		}
 	}
 }
 
 bool StandardNodule::updateUserColor()
 {
 	boost::optional<Color3f> c;
-	if( IECore::ConstColor3fDataPtr d = Metadata::plugValue<IECore::Color3fData>( plug(), g_colorKey ) )
+	if( IECore::ConstColor3fDataPtr d = Metadata::value<IECore::Color3fData>( plug(), g_colorKey ) )
 	{
 		c = d->readable();
 	}

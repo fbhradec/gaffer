@@ -35,17 +35,10 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/bind/placeholders.hpp"
+#include "Gaffer/Plug.h"
 
-#include "IECore/SimpleTypedData.h"
-
-#include "Gaffer/CompoundPlug.h"
-#include "Gaffer/PlugIterator.h"
-#include "Gaffer/Metadata.h"
-
+#include "GafferUI/NoduleLayout.h"
 #include "GafferUI/CompoundNodule.h"
-#include "GafferUI/LinearContainer.h"
 
 using namespace std;
 using namespace Imath;
@@ -57,73 +50,15 @@ IE_CORE_DEFINERUNTIMETYPED( CompoundNodule );
 
 Nodule::NoduleTypeDescription<CompoundNodule> CompoundNodule::g_noduleTypeDescription;
 
-static IECore::InternedString g_orientationKey( "compoundNodule:orientation"  );
-static IECore::InternedString g_spacingKey( "compoundNodule:spacing"  );
-static IECore::InternedString g_directionKey( "compoundNodule:direction"  );
-
 CompoundNodule::CompoundNodule( Gaffer::PlugPtr plug, LinearContainer::Orientation orientation,
 	float spacing, LinearContainer::Direction direction )
 	:	Nodule( plug )
 {
-	if( ConstStringDataPtr orientationData = Metadata::plugValue<StringData>( plug.get(), g_orientationKey ) )
-	{
-		if( orientationData->readable() == "x" )
-		{
-			orientation = LinearContainer::X;
-		}
-		else if( orientationData->readable() == "y" )
-		{
-			orientation = LinearContainer::Y;
-		}
-		else
-		{
-			orientation = LinearContainer::Z;
-		}
-	}
-
-	if( ConstFloatDataPtr spacingData = Metadata::plugValue<FloatData>( plug.get(), g_spacingKey ) )
-	{
-		spacing = spacingData->readable();
-	}
-
-	if( ConstStringDataPtr directionData = Metadata::plugValue<StringData>( plug.get(), g_directionKey ) )
-	{
-		direction = directionData->readable() == "increasing" ? LinearContainer::Increasing : LinearContainer::Decreasing;
-	}
-
-	if( direction == LinearContainer::InvalidDirection )
-	{
-		direction = orientation == LinearContainer::X ? LinearContainer::Increasing : LinearContainer::Decreasing;
-	}
-
-	m_row = new LinearContainer( "row", orientation, LinearContainer::Centre, spacing, direction );
-	addChild( m_row );
-
-	plug->childAddedSignal().connect( boost::bind( &CompoundNodule::childAdded, this, ::_1,  ::_2 ) );
-	plug->childRemovedSignal().connect( boost::bind( &CompoundNodule::childRemoved, this, ::_1,  ::_2 ) );
-
-	for( Gaffer::PlugIterator it( plug.get() ); it!=it.end(); it++ )
-	{
-		NodulePtr nodule = Nodule::create( *it );
-		if( nodule )
-		{
-			m_row->addChild( nodule );
-		}
-	}
+	addChild( new NoduleLayout( plug ) );
 }
 
 CompoundNodule::~CompoundNodule()
 {
-}
-
-Imath::Box3f CompoundNodule::bound() const
-{
-	return m_row->bound();
-}
-
-void CompoundNodule::doRender( const Style *style ) const
-{
-	m_row->render( style );
 }
 
 bool CompoundNodule::acceptsChild( const Gaffer::GraphComponent *potentialChild ) const
@@ -133,51 +68,20 @@ bool CompoundNodule::acceptsChild( const Gaffer::GraphComponent *potentialChild 
 
 Nodule *CompoundNodule::nodule( const Gaffer::Plug *plug )
 {
-	for( NoduleIterator it( m_row.get() ); it!=it.end(); it++ )
-	{
-		if( (*it)->plug() == plug )
-		{
-			return it->get();
-		}
-	}
-	return 0;
+	return noduleLayout()->nodule( plug );
 }
 
 const Nodule *CompoundNodule::nodule( const Gaffer::Plug *plug ) const
 {
-	// preferring the nasty casts over mainaining two nearly identical implementations
-	return const_cast<CompoundNodule *>( this )->nodule( plug );
+	return noduleLayout()->nodule( plug );
 }
 
-void CompoundNodule::childAdded( Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child )
+NoduleLayout *CompoundNodule::noduleLayout()
 {
-	Gaffer::Plug *plug = IECore::runTimeCast<Gaffer::Plug>( child );
-	if( !plug )
-	{
-		return;
-	}
-
-	NodulePtr nodule = Nodule::create( plug );
-	if( nodule )
-	{
-		m_row->addChild( nodule );
-	}
+	return getChild<NoduleLayout>( 0 );
 }
 
-void CompoundNodule::childRemoved( Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child )
+const NoduleLayout *CompoundNodule::noduleLayout() const
 {
-	Gaffer::Plug *plug = IECore::runTimeCast<Gaffer::Plug>( child );
-	if( !plug )
-	{
-		return;
-	}
-
-	for( NoduleIterator it( m_row.get() ); it!=it.end(); it++ )
-	{
-		if( (*it)->plug() == plug )
-		{
-			m_row->removeChild( *it );
-			break;
-		}
-	}
+	return getChild<NoduleLayout>( 0 );
 }

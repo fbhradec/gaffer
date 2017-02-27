@@ -54,19 +54,18 @@ Gaffer.Metadata.registerNode(
 
 	plugs = {
 
-		"in*" : [
-
-			"nodeGadget:nodulePosition", "left",
-
-		],
-
 		"in" : [
 
 			"description",
 			"""
-			The first input shader - the one passed through when
-			the index is 0.
+			The input shaders - the index plug decides
+			which of these is passed through to the output.
 			""",
+
+			"plugValueWidget:type", "",
+			"nodule:type", "GafferUI::CompoundNodule",
+			"noduleLayout:section", "left",
+			"noduleLayout:spacing", 0.2,
 
 		],
 
@@ -77,20 +76,18 @@ Gaffer.Metadata.registerNode(
 			The output shader.
 			""",
 
-			"nodeGadget:nodulePosition", "right",
+			"noduleLayout:section", "right",
+			"plugValueWidget:type", "",
 
 		],
 
 		"index" : [
 
 			"nodule:type", "",
+			"plugValueWidget:type", "GafferUI.NumericPlugValueWidget",
 
 		],
 
 	},
 
 )
-
-GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "in", None )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "in[0-9]*", None )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.ShaderSwitch, "out", None )

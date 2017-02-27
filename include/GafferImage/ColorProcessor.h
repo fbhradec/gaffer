@@ -61,17 +61,9 @@ class ColorProcessor : public ImageProcessor
 
 	protected :
 
-		virtual bool channelEnabled( const std::string &channel ) const;
-
-		// Reimplemented to assign directly from the input. Format cannot be a direct connection
-		// because it needs to update when the default format changes.
-		/// \todo: make this a direct pass-through once FormatPlug supports it.
-		virtual void hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const;
-		
 		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		
+
 		/// Implemented to process the color data and stash the results on colorDataPlug()
 		/// format, dataWindow, metadata, and channelNames are passed through via direct connection to the input values.
 		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;

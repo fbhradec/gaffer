@@ -42,8 +42,8 @@
 
 #include "IECoreGL/Selector.h"
 
-#include "Gaffer/BlockedConnection.h"
 #include "Gaffer/Metadata.h"
+#include "Gaffer/MetadataAlgo.h"
 #include "Gaffer/StringPlug.h"
 
 #include "GafferUI/BackdropNodeGadget.h"
@@ -185,7 +185,7 @@ void BackdropNodeGadget::framed( std::vector<Gaffer::Node *> &nodes ) const
 	const Box3f bound3 = transformedBound( graphGadget );
 	const Box2f bound2( V2f( bound3.min.x, bound3.min.y ), V2f( bound3.max.x, bound3.max.y ) );
 
-	for( NodeIterator it( nodeParent ); it != it.end(); ++it )
+	for( NodeIterator it( nodeParent ); !it.done(); ++it )
 	{
 		if( node() == it->get() )
 		{
@@ -303,6 +303,11 @@ void BackdropNodeGadget::plugDirtied( const Gaffer::Plug *plug )
 
 bool BackdropNodeGadget::mouseMove( Gadget *gadget, const ButtonEvent &event )
 {
+	if( MetadataAlgo::readOnly( node() ) )
+	{
+		return false;
+	}
+
 	int h, v;
 	hoveredEdges( event, h, v );
 	if( h && v )
@@ -334,6 +339,11 @@ bool BackdropNodeGadget::mouseMove( Gadget *gadget, const ButtonEvent &event )
 
 bool BackdropNodeGadget::buttonPress( Gadget *gadget, const ButtonEvent &event )
 {
+	if( MetadataAlgo::readOnly( node() ) )
+	{
+		return false;
+	}
+
 	if( event.buttons != ButtonEvent::Left )
 	{
 		return false;
@@ -469,7 +479,7 @@ void BackdropNodeGadget::nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore:
 bool BackdropNodeGadget::updateUserColor()
 {
 	boost::optional<Color3f> c;
-	if( IECore::ConstColor3fDataPtr d = Metadata::nodeValue<IECore::Color3fData>( node(), g_colorKey ) )
+	if( IECore::ConstColor3fDataPtr d = Metadata::value<IECore::Color3fData>( node(), g_colorKey ) )
 	{
 		c = d->readable();
 	}

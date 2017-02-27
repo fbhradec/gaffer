@@ -133,7 +133,40 @@ struct ThreadableFilteredFunctor
 
 };
 
-} // namespace
+template<class ThreadableFunctor>
+struct PathMatcherFunctor
+{
+
+	PathMatcherFunctor( ThreadableFunctor &f, const PathMatcher &filter )
+		: m_f( f ), m_filter( filter )
+	{
+	}
+
+	bool operator()( const GafferScene::ScenePlug *scene, const GafferScene::ScenePlug::ScenePath &path )
+	{
+		const unsigned match = m_filter.match( path );
+		if( match & GafferScene::Filter::ExactMatch )
+		{
+			if( !m_f( scene, path ) )
+			{
+				return false;
+			}
+		}
+
+		return match & GafferScene::Filter::DescendantMatch;
+	}
+
+	private :
+
+		ThreadableFunctor &m_f;
+		const PathMatcher &m_filter;
+
+};
+
+} // namespace Detail
+
+namespace SceneAlgo
+{
 
 template <class ThreadableFunctor>
 void parallelTraverse( const GafferScene::ScenePlug *scene, ThreadableFunctor &f )
@@ -157,4 +190,13 @@ void filteredParallelTraverse( const GafferScene::ScenePlug *scene, const Gaffer
 	parallelTraverse( scene, ff );
 }
 
+template <class ThreadableFunctor>
+void filteredParallelTraverse( const ScenePlug *scene, const PathMatcher &filter, ThreadableFunctor &f )
+{
+	Detail::PathMatcherFunctor<ThreadableFunctor> ff( f, filter );
+	parallelTraverse( scene, ff );
 }
+
+} // namespace SceneAlgo
+
+} // namespace GafferScene

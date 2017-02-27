@@ -38,12 +38,6 @@ import Gaffer
 import GafferUI
 import GafferRenderMan
 
-## \todo This is getting used in a few places now - maybe put it in one
-# place? Maybe a static method on NumericWidget?
-def __floatToString( f ) :
-
-	return ( "%.4f" % f ).rstrip( '0' ).rstrip( '.' )
-
 def __visibilitySummary( plug ) :
 
 	info = []
@@ -70,13 +64,13 @@ def __shadingSummary( plug ) :
 
 	info = []
 	if plug["shadingRate"]["enabled"].getValue() :
-		info.append( "Shading Rate %s" % __floatToString( plug["shadingRate"]["value"].getValue() ) )
+		info.append( "Shading Rate %s" % GafferUI.NumericWidget.valueToString( plug["shadingRate"]["value"].getValue() ) )
 	if plug["relativeShadingRate"]["enabled"].getValue() :
-		info.append( "Relative Shading Rate %s" % __floatToString( plug["relativeShadingRate"]["value"].getValue() ) )
+		info.append( "Relative Shading Rate %s" % GafferUI.NumericWidget.valueToString( plug["relativeShadingRate"]["value"].getValue() ) )
 	if plug["matte"]["enabled"].getValue() :
 		info.append( "Matte %s" % ( "On" if plug["matte"]["value"].getValue() else "Off" ) )
 	if plug["displacementBound"]["enabled"].getValue() :
-		info.append( "Displacement Bound %s" % __floatToString( plug["displacementBound"]["value"].getValue() ) )
+		info.append( "Displacement Bound %s" % GafferUI.NumericWidget.valueToString( plug["displacementBound"]["value"].getValue() ) )
 
 	return ", ".join( info )
 
@@ -90,7 +84,7 @@ def __raytracingSummary( plug ) :
 	if plug["traceDisplacements"]["enabled"].getValue() :
 		info.append( "Displacements %s" % ( "On" if plug["traceDisplacements"]["value"].getValue() else "Off" ) )
 	if plug["traceBias"]["enabled"].getValue() :
-		info.append( "Trace Bias %s" % __floatToString( plug["traceBias"]["value"].getValue() ) )
+		info.append( "Trace Bias %s" % GafferUI.NumericWidget.valueToString( plug["traceBias"]["value"].getValue() ) )
 
 	return ", ".join( info )
 
@@ -152,6 +146,8 @@ Gaffer.Metadata.registerNode(
 			"preset:Shader", "shader",
 			"preset:Primitive", "primitive",
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
 		"attributes.transmissionVisibility" : [
@@ -188,6 +184,8 @@ Gaffer.Metadata.registerNode(
 			"preset:Shader", "shader",
 			"preset:Primitive", "primitive",
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
 		"attributes.diffuseVisibility" : [
@@ -222,6 +220,8 @@ Gaffer.Metadata.registerNode(
 
 			"preset:Shader", "shader",
 			"preset:Primitive", "primitive",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 
 		],
 
@@ -259,6 +259,8 @@ Gaffer.Metadata.registerNode(
 			"preset:Shader", "shader",
 			"preset:Primitive", "primitive",
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
 		"attributes.photonVisibility" : [
@@ -292,6 +294,8 @@ Gaffer.Metadata.registerNode(
 
 			"preset:Shader", "shader",
 			"preset:Primitive", "primitive",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 
 		],
 
@@ -398,40 +402,4 @@ Gaffer.Metadata.registerNode(
 
 	}
 
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferRenderMan.RenderManAttributes,
-	"attributes.cameraHitMode.value",
-	GafferUI.PresetsPlugValueWidget
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferRenderMan.RenderManAttributes,
-	"attributes.transmissionHitMode.value",
-	GafferUI.PresetsPlugValueWidget
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferRenderMan.RenderManAttributes,
-	"attributes.transmissionHitMode.value",
-	GafferUI.PresetsPlugValueWidget
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferRenderMan.RenderManAttributes,
-	"attributes.diffuseHitMode.value",
-	GafferUI.PresetsPlugValueWidget
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferRenderMan.RenderManAttributes,
-	"attributes.specularHitMode.value",
-	GafferUI.PresetsPlugValueWidget
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferRenderMan.RenderManAttributes,
-	"attributes.photonHitMode.value",
-	GafferUI.PresetsPlugValueWidget
 )

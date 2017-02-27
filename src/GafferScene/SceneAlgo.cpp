@@ -38,8 +38,14 @@
 #include "tbb/task.h"
 #include "tbb/parallel_for.h"
 
+#include "boost/algorithm/string/predicate.hpp"
+
 #include "IECore/MatrixMotionTransform.h"
 #include "IECore/Camera.h"
+#include "IECore/CoordinateSystem.h"
+#include "IECore/ClippingPlane.h"
+#include "IECore/NullObject.h"
+#include "IECore/VisibleRenderable.h"
 
 #include "Gaffer/Context.h"
 
@@ -54,7 +60,7 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-bool GafferScene::exists( const ScenePlug *scene, const ScenePlug::ScenePath &path )
+bool GafferScene::SceneAlgo::exists( const ScenePlug *scene, const ScenePlug::ScenePath &path )
 {
 	ContextPtr context = new Context( *Context::current(), Context::Borrowed );
 	Context::Scope scopedContext( context.get() );
@@ -75,7 +81,7 @@ bool GafferScene::exists( const ScenePlug *scene, const ScenePlug::ScenePath &pa
 	return true;
 }
 
-bool GafferScene::visible( const ScenePlug *scene, const ScenePlug::ScenePath &path )
+bool GafferScene::SceneAlgo::visible( const ScenePlug *scene, const ScenePlug::ScenePath &path )
 {
 	ContextPtr context = new Context( *Context::current(), Context::Borrowed );
 	Context::Scope scopedContext( context.get() );
@@ -118,18 +124,47 @@ struct ThreadablePathAccumulator
 
 } // namespace
 
-void GafferScene::matchingPaths( const Filter *filter, const ScenePlug *scene, PathMatcher &paths )
+void GafferScene::SceneAlgo::matchingPaths( const Filter *filter, const ScenePlug *scene, PathMatcher &paths )
 {
 	matchingPaths( filter->outPlug(), scene, paths );
 }
 
-void GafferScene::matchingPaths( const Gaffer::IntPlug *filterPlug, const ScenePlug *scene, PathMatcher &paths )
+void GafferScene::SceneAlgo::matchingPaths( const Gaffer::IntPlug *filterPlug, const ScenePlug *scene, PathMatcher &paths )
 {
 	ThreadablePathAccumulator f( paths );
-	GafferScene::filteredParallelTraverse( scene, filterPlug, f );
+	GafferScene::SceneAlgo::filteredParallelTraverse( scene, filterPlug, f );
 }
 
-Imath::V2f GafferScene::shutter( const IECore::CompoundObject *globals )
+void GafferScene::SceneAlgo::matchingPaths( const PathMatcher &filter, const ScenePlug *scene, PathMatcher &paths )
+{
+	ThreadablePathAccumulator f( paths );
+	GafferScene::SceneAlgo::filteredParallelTraverse( scene, filter, f );
+}
+
+IECore::ConstCompoundObjectPtr GafferScene::SceneAlgo::globalAttributes( const IECore::CompoundObject *globals )
+{
+	static const std::string prefix( "attribute:" );
+
+	CompoundObjectPtr result = new CompoundObject;
+
+	CompoundObject::ObjectMap::const_iterator it, eIt;
+	for( it = globals->members().begin(), eIt = globals->members().end(); it != eIt; ++it )
+	{
+		if( !boost::starts_with( it->first.c_str(), "attribute:" ) )
+		{
+			continue;
+		}
+		// Cast is justified because we don't modify the data, and will return it
+		// as const from this function.
+		result->members()[it->first.string().substr( prefix.size() )] = boost::const_pointer_cast<Object>(
+			it->second
+		);
+	}
+
+	return result;
+}
+
+Imath::V2f GafferScene::SceneAlgo::shutter( const IECore::CompoundObject *globals )
 {
 	const BoolData *cameraBlurData = globals->member<BoolData>( "option:render:cameraBlur" );
 	const bool cameraBlur = cameraBlurData ? cameraBlurData->readable() : false;
@@ -151,7 +186,7 @@ Imath::V2f GafferScene::shutter( const IECore::CompoundObject *globals )
 	return shutter;
 }
 
-IECore::TransformPtr GafferScene::transform( const ScenePlug *scene, const ScenePlug::ScenePath &path, const Imath::V2f &shutter, bool motionBlur )
+IECore::TransformPtr GafferScene::SceneAlgo::transform( const ScenePlug *scene, const ScenePlug::ScenePath &path, const Imath::V2f &shutter, bool motionBlur )
 {
 	int numSamples = 1;
 	if( motionBlur )
@@ -182,12 +217,11 @@ IECore::TransformPtr GafferScene::transform( const ScenePlug *scene, const Scene
 
 //////////////////////////////////////////////////////////////////////////
 // Camera algo
+// This is deprecated, and should be replaced by GafferScene::Preview::RendererAlgo::applyCameraGlobals
+// as we switch to new renderer backends, which will support the new renderRegion parameter
 //////////////////////////////////////////////////////////////////////////
 
-namespace
-{
-
-void applyCameraGlobals( IECore::Camera *camera, const IECore::CompoundObject *globals )
+void GafferScene::SceneAlgo::applyCameraGlobals( IECore::Camera *camera, const IECore::CompoundObject *globals )
 {
 
 	// apply the resolution, aspect ratio and crop window
@@ -334,9 +368,7 @@ void applyCameraGlobals( IECore::Camera *camera, const IECore::CompoundObject *g
 
 }
 
-} // namespace
-
-IECore::CameraPtr GafferScene::camera( const ScenePlug *scene, const IECore::CompoundObject *globals )
+IECore::CameraPtr GafferScene::SceneAlgo::camera( const ScenePlug *scene, const IECore::CompoundObject *globals )
 {
 	ConstCompoundObjectPtr computedGlobals;
 	if( !globals )
@@ -345,7 +377,8 @@ IECore::CameraPtr GafferScene::camera( const ScenePlug *scene, const IECore::Com
 		globals = computedGlobals.get();
 	}
 
-	if( const StringData *cameraPathData = globals->member<StringData>( "option:render:camera" ) )
+	const StringData *cameraPathData = globals->member<StringData>( "option:render:camera" );
+	if( cameraPathData && !cameraPathData->readable().empty() )
 	{
 		ScenePlug::ScenePath cameraPath;
 		ScenePlug::stringToPath( cameraPathData->readable(), cameraPath );
@@ -359,7 +392,7 @@ IECore::CameraPtr GafferScene::camera( const ScenePlug *scene, const IECore::Com
 	}
 }
 
-IECore::CameraPtr GafferScene::camera( const ScenePlug *scene, const ScenePlug::ScenePath &cameraPath, const IECore::CompoundObject *globals )
+IECore::CameraPtr GafferScene::SceneAlgo::camera( const ScenePlug *scene, const ScenePlug::ScenePath &cameraPath, const IECore::CompoundObject *globals )
 {
 	ConstCompoundObjectPtr computedGlobals;
 	if( !globals )
@@ -398,7 +431,7 @@ IECore::CameraPtr GafferScene::camera( const ScenePlug *scene, const ScenePlug::
 // Sets Algo
 //////////////////////////////////////////////////////////////////////////
 
-bool GafferScene::setExists( const ScenePlug *scene, const IECore::InternedString &setName )
+bool GafferScene::SceneAlgo::setExists( const ScenePlug *scene, const IECore::InternedString &setName )
 {
 	IECore::ConstInternedStringVectorDataPtr setNamesData = scene->setNamesPlug()->getValue();
 	const std::vector<IECore::InternedString> &setNames = setNamesData->readable();
@@ -411,13 +444,14 @@ namespace
 struct Sets
 {
 
-	Sets( const ScenePlug *scene, const std::vector<InternedString> &names, std::vector<GafferScene::ConstPathMatcherDataPtr> &sets )
-		:	m_scene( scene ), m_names( names ), m_sets( sets )
+	Sets( const ScenePlug *scene, const Context *context, const std::vector<InternedString> &names, std::vector<GafferScene::ConstPathMatcherDataPtr> &sets )
+		:	m_scene( scene ), m_context( context ), m_names( names ), m_sets( sets )
 	{
 	}
 
 	void operator()( const tbb::blocked_range<size_t> &r ) const
 	{
+		Context::Scope scopedContext( m_context );
 		for( size_t i=r.begin(); i!=r.end(); ++i )
 		{
 			m_sets[i] = m_scene->set( m_names[i] );
@@ -427,6 +461,7 @@ struct Sets
 	private :
 
 		const ScenePlug *m_scene;
+		const Context *m_context;
 		const std::vector<InternedString> &m_names;
 		std::vector<GafferScene::ConstPathMatcherDataPtr> &m_sets;
 
@@ -434,13 +469,18 @@ struct Sets
 
 } // namespace
 
-IECore::ConstCompoundDataPtr GafferScene::sets( const ScenePlug *scene )
+IECore::ConstCompoundDataPtr GafferScene::SceneAlgo::sets( const ScenePlug *scene )
 {
 	ConstInternedStringVectorDataPtr setNamesData = scene->setNamesPlug()->getValue();
-	std::vector<GafferScene::ConstPathMatcherDataPtr> setsVector;
-	setsVector.resize( setNamesData->readable().size(), NULL );
+	return sets( scene, setNamesData->readable() );
+}
 
-	Sets setsCompute( scene, setNamesData->readable(), setsVector );
+IECore::ConstCompoundDataPtr GafferScene::SceneAlgo::sets( const ScenePlug *scene, const std::vector<IECore::InternedString> &setNames )
+{
+	std::vector<GafferScene::ConstPathMatcherDataPtr> setsVector;
+	setsVector.resize( setNames.size(), NULL );
+
+	Sets setsCompute( scene, Context::current(), setNames, setsVector );
 	parallel_for( tbb::blocked_range<size_t>( 0, setsVector.size() ), setsCompute );
 
 	CompoundDataPtr result = new CompoundData;
@@ -448,8 +488,35 @@ IECore::ConstCompoundDataPtr GafferScene::sets( const ScenePlug *scene )
 	{
 		// The const_pointer_cast is ok because we're just using it to put the set into
 		// a container that will be const on return - we never modify the set itself.
-		result->writable()[setNamesData->readable()[i]] = boost::const_pointer_cast<GafferScene::PathMatcherData>( setsVector[i] );
+		result->writable()[setNames[i]] = boost::const_pointer_cast<GafferScene::PathMatcherData>( setsVector[i] );
 	}
 	return result;
 }
 
+Imath::Box3f GafferScene::SceneAlgo::bound( const IECore::Object *object )
+{
+	if( const IECore::VisibleRenderable *renderable = IECore::runTimeCast<const IECore::VisibleRenderable>( object ) )
+	{
+		return renderable->bound();
+	}
+	else if( object->isInstanceOf( IECore::Camera::staticTypeId() ) )
+	{
+		return Imath::Box3f( Imath::V3f( -0.5, -0.5, 0 ), Imath::V3f( 0.5, 0.5, 2.0 ) );
+	}
+	else if( object->isInstanceOf( IECore::CoordinateSystem::staticTypeId() ) )
+	{
+		return Imath::Box3f( Imath::V3f( 0 ), Imath::V3f( 1 ) );
+	}
+	else if( object->isInstanceOf( IECore::ClippingPlane::staticTypeId() ) )
+	{
+		return Imath::Box3f( Imath::V3f( -0.5, -0.5, 0 ), Imath::V3f( 0.5 ) );
+	}
+	else if( !object->isInstanceOf( IECore::NullObject::staticTypeId() ) )
+	{
+		return Imath::Box3f( Imath::V3f( -0.5 ), Imath::V3f( 0.5 ) );
+	}
+	else
+	{
+		return Imath::Box3f();
+	}
+}

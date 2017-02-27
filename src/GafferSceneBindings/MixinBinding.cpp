@@ -38,9 +38,11 @@
 
 #include "GafferBindings/DependencyNodeBinding.h"
 
+#include "GafferScene/SceneContextProcessor.h"
 #include "GafferScene/SceneContextVariables.h"
 #include "GafferScene/SceneSwitch.h"
 #include "GafferScene/SceneTimeWarp.h"
+#include "GafferScene/SceneLoop.h"
 
 #include "GafferSceneBindings/MixinBinding.h"
 
@@ -49,10 +51,10 @@ using namespace GafferScene;
 void GafferSceneBindings::bindMixin()
 {
 
-	GafferBindings::DependencyNodeClass<SceneMixinBase>();
 	GafferBindings::DependencyNodeClass<SceneContextProcessor>();
 	GafferBindings::DependencyNodeClass<SceneTimeWarp>();
 	GafferBindings::DependencyNodeClass<SceneContextVariables>();
 	GafferBindings::DependencyNodeClass<SceneSwitch>();
+	GafferBindings::DependencyNodeClass<SceneLoop>();
 
 }

@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2011-2012, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2011-2015, Image Engine Design Inc. All rights reserved.
 #  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -105,10 +105,10 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		with n.parameterModificationContext() as parameters :
 
 			parameters["multiply"].setNumericValue( 10 )
-			parameters["dst"].setTypedValue( "/tmp/s.####.exr" )
+			parameters["dst"].setTypedValue( self.temporaryDirectory() + "/s.####.exr" )
 
 		self.assertEqual( n["parameters"]["multiply"].getValue(), 10 )
-		self.assertEqual( n["parameters"]["dst"].getValue(), "/tmp/s.####.exr" )
+		self.assertEqual( n["parameters"]["dst"].getValue(), self.temporaryDirectory() + "/s.####.exr" )
 
 		n["parameters"]["multiply"].setValue( 20 )
 		n["parameters"]["dst"].setValue( "lalalal.##.tif" )
@@ -285,7 +285,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( p )
 
-		self.failUnless( isinstance( ph["parameters"]["b"], Gaffer.CompoundPlug ) )
+		self.failUnless( isinstance( ph["parameters"]["b"], Gaffer.Box3iPlug ) )
 		self.failUnless( isinstance( ph["parameters"]["b"]["min"], Gaffer.V3iPlug ) )
 		self.failUnless( isinstance( ph["parameters"]["b"]["max"], Gaffer.V3iPlug ) )
 
@@ -1003,6 +1003,53 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		# the plug was made read only, so should not have accepted the new parameter value
 		self.assertEqual( ph["parameters"]["i"].getValue(), 1 )
 
+	def testConections( self ) :
+
+		p = IECore.Parameterised( "" )
+
+		p.parameters().addParameters(
+
+			[
+				IECore.IntParameter(
+					"a",
+					"",
+					1,
+				),
+				IECore.IntParameter(
+					"b",
+					"",
+					2,
+				)
+			]
+
+		)
+
+		ph = GafferCortex.ParameterisedHolderNode()
+		ph.setParameterised( p )
+
+		self.failUnless( "parameters" in ph )
+		self.failUnless( "a" in ph["parameters"] )
+		self.failUnless( "b" in ph["parameters"] )
+		self.assertEqual( ph["parameters"]["a"].getValue(), 1 )
+		self.assertEqual( ph["parameters"]["b"].getValue(), 2 )
+		self.assertEqual( ph["parameters"]["b"].getInput(), None )
+
+		ph["parameters"]["b"].setInput( ph["parameters"]["a"] )
+		self.assertTrue( ph["parameters"]["b"].getInput().isSame( ph["parameters"]["a"] ) )
+		self.assertEqual( ph["parameters"]["b"].getValue(), 1 )
+
+		ph["parameters"]["a"].setValue( 2 )
+		self.assertEqual( ph["parameters"]["b"].getValue(), 2 )
+
+		messageHandler = IECore.CapturingMessageHandler()
+		with messageHandler :
+			with ph.parameterModificationContext() :
+				p.parameters()["a"].setNumericValue( 3 )
+
+		self.assertEqual( ph["parameters"]["a"].getValue(), 3 )
+		self.assertEqual( ph["parameters"]["b"].getValue(), 3 )
+		self.assertEqual( messageHandler.messages, [] )
+
 	def testExceptionInParameterChanged( self ) :
 
 		class ParameterChangedRaiser( IECore.Parameterised ) :
@@ -1076,7 +1123,12 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( c )
 
-		self.assertRaises( RuntimeError, ph["parameters"]["driver"].setValue, 1 )
+		with IECore.CapturingMessageHandler() as mh :
+			# We want the original exception to be the visible one.
+			self.assertRaisesRegexp( RuntimeError, "Ooops!", ph["parameters"]["driver"].setValue, 1 )
+		# And we want the secondary exception to be reported as a message.
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertTrue( "Value is not an instance of \"IntData\"" in mh.messages[0].message )
 
 	def testTypeNamePrefixes( self ) :
 
@@ -1084,6 +1136,8 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertTypeNamesArePrefixed( GafferCortexTest )
 
 	def setUp( self ) :
+
+		GafferTest.TestCase.setUp( self )
 
 		os.environ["GAFFERCORTEXTEST_CLASS_PATHS"] = os.path.dirname( __file__ ) + "/classes"
 

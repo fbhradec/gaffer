@@ -35,6 +35,7 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "boost/python.hpp"
+#include "boost/python/suite/indexing/container_utils.hpp"
 
 #include "IECore/Camera.h"
 
@@ -53,23 +54,78 @@ using namespace GafferScene;
 namespace
 {
 
-void matchingPathsHelper1( const Filter *filter, const ScenePlug *scene, PathMatcher &paths )
+bool existsWrapper( const ScenePlug *scene, const ScenePlug::ScenePath &path )
 {
 	// gil release in case the scene traversal dips back into python:
 	IECorePython::ScopedGILRelease r;
-	matchingPaths( filter, scene, paths );
+	return SceneAlgo::exists( scene, path );
 }
 
-void matchingPathsHelper2( const Gaffer::IntPlug *filterPlug, const ScenePlug *scene, PathMatcher &paths )
+bool visibleWrapper( const ScenePlug *scene, const ScenePlug::ScenePath &path )
+{
+	IECorePython::ScopedGILRelease r;
+	return SceneAlgo::visible( scene, path );
+}
+
+void matchingPathsWrapper1( const Filter *filter, const ScenePlug *scene, PathMatcher &paths )
 {
 	// gil release in case the scene traversal dips back into python:
 	IECorePython::ScopedGILRelease r;
-	matchingPaths( filterPlug, scene, paths );
+	SceneAlgo::matchingPaths( filter, scene, paths );
 }
 
-IECore::CompoundDataPtr setsHelper( const ScenePlug *scene, bool copy )
+void matchingPathsWrapper2( const Gaffer::IntPlug *filterPlug, const ScenePlug *scene, PathMatcher &paths )
 {
-	IECore::ConstCompoundDataPtr result = sets( scene );
+	// gil release in case the scene traversal dips back into python:
+	IECorePython::ScopedGILRelease r;
+	SceneAlgo::matchingPaths( filterPlug, scene, paths );
+}
+
+void matchingPathsWrapper3( const PathMatcher &filter, const ScenePlug *scene, PathMatcher &paths )
+{
+	// gil release in case the scene traversal dips back into python:
+	IECorePython::ScopedGILRelease r;
+	SceneAlgo::matchingPaths( filter, scene, paths );
+}
+
+Imath::V2f shutterWrapper( const IECore::CompoundObject *globals )
+{
+	IECorePython::ScopedGILRelease r;
+	return SceneAlgo::shutter( globals );
+}
+
+IECore::CameraPtr cameraWrapper1( const ScenePlug *scene, const IECore::CompoundObject *globals )
+{
+	IECorePython::ScopedGILRelease r;
+	return SceneAlgo::camera( scene, globals );
+}
+
+IECore::CameraPtr cameraWrapper2( const ScenePlug *scene, const ScenePlug::ScenePath &cameraPath, const IECore::CompoundObject *globals )
+{
+	IECorePython::ScopedGILRelease r;
+	return SceneAlgo::camera( scene, cameraPath, globals );
+}
+
+bool setExistsWrapper( const ScenePlug *scene, const IECore::InternedString &setName )
+{
+	IECorePython::ScopedGILRelease r;
+	return SceneAlgo::setExists( scene, setName );
+}
+
+IECore::CompoundDataPtr setsWrapper1( const ScenePlug *scene, bool copy )
+{
+	IECorePython::ScopedGILRelease r;
+	IECore::ConstCompoundDataPtr result = SceneAlgo::sets( scene );
+	return copy ? result->copy() : boost::const_pointer_cast<IECore::CompoundData>( result );
+}
+
+IECore::CompoundDataPtr setsWrapper2( const ScenePlug *scene, object pythonSetNames, bool copy )
+{
+	std::vector<IECore::InternedString> setNames;
+	boost::python::container_utils::extend_container( setNames, pythonSetNames );
+
+	IECorePython::ScopedGILRelease r;
+	IECore::ConstCompoundDataPtr result = SceneAlgo::sets( scene, setNames );
 	return copy ? result->copy() : boost::const_pointer_cast<IECore::CompoundData>( result );
 }
 
@@ -80,26 +136,36 @@ namespace GafferSceneBindings
 
 void bindSceneAlgo()
 {
-	def( "exists", exists );
-	def( "visible", visible );
-	def( "matchingPaths", &matchingPathsHelper1 );
-	def( "matchingPaths", &matchingPathsHelper2 );
-	def( "shutter", &shutter );
+	object module( borrowed( PyImport_AddModule( "GafferScene.SceneAlgo" ) ) );
+	scope().attr( "SceneAlgo" ) = module;
+	scope moduleScope( module );
+
+	def( "exists", &existsWrapper );
+	def( "visible", visibleWrapper );
+	def( "matchingPaths", &matchingPathsWrapper1 );
+	def( "matchingPaths", &matchingPathsWrapper2 );
+	def( "matchingPaths", &matchingPathsWrapper3 );
+	def( "shutter", &shutterWrapper );
 	def(
 		"camera",
-		(IECore::CameraPtr (*)( const ScenePlug *, const IECore::CompoundObject * ) )&camera,
+		&cameraWrapper1,
 		( arg( "scene" ), arg( "globals" ) = object() )
 	);
 	def(
 		"camera",
-		(IECore::CameraPtr (*)( const ScenePlug *, const ScenePlug::ScenePath &, const IECore::CompoundObject * ) )&camera,
+		&cameraWrapper2,
 		( arg( "scene" ), args( "cameraPath" ), arg( "globals" ) = object() )
 	);
-	def( "setExists", &setExists );
+	def( "setExists", &setExistsWrapper );
 	def(
 		"sets",
-		&setsHelper,
+		&setsWrapper1,
 		( arg( "scene" ), arg( "_copy" ) = true )
+	);
+	def(
+		"sets",
+		&setsWrapper2,
+		( arg( "scene" ), arg( "setNames" ), arg( "_copy" ) = true )
 	);
 }
 

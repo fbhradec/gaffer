@@ -41,6 +41,7 @@
 #include "GafferScene/StandardOptions.h"
 #include "GafferScene/CustomOptions.h"
 #include "GafferScene/DeleteOptions.h"
+#include "GafferScene/CopyOptions.h"
 
 #include "GafferSceneBindings/OptionsBinding.h"
 
@@ -52,4 +53,5 @@ void GafferSceneBindings::bindOptions()
 	GafferBindings::DependencyNodeClass<StandardOptions>();
 	GafferBindings::DependencyNodeClass<CustomOptions>();
 	GafferBindings::DependencyNodeClass<DeleteOptions>();
+	GafferBindings::DependencyNodeClass<CopyOptions>();
 }

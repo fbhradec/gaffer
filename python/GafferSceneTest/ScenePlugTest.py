@@ -43,14 +43,14 @@ import Gaffer
 import GafferScene
 import GafferSceneTest
 
-class ScenePlugTest( unittest.TestCase ) :
+class ScenePlugTest( GafferSceneTest.SceneTestCase ) :
 
 	def testRunTimeTyped( self ) :
 
 		p = GafferScene.ScenePlug()
 
-		self.failUnless( p.isInstanceOf( Gaffer.CompoundPlug.staticTypeId() ) )
-		self.assertEqual( IECore.RunTimeTyped.baseTypeId( p.typeId() ), Gaffer.CompoundPlug.staticTypeId() )
+		self.failUnless( p.isInstanceOf( Gaffer.ValuePlug.staticTypeId() ) )
+		self.assertEqual( IECore.RunTimeTyped.baseTypeId( p.typeId() ), Gaffer.ValuePlug.staticTypeId() )
 
 	def testDynamicSerialisation( self ) :
 
@@ -198,6 +198,12 @@ class ScenePlugTest( unittest.TestCase ) :
 		self.assertEqual( GafferScene.ScenePlug.stringToPath( "/foo/bar/" ), IECore.InternedStringVectorData( [ "foo", "bar" ] ) )
 		self.assertEqual( GafferScene.ScenePlug.stringToPath( "foo/bar/" ), IECore.InternedStringVectorData( [ "foo", "bar" ] ) )
 
+	def testPathToString( self ) :
+
+		self.assertEqual( GafferScene.ScenePlug.pathToString( IECore.InternedStringVectorData() ), "/" )
+		self.assertEqual( GafferScene.ScenePlug.pathToString( IECore.InternedStringVectorData( [ "a" ] ) ), "/a" )
+		self.assertEqual( GafferScene.ScenePlug.pathToString( IECore.InternedStringVectorData( [ "a", "b" ] ) ), "/a/b" )
+
 	def testManyStringToPathCalls( self ) :
 
 		GafferSceneTest.testManyStringToPathCalls()
@@ -212,6 +218,20 @@ class ScenePlugTest( unittest.TestCase ) :
 		self.assertTrue( isinstance( p["set"], GafferScene.PathMatcherDataPlug ) )
 		self.assertEqual( p["set"].defaultValue(), GafferScene.PathMatcherData() )
 
+	def testGlobalsAccessors( self ) :
+
+		p = GafferScene.ScenePlug()
+
+		self.assertEqual( p.globals(), p["globals"].getValue() )
+		self.assertFalse( p.globals().isSame( p["globals"].getValue() ) )
+		self.assertTrue( p.globals( _copy = False ).isSame( p["globals"].getValue( _copy = False ) ) )
+
+		self.assertEqual( p.setNames(), p["setNames"].getValue() )
+		self.assertFalse( p.setNames().isSame( p["setNames"].getValue() ) )
+		self.assertTrue( p.setNames( _copy = False ).isSame( p["setNames"].getValue( _copy = False ) ) )
+
+		self.assertEqual( p.globalsHash(), p["globals"].hash() )
+		self.assertEqual( p.setNamesHash(), p["setNames"].hash() )
+
 if __name__ == "__main__":
 	unittest.main()
-

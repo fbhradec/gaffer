@@ -35,6 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "Gaffer/TypedPlug.h"
 #include "GafferBindings/TypedPlugBinding.h"
 
 using namespace Gaffer;
@@ -44,6 +45,7 @@ void GafferBindings::bindTypedPlug()
 	TypedPlugClass<BoolPlug>();
 	TypedPlugClass<M33fPlug>();
 	TypedPlugClass<M44fPlug>();
+	TypedPlugClass<AtomicBox2fPlug>();
 	TypedPlugClass<AtomicBox3fPlug>();
 	TypedPlugClass<AtomicBox2iPlug>();
 }

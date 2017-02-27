@@ -37,21 +37,59 @@
 #include "boost/python.hpp"
 
 #include "GafferBindings/DependencyNodeBinding.h"
+#include "GafferDispatchBindings/TaskNodeBinding.h"
 
 #include "GafferArnold/ArnoldShader.h"
 #include "GafferArnold/ArnoldOptions.h"
 #include "GafferArnold/ArnoldAttributes.h"
 #include "GafferArnold/ArnoldLight.h"
+#include "GafferArnold/ArnoldVDB.h"
+#include "GafferArnold/InteractiveArnoldRender.h"
+#include "GafferArnold/ArnoldRender.h"
+#include "GafferArnold/ArnoldDisplacement.h"
+#include "GafferArnold/ArnoldMeshLight.h"
 
 using namespace boost::python;
 using namespace GafferArnold;
+
+namespace
+{
+
+/// \todo Move this serialisation to the bindings for GafferScene::Shader, once we've made Shader::loadShader() virtual
+/// and implemented it so reloading works in OpenGLShader.
+class ArnoldShaderSerialiser : public GafferBindings::NodeSerialiser
+{
+
+	virtual std::string postScript( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const GafferBindings::Serialisation &serialisation ) const
+	{
+		const ArnoldShader *shader = static_cast<const ArnoldShader *>( graphComponent );
+		std::string shaderName = shader->namePlug()->getValue();
+		if( shaderName.size() )
+		{
+			return boost::str( boost::format( "%s.loadShader( \"%s\", keepExistingValues=True )\n" ) % identifier % shaderName );
+		}
+
+		return "";
+	}
+
+};
+
+} // namespace
 
 BOOST_PYTHON_MODULE( _GafferArnold )
 {
 
 	GafferBindings::DependencyNodeClass<ArnoldShader>()
-		.def( "loadShader", (void (ArnoldShader::*)( const std::string & ) )&ArnoldShader::loadShader )
+		.def(
+			"loadShader", (void (ArnoldShader::*)( const std::string &, bool ))&ArnoldShader::loadShader,
+			(
+				arg( "shaderName" ),
+				arg( "keepExistingValues" ) = false
+			)
+		)
 	;
+
+	GafferBindings::Serialisation::registerSerialiser( ArnoldShader::staticTypeId(), new ArnoldShaderSerialiser() );
 
 	GafferBindings::NodeClass<ArnoldLight>()
 		.def( "loadShader", (void (ArnoldLight::*)( const std::string & ) )&ArnoldLight::loadShader )
@@ -59,5 +97,10 @@ BOOST_PYTHON_MODULE( _GafferArnold )
 
 	GafferBindings::DependencyNodeClass<ArnoldOptions>();
 	GafferBindings::DependencyNodeClass<ArnoldAttributes>();
+	GafferBindings::DependencyNodeClass<ArnoldVDB>();
+	GafferBindings::DependencyNodeClass<ArnoldDisplacement>();
+	GafferBindings::DependencyNodeClass<ArnoldMeshLight>();
+	GafferBindings::NodeClass<InteractiveArnoldRender>();
+	GafferDispatchBindings::TaskNodeClass<ArnoldRender>();
 
 }

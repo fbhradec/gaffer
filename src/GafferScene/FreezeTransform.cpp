@@ -36,6 +36,7 @@
 
 #include "IECore/TransformOp.h"
 #include "IECore/DespatchTypedData.h"
+#include "IECore/Primitive.h"
 
 #include "Gaffer/Context.h"
 
@@ -56,7 +57,7 @@ FreezeTransform::FreezeTransform( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new M44fPlug( "__transform", Plug::Out ) );
-	
+
 	// pass through the things we don't want to change
 	outPlug()->attributesPlug()->setInput( inPlug()->attributesPlug() );
 	outPlug()->childNamesPlug()->setInput( inPlug()->childNamesPlug() );
@@ -86,6 +87,10 @@ void FreezeTransform::affects( const Gaffer::Plug *input, AffectedPlugsContainer
 	if( input == inPlug()->transformPlug() )
 	{
 		outputs.push_back( transformPlug() );
+	}
+	else if( input == inPlug()->objectPlug() )
+	{
+		outputs.push_back( outPlug()->objectPlug() );
 	}
 	else if(
 		input == transformPlug() ||

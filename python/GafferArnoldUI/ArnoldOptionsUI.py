@@ -35,9 +35,22 @@
 #
 ##########################################################################
 
+import IECore
+
 import Gaffer
 import GafferUI
 import GafferArnold
+
+def __renderingSummary( plug ) :
+
+	info = []
+	if plug["bucketSize"]["enabled"].getValue() :
+		info.append( "Bucket Size %d" % plug["bucketSize"]["value"].getValue() )
+	if plug["bucketScanning"]["enabled"].getValue() :
+		info.append( "Bucket Scanning %s" % plug["bucketScanning"]["value"].getValue().capitalize() )
+	if plug["threads"]["enabled"].getValue() :
+		info.append( "Threads %d" % plug["threads"]["value"].getValue() )
+	return ", ".join( info )
 
 def __samplingSummary( plug ) :
 
@@ -50,7 +63,48 @@ def __samplingSummary( plug ) :
 		info.append( "Glossy %d" % plug["giGlossySamples"]["value"].getValue() )
 	if plug["giRefractionSamples"]["enabled"].getValue() :
 		info.append( "Refraction %d" % plug["giRefractionSamples"]["value"].getValue() )
+	if plug["giSSSSamples"]["enabled"].getValue() :
+		info.append( "SSS %d" % plug["giSSSSamples"]["value"].getValue() )
+	if plug["giVolumeSamples"]["enabled"].getValue() :
+		info.append( "Volume %d" % plug["giVolumeSamples"]["value"].getValue() )
+	if plug["aaSeed"]["enabled"].getValue() :
+		info.append( "Seed {0}".format( plug["aaSeed"]["value"].getValue() ) )
+	if plug["aaSampleClamp"]["enabled"].getValue() :
+		info.append( "Clamp {0}".format( GafferUI.NumericWidget.valueToString( plug["aaSampleClamp"]["value"].getValue() ) ) )
+	if plug["aaSampleClampAffectsAOVs"]["enabled"].getValue() :
+		info.append( "Clamp AOVs {0}".format( "On" if plug["aaSampleClampAffectsAOVs"]["value"].getValue() else "Off" ) )
+	return ", ".join( info )
 
+def __rayDepthSummary( plug ) :
+
+	info = []
+	if plug["giTotalDepth"]["enabled"].getValue() :
+		info.append( "Total %d" % plug["giTotalDepth"]["value"].getValue() )
+	if plug["giDiffuseDepth"]["enabled"].getValue() :
+		info.append( "Diffuse %d" % plug["giDiffuseDepth"]["value"].getValue() )
+	if plug["giGlossyDepth"]["enabled"].getValue() :
+		info.append( "Glossy %d" % plug["giGlossyDepth"]["value"].getValue() )
+	if plug["giReflectionDepth"]["enabled"].getValue() :
+		info.append( "Reflection %d" % plug["giReflectionDepth"]["value"].getValue() )
+	if plug["giRefractionDepth"]["enabled"].getValue() :
+		info.append( "Refraction %d" % plug["giRefractionDepth"]["value"].getValue() )
+	if plug["giVolumeDepth"]["enabled"].getValue() :
+		info.append( "Volume %d" % plug["giVolumeDepth"]["value"].getValue() )
+	if plug["autoTransparencyDepth"]["enabled"].getValue() :
+		info.append( "Transparency %d" % plug["autoTransparencyDepth"]["value"].getValue() )
+	if plug["autoTransparencyThreshold"]["enabled"].getValue() :
+		info.append( "Threshold %s" % GafferUI.NumericWidget.valueToString( plug["autoTransparencyThreshold"]["value"].getValue() ) )
+	return ", ".join( info )
+
+def __texturingSummary( plug ) :
+
+	info = []
+	if plug["textureMaxMemoryMB"]["enabled"].getValue() :
+		info.append( "Memory {0}".format( GafferUI.NumericWidget.valueToString( plug["textureMaxMemoryMB"]["value"].getValue() ) ) )
+	if plug["texturePerFileStats"]["enabled"].getValue() :
+		info.append( "Per File Stats {0}".format( "On" if plug["texturePerFileStats"]["value"].getValue() else "Off" ) )
+	if plug["textureMaxSharpen"]["enabled"].getValue() :
+		info.append( "Sharpen {0}".format( GafferUI.NumericWidget.valueToString( plug["textureMaxSharpen"]["value"].getValue() ) ) )
 	return ", ".join( info )
 
 def __featuresSummary( plug ) :
@@ -85,9 +139,31 @@ def __searchPathsSummary( plug ) :
 def __errorColorsSummary( plug ) :
 
 	info = []
-	for suffix in ( "Texture", "Mesh", "Pixel", "Shader" ) :
+	for suffix in ( "Texture", "Pixel", "Shader" ) :
 		if plug["errorColorBad"+suffix]["enabled"].getValue() :
 			info.append( suffix )
+
+	return ", ".join( info )
+
+def __loggingSummary( plug ) :
+
+	info = []
+	if plug["logFileName"]["enabled"].getValue() :
+		info.append( "File name" )
+	if plug["logMaxWarnings"]["enabled"].getValue() :
+		info.append( "Max Warnings %d" % plug["logMaxWarnings"]["value"].getValue() )
+
+	return ", ".join( info )
+
+def __licensingSummary( plug ) :
+
+	info = []
+	for name, label in (
+		( "abortOnLicenseFail", "Abort on Fail" ),
+		( "skipLicenseCheck", "Skip Check" )
+	) :
+		if plug[name]["enabled"].getValue() :
+			info.append( label + " " + ( "On" if plug[name]["value"].getValue() else "Off" ) )
 
 	return ", ".join( info )
 
@@ -108,10 +184,67 @@ Gaffer.Metadata.registerNode(
 
 		"options" : [
 
+			"layout:section:Rendering:summary", __renderingSummary,
 			"layout:section:Sampling:summary", __samplingSummary,
+			"layout:section:Ray Depth:summary", __rayDepthSummary,
+			"layout:section:Texturing:summary", __texturingSummary,
 			"layout:section:Features:summary", __featuresSummary,
 			"layout:section:Search Paths:summary", __searchPathsSummary,
 			"layout:section:Error Colors:summary", __errorColorsSummary,
+			"layout:section:Logging:summary", __loggingSummary,
+			"layout:section:Licensing:summary", __licensingSummary,
+
+		],
+
+		# Rendering
+
+		"options.bucketSize": [
+
+			"description",
+			"""
+			Controls the size of the image buckets.
+			The default size is 64x64 pixels.
+			Bigger buckets will increase memory usage
+			while smaller buckets may render slower as
+			they need to perform redundant computations
+			and filtering.
+			""",
+
+			"layout:section", "Rendering",
+			"label", "Bucket Size",
+
+		],
+
+		"options.bucketScanning": [
+
+			"description",
+			"""
+			Controls the order in which buckets are
+			processed. A spiral pattern is the default.
+			""",
+
+			"layout:section", "Rendering",
+			"label", "Bucket Scanning",
+
+		],
+
+		"options.bucketScanning.value": [
+
+			"plugValueWidget:type", 'GafferUI.PresetsPlugValueWidget',
+			"presetNames", IECore.StringVectorData( ["Top", "Bottom", "Left", "Right", "Random", "Woven", "Spiral", "Spiral"] ),
+			"presetValues", IECore.StringVectorData( ["top", "bottom", "left", "right", "random", "woven", "spiral", "spiral"] ),
+		],
+
+		"options.threads" : [
+
+			"description",
+			"""
+			Specifies the number of threads Arnold
+			is allowed to use. A value of 0 gives
+			Arnold access to all available threads.
+			""",
+
+			"layout:section", "Rendering",
 
 		],
 
@@ -178,6 +311,237 @@ Gaffer.Metadata.registerNode(
 			"layout:section", "Sampling",
 			"label", "Refraction Samples",
 
+		],
+
+		"options.giSSSSamples" : [
+
+			"description",
+			"""
+			Controls the number of rays traced when
+			computing subsurface scattering. The number of actual
+			subsurface rays traced is the square of this number.
+			""",
+
+			"layout:section", "Sampling",
+			"label", "SSS Samples",
+
+		],
+
+		"options.giVolumeSamples" : [
+
+			"description",
+			"""
+			Controls the number of rays traced when
+			computing indirect lighting for volumes.
+			The number of actual rays traced
+			is the square of this number. The volume
+			ray depth must be increased from the default
+			value of 0 before this setting is of use.
+			""",
+
+			"layout:section", "Sampling",
+			"label", "Volume Samples",
+
+		],
+
+		"options.aaSeed" : [
+
+			"description",
+			"""
+			Seeds the randomness used when generating samples.
+			By default this is set to the current frame number
+			so that the pattern of sampling noise changes every
+			frame. It can be locked to a particular value so
+			that sampling noise does not change from frame to
+			frame.
+			""",
+
+			"layout:section", "Sampling",
+			"label", "AA Seed",
+
+		],
+
+		"options.aaSampleClamp" : [
+
+			"description",
+			"""
+			Sets a maximum for the values of individual pixel samples. This
+			can help reduce fireflies.
+			""",
+
+			"layout:section", "Sampling",
+			"label", "Sample Clamp",
+
+		],
+
+		"options.aaSampleClampAffectsAOVs" : [
+
+			"description",
+			"""
+			Applies the sample clamping settings to all RGB and RGBA
+			AOVs, in addition to the beauty image.
+			""",
+
+			"layout:section", "Sampling",
+			"label", "Clamp AOVs",
+
+		],
+
+		# Ray Depth
+
+		"options.giTotalDepth" : [
+
+			"description",
+			"""
+			The maximum depth of any ray (Diffuse + Glossy +
+			Reflection + Refraction + Volume).
+			""",
+
+			"layout:section", "Ray Depth",
+			"label", "Total Depth",
+
+		],
+
+		"options.giDiffuseDepth" : [
+
+			"description",
+			"""
+			Controls the number of ray bounces when
+			computing indirect illumination ("bounce light").
+			""",
+
+			"layout:section", "Ray Depth",
+			"label", "Diffuse Depth",
+
+		],
+
+		"options.giGlossyDepth" : [
+
+			"description",
+			"""
+			Controls the number of ray bounces when
+			computing glossy specular reflections.
+			""",
+
+			"layout:section", "Ray Depth",
+			"label", "Glossy Depth",
+
+		],
+
+		"options.giReflectionDepth" : [
+
+			"description",
+			"""
+			Controls the number of ray bounces when
+			computing reflections.
+			""",
+
+			"layout:section", "Ray Depth",
+			"label", "Reflection Depth",
+
+		],
+
+
+		"options.giRefractionDepth" : [
+
+			"description",
+			"""
+			Controls the number of ray bounces when
+			computing refractions.
+			""",
+
+			"layout:section", "Ray Depth",
+			"label", "Refraction Depth",
+
+		],
+
+		"options.giVolumeDepth" : [
+
+			"description",
+			"""
+			Controls the number of ray bounces when
+			computing indirect lighting on volumes.
+			""",
+
+			"layout:section", "Ray Depth",
+			"label", "Volume Depth",
+
+		],
+
+		"options.autoTransparencyDepth" : [
+
+			"description",
+			"""
+			The number of allowable transparent layers - after
+			this the last object will be treated as opaque.
+			""",
+
+			"layout:section", "Ray Depth",
+			"label", "Transparency Depth",
+
+		],
+
+		"options.autoTransparencyThreshold" : [
+
+			"description",
+			"""
+			A threshold for accumulated opacity, after which the
+			last object will be treated as opaque.
+			""",
+
+			"layout:section", "Ray Depth",
+			"label", "Opacity Threshold",
+		],
+
+		# Texturing
+
+		"options.textureMaxMemoryMB" : [
+
+			"description",
+			"""
+			The maximum amount of memory to use for caching
+			textures. Tiles are loaded on demand and cached,
+			and when the memory limit is reached the least
+			recently used tiles are discarded to make room
+			for more. Measured in megabytes.
+			""",
+
+			"layout:section", "Texturing",
+			"label", "Max Memory MB",
+		],
+
+		"options.texturePerFileStats" : [
+
+			"description",
+			"""
+			Turns on detailed statistics output for
+			each individual texture file used.
+			""",
+
+			"layout:section", "Texturing",
+			"label", "Per File Stats",
+
+		],
+
+		"options.textureMaxSharpen" : [
+
+			"description",
+			"""
+			Controls the sharpness of texture lookups,
+			providing a tradeoff between sharpness and
+			the amount of texture data loaded. If
+			textures appear too blurry, then the value
+			should be increased to add sharpness.
+
+			The theoretical optimum value is to match the
+			number of AA samples, but in practice the
+			improvement in sharpness this brings often
+			doesn't justify the increased render time and
+			memory usage.
+			""",
+
+			"layout:section", "Texturing",
+			"label", "Max Sharpen",
 		],
 
 		# Features
@@ -353,19 +717,6 @@ Gaffer.Metadata.registerNode(
 
 		],
 
-		"options.errorColorBadMesh" : [
-
-			"description",
-			"""
-			The colour to display if bad geometry
-			is encountered.
-			""",
-
-			"layout:section", "Error Colors",
-			"label", "Bad Mesh",
-
-		],
-
 		"options.errorColorBadPixel" : [
 
 			"description",
@@ -392,6 +743,109 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		# Logging
+
+		"options.logFileName" : [
+
+			"description",
+			"""
+			The name of a log file which Arnold will generate
+			while rendering.
+			""",
+
+			"layout:section", "Logging",
+			"label", "File Name",
+
+		],
+
+		"options.logFileName.value" : [
+
+			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
+			"pathPlugValueWidget:leaf", True,
+			"fileSystemPathPlugValueWidget:extensions", IECore.StringVectorData( [ "txt", "log" ] ),
+			"fileSystemPathPlugValueWidget:extensionsLabel", "Show only log files",
+
+		],
+
+		"options.logMaxWarnings" : [
+
+			"description",
+			"""
+			The maximum number of warnings that will be reported.
+			""",
+
+			"layout:section", "Logging",
+			"label", "Max Warnings",
+
+		],
+
+		# Licensing
+
+		"options.abortOnLicenseFail" : [
+
+			"description",
+			"""
+			Aborts the render if a license is not available,
+			instead of rendering with a watermark.
+			""",
+
+			"layout:section", "Licensing",
+
+		],
+
+		"options.skipLicenseCheck" : [
+
+			"description",
+			"""
+			Skips the check for a license, always rendering
+			with a watermark.
+			""",
+
+			"layout:section", "Licensing",
+
+		],
+
 	}
 
 )
+
+for plugPrefix in ( "log", "console" ) :
+
+	for plugSuffix, description in (
+		( "Info", "information messages" ),
+		( "Warnings", "warning messages" ),
+		( "Errors", "error messages" ),
+		( "Debug", "debug messages" ),
+		( "AssParse", "ass parsing" ),
+		( "Plugins", "plugin loading" ),
+		( "Progress", "progress messages" ),
+		( "NAN", "pixels with NaNs" ),
+		( "Timestamp", "timestamp prefixes" ),
+		( "Stats", "statistics" ),
+		( "Backtrace", "stack backtraces from crashes" ),
+		( "Memory", "memory usage prefixes" ),
+		( "Color", "coloured messages" ),
+	) :
+
+		Gaffer.Metadata.registerNode(
+
+			GafferArnold.ArnoldOptions,
+
+			plugs = {
+
+				"options." + plugPrefix + plugSuffix : [
+
+					"description",
+					"""
+					Whether or not {0} {1} included in the {2} output.
+					""".format( description, "are" if description.endswith( "s" ) else "is", plugPrefix ),
+
+					"label", plugSuffix,
+					"layout:section", "Logging." + ( "Console " if plugPrefix == "console" else "" ) + "Verbosity",
+
+				],
+
+			}
+
+		)
+

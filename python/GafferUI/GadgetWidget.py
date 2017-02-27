@@ -41,8 +41,6 @@ import IECore
 
 import Gaffer
 import GafferUI
-from GLWidget import GLWidget
-from _GafferUI import ButtonEvent, ModifiableEvent, ContainerGadget, DragDropEvent, KeyEvent
 
 # import lazily to improve startup of apps which don't use GL functionality
 GL = Gaffer.lazyImport( "OpenGL.GL" )
@@ -60,7 +58,7 @@ class GadgetWidget( GafferUI.GLWidget ) :
 	# be placed within it.
 	def __init__( self, gadget=None, bufferOptions=set(), **kw ) :
 
-		GLWidget.__init__( self, bufferOptions, **kw )
+		GafferUI.GLWidget.__init__( self, bufferOptions, **kw )
 
 		self._qtWidget().setFocusPolicy( QtCore.Qt.ClickFocus )
 
@@ -88,6 +86,8 @@ class GadgetWidget( GafferUI.GLWidget ) :
 
 		self.__wheelConnection = self.wheelSignal().connect( Gaffer.WeakMethod( self.__wheel ) )
 
+		self.__visibilityChangedConnection = self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ) )
+
 		self.__viewportGadget = None
 		if isinstance( gadget, GafferUI.ViewportGadget ) :
 			self.setViewportGadget( gadget )
@@ -110,11 +110,17 @@ class GadgetWidget( GafferUI.GLWidget ) :
 		if viewportGadget.isSame( self.__viewportGadget ) :
 			return
 
+		if self.__viewportGadget is not None :
+			self.__viewportGadget.setVisible( False )
+
 		self.__viewportGadget = viewportGadget
 		self.__renderRequestConnection = self.__viewportGadget.renderRequestSignal().connect( Gaffer.WeakMethod( self.__renderRequest ) )
 		size = self.size()
 		if size.x and size.y :
 			self.__viewportGadget.setViewport( size )
+
+		self.__viewportGadget.setVisible( self.visible() )
+
 		self._redraw()
 
 	def _resize( self, size ) :
@@ -261,6 +267,10 @@ class GadgetWidget( GafferUI.GLWidget ) :
 			return False
 
 		return self.__viewportGadget.wheelSignal()( self.__viewportGadget, event )
+
+	def __visibilityChanged( self, widget ) :
+
+		self.__viewportGadget.setVisible( self.visible() )
 
 ## Used to make the tooltips dependent on which gadget is under the mouse
 class _EventFilter( QtCore.QObject ) :

@@ -38,11 +38,9 @@
 #include "boost/python.hpp"
 
 #include "GafferBindings/ComputeNodeBinding.h"
-#include "GafferBindings/ExecutableNodeBinding.h"
+#include "GafferDispatchBindings/TaskNodeBinding.h"
 
-#include "GafferScene/SceneNode.h"
 #include "GafferScene/SceneProcedural.h"
-#include "GafferScene/SceneProcessor.h"
 #include "GafferScene/PrimitiveVariableProcessor.h"
 #include "GafferScene/DeletePrimitiveVariables.h"
 #include "GafferScene/DeleteSets.h"
@@ -69,6 +67,10 @@
 #include "GafferScene/MapOffset.h"
 
 #include "GafferSceneBindings/ScenePlugBinding.h"
+#include "GafferSceneBindings/ShaderPlugBinding.h"
+#include "GafferSceneBindings/SceneNodeBinding.h"
+#include "GafferSceneBindings/SceneProcessorBinding.h"
+#include "GafferSceneBindings/FilteredSceneProcessorBinding.h"
 #include "GafferSceneBindings/OutputsBinding.h"
 #include "GafferSceneBindings/PathMatcherBinding.h"
 #include "GafferSceneBindings/SceneProceduralBinding.h"
@@ -100,8 +102,14 @@
 #include "GafferSceneBindings/PointsTypeBinding.h"
 #include "GafferSceneBindings/ParametersBinding.h"
 #include "GafferSceneBindings/PathMatcherDataPlugBinding.h"
+#include "GafferSceneBindings/MeshToPointsBinding.h"
+#include "GafferSceneBindings/FilterPlugBinding.h"
+#include "GafferSceneBindings/LightTweaksBinding.h"
+#include "GafferSceneBindings/LightToCameraBinding.h"
+#include "GafferSceneBindings/FilterResultsBinding.h"
 
 using namespace boost::python;
+using namespace GafferBindings;
 using namespace GafferScene;
 using namespace GafferSceneBindings;
 
@@ -109,9 +117,12 @@ BOOST_PYTHON_MODULE( _GafferScene )
 {
 
 	bindScenePlug();
-	GafferBindings::DependencyNodeClass<SceneNode>();
-	GafferBindings::DependencyNodeClass<SceneProcessor>();
-	GafferBindings::DependencyNodeClass<FilteredSceneProcessor>();
+	bindShaderPlug();
+	bindSceneNode();
+	bindSceneProcessor();
+	bindFilter();
+	bindFilterPlug();
+	bindFilteredSceneProcessor();
 	GafferBindings::DependencyNodeClass<SceneElementProcessor>();
 	GafferBindings::DependencyNodeClass<MeshType>();
 	GafferBindings::DependencyNodeClass<ObjectSource>();
@@ -125,7 +136,7 @@ BOOST_PYTHON_MODULE( _GafferScene )
 	GafferBindings::DependencyNodeClass<GlobalsProcessor>();
 	GafferBindings::DependencyNodeClass<DeleteSets>();
 
-	GafferBindings::ExecutableNodeClass<SceneWriter>();
+	GafferDispatchBindings::TaskNodeClass<SceneWriter>();
 
 	bindDeleteGlobals();
 	bindOutputs();
@@ -161,7 +172,6 @@ BOOST_PYTHON_MODULE( _GafferScene )
 	bindRender();
 	bindConstraint();
 	bindAttributes();
-	bindFilter();
 	bindMixin();
 	bindTransform();
 	bindParent();
@@ -181,5 +191,9 @@ BOOST_PYTHON_MODULE( _GafferScene )
 	bindPointsType();
 	bindParameters();
 	bindPathMatcherDataPlug();
+	bindMeshToPoints();
+	bindLightTweaks();
+	bindLightToCamera();
+	bindFilterResults();
 
 }

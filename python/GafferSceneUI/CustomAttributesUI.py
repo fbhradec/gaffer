@@ -49,12 +49,18 @@ Gaffer.Metadata.registerNode(
 	"""
 	Applies arbitrary user-defined attributes to locations in the scene. Note
 	that for most common cases the StandardAttributes, OpenGLAttributes, RenderManAttributes,
-	and ArnoldAttributes nodes should be used in preference - they provide predefined
+	ArnoldAttributes and AppleseedAttributes nodes should be used in preference - they provide predefined
 	sets of attributes with customised user interfaces. The CustomAttributes node is of most use when
 	needing to set a custom attribute not supported by the specialised nodes.
 	""",
 
 	plugs = {
+
+		"attributes" : [
+
+			"compoundDataPlugValueWidget:editable", True,
+
+		],
 
 		"attributes.*.name" : [
 
@@ -65,8 +71,6 @@ Gaffer.Metadata.registerNode(
 	}
 
 )
-
-GafferUI.PlugValueWidget.registerCreator( GafferScene.CustomAttributes, "attributes", GafferUI.CompoundDataPlugValueWidget, collapsed=None )
 
 ##########################################################################
 # Right click menu for adding attribute names to plugs
@@ -85,8 +89,8 @@ def __attributePopupMenu( menuDefinition, plugValueWidget ) :
 	if plug is None :
 		return
 
-	acceptsAttributeName = Gaffer.Metadata.plugValue( plug, "ui:scene:acceptsAttributeName" )
-	acceptsAttributeNames = Gaffer.Metadata.plugValue( plug, "ui:scene:acceptsAttributeNames" )
+	acceptsAttributeName = Gaffer.Metadata.value( plug, "ui:scene:acceptsAttributeName" )
+	acceptsAttributeNames = Gaffer.Metadata.value( plug, "ui:scene:acceptsAttributeNames" )
 	if not acceptsAttributeName and not acceptsAttributeNames :
 		return
 
@@ -132,7 +136,7 @@ def __attributePopupMenu( menuDefinition, plugValueWidget ) :
 			{
 				"command" : functools.partial( __setValue, plug, " ".join( sorted( newNames ) ) ),
 				"checkBox" : attributeName in currentNames,
-				"active" : plug.settable() and not plugValueWidget.getReadOnly(),
+				"active" : plug.settable() and not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ),
 			}
 		)
 

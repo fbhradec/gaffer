@@ -52,13 +52,10 @@ using namespace GafferScene;
 
 IE_CORE_DEFINERUNTIMETYPED( SceneWriter );
 
-/// \todo hard coded framerate should be replaced with a getTime() method on Gaffer::Context or something
-const double SceneWriter::g_frameRate( 24 );
-
 size_t SceneWriter::g_firstPlugIndex = 0;
 
 SceneWriter::SceneWriter( const std::string &name )
-	: ExecutableNode( name )
+	: TaskNode( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new ScenePlug( "in", Plug::In ) );
@@ -110,7 +107,7 @@ IECore::MurmurHash SceneWriter::hash( const Gaffer::Context *context ) const
 		return IECore::MurmurHash();
 	}
 
-	IECore::MurmurHash h = ExecutableNode::hash( context );
+	IECore::MurmurHash h = TaskNode::hash( context );
 	h.append( fileNamePlug()->hash() );
 	/// \todo hash the actual scene when we have a hierarchyHash
 	h.append( (uint64_t)scenePlug );
@@ -136,15 +133,14 @@ void SceneWriter::executeSequence( const std::vector<float> &frames ) const
 	ContextPtr context = new Context( *Context::current(), Context::Borrowed );
 	Context::Scope scopedContext( context.get() );
 
-	std::string fileName = context->substitute( fileNamePlug()->getValue() );
+	const std::string fileName = fileNamePlug()->getValue();
 	createDirectories( fileName );
 	SceneInterfacePtr output = SceneInterface::create( fileName, IndexedIO::Write );
 
 	for ( std::vector<float>::const_iterator it = frames.begin(); it != frames.end(); ++it )
 	{
 		context->setFrame( *it );
-		double time = *it / g_frameRate;
-		writeLocation( scene, ScenePlug::ScenePath(), context.get(), output.get(), time );
+		writeLocation( scene, ScenePlug::ScenePath(), context.get(), output.get(), context->getTime() );
 	}
 }
 
@@ -207,7 +203,7 @@ void SceneWriter::writeLocation( const GafferScene::ScenePlug *scene, const Scen
 	}
 }
 
-void SceneWriter::createDirectories( std::string &fileName ) const
+void SceneWriter::createDirectories( const std::string &fileName ) const
 {
 	boost::filesystem::path filePath( fileName );
 	boost::filesystem::path directory = filePath.parent_path();

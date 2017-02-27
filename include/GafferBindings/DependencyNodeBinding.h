@@ -74,13 +74,36 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 		{
 		}
 
+		template<typename Arg1, typename Arg2>
+		DependencyNodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2 )
+			:	NodeWrapper<WrappedType>( self, arg1, arg2 )
+		{
+		}
+
+		template<typename Arg1, typename Arg2, typename Arg3>
+		DependencyNodeWrapper( PyObject *self, Arg1 arg1, Arg2 arg2, Arg3 arg3 )
+			:	NodeWrapper<WrappedType>( self, arg1, arg2, arg3 )
+		{
+		}
+
+		virtual bool isInstanceOf( IECore::TypeId typeId ) const
+		{
+			if( typeId == (IECore::TypeId)Gaffer::DependencyNodeTypeId )
+			{
+				// Correct for the slightly overzealous (but hugely beneficial)
+				// optimisation in NodeWrapper::isInstanceOf().
+				return true;
+			}
+			return NodeWrapper<WrappedType>::isInstanceOf( typeId );
+		}
+
 		virtual void affects( const Gaffer::Plug *input, Gaffer::DependencyNode::AffectedPlugsContainer &outputs ) const
 		{
 			if( this->isSubclassed() )
 			{
+				IECorePython::ScopedGILLock gilLock;
 				try
 				{
-					IECorePython::ScopedGILLock gilLock;
 					boost::python::object f = this->methodOverride( "affects" );
 					if( f )
 					{
@@ -92,7 +115,7 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					translatePythonException();
+					ExceptionAlgo::translatePythonException();
 				}
 			}
 			WrappedType::affects( input, outputs );
@@ -102,9 +125,9 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 		{
 			if( this->isSubclassed() )
 			{
+				IECorePython::ScopedGILLock gilLock;
 				try
 				{
-					IECorePython::ScopedGILLock gilLock;
 					boost::python::object f = this->methodOverride( "enabledPlug" );
 					if( f )
 					{
@@ -113,7 +136,7 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					translatePythonException();
+					ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::enabledPlug();
@@ -129,9 +152,9 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 		{
 			if( this->isSubclassed() )
 			{
+				IECorePython::ScopedGILLock gilLock;
 				try
 				{
-					IECorePython::ScopedGILLock gilLock;
 					boost::python::object f = this->methodOverride( "correspondingInput" );
 					if( f )
 					{
@@ -143,7 +166,7 @@ class DependencyNodeWrapper : public NodeWrapper<WrappedType>
 				}
 				catch( const boost::python::error_already_set &e )
 				{
-					translatePythonException();
+					ExceptionAlgo::translatePythonException();
 				}
 			}
 			return WrappedType::correspondingInput( output );

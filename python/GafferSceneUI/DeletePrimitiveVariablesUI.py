@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2015, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2015-2016, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -46,31 +46,5 @@ Gaffer.Metadata.registerNode(
 	Deletes primitive variables from objects. The primitive
 	variables to be deleted are chosen based on name.
 	""",
-
-	plugs = {
-
-		"names" : [
-
-			"description",
-			"""
-			The names of the primitive variables to be deleted.
-			Names should be specified by spaces, and Gaffer's
-			standard wildcard characters may be used.
-			""",
-
-		],
-
-		"invertNames" : [
-
-			"description",
-			"""
-			When on, the primitive variables matched by names
-			are kept, and the non-matching primitive variables
-			are deleted.
-			""",
-
-		],
-
-	}
 
 )

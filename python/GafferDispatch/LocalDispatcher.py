@@ -1,0 +1,457 @@
+##########################################################################
+#
+#  Copyright (c) 2013-2014, Image Engine Design Inc. All rights reserved.
+#
+#  Redistribution and use in source and binary forms, with or without
+#  modification, are permitted provided that the following conditions are
+#  met:
+#
+#      * Redistributions of source code must retain the above
+#        copyright notice, this list of conditions and the following
+#        disclaimer.
+#
+#      * Redistributions in binary form must reproduce the above
+#        copyright notice, this list of conditions and the following
+#        disclaimer in the documentation and/or other materials provided with
+#        the distribution.
+#
+#      * Neither the name of John Haddon nor the names of
+#        any other contributors to this software may be used to endorse or
+#        promote products derived from this software without specific prior
+#        written permission.
+#
+#  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+#  IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+#  THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+#  PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+#  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+#  EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+#  PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+#  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+#  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+#  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+#  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+##########################################################################
+
+import os
+import errno
+import signal
+import shlex
+import subprocess32 as subprocess
+import threading
+import time
+import traceback
+
+import IECore
+
+import Gaffer
+import GafferDispatch
+
+class LocalDispatcher( GafferDispatch.Dispatcher ) :
+
+	def __init__( self, name = "LocalDispatcher", jobPool = None ) :
+
+		GafferDispatch.Dispatcher.__init__( self, name )
+
+		self["executeInBackground"] = Gaffer.BoolPlug( defaultValue = False )
+		self["ignoreScriptLoadErrors"] = Gaffer.BoolPlug( defaultValue = False )
+		self["environmentCommand"] = Gaffer.StringPlug()
+
+		self.__jobPool = jobPool if jobPool else LocalDispatcher.defaultJobPool()
+
+	class Job( object ) :
+
+		Status = IECore.Enum.create( "Waiting", "Running", "Complete", "Failed", "Killed" )
+
+		def __init__( self, batch, dispatcher, name, jobId, directory ) :
+
+			assert( isinstance( batch, GafferDispatch.Dispatcher._TaskBatch ) )
+			assert( isinstance( dispatcher, GafferDispatch.Dispatcher ) )
+
+			self.__batch = batch
+			## \todo Stop storing this. It's just a temptation to access potentially
+			# invalid data during background dispatches - all dispatcher settings _must_
+			# be copied to the job upon construction, because nothing stops a user changing
+			# the dispatcher settings during a background dispatch. Currently __dispatcher
+			# is used to access the JobPool in __reportCompleted etc - instead the job should
+			# use signals to report changes in status, and the JobPool should connect to those
+			# signals. Jobs should be blissfully ignorant of JobPools.
+			self.__dispatcher = dispatcher
+			script = batch.preTasks()[0].plug().ancestor( Gaffer.ScriptNode )
+			self.__context = Gaffer.Context( script.context() )
+
+			self.__name = name
+			self.__id = jobId
+			self.__directory = directory
+			self.__stats = {}
+			self.__ignoreScriptLoadErrors = dispatcher["ignoreScriptLoadErrors"].getValue()
+			## \todo Make `Dispatcher::dispatch()` use a Process, so we don't need to
+			# do substitutions manually like this.
+			self.__environmentCommand = Gaffer.Context.current().substitute(
+				dispatcher["environmentCommand"].getValue()
+			)
+
+			self.__messageHandler = IECore.CapturingMessageHandler()
+			self.__messageTitle = "%s : Job %s %s" % ( self.__dispatcher.getName(), self.__name, self.__id )
+
+			scriptFileName = script["fileName"].getValue()
+			self.__scriptFile = os.path.join( self.__directory, os.path.basename( scriptFileName ) if scriptFileName else "untitled.gfr" )
+			script.serialiseToFile( self.__scriptFile )
+
+			self.__initBatchWalk( batch )
+
+		def name( self ) :
+
+			return self.__name
+
+		def id( self ) :
+
+			return self.__id
+
+		def directory( self ) :
+
+			return self.__directory
+
+		def description( self ) :
+
+			batch = self.__currentBatch()
+			if batch is None or batch.plug() is None :
+				return "N/A"
+
+			frames = str( IECore.frameListFromList( [ int(x) for x in batch.frames() ] ) )
+
+			return "Executing " + batch.blindData()["nodeName"].value + " on frames " + frames
+
+		def statistics( self ) :
+
+			batch = self.__currentBatch()
+			if batch is None or "pid" not in batch.blindData().keys() :
+				return {}
+
+			rss = 0
+			pcpu = 0.0
+			pid = batch.blindData().get( "pid" )
+
+			try :
+				stats = subprocess.Popen( ( "ps -Ao pid,ppid,pgid,sess,pcpu,rss" ).split( " " ), stdout=subprocess.PIPE, stderr=subprocess.PIPE ).communicate()[0].split()
+				for i in range( 0, len(stats), 6 ) :
+					if str(pid) in stats[i:i+4] :
+						pcpu += float(stats[i+4])
+						rss += float(stats[i+5])
+			except :
+				return {}
+
+			return {
+				"pid" : pid,
+				"pcpu" : pcpu,
+				"rss" : rss,
+			}
+
+		def messageHandler( self ) :
+
+			return self.__messageHandler
+
+		def execute( self, background = False ) :
+
+			if background :
+				threading.Thread( target = self.__backgroundDispatch ).start()
+			else :
+				with self.__messageHandler :
+					self.__foregroundDispatch( self.__batch )
+					self.__reportCompleted( self.__batch )
+
+		def failed( self ) :
+
+			return self.__getStatus( self.__batch ) == LocalDispatcher.Job.Status.Failed
+
+		def kill( self ) :
+
+			if not self.failed() :
+				self.__killBatchWalk( self.__batch )
+
+		def killed( self ) :
+
+			return "killed" in self.__batch.blindData().keys()
+
+		def _fail( self ) :
+
+			self.__setStatus( self.__batch, LocalDispatcher.Job.Status.Failed )
+
+		def __killBatchWalk( self, batch ) :
+
+			if "killed" in batch.blindData() :
+				# Already visited via another path
+				return
+
+			# this doesn't set the status to Killed because that could
+			# run into a race condition with a background dispatch.
+			batch.blindData()["killed"] = IECore.BoolData( True )
+			for upstreamBatch in batch.preTasks() :
+				self.__killBatchWalk( upstreamBatch )
+
+		## \todo Having separate functions for foreground and background
+		# dispatch functions is error prone. Have only one.
+		def __foregroundDispatch( self, batch ) :
+
+			if self.__getStatus( batch ) == LocalDispatcher.Job.Status.Complete :
+				return True
+
+			for upstreamBatch in batch.preTasks() :
+				if not self.__foregroundDispatch( upstreamBatch ) :
+					return False
+
+			if batch.blindData().get( "killed" ) :
+				self.__reportKilled( batch )
+				return False
+
+			if not batch.plug() :
+				self.__setStatus( batch, LocalDispatcher.Job.Status.Complete )
+				return True
+
+			description = "executing %s on %s" % ( batch.blindData()["nodeName"].value, str(batch.frames()) )
+			IECore.msg( IECore.MessageHandler.Level.Info, self.__messageTitle, description )
+
+			try :
+				self.__setStatus( batch, LocalDispatcher.Job.Status.Running )
+				batch.execute()
+			except :
+				traceback.print_exc()
+				self.__reportFailed( batch )
+				return False
+
+			self.__setStatus( batch, LocalDispatcher.Job.Status.Complete )
+
+			return True
+
+		def __backgroundDispatch( self ) :
+
+			with self.__messageHandler :
+				self.__doBackgroundDispatch( self.__batch )
+
+		def __doBackgroundDispatch( self, batch ) :
+
+			if self.__getStatus( batch ) == LocalDispatcher.Job.Status.Complete :
+				return True
+
+			for upstreamBatch in batch.preTasks() :
+				if not self.__doBackgroundDispatch( upstreamBatch ) :
+					return False
+
+			if batch.blindData().get( "killed" ) :
+				self.__reportKilled( batch )
+				return False
+
+			if not batch.plug() :
+				self.__reportCompleted( batch )
+				return True
+
+			if len( batch.frames() ) == 0 :
+				# This case occurs for nodes like TaskList and TaskContextProcessors,
+				# because they don't do anything in execute (they have empty hashes).
+				# Their batches exist only to depend on upstream batches. We don't need
+				# to do any work here, but we still signal completion for the task to
+				# provide progress feedback to the user.
+				self.__setStatus( batch, LocalDispatcher.Job.Status.Complete )
+				IECore.msg( IECore.MessageHandler.Level.Info, self.__messageTitle, "Finished " + batch.blindData()["nodeName"].value )
+				return True
+
+			taskContext = batch.context()
+			frames = str( IECore.frameListFromList( [ int(x) for x in batch.frames() ] ) )
+
+			args = [
+				"gaffer", "execute",
+				"-script", self.__scriptFile,
+				"-nodes", batch.blindData()["nodeName"].value,
+				"-frames", frames,
+			]
+
+			args = shlex.split( self.__environmentCommand ) + args
+
+			if self.__ignoreScriptLoadErrors :
+				args.append( "-ignoreScriptLoadErrors" )
+
+			contextArgs = []
+			for entry in [ k for k in taskContext.keys() if k != "frame" and not k.startswith( "ui:" ) ] :
+				if entry not in self.__context.keys() or taskContext[entry] != self.__context[entry] :
+					contextArgs.extend( [ "-" + entry, repr(taskContext[entry]) ] )
+
+			if contextArgs :
+				args.extend( [ "-context" ] + contextArgs )
+
+			self.__setStatus( batch, LocalDispatcher.Job.Status.Running )
+			IECore.msg( IECore.MessageHandler.Level.Info, self.__messageTitle, " ".join( args ) )
+			process = subprocess.Popen( args, start_new_session=True )
+			batch.blindData()["pid"] = IECore.IntData( process.pid )
+
+			while process.poll() is None :
+
+				if batch.blindData().get( "killed" ) :
+					os.killpg( process.pid, signal.SIGTERM )
+					self.__reportKilled( batch )
+					return False
+
+				time.sleep( 0.01 )
+
+			if process.returncode :
+				self.__reportFailed( batch )
+				return False
+
+			self.__setStatus( batch, LocalDispatcher.Job.Status.Complete )
+
+			return True
+
+		def __getStatus( self, batch ) :
+
+			return LocalDispatcher.Job.Status( batch.blindData().get( "status", IECore.IntData( int(LocalDispatcher.Job.Status.Waiting) ) ).value )
+
+		def __setStatus( self, batch, status ) :
+
+			batch.blindData()["status"] = IECore.IntData( int(status) )
+
+		def __reportCompleted( self, batch ) :
+
+			self.__setStatus( batch, LocalDispatcher.Job.Status.Complete )
+			self.__dispatcher.jobPool()._remove( self )
+			IECore.msg( IECore.MessageHandler.Level.Info, self.__messageTitle, "Dispatched all tasks for " + self.name() )
+
+		def __reportFailed( self, batch ) :
+
+			self.__setStatus( batch, LocalDispatcher.Job.Status.Failed )
+			self.__dispatcher.jobPool()._fail( self )
+			frames = str( IECore.frameListFromList( [ int(x) for x in batch.frames() ] ) )
+			IECore.msg( IECore.MessageHandler.Level.Error, self.__messageTitle, "Failed to execute " + batch.blindData()["nodeName"].value + " on frames " + frames )
+
+		def __reportKilled( self, batch ) :
+
+			self.__setStatus( batch, LocalDispatcher.Job.Status.Killed )
+			self.__dispatcher.jobPool()._remove( self )
+			IECore.msg( IECore.MessageHandler.Level.Info, self.__messageTitle, "Killed " + self.name() )
+
+		def __currentBatch( self ) :
+
+			## \todo Consider just storing the current batch, rather
+			# than searching each time it is requested.
+			return self.__currentBatchWalk( self.__batch, set() )
+
+		def __currentBatchWalk( self, batch, visited ) :
+
+			if batch in visited :
+				return None
+
+			visited.add( batch )
+
+			if self.__getStatus( batch ) == LocalDispatcher.Job.Status.Running :
+				return batch
+
+			for upstreamBatch in batch.preTasks() :
+				currentBatch = self.__currentBatchWalk( upstreamBatch, visited )
+				if currentBatch is not None :
+					return currentBatch
+
+			return None
+
+		def __initBatchWalk( self, batch ) :
+
+			if "nodeName" in batch.blindData() :
+				# Already visited via another path
+				return
+
+			nodeName = ""
+			if batch.plug() is not None :
+				nodeName = batch.plug().node().relativeName( batch.plug().node().scriptNode() )
+			batch.blindData()["nodeName"] = nodeName
+
+			self.__setStatus( batch, LocalDispatcher.Job.Status.Waiting )
+
+			for upstreamBatch in batch.preTasks() :
+				self.__initBatchWalk( upstreamBatch )
+
+	class JobPool( IECore.RunTimeTyped ) :
+
+		def __init__( self ) :
+
+			self.__jobs = []
+			self.__failedJobs = []
+			self.__jobAddedSignal = Gaffer.Signal1()
+			self.__jobRemovedSignal = Gaffer.Signal1()
+			self.__jobFailedSignal = Gaffer.Signal1()
+
+		def jobs( self ) :
+
+			return list(self.__jobs)
+
+		def failedJobs( self ) :
+
+			return list(self.__failedJobs)
+
+		def waitForAll( self ) :
+
+			while len(self.__jobs) :
+				time.sleep( 0.2 )
+
+		def jobAddedSignal( self ) :
+
+			return self.__jobAddedSignal
+
+		def jobRemovedSignal( self ) :
+
+			return self.__jobRemovedSignal
+
+		def jobFailedSignal( self ) :
+
+			return self.__jobFailedSignal
+
+		def _append( self, job ) :
+
+			assert( isinstance( job, LocalDispatcher.Job ) )
+
+			self.__jobs.append( job )
+			self.jobAddedSignal()( job )
+
+		def _remove( self, job, force = False ) :
+
+			if job in self.__jobs :
+				self.__jobs.remove( job )
+				self.jobRemovedSignal()( job )
+
+			if force and job in self.__failedJobs :
+				self.__failedJobs.remove( job )
+
+		def _fail( self, job ) :
+
+			if job in self.__jobs and job not in self.__failedJobs :
+				job._fail()
+				self.__failedJobs.append( job )
+				self.jobFailedSignal()( job )
+				self._remove( job )
+
+	__jobPool = JobPool()
+
+	@staticmethod
+	def defaultJobPool() :
+
+		return LocalDispatcher.__jobPool
+
+	def jobPool( self ) :
+
+		return self.__jobPool
+
+	def _doDispatch( self, batch ) :
+
+		job = LocalDispatcher.Job(
+			batch = batch,
+			dispatcher = self,
+			name = Gaffer.Context.current().substitute( self["jobName"].getValue() ),
+			jobId = os.path.basename( self.jobDirectory() ),
+			directory = self.jobDirectory(),
+		)
+
+		self.__jobPool._append( job )
+
+		job.execute( background = self["executeInBackground"].getValue() )
+
+IECore.registerRunTimeTyped( LocalDispatcher, typeName = "GafferDispatch::LocalDispatcher" )
+IECore.registerRunTimeTyped( LocalDispatcher.JobPool, typeName = "GafferDispatch::LocalDispatcher::JobPool" )
+
+GafferDispatch.Dispatcher.registerDispatcher( "Local", LocalDispatcher )

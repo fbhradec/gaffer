@@ -45,7 +45,7 @@ import GafferTest
 import GafferScene
 import GafferSceneTest
 
-class SceneNodeTest( GafferTest.TestCase ) :
+class SceneNodeTest( GafferSceneTest.SceneTestCase ) :
 
 	def testRootConstraints( self ) :
 
@@ -160,8 +160,8 @@ class SceneNodeTest( GafferTest.TestCase ) :
 		p2["divisions"].setValue( IECore.V2i( 51 ) )
 
 		g = GafferScene.Group()
-		g["in"].setInput( p1["out"] )
-		g["in1"].setInput( p2["out"] )
+		g["in"][0].setInput( p1["out"] )
+		g["in"][1].setInput( p2["out"] )
 
 		# not enough for both objects - will cause cache thrashing
 		Gaffer.ValuePlug.setCacheMemoryLimit( p1["out"].object( "/plane" ).memoryUsage() )
@@ -190,14 +190,101 @@ class SceneNodeTest( GafferTest.TestCase ) :
 
 		self.assertNodesConstructWithDefaultValues( GafferScene )
 
+	def testDerivingInPython( self ) :
+
+		# We allow deriving in Python for use as a "shell" node containing
+		# an internal node network which provides the implementation. But
+		# we don't allow the overriding of the compute*() and hash*() methods
+		# because the performance would be abysmal.
+
+		class SphereOrCube( GafferScene.SceneNode ) :
+
+			Type = IECore.Enum.create( "Sphere", "Cube" )
+
+			def __init__( self, name = "SphereOrCube" ) :
+
+				GafferScene.SceneNode.__init__( self, name )
+
+				self["type"] = Gaffer.IntPlug(
+					defaultValue = int( self.Type.Sphere ),
+					minValue = int( self.Type.Sphere ),
+					maxValue = int( self.Type.Cube ),
+				)
+
+				self["__sphere"] = GafferScene.Sphere()
+				self["__sphere"]["enabled"].setInput( self["enabled"] )
+
+				self["__cube"] = GafferScene.Cube()
+				self["__cube"]["enabled"].setInput( self["enabled"] )
+
+				self["__primitiveSwitch"] = GafferScene.SceneSwitch()
+				self["__primitiveSwitch"]["index"].setInput( self["type"] )
+				self["__primitiveSwitch"]["in"][0].setInput( self["__sphere"]["out"] )
+				self["__primitiveSwitch"]["in"][1].setInput( self["__cube"]["out"] )
+
+				self["out"].setInput( self["__primitiveSwitch"]["out"] )
+
+		IECore.registerRunTimeTyped( SphereOrCube )
+
+		Gaffer.Metadata.registerNode(
+
+			SphereOrCube,
+
+			"description",
+			"""
+			A little test node
+			""",
+
+			plugs = {
+
+				"type" : [
+
+					"description",
+					"""
+					Pick yer lovely primitive here.
+					""",
+
+					"preset:Sphere", int( SphereOrCube.Type.Sphere ),
+					"preset:Cube", int( SphereOrCube.Type.Cube ),
+
+				]
+
+			}
+
+		)
+
+		n = SphereOrCube()
+		self.assertEqual( n["out"].childNames( "/"), IECore.InternedStringVectorData( [ "sphere" ] ) )
+
+		n["type"].setValue( int( n.Type.Cube ) )
+		self.assertEqual( n["out"].childNames( "/"), IECore.InternedStringVectorData( [ "cube" ] ) )
+
+		n["enabled"].setValue( False )
+		self.assertEqual( n["out"].childNames( "/"), IECore.InternedStringVectorData() )
+
+		self.assertEqual(
+			Gaffer.Metadata.value( n, "description" ),
+			"A little test node",
+		)
+
+		self.assertEqual(
+			Gaffer.Metadata.value( n["type"], "description" ),
+			"Pick yer lovely primitive here.",
+		)
+
+		self.assertEqual( Gaffer.NodeAlgo.presets( n["type"] ), [ "Sphere", "Cube" ] )
+
 	def setUp( self ) :
+
+		GafferSceneTest.SceneTestCase.setUp( self )
 
 		self.__previousCacheMemoryLimit = Gaffer.ValuePlug.getCacheMemoryLimit()
 
 	def tearDown( self ) :
 
+		GafferSceneTest.SceneTestCase.tearDown( self )
+
 		Gaffer.ValuePlug.setCacheMemoryLimit( self.__previousCacheMemoryLimit )
 
 if __name__ == "__main__":
 	unittest.main()
-

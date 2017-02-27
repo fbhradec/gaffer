@@ -64,8 +64,8 @@ enum TypeId
 	ImageGadgetTypeId = 110269,
 	ViewportGadgetTypeId = 110270,
 	ViewTypeId = 110271,
-	View3DTypeId = 110272,
-	ObjectViewTypeId = 110273,
+	View3DTypeId = 110272, // Obsolete - available for reuse
+	ObjectViewTypeId = 110273, // Obsolete - available for reuse
 	PlugGadgetTypeId = 110274,
 	GraphLayoutTypeId = 110275,
 	StandardGraphLayoutTypeId = 110276,
@@ -75,6 +75,8 @@ enum TypeId
 	HandleTypeId = 110280,
 	ToolTypeId = 110281,
 	DotNodeGadgetTypeId = 110282,
+	PlugAdderTypeId = 110283,
+	NoduleLayoutTypeId = 110284,
 
 	LastTypeId = 110450
 };

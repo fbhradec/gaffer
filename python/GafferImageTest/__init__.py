@@ -37,20 +37,20 @@
 
 from _GafferImageTest import *
 
+from ImageTestCase import ImageTestCase
 from ImagePlugTest import ImagePlugTest
+from OpenImageIOReaderTest import OpenImageIOReaderTest
 from ImageReaderTest import ImageReaderTest
-from OpenColorIOTest import OpenColorIOTest
+from ColorSpaceTest import ColorSpaceTest
 from ObjectToImageTest import ObjectToImageTest
 from FormatTest import FormatTest
-from FormatPlugTest import FormatPlugTest
+from AtomicFormatPlugTest import AtomicFormatPlugTest
 from MergeTest import MergeTest
 from GradeTest import GradeTest
 from ConstantTest import ConstantTest
 from ImageWriterTest import ImageWriterTest
 from ChannelMaskPlugTest import ChannelMaskPlugTest
 from SamplerTest import SamplerTest
-from ReformatTest import ReformatTest
-from FilterTest import FilterTest
 from DisplayTest import DisplayTest
 from ImageStatsTest import ImageStatsTest
 from ImageTransformTest import ImageTransformTest
@@ -64,6 +64,26 @@ from FormatDataTest import FormatDataTest
 from ImageMetadataTest import ImageMetadataTest
 from DeleteImageMetadataTest import DeleteImageMetadataTest
 from CopyImageMetadataTest import CopyImageMetadataTest
+from ImageLoopTest import ImageLoopTest
+from ImageProcessorTest import ImageProcessorTest
+from ShuffleTest import ShuffleTest
+from PremultiplyTest import PremultiplyTest
+from UnpremultiplyTest import UnpremultiplyTest
+from CropTest import CropTest
+from ResampleTest import ResampleTest
+from ResizeTest import ResizeTest
+from LUTTest import LUTTest
+from CDLTest import CDLTest
+from ImageAlgoTest import ImageAlgoTest
+from BufferAlgoTest import BufferAlgoTest
+from DisplayTransformTest import DisplayTransformTest
+from FormatPlugTest import FormatPlugTest
+from OffsetTest import OffsetTest
+from BlurTest import BlurTest
+from TextTest import TextTest
+from OpenColorIOTransformTest import OpenColorIOTransformTest
+from UVWarpTest import UVWarpTest
+from MirrorTest import MirrorTest
 
 if __name__ == "__main__":
 	import unittest

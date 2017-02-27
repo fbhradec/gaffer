@@ -50,7 +50,7 @@ using namespace GafferCortex;
 IE_CORE_DEFINERUNTIMETYPED( ExecutableOpHolder )
 
 ExecutableOpHolder::ExecutableOpHolder( const std::string &name )
-	:	ParameterisedHolderExecutableNode( name )
+	:	ParameterisedHolderTaskNode( name )
 {
 }
 
@@ -61,12 +61,12 @@ void ExecutableOpHolder::setParameterised( IECore::RunTimeTypedPtr parameterised
 	{
 		throw IECore::Exception( "Parameterised object is not an IECore::Op" );
 	}
-	ParameterisedHolderExecutableNode::setParameterised( parameterised, keepExistingValues );
+	ParameterisedHolderTaskNode::setParameterised( parameterised, keepExistingValues );
 }
 
 void ExecutableOpHolder::setOp( const std::string &className, int classVersion, bool keepExistingValues )
 {
-	ParameterisedHolderExecutableNode::setParameterised( className, classVersion, "IECORE_OP_PATHS", keepExistingValues );
+	ParameterisedHolderTaskNode::setParameterised( className, classVersion, "IECORE_OP_PATHS", keepExistingValues );
 }
 
 IECore::Op *ExecutableOpHolder::getOp( std::string *className, int *classVersion )
@@ -88,7 +88,7 @@ IECore::MurmurHash ExecutableOpHolder::hash( const Gaffer::Context *context ) co
 		return IECore::MurmurHash();
 	}
 
-	IECore::MurmurHash h = ExecutableNode::hash( context );
+	IECore::MurmurHash h = ParameterisedHolderTaskNode::hash( context );
 	h.append( className );
 	h.append( classVersion );
 
@@ -108,24 +108,5 @@ void ExecutableOpHolder::execute() const
 	// and passing it explicitly in the operate call, so clients can safely call execute() from multiple threads.
 	const_cast<CompoundParameterHandler *>( parameterHandler() )->setParameterValue();
 	Op *op = const_cast<Op *>( getOp() );
-	/// \todo: Remove this once scoping the context takes care of it for us
-	substitute( op->parameters(), Gaffer::Context::current() );
 	op->operate();
-}
-
-void ExecutableOpHolder::substitute( Parameter *parameter, const Gaffer::Context *context ) const
-{
-	if ( const CompoundParameter *compound = runTimeCast<const CompoundParameter>( parameter ) )
-	{
-		const CompoundParameter::ParameterVector &children = compound->orderedParameters();
-		for ( CompoundParameter::ParameterVector::const_iterator it = children.begin(); it != children.end(); ++it )
-		{
-			substitute( const_cast<Parameter*>( it->get() ), context );
-		}
-	}
-
-	if ( StringParameter *stringParm = runTimeCast<StringParameter>( parameter ) )
-	{
-		stringParm->setTypedValue( context->substitute( stringParm->getTypedValue() ) );
-	}
 }

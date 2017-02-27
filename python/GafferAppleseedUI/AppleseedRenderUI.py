@@ -34,46 +34,41 @@
 #
 ##########################################################################
 
+import IECore
+
 import Gaffer
 import GafferUI
 import GafferAppleseed
 
-GafferUI.PlugValueWidget.registerCreator(
+Gaffer.Metadata.registerNode(
+
 	GafferAppleseed.AppleseedRender,
-	"mode",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Render", "render" ),
-		( "Generate .appleseed only", "generate" ),
-	),
+
+	"description",
+	"""
+	Performs offline batch rendering using the
+	appleseed renderer, or optionally generates
+	appleseed projects for later rendering using a SystemCommand
+	node.
+	""",
+
+	plugs = {
+
+		"fileName" : [
+
+			"description",
+			"""
+			The name of the appleseed project file to be generated.
+			""",
+
+			"nodule:type", "",
+			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
+			"pathPlugValueWidget:leaf", True,
+			"pathPlugValueWidget:bookmarks", "appleseed",
+			"fileSystemPathPlugValueWidget:extensions", IECore.StringVectorData( [ "appleseed" ] ),
+
+		],
+
+	}
+
 )
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedRender,
-	"fileName",
-	lambda plug : GafferUI.PathPlugValueWidget( plug,
-		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter() ),
-		pathChooserDialogueKeywords = {
-			"bookmarks" : GafferUI.Bookmarks.acquire( plug, category = "appleseed" ),
-			"leaf" : True,
-		},
-	),
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedRender,
-	"verbosity",
-	GafferUI.EnumPlugValueWidget,
-	labelsAndValues = (
-		( "Fatal", "fatal" ),
-		( "Error", "error" ),
-		( "Warning", "warning" ),
-		( "Debug", "debug" ),
-		( "Info", "info" ),
-	),
-)
-
-GafferUI.Nodule.registerNodule( GafferAppleseed.AppleseedRender, "mode", lambda plug : None )
-GafferUI.Nodule.registerNodule( GafferAppleseed.AppleseedRender, "fileName", lambda plug : None )
-GafferUI.Nodule.registerNodule( GafferAppleseed.AppleseedRender, "verbosity", lambda plug : None )
-

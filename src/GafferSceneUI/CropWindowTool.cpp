@@ -374,7 +374,7 @@ class CropWindowTool::Rectangle : public GafferUI::Gadget
 		V2f eventPosition( const ButtonEvent &event ) const
 		{
 			const ViewportGadget *viewportGadget = ancestor<ViewportGadget>();
-			return viewportGadget->gadgetToRasterSpace( event.line.p0, this );
+			return viewportGadget->gadgetToRasterSpace( event.line.p1, this );
 		}
 
 		Imath::Box2f m_rectangle;
@@ -624,7 +624,7 @@ bool CropWindowTool::findCropWindowPlugFromNode( GafferScene::ScenePlug *scene, 
 		return false;
 	}
 
-	for( CompoundDataPlug::MemberPlugIterator it( options->optionsPlug() ); it != it.end(); ++it )
+	for( CompoundDataPlug::MemberPlugIterator it( options->optionsPlug() ); !it.done(); ++it )
 	{
 		CompoundDataPlug::MemberPlug *memberPlug = it->get();
 		if( memberPlug->namePlug()->getValue() != "render:cropWindow" )

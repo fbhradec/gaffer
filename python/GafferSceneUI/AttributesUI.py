@@ -39,7 +39,6 @@ import GafferUI
 
 import GafferScene
 
-
 Gaffer.Metadata.registerNode(
 
 	GafferScene.Attributes,
@@ -48,6 +47,8 @@ Gaffer.Metadata.registerNode(
 	"""
 	The base type for nodes that apply attributes to the scene.
 	""",
+
+	"layout:activator:isNotGlobal", lambda node : not node["global"].getValue(),
 
 	plugs = {
 
@@ -59,6 +60,8 @@ Gaffer.Metadata.registerNode(
 			attributes may be added as children of this plug via the user
 			interface, or using the CompoundDataPlug API via python.
 			""",
+
+			"compoundDataPlugValueWidget:editable", False,
 
 		],
 
@@ -72,10 +75,14 @@ Gaffer.Metadata.registerNode(
 
 			"layout:section", "Filter",
 
-		]
+		],
+
+		"filter" : [
+
+			"layout:activator", "isNotGlobal",
+
+		],
 
 	}
 
 )
-
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Attributes, "attributes", GafferUI.LayoutPlugValueWidget )

@@ -34,8 +34,6 @@
 #
 ##########################################################################
 
-import fnmatch
-
 import IECore
 
 import Gaffer
@@ -77,8 +75,6 @@ class SceneReaderPathPreview( GafferUI.PathPreviewWidget ) :
 		column.append( self.__viewer )
 		column.append( GafferUI.Timeline( self.__script ) )
 
-		self.__script.selection().add( self.__script["camera"] )
-
 		self._updateFromPath()
 
 	def isValid( self ) :
@@ -113,6 +109,7 @@ class SceneReaderPathPreview( GafferUI.PathPreviewWidget ) :
 		self.__script["ObjectPreview"]["fileName"].setValue( "" )
 
 		if not self.isValid() :
+			self.__script.selection().clear()
 			return
 
 		path = self.getPath()
@@ -175,6 +172,7 @@ class SceneReaderPathPreview( GafferUI.PathPreviewWidget ) :
 			GafferUI.Playback.acquire( self.__script.context() ).setFrameRange( startFrame, endFrame )
 
 		# focus the viewer
+		self.__script.selection().add( self.__script["camera"] )
 		with self.__script.context() :
 			self.__viewer.viewGadgetWidget().getViewportGadget().frame( self.__script["OpenGLAttributes"]["out"].bound( "/" ) )
 
@@ -213,17 +211,14 @@ class _Camera( Gaffer.Node ) :
 		self["cameraRotate"] = GafferScene.Transform()
 		self["cameraRotate"]["in"].setInput( self["parentConstraint"]["out"] )
 		self["cameraRotate"]["transform"]["rotate"]["y"].setInput( self["angle"] )
-		self["cameraRotate"]["space"].setValue( self["cameraRotate"].Space.Object )
 		self["cameraRotate"]["filter"].setInput( self["cameraFilter"]["out"] )
 
 		self["elevationExpression"] = Gaffer.Expression()
-		self["elevationExpression"]["engine"].setValue( "python" )
-		self["elevationExpression"]["expression"].setValue( 'parent["cameraRotate"]["transform"]["rotate"]["x"] = -parent["elevation"]' )
+		self["elevationExpression"].setExpression( 'parent["cameraRotate"]["transform"]["rotate"]["x"] = -parent["elevation"]' )
 
 		self["cameraTranslate"] = GafferScene.Transform()
 		self["cameraTranslate"]["in"].setInput( self["cameraRotate"]["out"] )
 		self["cameraTranslate"]["transform"]["translate"]["z"].setInput( self["depth"] )
-		self["cameraTranslate"]["space"].setValue( self["cameraRotate"].Space.Object )
 		self["cameraTranslate"]["filter"].setInput( self["cameraFilter"]["out"] )
 
 		self["options"] = GafferScene.StandardOptions()
@@ -241,30 +236,65 @@ class _Camera( Gaffer.Node ) :
 
 IECore.registerRunTimeTyped( _Camera )
 
-GafferUI.NodeToolbar.registerCreator( _Camera, GafferUI.StandardNodeToolbar )
-GafferUI.PlugValueWidget.registerCreator( _Camera, "in", None )
-GafferUI.PlugValueWidget.registerCreator( _Camera, "out", None )
-GafferUI.PlugValueWidget.registerCreator( _Camera, "user", None )
+Gaffer.Metadata.registerNode(
 
-GafferUI.PlugValueWidget.registerCreator(
 	_Camera,
-	"lookAt",
-	lambda plug : GafferUI.PathPlugValueWidget(
-		plug,
-		path = GafferScene.ScenePath( plug.node()["in"], plug.node().scriptNode().context(), "/" ),
-	),
+
+	"nodeToolbar:top:type", "GafferUI.StandardNodeToolbar.top",
+
+	plugs = {
+
+		"*" : [
+
+			"toolbarLayout:section", "Top",
+
+		],
+
+		"in" : [
+
+			"plugValueWidget:type", "",
+
+		],
+
+		"out" : [
+
+			"plugValueWidget:type", "",
+
+		],
+
+		"user" : [
+
+			"plugValueWidget:type", "",
+
+		],
+
+		"lookAt" : [
+
+			"plugValueWidget:type", "GafferSceneUI.ScenePathPlugValueWidget",
+
+		],
+
+		"depth" : [
+
+			"numericPlugValueWidget:fixedCharacterWidth", 5,
+
+		],
+
+		"angle" : [
+
+			"numericPlugValueWidget:fixedCharacterWidth", 5,
+
+		],
+
+		"elevation" : [
+
+			"numericPlugValueWidget:fixedCharacterWidth", 5,
+
+		],
+
+	}
+
 )
-
-def __fixedWidthNumericPlugValueWidget( plug ) :
-
-	result = GafferUI.NumericPlugValueWidget( plug )
-	result.numericWidget().setFixedCharacterWidth( 5 )
-
-	return result
-
-GafferUI.PlugValueWidget.registerCreator( _Camera, "depth", __fixedWidthNumericPlugValueWidget )
-GafferUI.PlugValueWidget.registerCreator( _Camera, "angle", __fixedWidthNumericPlugValueWidget )
-GafferUI.PlugValueWidget.registerCreator( _Camera, "elevation", __fixedWidthNumericPlugValueWidget )
 
 # Utility node for previewing single objects from a file or
 # sequence (cob, ptc, pdc, etc), as though they were a scene
@@ -281,7 +311,7 @@ class _ObjectPreview( Gaffer.Node ) :
 		# single object scenes using Reader ops behind the scenes?
 		self["ObjectReader"] = Gaffer.ObjectReader()
 		self["ObjectReaderExpression"] = Gaffer.Expression( "Expression" )
-		self["ObjectReaderExpression"]["expression"].setValue(
+		self["ObjectReaderExpression"].setExpression(
 '''
 import IECore
 
@@ -301,7 +331,6 @@ except :
 parent['ObjectReader']['fileName'] = result
 '''
 		)
-		self["ObjectReader"]["fileName"].setInput( self["ObjectReaderExpression"]["out"] )
 		self["ObjectToScene"] = GafferScene.ObjectToScene( "ObjectToScene" )
 		self["ObjectToScene"]["object"].setInput( self["ObjectReader"]["out"] )
 

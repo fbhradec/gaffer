@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2013-2015, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -36,17 +36,17 @@
 
 #include "boost/format.hpp"
 #include "boost/algorithm/string/replace.hpp"
+#include "boost/algorithm/string/predicate.hpp"
 #include "boost/regex.hpp"
 
 #include "Gaffer/Box.h"
 #include "Gaffer/StandardSet.h"
-#include "Gaffer/PlugIterator.h"
 #include "Gaffer/NumericPlug.h"
-#include "Gaffer/CompoundPlug.h"
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/Metadata.h"
 #include "Gaffer/Context.h"
 
+using namespace std;
 using namespace Gaffer;
 
 IE_CORE_DEFINERUNTIMETYPED( Box );
@@ -69,19 +69,24 @@ Plug *Box::promotePlug( Plug *descendantPlug )
 {
 	validatePromotability( descendantPlug, /* throwExceptions = */ true );
 
-	std::string externalPlugName = descendantPlug->relativeName( this );
-	boost::replace_all( externalPlugName, ".", "_" );
-
-	PlugPtr externalPlug = descendantPlug->createCounterpart( externalPlugName, descendantPlug->direction() );
+	PlugPtr externalPlug = descendantPlug->createCounterpart( promotedCounterpartName( descendantPlug ), descendantPlug->direction() );
 	externalPlug->setFlags( Plug::Dynamic, true );
-	// flags are not automatically propagated to the children of compound plugs,
-	// so we need to do that ourselves.
-	if( externalPlug->typeId() == Gaffer::CompoundPlug::staticTypeId() )
+	// Flags are not automatically propagated to the children of compound plugs,
+	// so we need to do that ourselves. We don't want to propagate them to the
+	// children of plug types which create the children themselves during
+	// construction though, hence the typeId checks for the base classes
+	// which add no children during construction. I'm not sure this approach is
+	// necessarily the best - the alternative would be to set everything dynamic
+	// unconditionally and then implement Serialiser::childNeedsConstruction()
+	// for types like CompoundNumericPlug that create children in their constructors.
+	const Gaffer::TypeId compoundTypes[] = { PlugTypeId, ValuePlugTypeId, CompoundPlugTypeId, ArrayPlugTypeId };
+	const Gaffer::TypeId *compoundTypesEnd = compoundTypes + 4;
+	if( find( compoundTypes, compoundTypesEnd, (Gaffer::TypeId)externalPlug->typeId() ) != compoundTypesEnd )
 	{
-		for( RecursivePlugIterator it( externalPlug.get() ); it != it.end(); ++it )
+		for( RecursivePlugIterator it( externalPlug.get() ); !it.done(); ++it )
 		{
 			(*it)->setFlags( Plug::Dynamic, true );
-			if( (*it)->typeId() != Gaffer::CompoundPlug::staticTypeId() )
+			if( find( compoundTypes, compoundTypesEnd, (Gaffer::TypeId)(*it)->typeId() ) != compoundTypesEnd )
 			{
 				it.prune();
 			}
@@ -184,7 +189,7 @@ void Box::unpromotePlug( Plug *promotedDescendantPlug )
 	while( plugToRemove->parent<Plug>() && plugToRemove->parent<Plug>() != userPlug() )
 	{
 		plugToRemove = plugToRemove->parent<Plug>();
-		for( PlugIterator it( plugToRemove ); it != it.end(); ++it )
+		for( PlugIterator it( plugToRemove ); !it.done(); ++it )
 		{
 			if(
 				( (*it)->direction() == Plug::In && (*it)->outputs().size() ) ||
@@ -250,10 +255,10 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool throwException
 			}
 		}
 
-		// the plug must be serialisable, as we need its input to be saved,
+		// The plug must be serialisable, as we need its input to be saved,
 		// but we only need to check this for the topmost plug and not for
-		// children, because a CompoundPlug::setInput() call will also restore
-		// child inputs.
+		// children, because a setInput() call for a parent plug will also
+		// restore child inputs.
 		if( !childPlug && !descendantPlug->getFlags( Plug::Serialisable ) )
 		{
 			if( !throwExceptions )
@@ -327,7 +332,7 @@ bool Box::validatePromotability( const Plug *descendantPlug, bool throwException
 	}
 
 	// check all the children of this plug too
-	for( RecursivePlugIterator it( descendantPlug ); it != it.end(); ++it )
+	for( RecursivePlugIterator it( descendantPlug ); !it.done(); ++it )
 	{
 		if( !validatePromotability( it->get(), throwExceptions, /* childPlug = */ true ) )
 		{
@@ -359,7 +364,10 @@ void Box::exportForReference( const std::string &fileName ) const
 		}
 		else if( const Plug *plug = IECore::runTimeCast<Plug>( it->get() ) )
 		{
-			if( !boost::regex_match( plug->getName().c_str(), invisiblePlug ) )
+			if(
+				!boost::regex_match( plug->getName().c_str(), invisiblePlug )
+				&& plug != userPlug()
+			)
 			{
 				toExport->add( *it );
 			}
@@ -369,7 +377,6 @@ void Box::exportForReference( const std::string &fileName ) const
 	ContextPtr context = new Context;
 	context->set( "valuePlugSerialiser:resetParentPlugDefaults", true );
 	context->set( "serialiser:includeParentMetadata", true );
-	context->set( "serialiser:includeVersionMetadata", true );
 	Context::Scope scopedContext( context.get() );
 
 	script->serialiseToFile( fileName, this, toExport.get() );
@@ -386,7 +393,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 	// the changing contents. we can use this opportunity to weed out anything in childNodes
 	// which isn't a direct child of parent though.
 	StandardSetPtr verifiedChildNodes = new StandardSet();
-	for( NodeIterator nodeIt( parent ); nodeIt != nodeIt.end(); nodeIt++ )
+	for( NodeIterator nodeIt( parent ); !nodeIt.done(); ++nodeIt )
 	{
 		if( childNodes->contains( nodeIt->get() ) )
 		{
@@ -406,7 +413,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 	{
 		Node *childNode = static_cast<Node *>( verifiedChildNodes->member( i ) );
 		// reroute any connections to external nodes
-		for( RecursivePlugIterator plugIt( childNode ); plugIt != plugIt.end(); plugIt++ )
+		for( RecursivePlugIterator plugIt( childNode ); !plugIt.done(); ++plugIt )
 		{
 			Plug *plug = plugIt->get();
 			if( plug->direction() == Plug::In )
@@ -417,7 +424,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 					PlugMap::const_iterator mapIt = plugMap.find( input );
 					if( mapIt == plugMap.end() )
 					{
-						PlugPtr intermediateInput = plug->createCounterpart( "in", Plug::In );
+						PlugPtr intermediateInput = plug->createCounterpart( result->promotedCounterpartName( plug ), Plug::In );
 						// we want intermediate inputs to appear on the same side of the node as the
 						// equivalent internal plug, so we copy the relevant metadata over.
 						copyMetadata( plug, intermediateInput.get() );
@@ -447,7 +454,7 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 							PlugMap::const_iterator mapIt = plugMap.find( plug );
 							if( mapIt == plugMap.end() )
 							{
-								PlugPtr intermediateOutput = plug->createCounterpart( "out", Plug::Out );
+								PlugPtr intermediateOutput = plug->createCounterpart( result->promotedCounterpartName( plug ), Plug::Out );
 								copyMetadata( plug, intermediateOutput.get() );
 								intermediateOutput->setFlags( Plug::Dynamic, true );
 								result->addChild( intermediateOutput );
@@ -471,16 +478,38 @@ BoxPtr Box::create( Node *parent, const Set *childNodes )
 	return result;
 }
 
+std::string Box::promotedCounterpartName( const Plug *plug ) const
+{
+	std::string result = plug->relativeName( plug->node() );
+	boost::replace_all( result, ".", "_" );
+	return result;
+}
+
 void Box::copyMetadata( const Plug *from, Plug *to )
 {
-	/// \todo Perhaps we should have a more general mechanism for mirroring all metadata?
+	/// \todo Perhaps we should have a more dynamic mechanism for mirroring all metadata?
 	/// If we could register a dynamic metadata value for "*", then we could just answer
 	/// all metadata queries on the fly - would that be a good idea? We'd need to figure
 	/// out how to make it compatible with Metadata::registeredPlugValues(), which needs to
-	/// know all valid names.
-	Metadata::registerPlugValue( to, "nodeGadget:nodulePosition", Metadata::plugValue<IECore::Data>( from, "nodeGadget:nodulePosition" ) );
-	Metadata::registerPlugValue( to, "nodule:type", Metadata::plugValue<IECore::Data>( from, "nodule:type" ) );
-	Metadata::registerPlugValue( to, "compoundNodule:orientation", Metadata::plugValue<IECore::Data>( from, "compoundNodule:orientation" ) );
-	Metadata::registerPlugValue( to, "compoundNodule:spacing", Metadata::plugValue<IECore::Data>( from, "compoundNodule:spacing" ) );
-	Metadata::registerPlugValue( to, "compoundNodule:direction", Metadata::plugValue<IECore::Data>( from, "compoundNodule:direction" ) );
+	/// know all valid names. We'd also need to put a lot of thought into how we allowed the
+	/// user to delete values which were being mirrored dynamically.
+	vector<IECore::InternedString> keys;
+	Metadata::registeredValues( from, keys, /* instanceOnly = */ false, /* persistentOnly = */ true );
+	for( vector<IECore::InternedString>::const_iterator it = keys.begin(), eIt = keys.end(); it != eIt; ++it )
+	{
+		if( boost::starts_with( it->string(), "layout:" ) )
+		{
+			// Don't want to copy layout metadata because the user will be making their own layout.
+			continue;
+		}
+		Metadata::registerValue( to, *it, Metadata::value<IECore::Data>( from, *it ) );
+	}
+
+	for( PlugIterator it( from ); !it.done(); ++it )
+	{
+		if( Plug *childTo = to->getChild<Plug>( (*it)->getName() ) )
+		{
+			copyMetadata( it->get(), childTo );
+		}
+	}
 }

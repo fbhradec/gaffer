@@ -35,20 +35,22 @@
 ##########################################################################
 
 import os
+import sys
 import unittest
 import subprocess32 as subprocess
 
 import IECore
 
 import Gaffer
+import GafferDispatch
 import GafferImage
 import GafferScene
+import GafferSceneTest
 import GafferRenderMan
 import GafferRenderManTest
+import GafferTest
 
 class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
-
-	__scriptFileName = "/tmp/test.gfr"
 
 	def testBoundsAndImageOutput( self ) :
 
@@ -61,7 +63,7 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["outputs"].addOutput(
 			"beauty",
 			IECore.Display(
-				"/tmp/test.tif",
+				self.temporaryDirectory() + "/test.tif",
 				"tiff",
 				"rgba",
 				{}
@@ -73,25 +75,23 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["render"]["in"].setInput( s["outputs"]["out"] )
 		s["render"]["mode"].setValue( "generate" )
 
-		s["render"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["render"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s.save()
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
-		self.assertTrue( os.path.exists( "/tmp/test.rib" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/test.rib" ) )
 
-		p = subprocess.Popen(
-			"renderdl " + "/tmp/test.rib",
-			shell = True,
-			stderr = subprocess.PIPE
+		output = subprocess.check_output(
+			[ "renderdl", self.temporaryDirectory() + "/test.rib" ],
+			stderr = subprocess.STDOUT
 		)
-		p.wait()
 
-		self.failIf( "exceeded its bounds" in "".join( p.stderr.readlines() ) )
+		self.failIf( "exceeded its bounds" in output )
 
-		self.assertTrue( os.path.exists( "/tmp/test.tif" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/test.tif" ) )
 
 	def testCameraMotionBlur( self ) :
 
@@ -111,18 +111,18 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["render"]["in"].setInput( s["options"]["out"] )
 		s["render"]["mode"].setValue( "generate" )
 
-		s["render"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["render"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s.save()
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
-		self.assertTrue( os.path.exists( "/tmp/test.rib" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/test.rib" ) )
 
 		# camera motion off, we should have no motion statements
 
-		r = "".join( file( "/tmp/test.rib" ).readlines() )
+		r = "".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.failIf( "MotionBegin" in r )
 
 		# camera motion on, we should have no motion statements
@@ -130,9 +130,9 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["options"]["options"]["cameraBlur"]["enabled"].setValue( True )
 		s["options"]["options"]["cameraBlur"]["value"].setValue( True )
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
-		r = "".join( file( "/tmp/test.rib" ).readlines() )
+		r = "".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.failUnless( "MotionBegin" in r )
 
 		# motion disabled on camera object, we should have no motion statements
@@ -141,9 +141,9 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["attributes"]["attributes"]["transformBlur"]["enabled"].setValue( True )
 		s["attributes"]["attributes"]["transformBlur"]["value"].setValue( False )
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
-		r = "".join( file( "/tmp/test.rib" ).readlines() )
+		r = "".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.failIf( "MotionBegin" in r )
 
 		# motion enabled on camera object, with extra samples specified. we should
@@ -153,7 +153,7 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["attributes"]["attributes"]["transformBlurSegments"]["enabled"].setValue( True )
 		s["attributes"]["attributes"]["transformBlurSegments"]["value"].setValue( 5 )
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
 		def motionTimes( ribFileName ) :
 
@@ -165,22 +165,22 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 			return []
 
-		self.assertEqual( len( motionTimes( "/tmp/test.rib" ) ), 6 )
+		self.assertEqual( len( motionTimes( self.temporaryDirectory() + "/test.rib" ) ), 6 )
 
 		# different shutter times
 
 		s["attributes"]["attributes"]["transformBlurSegments"]["enabled"].setValue( False )
 		s["options"]["options"]["shutter"]["enabled"].setValue( True )
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
-		self.assertEqual( motionTimes( "/tmp/test.rib" ), [ 0.75, 1.25 ] )
+		self.assertEqual( motionTimes( self.temporaryDirectory() + "/test.rib" ), [ 0.75, 1.25 ] )
 
 		s["options"]["options"]["shutter"]["value"].setValue( IECore.V2f( -0.1, 0.3 ) )
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
-		self.assertEqual( motionTimes( "/tmp/test.rib" ), [ 0.9, 1.3 ] )
+		self.assertEqual( motionTimes( self.temporaryDirectory() + "/test.rib" ), [ 0.9, 1.3 ] )
 
 	def testDynamicLoadProcedural( self ) :
 
@@ -192,24 +192,24 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["render"]["in"].setInput( s["plane"]["out"] )
 		s["render"]["mode"].setValue( "generate" )
 
-		s["render"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["render"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s.save()
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
-		self.assertTrue( os.path.exists( "/tmp/test.rib" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/test.rib" ) )
 
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "DynamicLoad" in rib )
 		self.assertFalse( "Polygon" in rib )
 
 	def testDirectoryCreation( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["variables"].addMember( "renderDirectory", "/tmp/renderTests" )
-		s["variables"].addMember( "ribDirectory", "/tmp/ribTests" )
+		s["variables"].addMember( "renderDirectory", self.temporaryDirectory() + "/renderTests" )
+		s["variables"].addMember( "ribDirectory", self.temporaryDirectory() + "/ribTests" )
 
 		s["plane"] = GafferScene.Plane()
 
@@ -230,27 +230,27 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["render"]["ribFileName"].setValue( "$ribDirectory/test.####.rib" )
 		s["render"]["mode"].setValue( "generate" )
 
-		self.assertFalse( os.path.exists( "/tmp/renderTests" ) )
-		self.assertFalse( os.path.exists( "/tmp/ribTests" ) )
-		self.assertFalse( os.path.exists( "/tmp/ribTests/test.0001.rib" ) )
+		self.assertFalse( os.path.exists( self.temporaryDirectory() + "/renderTests" ) )
+		self.assertFalse( os.path.exists( self.temporaryDirectory() + "/ribTests" ) )
+		self.assertFalse( os.path.exists( self.temporaryDirectory() + "/ribTests/test.0001.rib" ) )
 
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		with s.context() :
-			s["render"].execute()
+			s["render"]["task"].execute()
 
-		self.assertTrue( os.path.exists( "/tmp/renderTests" ) )
-		self.assertTrue( os.path.exists( "/tmp/ribTests" ) )
-		self.assertTrue( os.path.exists( "/tmp/ribTests/test.0001.rib" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/renderTests" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/ribTests" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/ribTests/test.0001.rib" ) )
 
 		# check that having the directories already exist is ok too
 
 		with s.context() :
-			s["render"].execute()
+			s["render"]["task"].execute()
 
-		self.assertTrue( os.path.exists( "/tmp/renderTests" ) )
-		self.assertTrue( os.path.exists( "/tmp/ribTests" ) )
-		self.assertTrue( os.path.exists( "/tmp/ribTests/test.0001.rib" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/renderTests" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/ribTests" ) )
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/ribTests/test.0001.rib" ) )
 
 	def testTypeNamePrefixes( self ) :
 
@@ -270,7 +270,7 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 	def testCropWindow( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["p"] = GafferScene.Plane()
 
@@ -281,12 +281,12 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		s["r"] = GafferRenderMan.RenderManRender()
 		s["r"]["mode"].setValue( "generate" )
-		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"].execute()
+		s["r"]["task"].execute()
 
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "CropWindow 0 1 0.5 1" in rib )
 
 	def testHash( self ) :
@@ -304,51 +304,61 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["render"] = GafferRenderMan.RenderManRender()
 
 		# no input scene produces no effect
-		self.assertEqual( s["render"].hash( c ), IECore.MurmurHash() )
+		with c :
+			self.assertEqual( s["render"]["task"].hash(), IECore.MurmurHash() )
 
 		# now theres an scene to render, we get some output
 		s["render"]["in"].setInput( s["outputs"]["out"] )
-		self.assertNotEqual( s["render"].hash( c ), IECore.MurmurHash() )
+		with c :
+			self.assertNotEqual( s["render"]["task"].hash(), IECore.MurmurHash() )
 
 		# output varies by time
-		self.assertNotEqual( s["render"].hash( c ), s["render"].hash( c2 ) )
+		with c :
+			h1 = s["render"]["task"].hash()
+		with c2 :
+			h2 = s["render"]["task"].hash()
+		self.assertNotEqual( h1, h2 )
 
 		# output varies by new Context entries
-		current = s["render"].hash( c )
-		c["renderDirectory"] = "/tmp/renderTests"
-		self.assertNotEqual( s["render"].hash( c ), current )
+		with c :
+			current = s["render"]["task"].hash()
+			c["renderDirectory"] = self.temporaryDirectory() + "/renderTests"
+			self.assertNotEqual( s["render"]["task"].hash(), current )
 
 		# output varies by changed Context entries
-		current = s["render"].hash( c )
-		c["renderDirectory"] = "/tmp/renderTests2"
-		self.assertNotEqual( s["render"].hash( c ), current )
+		with c :
+			current = s["render"]["task"].hash()
+			c["renderDirectory"] = self.temporaryDirectory() + "/renderTests2"
+			self.assertNotEqual( s["render"]["task"].hash(), current )
 
 		# output doesn't vary by ui Context entries
-		current = s["render"].hash( c )
-		c["ui:something"] = "alterTheUI"
-		self.assertEqual( s["render"].hash( c ), current )
+		with c :
+			current = s["render"]["task"].hash()
+			c["ui:something"] = "alterTheUI"
+			self.assertEqual( s["render"]["task"].hash(), current )
 
 		# also varies by input node
-		current = s["render"].hash( c )
-		s["render"]["in"].setInput( s["plane"]["out"] )
-		self.assertNotEqual( s["render"].hash( c ), current )
+		with c :
+			current = s["render"]["task"].hash()
+			s["render"]["in"].setInput( s["plane"]["out"] )
+			self.assertNotEqual( s["render"]["task"].hash(), current )
 
 	def testCoordinateSystem( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["c"] = GafferScene.CoordinateSystem()
 		s["c"]["name"].setValue( "myCoordSys" )
 
 		s["r"] = GafferRenderMan.RenderManRender()
 		s["r"]["mode"].setValue( "generate" )
-		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 		s["r"]["in"].setInput( s["c"]["out"] )
 
-		s["r"].execute()
+		s["r"]["task"].execute()
 
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "CoordinateSystem \"/myCoordSys\"" in rib )
 
 	def testRenderToDisplayViaForegroundDispatch( self ) :
@@ -388,18 +398,18 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		)
 
 		s["render"] = GafferRenderMan.RenderManRender()
-		s["render"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["render"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 		s["render"]["in"].setInput( s["outputs"]["out"] )
 
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s.save()
 
 		# dispatch the render on the foreground thread. if we don't manage
 		# the GIL appropriately, we'll get a deadlock when the Display signals
 		# above try to enter python on the background thread.
-		dispatcher = Gaffer.LocalDispatcher()
-		dispatcher["jobsDirectory"].setValue( "/tmp/testJobDirectory" )
-		dispatcher["framesMode"].setValue( Gaffer.Dispatcher.FramesMode.CurrentFrame )
+		dispatcher = GafferDispatch.LocalDispatcher()
+		dispatcher["jobsDirectory"].setValue( self.temporaryDirectory() + "/testJobDirectory" )
+		dispatcher["framesMode"].setValue( GafferDispatch.Dispatcher.FramesMode.CurrentFrame )
 		dispatcher["executeInBackground"].setValue( False )
 
 		dispatcher.dispatch( [ s["render"] ] )
@@ -430,21 +440,21 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["outputs"]["in"].setInput( s["sphere"]["out"] )
 
 		s["display"] = GafferImage.Display()
-	
+
 		s["render"] = GafferRenderMan.RenderManRender()
-		s["render"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["render"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 		s["render"]["in"].setInput( s["outputs"]["out"] )
 
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s.save()
-		
+
 		# render a full frame and get the data window
-		s["render"].execute()
+		s["render"]["task"].execute()
 		dataWindow1 = s["display"]["out"].image().dataWindow
 
 		# specify a crop on the command line and get the new data window
 		s["render"]["command"].setValue( "renderdl -crop 0 0.5 0 0.5" )
-		s["render"].execute()
+		s["render"]["task"].execute()
 
 		# check that the crop worked
 		dataWindow2 = s["display"]["out"].image().dataWindow
@@ -454,15 +464,15 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["render"]["command"].setValue( "renderdl -crop 0 ${size} 0 ${size}" )
 		s.context()["size"] = 0.25
 		with s.context() :
-			s["render"].execute()
-		
+			s["render"]["task"].execute()
+
 		dataWindow3 = s["display"]["out"].image().dataWindow
 		self.assertEqual( dataWindow3.size(), dataWindow1.size() / 4 )
-		
+
 	def testOptions( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["p"] = GafferScene.Plane()
 
@@ -473,12 +483,12 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		s["r"] = GafferRenderMan.RenderManRender()
 		s["r"]["mode"].setValue( "generate" )
-		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 		s["r"]["in"].setInput( s["o"]["out"] )
 
-		s["r"].execute()
+		s["r"]["task"].execute()
 
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "PixelSamples 2 3" in rib )
 
 	def testFrameBlock( self ) :
@@ -489,14 +499,14 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		s["r"] = GafferRenderMan.RenderManRender()
 		s["r"]["mode"].setValue( "generate" )
-		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 		s["r"]["in"].setInput( s["p"]["out"] )
 
 		with Gaffer.Context( s.context() ) as context :
 			for i in range( 0, 10 ) :
 				context.setFrame( i )
-				s["r"].execute()
-				rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+				s["r"]["task"].execute()
+				rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 				self.assertTrue( "FrameBegin %d" % i in rib )
 
 	def testMultipleCameras( self ) :
@@ -513,9 +523,9 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["camera3"]["name"].setValue( "camera3" )
 
 		s["group"] = GafferScene.Group()
-		s["group"]["in"].setInput( s["camera1"]["out"] )
-		s["group"]["in1"].setInput( s["camera2"]["out"] )
-		s["group"]["in2"].setInput( s["camera3"]["out"] )
+		s["group"]["in"][0].setInput( s["camera1"]["out"] )
+		s["group"]["in"][1].setInput( s["camera2"]["out"] )
+		s["group"]["in"][2].setInput( s["camera3"]["out"] )
 
 		s["options"] = GafferScene.StandardOptions()
 		s["options"]["in"].setInput( s["group"]["out"] )
@@ -526,14 +536,14 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 		s["render"]["in"].setInput( s["options"]["out"] )
 		s["render"]["mode"].setValue( "generate" )
 
-		s["render"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["render"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s.save()
 
-		s["render"].execute()
+		s["render"]["task"].execute()
 
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 
 		self.assertTrue( "Camera \"/group/camera1\"" in rib )
 		self.assertTrue( "Camera \"/group/camera2\"" in rib )
@@ -545,13 +555,13 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 	def testHiddenCoordinateSystem( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["c"] = GafferScene.CoordinateSystem()
 		s["c"]["name"].setValue( "myCoordSys" )
 
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["c"]["out"] )
+		s["g"]["in"][0].setInput( s["c"]["out"] )
 
 		s["f1"] = GafferScene.PathFilter()
 		s["f2"] = GafferScene.PathFilter()
@@ -570,36 +580,36 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		s["r"] = GafferRenderMan.RenderManRender()
 		s["r"]["mode"].setValue( "generate" )
-		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 		s["r"]["in"].setInput( s["a2"]["out"] )
 
-		s["r"].execute()
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		s["r"]["task"].execute()
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "CoordinateSystem \"/group/myCoordSys\"" in rib )
 
 		s["f1"]["paths"].setValue( IECore.StringVectorData( [ "/group" ] ) ) # hide group
 
-		s["r"].execute()
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		s["r"]["task"].execute()
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "CoordinateSystem" not in rib )
 
 		s["f2"]["paths"].setValue( IECore.StringVectorData( [ "/group/myCoordSys" ] ) ) # show coordsys (but parent still hidden)
 
-		s["r"].execute()
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		s["r"]["task"].execute()
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "CoordinateSystem" not in rib )
 
 	def testHiddenLight( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["l"] = GafferRenderMan.RenderManLight()
 		s["l"]["name"].setValue( "myLight" )
 		s["l"].loadShader( "pointlight" )
 
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["l"]["out"] )
+		s["g"]["in"][0].setInput( s["l"]["out"] )
 
 		s["f1"] = GafferScene.PathFilter()
 		s["f2"] = GafferScene.PathFilter()
@@ -618,23 +628,23 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		s["r"] = GafferRenderMan.RenderManRender()
 		s["r"]["mode"].setValue( "generate" )
-		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 		s["r"]["in"].setInput( s["a2"]["out"] )
 
-		s["r"].execute()
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		s["r"]["task"].execute()
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "LightSource \"pointlight\"" in rib )
 
 		s["f1"]["paths"].setValue( IECore.StringVectorData( [ "/group" ] ) ) # hide group
 
-		s["r"].execute()
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		s["r"]["task"].execute()
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "LightSource \"pointlight\"" not in rib )
 
 		s["f2"]["paths"].setValue( IECore.StringVectorData( [ "/group/myLight" ] ) ) # show coordsys (but parent still hidden)
 
-		s["r"].execute()
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		s["r"]["task"].execute()
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "LightSource \"pointlight\"" not in rib )
 
 	def testClippingPlane( self ) :
@@ -645,33 +655,222 @@ class RenderManRenderTest( GafferRenderManTest.RenderManTestCase ) :
 
 		s["r"] = GafferRenderMan.RenderManRender()
 		s["r"]["mode"].setValue( "generate" )
-		s["r"]["ribFileName"].setValue( "/tmp/test.rib" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
 		s["r"]["in"].setInput( s["c"]["out"] )
 
-		s["r"].execute()
+		s["r"]["task"].execute()
 
-		rib = "\n".join( file( "/tmp/test.rib" ).readlines() )
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
 		self.assertTrue( "ClippingPlane" in rib )
 
-	def setUp( self ) :
+	def testWedge( self ) :
 
-		for f in (
-			"/tmp/test.tif",
-			"/tmp/test.rib",
-			"/tmp/test.gfr",
-			"/tmp/renderTests",
-			"/tmp/ribTests/test.0001.rib",
-			"/tmp/ribTests",
-			"default.tif"
-		) :
-			if os.path.isfile( f ) :
-				os.remove( f )
-			elif os.path.isdir( f ) :
-				os.rmdir( f )
+		s = Gaffer.ScriptNode()
 
-	def tearDown( self ) :
+		s["sphere"] = GafferScene.Sphere()
+		s["sphere"]["type"].setValue( GafferScene.Sphere.Type.Primitive )
+		s["sphere"]["sets"].setValue( "${wedge:value}" )
 
-		self.setUp()
+		s["filter"] = GafferScene.SetFilter()
+		s["filter"]["set"].setValue( "hidden" )
+
+		s["attributes"] = GafferScene.StandardAttributes()
+		s["attributes"]["attributes"]["visibility"]["enabled"].setValue( True )
+		s["attributes"]["attributes"]["visibility"]["value"].setValue( False )
+		s["attributes"]["filter"].setInput( s["filter"]["out"] )
+		s["attributes"]["in"].setInput( s["sphere"]["out"] )
+
+		s["outputs"] = GafferScene.Outputs()
+		s["outputs"].addOutput(
+			"beauty",
+			IECore.Display(
+				self.temporaryDirectory() + "/${wedge:value}.tif",
+				"tiff",
+				"rgba",
+				{
+				}
+			)
+		)
+		s["outputs"]["in"].setInput( s["attributes"]["out"] )
+
+		s["render"] = GafferRenderMan.RenderManRender()
+		s["render"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
+		s["render"]["in"].setInput( s["outputs"]["out"] )
+
+		s["wedge"] = GafferDispatch.Wedge()
+		s["wedge"]["mode"].setValue( int( s["wedge"].Mode.StringList ) )
+		s["wedge"]["strings"].setValue( IECore.StringVectorData( [ "visible", "hidden" ] ) )
+		s["wedge"]["preTasks"][0].setInput( s["render"]["task"] )
+
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		s.save()
+
+		dispatcher = GafferDispatch.LocalDispatcher()
+		dispatcher["jobsDirectory"].setValue( self.temporaryDirectory() + "/testJobDirectory" )
+		dispatcher["framesMode"].setValue( GafferDispatch.Dispatcher.FramesMode.CurrentFrame )
+		dispatcher["executeInBackground"].setValue( False )
+
+		dispatcher.dispatch( [ s["wedge"] ] )
+
+		hidden = GafferImage.ImageReader()
+		hidden["fileName"].setValue( self.temporaryDirectory() + "/hidden.tif" )
+
+		visible = GafferImage.ImageReader()
+		visible["fileName"].setValue( self.temporaryDirectory() + "/visible.tif" )
+
+		hiddenStats = GafferImage.ImageStats()
+		hiddenStats["in"].setInput( hidden["out"] )
+		hiddenStats["regionOfInterest"].setValue( hidden["out"]["format"].getValue().getDisplayWindow() )
+
+		visibleStats = GafferImage.ImageStats()
+		visibleStats["in"].setInput( visible["out"] )
+		visibleStats["regionOfInterest"].setValue( visible["out"]["format"].getValue().getDisplayWindow() )
+
+		self.assertLess( hiddenStats["average"].getValue()[0], 0.05 )
+		self.assertGreater( visibleStats["average"].getValue()[0], .35 )
+
+	def testPreWorldRenderables( self ):
+
+		s = Gaffer.ScriptNode()
+
+		s["g"] = GafferSceneTest.CompoundObjectSource()
+		s["g"]["in"].setValue(
+			IECore.CompoundObject( {
+				"bound" : IECore.Box3fData( IECore.Box3f() ),
+				"globals" : {
+					"option:user:blah" : IECore.ClippingPlane(),
+				},
+			} )
+		)
+
+		s["r"] = GafferRenderMan.RenderManRender()
+		s["r"]["mode"].setValue( "generate" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
+		s["r"]["in"].setInput( s["g"]["out"] )
+
+		s["r"]["task"].execute()
+
+		# node should have inserted a ClippingPlane into the rib by putting it
+		# in the options:
+		rib = "\n".join( file( self.temporaryDirectory() + "/test.rib" ).readlines() )
+		self.assertTrue( "ClippingPlane" in rib )
+
+	def __expandedRIB( self, scene ) :
+
+		script = scene.ancestor( Gaffer.ScriptNode )
+		script["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+		script.save()
+
+		script["__render"] = GafferRenderMan.RenderManRender()
+		script["__render"]["in"].setInput( scene )
+		script["__render"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
+		script["__render"]["mode"].setValue( "generate" )
+
+		script["__render"]["task"].execute()
+
+		self.assertTrue( os.path.exists( self.temporaryDirectory() + "/test.rib" ) )
+
+		expandedRIB = self.temporaryDirectory() + "/expanded.rib"
+		subprocess.check_call(
+			[ "renderdl", "-catrib", "-callprocedurals", "-o", expandedRIB, self.temporaryDirectory() + "/test.rib"  ]
+		)
+
+		return "".join( file( expandedRIB ).readlines() )
+
+	def testTransformMotionBlur( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["sphere"] = GafferScene.Sphere()
+		s["sphere"]["type"].setValue( s["sphere"].Type.Primitive )
+
+		s["attributes"] = GafferScene.StandardAttributes()
+		s["attributes"]["in"].setInput( s["sphere"]["out"] )
+
+		s["options"] = GafferScene.StandardOptions()
+		s["options"]["in"].setInput( s["attributes"]["out"] )
+
+		# Transform motion off, we should have no motion statements
+
+		r = self.__expandedRIB( s["options"]["out"] )
+		self.assertEqual( r.count( "MotionBegin" ), 0 )
+
+		# Transform motion on, but no motion, so we should still have no motion statements
+
+		s["options"]["options"]["transformBlur"]["enabled"].setValue( True )
+		s["options"]["options"]["transformBlur"]["value"].setValue( True )
+
+		r = self.__expandedRIB( s["options"]["out"] )
+		self.assertEqual( r.count( "MotionBegin" ), 0 )
+
+		# With some motion - we should have a motion block.
+
+		s["expression"] = Gaffer.Expression()
+		s["expression"].setExpression( 'parent["sphere"]["transform"]["translate"]["x"] = context.getFrame()' )
+
+		r = self.__expandedRIB( s["options"]["out"] )
+		self.assertEqual( r.count( "MotionBegin" ), 1 )
+
+	def testDeformationMotionBlur( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["sphere"] = GafferScene.Sphere()
+		s["sphere"]["type"].setValue( s["sphere"].Type.Primitive )
+
+		s["attributes"] = GafferScene.StandardAttributes()
+		s["attributes"]["in"].setInput( s["sphere"]["out"] )
+
+		s["options"] = GafferScene.StandardOptions()
+		s["options"]["in"].setInput( s["attributes"]["out"] )
+
+		# Deformation motion off, we should have no motion statements
+
+		r = self.__expandedRIB( s["options"]["out"] )
+		self.assertEqual( r.count( "MotionBegin" ), 0 )
+
+		# Deformation motion on, but no motion, so we should still have no motion statements
+
+		s["options"]["options"]["deformationBlur"]["enabled"].setValue( True )
+		s["options"]["options"]["deformationBlur"]["value"].setValue( True )
+
+		r = self.__expandedRIB( s["options"]["out"] )
+		self.assertEqual( r.count( "MotionBegin" ), 0 )
+
+		# With some motion - we should have a motion block.
+
+		s["expression"] = Gaffer.Expression()
+		s["expression"].setExpression( 'parent["sphere"]["radius"] = context.getFrame()' )
+
+		r = self.__expandedRIB( s["options"]["out"] )
+		self.assertEqual( r.count( "MotionBegin" ), 1 )
+
+	@unittest.skipIf( IECore.versionString() == "9.14.1", "Cortex-9.14.1 which is current in Gaffer dependencies doesn't support sampleMotion yet" )
+	def testSampleMotion( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+
+		s["p"] = GafferScene.Plane()
+
+		s["o"] = GafferScene.StandardOptions()
+		s["o"]["in"].setInput( s["p"]["out"] )
+
+		s["r"] = GafferRenderMan.RenderManRender()
+		s["r"]["mode"].setValue( "generate" )
+		s["r"]["ribFileName"].setValue( self.temporaryDirectory() + "/test.rib" )
+		s["r"]["in"].setInput( s["o"]["out"] )
+
+		s["r"]["task"].execute()
+		rib = file( self.temporaryDirectory() + "/test.rib" ).read()
+		self.assertFalse( "sampleMotion" in rib )
+
+		s["o"]["options"]["sampleMotion"]["enabled"].setValue( True )
+		s["o"]["options"]["sampleMotion"]["value"].setValue( False )
+
+		s["r"]["task"].execute()
+		rib = file( self.temporaryDirectory() + "/test.rib" ).read()
+		self.assertTrue( '"int samplemotion" [ 0 ]' in rib )
 
 if __name__ == "__main__":
 	unittest.main()

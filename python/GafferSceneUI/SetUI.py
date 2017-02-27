@@ -40,6 +40,7 @@ import Gaffer
 import GafferUI
 
 import GafferScene
+import GafferSceneUI
 
 Gaffer.Metadata.registerNode(
 
@@ -66,7 +67,7 @@ Gaffer.Metadata.registerNode(
 			Add mode adds the specified paths to an existing set,
 			keeping the paths already in the set. If the set does
 			not exist yet, this is the same as create mode.
-			
+
 			Remove mode removes the specified paths from an
 			existing set. If the set does not exist yet, nothing
 			is done.
@@ -76,6 +77,8 @@ Gaffer.Metadata.registerNode(
 			"preset:Add", GafferScene.Set.Mode.Add,
 			"preset:Remove", GafferScene.Set.Mode.Remove,
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
 		"name" : [
@@ -83,10 +86,11 @@ Gaffer.Metadata.registerNode(
 			"description",
 			"""
 			The name of the set that will be created or edited.
+			You can create multiple set names at once by separating them with spaces.
 			""",
-			
+
 			"ui:scene:acceptsSetName", True,
-			
+
 		],
 
 		"paths" : [
@@ -96,32 +100,30 @@ Gaffer.Metadata.registerNode(
 			The paths to be added to or removed from the set.
 			""",
 
+			"ui:scene:acceptsPaths", True,
+			"vectorDataPlugValueWidget:dragPointer", "objects",
+
+		],
+
+		"filter" : [
+
+			"description",
+			"""
+			A filter to define additional paths to be added to
+			or removed from the set.
+
+			> Warning : Using a filter can be very expensive.
+			It is advisable to limit use to filters with a
+			limited number of matches and/or sets which are
+			not used heavily downstream. Wherever possible,
+			prefer to use the `paths` plug directly instead
+			of using a filter.
+			""",
+
 		],
 
 	}
 
-)
-
-
-# PlugValueWidget registrations
-##########################################################################
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.Set,
-	"mode",
-	GafferUI.PresetsPlugValueWidget,
-)
-
-def __pathsPlugWidgetCreator( plug ) :
-
-	result = GafferUI.VectorDataPlugValueWidget( plug )
-	result.vectorDataWidget().setDragPointer( "objects" )
-	return result
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.Set,
-	"paths",
-	__pathsPlugWidgetCreator,
 )
 
 ##########################################################################
@@ -137,29 +139,29 @@ def __setValue( plug, value, *unused ) :
 
 def __setsPopupMenu( menuDefinition, plugValueWidget ) :
 
-	plug = plugValueWidget.getPlug() 
+	plug = plugValueWidget.getPlug()
 	if plug is None :
 		return
 
-	acceptsSetName = Gaffer.Metadata.plugValue( plug, "ui:scene:acceptsSetName" )
-	acceptsSetNames = Gaffer.Metadata.plugValue( plug, "ui:scene:acceptsSetNames" )
+	acceptsSetName = Gaffer.Metadata.value( plug, "ui:scene:acceptsSetName" )
+	acceptsSetNames = Gaffer.Metadata.value( plug, "ui:scene:acceptsSetNames" )
 	if not acceptsSetName and not acceptsSetNames :
 		return
-	
+
 	node = plug.node()
 	if isinstance( node, GafferScene.Filter ) :
 		nodes = [ o.node() for o in node["out"].outputs() ]
 	else :
 		nodes = [ node ]
-	
+
 	setNames = set()
 	with plugValueWidget.getContext() :
 		for node in nodes :
 			for scenePlug in node.children( GafferScene.ScenePlug ) :
-				
+
 				if scenePlug.direction() != scenePlug.Direction.In :
 					continue
-				
+
 				setNames.update( [ str( n ) for n in scenePlug["setNames"].getValue() ] )
 
 	if not setNames :
@@ -187,9 +189,21 @@ def __setsPopupMenu( menuDefinition, plugValueWidget ) :
 			{
 				"command" : functools.partial( __setValue, plug, " ".join( sorted( newNames ) ) ),
 				"checkBox" : setName in currentNames,
-				"active" : plug.settable() and not plugValueWidget.getReadOnly(),
+				"active" : plug.settable() and not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ),
 			}
 		)
 
 __setsPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __setsPopupMenu )
 
+##########################################################################
+# Gadgets
+##########################################################################
+
+def __nodeGadget( node ) :
+
+	nodeGadget = GafferUI.StandardNodeGadget( node )
+	GafferSceneUI.PathFilterUI.addObjectDropTarget( nodeGadget )
+
+	return nodeGadget
+
+GafferUI.NodeGadget.registerNodeGadget( GafferScene.Set, __nodeGadget )

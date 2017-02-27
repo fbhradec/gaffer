@@ -63,6 +63,8 @@ Gaffer.Metadata.registerNode(
 			"preset:Delete", GafferImage.DeleteChannels.Mode.Delete,
 			"preset:Keep", GafferImage.DeleteChannels.Mode.Keep,
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
 		"channels" : [
@@ -78,6 +80,3 @@ Gaffer.Metadata.registerNode(
 	}
 
 )
-
-GafferUI.PlugValueWidget.registerCreator( GafferImage.DeleteChannels, "mode", GafferUI.PresetsPlugValueWidget )
-GafferUI.PlugValueWidget.registerCreator( GafferImage.DeleteChannels, "channels", GafferImageUI.ChannelMaskPlugValueWidget, inputImagePlug = "in" )

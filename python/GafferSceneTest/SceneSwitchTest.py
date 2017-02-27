@@ -34,6 +34,7 @@
 #
 ##########################################################################
 
+import inspect
 import unittest
 
 import IECore
@@ -63,10 +64,10 @@ class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 		sphere = GafferScene.Sphere()
 
 		switch = GafferScene.SceneSwitch()
-		switch["in"].setInput( plane["out"] )
-		switch["in1"].setInput( sphere["out"] )
+		switch["in"][0].setInput( plane["out"] )
+		switch["in"][1].setInput( sphere["out"] )
 
-		for p in [ switch["in"], switch["in1"] ] :
+		for p in [ switch["in"][0], switch["in"][1] ] :
 			for n in p.keys() :
 				a = switch.affects( p[n] )
 				self.assertEqual( len( a ), 1 )
@@ -84,8 +85,8 @@ class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 		sphere = GafferScene.Sphere()
 
 		switch = GafferScene.SceneSwitch()
-		switch["in"].setInput( plane["out"] )
-		switch["in1"].setInput( sphere["out"] )
+		switch["in"][0].setInput( plane["out"] )
+		switch["in"][1].setInput( sphere["out"] )
 
 		self.assertScenesEqual( switch["out"], plane["out"] )
 		self.assertSceneHashesEqual( switch["out"], plane["out"] )
@@ -108,15 +109,57 @@ class SceneSwitchTest( GafferSceneTest.SceneTestCase ) :
 		script["plane"] = GafferScene.Plane()
 		script["sphere"] = GafferScene.Sphere()
 
-		script["switch"]["in"].setInput( script["plane"]["out"] )
-		script["switch"]["in1"].setInput( script["sphere"]["out"] )
+		script["switch"]["in"][0].setInput( script["plane"]["out"] )
+		script["switch"]["in"][1].setInput( script["sphere"]["out"] )
 
 		script2 = Gaffer.ScriptNode()
 		script2.execute( script.serialise() )
 
-		self.assertTrue( script2["switch"]["in"].getInput().isSame( script2["plane"]["out"] ) )
-		self.assertTrue( script2["switch"]["in1"].getInput().isSame( script2["sphere"]["out"] ) )
-		self.assertTrue( script2["switch"]["in2"].getInput() is None )
+		self.assertTrue( script2["switch"]["in"][0].getInput().isSame( script2["plane"]["out"] ) )
+		self.assertTrue( script2["switch"]["in"][1].getInput().isSame( script2["sphere"]["out"] ) )
+		self.assertTrue( script2["switch"]["in"][2].getInput() is None )
+
+	def testScenePathNotAvailableInContextExpressions( self ) :
+
+		# We don't want expressions on the index to be sensitive
+		# to the scene:path context entry, because then the scene
+		# can be made invalid by splicing together different input
+		# scenes without taking care of bounding box propagation etc.
+
+		script = Gaffer.ScriptNode()
+
+		script["plane"] = GafferScene.Plane()
+		script["sphere"] = GafferScene.Sphere()
+
+		script["switch"] = GafferScene.SceneSwitch()
+		script["switch"]["in"][0].setInput( script["plane"]["out"] )
+		script["switch"]["in"][1].setInput( script["sphere"]["out"] )
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( inspect.cleandoc(
+			"""
+			assert( context.get( "scene:path", None ) is None )
+			parent["switch"]["index"] = 1
+			"""
+		) )
+
+		self.assertEqual( script["switch"]["out"].childNames( "/" ), IECore.InternedStringVectorData( [ "sphere" ] ) )
+
+	def testAcceptsInputPerformance( self ) :
+
+		s1 = GafferScene.Sphere()
+		lastPlug = s1["out"]
+
+		switches = []
+		for i in range( 0, 10 ) :
+			switch = GafferScene.SceneSwitch()
+			for i in range( 0, 10 ) :
+				switch["in"][i].setInput( lastPlug )
+			switches.append( switch )
+			lastPlug = switch["out"]
+
+		s2 = GafferScene.Sphere()
+		self.assertTrue( switches[0]["in"][0].acceptsInput( s2["out"] ) )
 
 if __name__ == "__main__":
 	unittest.main()

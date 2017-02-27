@@ -34,10 +34,44 @@
 #
 ##########################################################################
 
+import appleseed
+
+import IECore
+
 import Gaffer
 import GafferScene
 import GafferUI
 import GafferAppleseed
+
+# Get the render settings metadata dictionary from appleseed
+__optionsMetadata = appleseed.Configuration.get_metadata()
+
+def __getDescriptionString( key, extraInfo = None ):
+
+	keys = key.split( ":" )
+
+	try:
+		desc =  reduce( lambda d, k: d[k], keys, __optionsMetadata )["help"]
+
+		if extraInfo :
+
+			desc += '.' + extraInfo
+
+		return desc
+	except:
+		return ""
+
+def __getShadingOverridesPresets():
+
+	modes = appleseed.SurfaceShader.get_input_metadata()['diagnostic_surface_shader']['mode']['items']
+	presets = ["preset:No Override", "no_override"]
+
+	for k in modes.keys():
+
+		presets.append( "preset:" + k )
+		presets.append( modes[k] )
+
+	return presets
 
 def __mainSummary( plug ) :
 
@@ -48,14 +82,8 @@ def __mainSummary( plug ) :
 		info.append( "Sampler %s" % plug["sampler"]["value"].getValue() )
 	if plug["aaSamples"]["enabled"].getValue() :
 		info.append( "AA Samples %d" % plug["aaSamples"]["value"].getValue() )
-	if plug["forceAA"]["enabled"].getValue() and plug["forceAA"]["value"].getValue() :
-		info.append( "Force AA" )
-	if plug["decorrelatePixels"]["enabled"].getValue() and plug["decorrelatePixels"]["value"].getValue() :
-		info.append( "Decorrelate Pixels" )
 	if plug["lightingEngine"]["enabled"].getValue() :
 		info.append( "Lighting Engine %s" % plug["lightingEngine"]["value"].getValue() )
-	if plug["meshFileFormat"]["enabled"].getValue() :
-		info.append( "Mesh File Format %s" % plug["meshFileFormat"]["value"].getValue() )
 
 	return ", ".join( info )
 
@@ -66,22 +94,6 @@ def __environmentSummary( plug ) :
 		info.append( "Environment %s" % plug["environmentEDF"]["value"].getValue() )
 	if plug["environmentEDFBackground"]["enabled"].getValue() and plug["environmentEDFBackground"]["value"].getValue() :
 		info.append( "Visible in Background" )
-
-	return ", ".join( info )
-
-def __drtSummary( plug ) :
-
-	info = []
-	if plug["drtIBL"]["enabled"].getValue() and plug["drtIBL"]["value"].getValue() :
-		info.append( "IBL" )
-	if plug["drtMaxBounces"]["enabled"].getValue() :
-		info.append( "Max Bounces %d" % plug["drtMaxBounces"]["value"].getValue() )
-	if plug["drtRRStartBounce"]["enabled"].getValue() :
-		info.append( "Min Bounces %d" % plug["drtRRStartBounce"]["value"].getValue() )
-	if plug["drtLightingSamples"]["enabled"].getValue() :
-		info.append( "Lighting samples %d" % plug["drtLightingSamples"]["value"].getValue() )
-	if plug["drtIBLSamples"]["enabled"].getValue() :
-		info.append( "IBL samples %d" % plug["drtIBLSamples"]["value"].getValue() )
 
 	return ", ".join( info )
 
@@ -96,14 +108,10 @@ def __ptSummary( plug ) :
 		info.append( "Caustics" )
 	if plug["ptMaxBounces"]["enabled"].getValue() :
 		info.append( "Max Bounces %d" % plug["ptMaxBounces"]["value"].getValue() )
-	if plug["ptRRStartBounce"]["enabled"].getValue() :
-		info.append( "Min Bounces %d" % plug["ptRRStartBounce"]["value"].getValue() )
-	if plug["ptNextEvent"]["enabled"].getValue() and plug["ptNextEvent"]["value"].getValue() :
-		info.append( "Next Event Estimation" )
 	if plug["ptLightingSamples"]["enabled"].getValue() :
-		info.append( "Lighting Samples %d" % plug["ptLightingSamples"]["value"].getValue() )
+		info.append( "Lighting Samples %f" % plug["ptLightingSamples"]["value"].getValue() )
 	if plug["ptIBLSamples"]["enabled"].getValue() :
-		info.append( "IBL Samples %d" % plug["ptIBLSamples"]["value"].getValue() )
+		info.append( "IBL Samples %f" % plug["ptIBLSamples"]["value"].getValue() )
 	if plug["ptMaxRayIntensity"]["enabled"].getValue() :
 		info.append( "Max Ray Intensity %f" % plug["ptMaxRayIntensity"]["value"].getValue() )
 
@@ -122,12 +130,8 @@ def __sppmSummary( plug ) :
 		info.append( "Caustics" )
 	if plug["sppmPhotonMaxBounces"]["enabled"].getValue() :
 		info.append( "Max Photon Bounces %d" % plug["sppmPhotonMaxBounces"]["value"].getValue() )
-	if plug["sppmPhotonRRStartBounce"]["enabled"].getValue() :
-		info.append( "Min Photon Bounces %d" % plug["sppmPhotonRRStartBounce"]["value"].getValue() )
 	if plug["sppmPathMaxBounces"]["enabled"].getValue() :
 		info.append( "Max Path Bounces %d" % plug["sppmPathMaxBounces"]["value"].getValue() )
-	if plug["sppmPathRRStartBounce"]["enabled"].getValue() :
-		info.append( "Min Path Bounces %d" % plug["sppmPathRRStartBounce"]["value"].getValue() )
 	if plug["sppmLightPhotons"]["enabled"].getValue() :
 		info.append( "Light Photons %d" % plug["sppmLightPhotons"]["value"].getValue() )
 	if plug["sppmEnvPhotons"]["enabled"].getValue() :
@@ -151,15 +155,32 @@ def __systemSummary( plug ) :
 	if plug["interactiveRenderFps"]["enabled"].getValue() :
 		info.append( "Interactive Render Fps %d" % plug["interactiveRenderFps"]["value"].getValue() )
 	if plug["textureMem"]["enabled"].getValue() :
-		info.append( "Texture Mem %d Kb" % plug["textureMem"]["value"].getValue() )
+		info.append( "Texture Mem %d bytes" % plug["textureMem"]["value"].getValue() )
 	if plug["tileOrdering"]["enabled"].getValue() :
 		info.append( "Tile Ordering %s" % plug["tileOrdering"]["value"].getValue().capitalize() )
+
+	return ", ".join( info )
+
+def __loggingSummary( plug ) :
+
+	info = []
+	if plug["logLevel"]["enabled"].getValue() :
+		info.append( "Log Level %s" % plug["logLevel"]["value"].getValue().capitalize() )
+	if plug["logFileName"]["enabled"].getValue() :
+		info.append( "File name" )
 
 	return ", ".join( info )
 
 Gaffer.Metadata.registerNode(
 
 	GafferAppleseed.AppleseedOptions,
+
+	"description",
+	"""
+	Sets global scene options applicable to the appleseed
+	renderer. Use the StandardOptions node to set
+	global options applicable to all renderers.
+	""",
 
 	plugs = {
 
@@ -169,10 +190,10 @@ Gaffer.Metadata.registerNode(
 
 			"layout:section:Main:summary", __mainSummary,
 			"layout:section:Environment:summary", __environmentSummary,
-			"layout:section:Distribution Ray Tracer:summary", __drtSummary,
 			"layout:section:Unidirectional Path Tracer:summary", __ptSummary,
 			"layout:section:SPPM:summary", __sppmSummary,
 			"layout:section:System:summary", __systemSummary,
+			"layout:section:Logging:summary", __loggingSummary,
 
 		],
 
@@ -180,12 +201,24 @@ Gaffer.Metadata.registerNode(
 
 		"options.renderPasses" : [
 
+			"description",
+			__getDescriptionString(
+				"generic_frame_renderer:passes",
+				"""
+				When using photon mapping this is the number of
+				progressive refinement passes used.
+				"""
+			),
+
 			"layout:section", "Main",
 			"label", "Passes",
 
 		],
 
 		"options.sampler" : [
+
+			"description",
+			__getDescriptionString( "sampling_mode" ),
 
 			"layout:section", "Main",
 
@@ -196,29 +229,24 @@ Gaffer.Metadata.registerNode(
 			"preset:Random", "rng",
 			"preset:QMC", "qmc",
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
 		"options.aaSamples" : [
+
+			"description",
+			__getDescriptionString( "uniform_pixel_renderer:samples" ),
 
 			"layout:section", "Main",
 			"label", "AA Samples",
 
 		],
 
-		"options.forceAA" : [
-
-			"layout:section", "Main",
-			"label", "Force Antialiasing",
-
-		],
-
-		"options.decorrelatePixels" : [
-
-			"layout:section", "Main",
-
-		],
-
 		"options.lightingEngine" : [
+
+			"description",
+			__getDescriptionString( "lighting_engine" ),
 
 			"layout:section", "Main",
 
@@ -226,81 +254,90 @@ Gaffer.Metadata.registerNode(
 
 		"options.lightingEngine.value" : [
 
-			"preset:Distribution Ray Tracer", "drt",
 			"preset:Unidirectional Path Tracer", "pt",
 			"preset:SPPM", "sppm",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 
 		],
 
 		"options.meshFileFormat" : [
 
+			"description",
+			"""
+			Mesh file format to use when exporting scenes to appleseed.
+			It is recommended to set it to BinaryMesh as it is more efficient than Obj.
+			""",
+
 			"layout:section", "Main",
 
-		],
-
-		"options.meshFileFormat.value" : [
-
-			"preset:BinaryMesh", "binarymesh",
-			"preset:Obj", "obj",
+			# Hidden because it's not used in the new renderer.
+			"plugValueWidget:type", ""
 
 		],
+
+		"options.shadingOverride" : [
+
+			"description",
+			"""
+			Replaces all shaders in the scene by special
+			diagnostics shaders that can visualize uvs, normals, ...
+			Useful for debugging scenes.
+			""",
+
+			"layout:section", "Main",
+			"label", "Shading Override",
+
+		],
+
+		"options.shadingOverride.value" : [
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
+		] + __getShadingOverridesPresets(),
+
 
 		# Environment
 
 		"options.environmentEDF" : [
+
+			"description",
+			"""
+			Light to use as the environment.
+			""",
 
 			"layout:section", "Environment",
 			"label", "Environment Light",
 
 		],
 
+		"options.environmentEDF.value" : [
+
+			"plugValueWidget:type", "GafferSceneUI.ScenePathPlugValueWidget",
+			"pathPlugValueWidget:valid", True,
+			"scenePathPlugValueWidget:setNames", IECore.StringVectorData( [ "__lights" ] ),
+			"scenePathPlugValueWidget:setsLabel", "Show only lights",
+
+		],
+
 		"options.environmentEDFBackground" : [
+
+			"description",
+			"""
+			Whether or not the environment is visible in the background.
+			""",
 
 			"layout:section", "Environment",
 			"label", "Visible in Background",
 
 		],
 
-		# Distribution Ray Tracer
-
-		"options.drtIBL" : [
-
-			"layout:section", "Distribution Ray Tracer",
-			"label", "Image Based Lighting",
-
-		],
-
-		"options.drtMaxBounces" : [
-
-			"layout:section", "Distribution Ray Tracer",
-			"label", "Max Bounces",
-
-		],
-
-		"options.drtRRStartBounce" : [
-
-			"layout:section", "Distribution Ray Tracer",
-			"label", "RR Start Bounce",
-
-		],
-
-		"options.drtLightingSamples" : [
-
-			"layout:section", "Distribution Ray Tracer",
-			"label", "Direct Lighting Samples",
-
-		],
-
-		"options.drtIBLSamples" : [
-
-			"layout:section", "Distribution Ray Tracer",
-			"label", "IBL Samples",
-
-		],
-
 		# Unidirectional Path Tracer
 
 		"options.ptDirectLighting" : [
+
+			"description",
+			__getDescriptionString( "pt:enable_dl" ),
 
 			"layout:section", "Unidirectional Path Tracer",
 			"label", "Direct Lighting",
@@ -309,12 +346,18 @@ Gaffer.Metadata.registerNode(
 
 		"options.ptIBL" : [
 
+			"description",
+			__getDescriptionString( "pt:enable_ibl" ),
+
 			"layout:section", "Unidirectional Path Tracer",
 			"label", "Image Based Lighting",
 
 		],
 
 		"options.ptCaustics" : [
+
+			"description",
+			__getDescriptionString( "pt:enable_caustics" ),
 
 			"layout:section", "Unidirectional Path Tracer",
 			"label", "Caustics",
@@ -323,26 +366,21 @@ Gaffer.Metadata.registerNode(
 
 		"options.ptMaxBounces" : [
 
+			"description",
+			__getDescriptionString(
+				"pt:max_path_length",
+				"If set to zero, use an unlimited number of bounces"
+			),
+
 			"layout:section", "Unidirectional Path Tracer",
 			"label", "Max Bounces",
 
 		],
 
-		"options.ptRRStartBounce" : [
-
-			"layout:section", "Unidirectional Path Tracer",
-			"label", "RR Start Bounce",
-
-		],
-
-		"options.ptNextEvent" : [
-
-			"layout:section", "Unidirectional Path Tracer",
-			"label", "Next Event Estimation",
-
-		],
-
 		"options.ptLightingSamples" : [
+
+			"description",
+			__getDescriptionString( "pt:dl_light_samples" ),
 
 			"layout:section", "Unidirectional Path Tracer",
 			"label", "Direct Lighting Samples",
@@ -351,12 +389,21 @@ Gaffer.Metadata.registerNode(
 
 		"options.ptIBLSamples" : [
 
+			"description",
+			__getDescriptionString( "pt:ibl_env_samples" ),
+
 			"layout:section", "Unidirectional Path Tracer",
 			"label", "IBL Samples",
 
 		],
 
 		"options.ptMaxRayIntensity" : [
+
+			"description",
+			__getDescriptionString(
+				"pt:max_ray_intensity",
+				"Set to zero to disable"
+			),
 
 			"layout:section", "Unidirectional Path Tracer",
 			"label", "Max Ray Intensity",
@@ -366,6 +413,9 @@ Gaffer.Metadata.registerNode(
 		# SPPM
 
 		"options.photonType" : [
+
+			"description",
+			__getDescriptionString( "sppm:photon_type" ),
 
 			"layout:section", "SPPM",
 			"label", "Photon Type",
@@ -377,9 +427,14 @@ Gaffer.Metadata.registerNode(
 			"preset:Monochromatic", "mono",
 			"preset:Polychromatic", "poly",
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
 		"options.sppmDirectLighting" : [
+
+			"description",
+			__getDescriptionString( "sppm:dl_type" ),
 
 			"layout:section", "SPPM",
 			"label", "Direct Lighting",
@@ -392,9 +447,14 @@ Gaffer.Metadata.registerNode(
 			"preset:SPPM", "sppm",
 			"preset:None", "off",
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
 		"options.sppmIBL" : [
+
+			"description",
+			__getDescriptionString( "sppm:enable_ibl" ),
 
 			"layout:section", "SPPM",
 			"label", "Image Based Lighting",
@@ -403,6 +463,9 @@ Gaffer.Metadata.registerNode(
 
 		"options.sppmCaustics" : [
 
+			"description",
+			__getDescriptionString( "sppm:enable_caustics" ),
+
 			"layout:section", "SPPM",
 			"label", "Caustics",
 
@@ -410,33 +473,34 @@ Gaffer.Metadata.registerNode(
 
 		"options.sppmPhotonMaxBounces" : [
 
+			"description",
+			__getDescriptionString(
+				"sppm:photon_tracing_max_path_length",
+				"If set to zero, use an unlimited number of bounces"
+			),
+
 			"layout:section", "SPPM",
 			"label", "Max Photon Bounces",
 
 		],
 
-		"options.sppmPhotonRRStartBounce" : [
-
-			"layout:section", "SPPM",
-			"label", "Photon RR Start Bounce",
-
-		],
-
 		"options.sppmPathMaxBounces" : [
+
+			"description",
+			__getDescriptionString(
+				"sppm:path_tracing_max_path_length",
+				"If set to zero, use an unlimited number of bounces"
+			),
 
 			"layout:section", "SPPM",
 			"label", "Max Path Bounces",
 
 		],
 
-		"options.sppmPathRRStartBounce" : [
-
-			"layout:section", "SPPM",
-			"label", "Path RR Start Bounce",
-
-		],
-
 		"options.sppmLightPhotons" : [
+
+			"description",
+			__getDescriptionString( "sppm:light_photons_per_pass" ),
 
 			"layout:section", "SPPM",
 			"label", "Light Photons",
@@ -445,12 +509,18 @@ Gaffer.Metadata.registerNode(
 
 		"options.sppmEnvPhotons" : [
 
+			"description",
+			__getDescriptionString( "sppm:env_photons_per_pass" ),
+
 			"layout:section", "SPPM",
 			"label", "Environment Photons",
 
 		],
 
 		"options.sppmInitialRadius" : [
+
+			"description",
+			__getDescriptionString( "sppm:initial_radius" ),
 
 			"layout:section", "SPPM",
 			"label", "Initial Radius",
@@ -459,12 +529,18 @@ Gaffer.Metadata.registerNode(
 
 		"options.sppmMaxPhotons" : [
 
+			"description",
+			__getDescriptionString( "sppm:max_photons_per_estimate" ),
+
 			"layout:section", "SPPM",
 			"label", "Max Photons",
 
 		],
 
 		"options.sppmAlpha" : [
+
+			"description",
+			__getDescriptionString( "sppm:alpha" ),
 
 			"layout:section", "SPPM",
 			"label", "Alpha",
@@ -475,11 +551,23 @@ Gaffer.Metadata.registerNode(
 
 		"options.searchPath" : [
 
+			"description",
+			"""
+			The filesystem paths where shaders and textures
+			are searched for.
+			""",
+
 			"layout:section", "System",
 
 		],
 
 		"options.numThreads" : [
+
+			"description",
+			__getDescriptionString(
+				"rendering_threads",
+				"Set to zero to use all CPU cores"
+			),
 
 			"layout:section", "System",
 			"label", "Threads",
@@ -488,11 +576,30 @@ Gaffer.Metadata.registerNode(
 
 		"options.interactiveRenderFps" : [
 
+			"description",
+			__getDescriptionString( "progressive_frame_renderer:max_fps" ),
+
 			"layout:section", "System",
 
 		],
 
+		"options.interactiveRenderMaxSamples" : [
+
+			"description",
+			"""
+			Sets the maximum number of samples to use when doing
+			interactive rendering.
+			""",
+
+			"layout:section", "System",
+			"plugValueWidget:type", ""
+
+		],
+
 		"options.textureMem" : [
+
+			"description",
+			__getDescriptionString( "texture_store:max_size" ),
 
 			"layout:section", "System",
 			"label", "Texture Cache Size",
@@ -500,6 +607,9 @@ Gaffer.Metadata.registerNode(
 		],
 
 		"options.tileOrdering" : [
+
+			"description",
+			__getDescriptionString( "generic_frame_renderer:tile_ordering" ),
 
 			"layout:section", "System",
 
@@ -512,53 +622,56 @@ Gaffer.Metadata.registerNode(
 			"preset:Hilbert", "hilbert",
 			"preset:Random", "random",
 
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
-	}
+		"options.logLevel" : [
 
-)
+			"description",
+			"""
+			Determines the verbosity of log
+			output.
+			""",
 
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedOptions,
-	"options.meshFileFormat.value",
-	GafferUI.PresetsPlugValueWidget,
-)
+			"layout:section", "Logging",
 
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedOptions,
-	"options.lightingEngine.value",
-	GafferUI.PresetsPlugValueWidget,
-)
+		],
 
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedOptions,
-	"options.environmentEDF.value",
-	lambda plug : GafferUI.PathPlugValueWidget(
-		plug,
-		path = GafferScene.ScenePath( plug.node()["in"], plug.node().scriptNode().context(), "/" ),
-	),
-)
+		"options.logLevel.value" : [
 
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedOptions,
-	"options.photonType.value",
-	GafferUI.PresetsPlugValueWidget,
-)
+			"preset:Debug", "debug",
+			"preset:Info", "info",
+			"preset:Warning", "warning",
+			"preset:Error", "error",
+			"preset:Fatal", "fata",
 
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedOptions,
-	"options.sppmDirectLighting.value",
-	GafferUI.PresetsPlugValueWidget,
-)
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedOptions,
-	"options.tileOrdering.value",
-	GafferUI.PresetsPlugValueWidget,
-)
+		],
 
-GafferUI.PlugValueWidget.registerCreator(
-	GafferAppleseed.AppleseedOptions,
-	"options.sampler.value",
-	GafferUI.PresetsPlugValueWidget,
+		"options.logFileName" : [
+
+		"description",
+		"""
+		The name of a log file which appleseed will generate
+		while rendering.
+		""",
+
+		"layout:section", "Logging",
+		"label", "Log File",
+
+		],
+
+		"options.logFileName.value" : [
+
+		"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
+		"pathPlugValueWidget:leaf", True,
+		"fileSystemPathPlugValueWidget:extensions", IECore.StringVectorData( [ "txt", "log" ] ),
+		"fileSystemPathPlugValueWidget:extensionsLabel", "Show only log files",
+
+		],
+
+}
+
 )

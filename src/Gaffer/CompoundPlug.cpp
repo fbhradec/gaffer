@@ -43,7 +43,6 @@
 
 #include "Gaffer/CompoundPlug.h"
 #include "Gaffer/Node.h"
-#include "Gaffer/BlockedConnection.h"
 
 using namespace Gaffer;
 using namespace boost;
@@ -53,8 +52,6 @@ IE_CORE_DEFINERUNTIMETYPED( CompoundPlug )
 CompoundPlug::CompoundPlug( const std::string &name, Direction direction, unsigned flags )
 	:	ValuePlug( name, direction, flags )
 {
-	childAddedSignal().connect( boost::bind( &CompoundPlug::childAddedOrRemoved, this ) );
-	childRemovedSignal().connect( boost::bind( &CompoundPlug::childAddedOrRemoved, this ) );
 }
 
 CompoundPlug::~CompoundPlug()
@@ -64,19 +61,9 @@ CompoundPlug::~CompoundPlug()
 PlugPtr CompoundPlug::createCounterpart( const std::string &name, Direction direction ) const
 {
 	CompoundPlugPtr result = new CompoundPlug( name, direction, getFlags() );
-	for( PlugIterator it( this ); it != it.end(); it++ )
+	for( PlugIterator it( this ); !it.done(); ++it )
 	{
 		result->addChild( (*it)->createCounterpart( (*it)->getName(), direction ) );
 	}
 	return result;
-}
-
-void CompoundPlug::childAddedOrRemoved()
-{
-	// addition or removal of a child to a compound is considered to
-	// change its value, so we emit the appropriate signal. this is
-	// mostly of use for the SplinePlug, as points are added by adding
-	// plugs and removed by removing them.
-	/// \todo Do we really need this?
-	emitPlugSet();
 }

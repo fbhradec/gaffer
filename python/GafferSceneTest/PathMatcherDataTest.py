@@ -40,8 +40,9 @@ import IECore
 
 import Gaffer
 import GafferScene
+import GafferSceneTest
 
-class PathMatcherDataTest( unittest.TestCase ) :
+class PathMatcherDataTest( GafferSceneTest.SceneTestCase ) :
 
 	def test( self ) :
 
@@ -94,6 +95,24 @@ class PathMatcherDataTest( unittest.TestCase ) :
 		d2.value.addPath( "/b")
 
 		self.assertNotEqual( d1.hash(), d2.hash() )
+
+	def testRepr( self ) :
+
+		d1 = GafferScene.PathMatcherData(
+			GafferScene.PathMatcher()
+		)
+		d2 = GafferScene.PathMatcherData(
+			GafferScene.PathMatcher( [
+				"/a/b",
+				"/a/*"
+			] )
+		)
+
+		d1c = eval( repr( d1 ) )
+		d2c = eval( repr( d2 ) )
+
+		self.assertEqual( d1, d1c )
+		self.assertEqual( d2, d2c )
 
 if __name__ == "__main__":
 	unittest.main()

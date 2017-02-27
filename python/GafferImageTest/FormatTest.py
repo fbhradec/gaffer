@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2012-2013, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2012-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -38,48 +38,18 @@ import unittest
 import random
 
 import IECore
+
 import Gaffer
+import GafferTest
 
 import GafferImage
+import GafferImageTest
 
-class FormatTest( unittest.TestCase ) :
-	def testAddRemoveFormat( self ) :
-		# Get any existing format names
-		existingFormatNames = GafferImage.Format.formatNames()
-
-		# Assert that our test format is in not in the list of formats
-		self.assertFalse( self.__testFormatName() in existingFormatNames )
-
-		# Add a test format
-		GafferImage.Format.registerFormat( self.__testFormatValue(), self.__testFormatName() )
-
-		# Get the new list of format names and test that it contains our new format
-		self.assertTrue( self.__testFormatName() in GafferImage.Format.formatNames() )
-
-		# Attempt to get the format we added by name and check to see if the results are what we expect
-		testFormat = GafferImage.Format.getFormat( self.__testFormatName() )
-		self.__assertTestFormat( testFormat )
-
-		# Now remove it by name.
-		GafferImage.Format.removeFormat( self.__testFormatName() )
-
-		# Get the new list of format names and check that it is the same as the old list
-		self.assertEqual( set( existingFormatNames ), set( GafferImage.Format.formatNames() ) )
-
-	def testDefaultFormatPlugExists( self ) :
-		# Create a node to make sure that we have a default format...
-		s = Gaffer.ScriptNode()
-		n = GafferImage.Grade()
-		s.addChild( n )
-
-		try:
-			# Now assert that the default format plug exists. If it doesn't then an exception is raised.
-			s["defaultFormat"]
-		except:
-			self.assertTrue(False)
+class FormatTest( GafferImageTest.ImageTestCase ) :
 
 	def testOffsetDisplayWindow( self ) :
-		box = IECore.Box2i( IECore.V2i( 6, -4 ), IECore.V2i( 49, 149 ) )
+
+		box = IECore.Box2i( IECore.V2i( 6, -4 ), IECore.V2i( 50, 150 ) )
 		f = GafferImage.Format( box, 1.1 )
 		self.assertEqual( f.getDisplayWindow(), box )
 		self.assertEqual( f.width(), 44 )
@@ -87,12 +57,22 @@ class FormatTest( unittest.TestCase ) :
 		self.assertEqual( f.getPixelAspect(), 1.1 )
 
 	def testBoxAspectConstructor( self ) :
-		f = GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 49, 149 ) ), 1.3 )
+
+		f = GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 50, 150 ) ), 1.3 )
 		self.assertEqual( f.width(), 50 )
 		self.assertEqual( f.height(), 150 )
 		self.assertEqual( f.getPixelAspect(), 1.3 )
 
+	def testDefaultPixelAspect( self ) :
+
+		f = GafferImage.Format( 100, 100 )
+		self.assertEqual( f.getPixelAspect(), 1. )
+
+		f = GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 100, 100 ) ) )
+		self.assertEqual( f.getPixelAspect(), 1. )
+
 	def testWH( self ) :
+
 		f = GafferImage.Format( 101, 102, 1. )
 		self.assertEqual( f.width(), 101 )
 		self.assertEqual( f.height(), 102 )
@@ -101,124 +81,149 @@ class FormatTest( unittest.TestCase ) :
 		self.assertEqual( f.width(), 0 )
 		self.assertEqual( f.height(), 0 )
 
-	def testDefaultFormatContext( self ) :
-		# Create a node to make sure that we have a default format...
-		s = Gaffer.ScriptNode()
-		n = GafferImage.Grade()
-		s.addChild( n )
-		s.context().get("image:defaultFormat")
+	def testEXRSpaceFormat( self ) :
 
-	def __hashChanged( self, cls ) :
-		# Create the node and check that the format changes if it is unconnected.
-		n = cls()
-		s = Gaffer.ScriptNode()
-		s.addChild( n )
+		f = GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 99 ) ), 1.0, True )
+		self.assertEqual( f.width(), 100 )
+		self.assertEqual( f.height(), 100 )
+		self.assertEqual(
+			f.toEXRSpace( f.getDisplayWindow() ),
+			IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 99 ) ),
+		)
 
-		h1 = n["out"]["format"].hash()
+		f = GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 99 ) ), 1.0, fromEXRSpace = True )
+		self.assertEqual( f.width(), 100 )
+		self.assertEqual( f.height(), 100 )
+		self.assertEqual(
+			f.toEXRSpace( f.getDisplayWindow() ),
+			IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 99 ) ),
+		)
 
-		# Change the default format.
-		GafferImage.Format.registerFormat( self.__testFormatValue(), self.__testFormatName() )
-		GafferImage.Format.setDefaultFormat( s, self.__testFormatValue() )
-
-		# Check that the hash has changed.
-		h2 = n["out"]["format"].hash()
-
-		# we want to assert h1 != h2, but we get a more useful failure message this way
-		if h1 == h2 :
-			self.assertFalse( cls.__name__ + " format hash did not change" )
-
-	def testHashChanged( self ) :
-		
-		def findNodes( base ) :
-			
-			result = []
-			
-			classes = base.__subclasses__()
-			if not classes :
-				result.append( base )
-			
-			for cls in classes :
-				result.extend( findNodes( cls ) )
-			
-			return result
-		
-		classes = findNodes( GafferImage.ImageProcessor )
-		
-		for cls in classes :
-			self.__hashChanged( cls )
-	
-	def testDefaultFormatChanged( self ) :
-		# Create a grade node and check that the format changes if it is unconnected.
-		n = GafferImage.Grade()
-		s = Gaffer.ScriptNode()
-		s.addChild( n )
-
-		p = GafferImage.ImagePlug( "test", GafferImage.ImagePlug.Direction.In )
-		p.setInput( n["out"] )
-
-		with s.context() :
-			f1 = p["format"].getValue()
-
-			# Change the default format.
-			GafferImage.Format.registerFormat( self.__testFormatValue(), self.__testFormatName() )
-			GafferImage.Format.setDefaultFormat( s, self.__testFormatValue() )
-
-			# Check that the hash has changed.
-			f2 = p["format"].getValue()
-
-			self.assertNotEqual( f1, f2 )
-
-	def testAddRemoveFormatByValue( self ) :
-		# Get any existing format names
-		existingFormatNames = GafferImage.Format.formatNames()
-
-		# Assert that our test format is in not in the list of formats
-		self.assertFalse( self.__testFormatName() in existingFormatNames )
-
-		# Add a test format by value only
-		GafferImage.Format.registerFormat( self.__testFormatValue() )
-
-		# Get the new list of format names and test that it contains our new format name
-		self.assertTrue( self.__testFormatName() in GafferImage.Format.formatNames() )
-
-		# Attempt to get the format we added by name and check to see if the results are what we expect
-		testFormat = GafferImage.Format.getFormat( self.__testFormatName() )
-		self.__assertTestFormat( testFormat )
-
-		# Now remove it by value.
-		GafferImage.Format.removeFormat( self.__testFormatValue() )
-
-		# Get the new list of format names and check that it is the same as the old list
-		self.assertEqual( set( existingFormatNames ), set( GafferImage.Format.formatNames() ) )
+		f = GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 100 ) ), 1.0, fromEXRSpace = False )
+		self.assertEqual( f.width(), 100 )
+		self.assertEqual( f.height(), 100 )
+		self.assertEqual(
+			f.getDisplayWindow(),
+			IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 100 ) ),
+		)
 
 	def testCoordinateSystemTransforms( self ) :
 
-		f = GafferImage.Format( IECore.Box2i( IECore.V2i( -100, -200 ), IECore.V2i( 500, 300 ) ), 1 )
+		f = GafferImage.Format( IECore.Box2i( IECore.V2i( -100, -200 ), IECore.V2i( 501, 301 ) ), 1 )
 
-		self.assertEqual( f.yDownToFormatSpace( IECore.V2i( -100, -200 ) ), IECore.V2i( -100, 300 ) )
-		self.assertEqual( f.yDownToFormatSpace( IECore.V2i( -100, 300 ) ), IECore.V2i( -100, -200 ) )
+		self.assertEqual( f.fromEXRSpace( IECore.V2i( -100, -200 ) ), IECore.V2i( -100, 300 ) )
+		self.assertEqual( f.fromEXRSpace( IECore.V2i( -100, 300 ) ), IECore.V2i( -100, -200 ) )
 
-		self.assertEqual( f.formatToYDownSpace( IECore.V2i( -100, -200 ) ), IECore.V2i( -100, 300 ) )
-		self.assertEqual( f.formatToYDownSpace( IECore.V2i( -100, 300 ) ), IECore.V2i( -100, -200 ) )
+		self.assertEqual( f.toEXRSpace( IECore.V2i( -100, -200 ) ), IECore.V2i( -100, 300 ) )
+		self.assertEqual( f.toEXRSpace( IECore.V2i( -100, 300 ) ), IECore.V2i( -100, -200 ) )
+
+		self.assertEqual(
+			f.toEXRSpace(
+				IECore.Box2i( IECore.V2i( -100, -200 ), IECore.V2i( 501, 301 ) )
+			),
+			IECore.Box2i( IECore.V2i( -100, -200 ), IECore.V2i( 500, 300 ) )
+		)
+
+		self.assertEqual(
+			f.toEXRSpace(
+				IECore.Box2i( IECore.V2i( -100, -100 ), IECore.V2i( 501, 301 ) )
+			),
+			IECore.Box2i( IECore.V2i( -100, -200 ), IECore.V2i( 500, 200 ) )
+		)
+
+		self.assertEqual(
+			f.toEXRSpace(
+				IECore.Box2i( IECore.V2i( -100, -200 ), IECore.V2i( 501, -100 ) )
+			),
+			IECore.Box2i( IECore.V2i( -100, 201 ), IECore.V2i( 500, 300 ) )
+		)
 
 		for i in range( 0, 1000 ) :
 
 			p = IECore.V2i( int( random.uniform( -500, 500 ) ), int( random.uniform( -500, 500 ) ) )
-			pDown = f.formatToYDownSpace( p )
-			self.assertEqual( f.yDownToFormatSpace( pDown ), p )
+			pDown = f.toEXRSpace( p )
+			self.assertEqual( f.fromEXRSpace( pDown ), p )
 
-	def __assertTestFormat( self, testFormat ):
-		self.assertEqual( testFormat.getPixelAspect(), 1.4 )
-		self.assertEqual( testFormat.width(), 1234 )
-		self.assertEqual( testFormat.height(), 5678 )
-		self.assertEqual( testFormat.getDisplayWindow(), IECore.Box2i( IECore.V2i( 0, 0 ), IECore.V2i( 1233, 5677 ) ) )
+			b = IECore.Box2i()
+			b.extendBy( IECore.V2i( int( random.uniform( -500, 500 ) ), int( random.uniform( -500, 500 ) ) ) )
+			b.extendBy( IECore.V2i( int( random.uniform( -500, 500 ) ), int( random.uniform( -500, 500 ) ) ) )
 
-	def __testFormatValue( self ) :
-		return GafferImage.Format( 1234, 5678, 1.4 )
+			bDown = f.toEXRSpace( b )
+			if not GafferImage.BufferAlgo.empty( b ) :
+				self.assertEqual( f.fromEXRSpace( bDown ), b )
+			else :
+				self.assertEqual( f.fromEXRSpace( bDown ), IECore.Box2i() )
 
-	def __testFormatName( self ) :
-		return '1234x5678 1.400'
+	def testDisplayWindowCoordinateSystemTransforms( self ) :
 
+		f = GafferImage.Format( 10, 10, 1.0 )
+
+		self.assertEqual( f.toEXRSpace( 0 ), 9 )
+		self.assertEqual( f.toEXRSpace( 9 ), 0 )
+
+		self.assertEqual( f.fromEXRSpace( 9 ), 0 )
+		self.assertEqual( f.fromEXRSpace( 0 ), 9 )
+
+		self.assertEqual(
+			f.toEXRSpace( f.getDisplayWindow() ),
+			IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 9 ) )
+		)
+
+		self.assertEqual(
+			f.fromEXRSpace( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 9 ) ) ),
+			f.getDisplayWindow()
+		)
+
+	def testRegistry( self ) :
+
+		f = GafferImage.Format( 100, 200, 2 )
+
+		# Our test format should not be registered yet.
+		self.assertTrue( "testFormat" not in GafferImage.Format.registeredFormats() )
+		self.assertEqual( GafferImage.Format.name( f ), "" )
+
+		# If we register it, it should be queryable afterwards.
+		GafferImage.Format.registerFormat( "testFormat", f )
+		self.assertTrue( "testFormat" in GafferImage.Format.registeredFormats() )
+		self.assertEqual( GafferImage.Format.name( f ), "testFormat" )
+		self.assertEqual( GafferImage.Format.format( "testFormat"), f )
+
+		# And if we reregister it with a new value, that should
+		# override the previous registration.
+		f = GafferImage.Format( 200, 200, 2 )
+		GafferImage.Format.registerFormat( "testFormat", f )
+		self.assertTrue( "testFormat" in GafferImage.Format.registeredFormats() )
+		self.assertEqual( GafferImage.Format.name( f ), "testFormat" )
+		self.assertEqual( GafferImage.Format.format( "testFormat"), f )
+
+		# If we deregister it, it should be gone gone gone.
+		GafferImage.Format.deregisterFormat( "testFormat" )
+		self.assertTrue( "testFormat" not in GafferImage.Format.registeredFormats() )
+		self.assertEqual( GafferImage.Format.name( f ), "" )
+
+	def testStr( self ) :
+
+		f = GafferImage.Format( 10, 20 )
+		self.assertEqual( str( f ), "10x20" )
+
+		f = GafferImage.Format( 10, 20, 2 )
+		self.assertEqual( str( f ), "10x20, 2" )
+
+		f = GafferImage.Format( IECore.Box2i( IECore.V2i( 10 ), IECore.V2i( 20 ) ) )
+		self.assertEqual( str( f ), "(10 10) - (20 20)" )
+
+	def testEmptyBoxCoordinateSystemTransforms( self ) :
+
+		f = GafferImage.Format( 100, 200 )
+		self.assertEqual( f.toEXRSpace( IECore.Box2i() ), IECore.Box2i() )
+		self.assertEqual( f.toEXRSpace( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 0 ) ) ), IECore.Box2i() )
+		self.assertEqual( f.fromEXRSpace( IECore.Box2i() ), IECore.Box2i() )
+
+	def tearDown( self ) :
+
+		GafferTest.TestCase.tearDown( self )
+
+		GafferImage.Format.deregisterFormat( "testFormat" )
 
 if __name__ == "__main__":
 	unittest.main()

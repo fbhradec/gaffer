@@ -51,7 +51,7 @@
 #include "Gaffer/TypedObjectPlug.h"
 #include "Gaffer/SplinePlug.h"
 #include "Gaffer/ArrayPlug.h"
-#include "Gaffer/Box.h"
+#include "Gaffer/SubGraph.h"
 #include "Gaffer/Dot.h"
 
 #include "GafferScene/ShaderSwitch.h"
@@ -98,26 +98,26 @@ const Gaffer::Plug *RenderManShader::correspondingInput( const Gaffer::Plug *out
 	ConstCompoundDataPtr ann = annotations();
 	if( !ann )
 	{
-		return 0;
+		return NULL;
 	}
 
 	const StringData *primaryInput = ann->member<StringData>( "primaryInput" );
 	if( !primaryInput )
 	{
-		return 0;
+		return NULL;
 	}
 
 	const Plug *result = parametersPlug()->getChild<Plug>( primaryInput->readable() );
 	if( !result )
 	{
 		IECore::msg( IECore::Msg::Error, "RenderManShader::correspondingInput", boost::format( "Parameter \"%s\" does not exist" ) % primaryInput->readable() );
-		return 0;
+		return NULL;
 	}
 
 	if( result->typeId() != Gaffer::Plug::staticTypeId() )
 	{
 		IECore::msg( IECore::Msg::Error, "RenderManShader::correspondingInput", boost::format( "Parameter \"%s\" is not of type shader" ) % primaryInput->readable() );
-		return 0;
+		return NULL;
 	}
 
 	return result;
@@ -133,7 +133,7 @@ void RenderManShader::loadShader( const std::string &shaderName, bool keepExisti
 
 	// A metadata option to override the shader type.
 	// This can be useful to work around some 3delight issues.
-	// For example, if you want to call illuminance() in a coshader, you need to add a 
+	// For example, if you want to call illuminance() in a coshader, you need to add a
 	// dummy surface() method, but you still want the type to be "ri:shader".
 	ConstCompoundDataPtr annotations = shader->blindData()->member<CompoundData>( "ri:annotations" );
 	if( annotations )
@@ -180,15 +180,15 @@ bool RenderManShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) co
 		if( plug->typeId() == Plug::staticTypeId() )
 		{
 			// coshader parameter - source must be another
-			// renderman shader hosting a coshader, or a box,
+			// renderman shader hosting a coshader, or a subgraph,
 			// shader switch or dot with a currently dangling connection.
 			// in the latter cases, we will be called again when the
-			// box or switch is connected to something, so we can check
+			// supgraph or switch is connected to something, so we can check
 			// that the indirect connection is to our liking.
 			const Node* sourceNode = sourcePlug->node();
 
 			if(
-				runTimeCast<const Box>( sourceNode ) ||
+				runTimeCast<const SubGraph>( sourceNode ) ||
 				runTimeCast<const ShaderSwitch>( sourceNode ) ||
 				runTimeCast<const Dot>( sourceNode )
 			)
@@ -250,64 +250,6 @@ bool RenderManShader::acceptsInput( const Plug *plug, const Plug *inputPlug ) co
 	}
 
 	return true;
-}
-
-void RenderManShader::parameterHash( const Gaffer::Plug *parameterPlug, NetworkBuilder &network, IECore::MurmurHash &h ) const
-{
-	if( parameterPlug->isInstanceOf( ArrayPlug::staticTypeId() ) )
-	{
-		// coshader array parameter
-		for( InputPlugIterator cIt( parameterPlug ); cIt != cIt.end(); ++cIt )
-		{
-			Shader::parameterHash( cIt->get(), network, h );
-		}
-	}
-	else
-	{
-		Shader::parameterHash( parameterPlug, network, h );
-	}
-}
-
-IECore::DataPtr RenderManShader::parameterValue( const Gaffer::Plug *parameterPlug, NetworkBuilder &network ) const
-{
-	if( parameterPlug->typeId() == Plug::staticTypeId() )
-	{
-		// coshader parameter
-		const Plug *inputPlug = parameterPlug->source<Plug>();
-		if( inputPlug && inputPlug != parameterPlug )
-		{
-			const RenderManShader *inputShader = inputPlug->parent<RenderManShader>();
-			if( inputShader )
-			{
-				const std::string &handle = network.shaderHandle( inputShader );
-				if( handle.size() )
-				{
-					return new StringData( handle );
-				}
-			}
-		}
-	}
-	else if( parameterPlug->isInstanceOf( ArrayPlug::staticTypeId() ) )
-	{
-		// coshader array parameter
-		StringVectorDataPtr value = new StringVectorData();
-		for( InputPlugIterator cIt( parameterPlug ); cIt != cIt.end(); ++cIt )
-		{
-			const Plug *inputPlug = (*cIt)->source<Plug>();
-			const RenderManShader *inputShader = inputPlug && inputPlug != *cIt ? inputPlug->parent<RenderManShader>() : 0;
-			if( inputShader )
-			{
-				value->writable().push_back( network.shaderHandle( inputShader ) );
-			}
-			else
-			{
-				value->writable().push_back( "" );
-			}
-		}
-		return value;
-	}
-
-	return Shader::parameterValue( parameterPlug, network );
 }
 
 const IECore::ConstCompoundDataPtr RenderManShader::annotations() const
@@ -417,6 +359,9 @@ static void loadCoshaderArrayParameter( Gaffer::Plug *parametersPlug, const std:
 
 	if( existingPlug )
 	{
+		// Must take a copy as the contents of `existingPlug->children()` is
+		// modified each time we transfer a child over with plug->addChild() below.
+		GraphComponent::ChildContainer existingChildren = existingPlug->children();
 		for( size_t i = 0, e = std::min( existingPlug->children().size(), maxSize ); i < e; ++i )
 		{
 			if( i < plug->children().size() )
@@ -425,7 +370,7 @@ static void loadCoshaderArrayParameter( Gaffer::Plug *parametersPlug, const std:
 			}
 			else
 			{
-				plug->addChild( existingPlug->getChild<Plug>( i ) );
+				plug->addChild( existingChildren[i] );
 			}
 		}
 	}
@@ -659,7 +604,7 @@ static IECore::FloatVectorDataPtr parseFloats( const std::string &value )
 
 	if( !r || first != value.end() )
 	{
-		return 0;
+		return NULL;
 	}
 
 	return result;
@@ -723,7 +668,7 @@ static IECore::Color3fVectorDataPtr parseColors( const std::string &value )
 
 	if( !r || first != value.end() )
 	{
-		return 0;
+		return NULL;
 	}
 	return result;
 }
@@ -913,5 +858,3 @@ void RenderManShader::loadShaderParameters( const IECore::Shader *shader, Gaffer
 	}
 
 }
-
-

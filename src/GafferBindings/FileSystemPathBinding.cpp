@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2014, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2014-2015, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -50,11 +50,11 @@ using namespace GafferBindings;
 namespace
 {
 
-PathFilterPtr createStandardFilter( object pythonExtensions, const std::string &extensionsLabel )
+PathFilterPtr createStandardFilter( object pythonExtensions, const std::string &extensionsLabel, bool includeSequences )
 {
 	std::vector<std::string> extensions;
 	boost::python::container_utils::extend_container( extensions, pythonExtensions );
-	return FileSystemPath::createStandardFilter( extensions, extensionsLabel );
+	return FileSystemPath::createStandardFilter( extensions, extensionsLabel, includeSequences );
 }
 
 } // namespace
@@ -64,17 +64,26 @@ void GafferBindings::bindFileSystemPath()
 
 	PathClass<FileSystemPath>()
 		.def(
-			init<PathFilterPtr>( arg( "filter" ) = object() )
-		)
-		.def(
-			init<const std::string &, PathFilterPtr>( (
-				arg( "path" ),
-				arg( "filter" ) = object()
+			init<PathFilterPtr, bool>( (
+				arg( "filter" ) = object(),
+				arg( "includeSequences" ) = false
 			) )
 		)
+		.def(
+			init<const std::string &, PathFilterPtr, bool>( (
+				arg( "path" ),
+				arg( "filter" ) = object(),
+				arg( "includeSequences" ) = false
+			) )
+		)
+		.def( "getIncludeSequences", &FileSystemPath::getIncludeSequences )
+		.def( "setIncludeSequences", &FileSystemPath::setIncludeSequences )
+		.def( "isFileSequence", &FileSystemPath::isFileSequence )
+		.def( "fileSequence", &FileSystemPath::fileSequence )
 		.def( "createStandardFilter", &createStandardFilter, (
 				arg( "extensions" ) = list(),
-				arg( "extensionsLabel" ) = ""
+				arg( "extensionsLabel" ) = "",
+				arg( "includeSequenceFilter" ) = false
 			)
 		)
 		.staticmethod( "createStandardFilter" )

@@ -35,12 +35,7 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Box.h"
-#include "Gaffer/Dot.h"
-
 #include "GafferScene/ShaderAssignment.h"
-#include "GafferScene/Shader.h"
-#include "GafferScene/ShaderSwitch.h"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -54,7 +49,7 @@ ShaderAssignment::ShaderAssignment( const std::string &name )
 	:	SceneElementProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
-	addChild( new Plug( "shader" ) );
+	addChild( new ShaderPlug( "shader" ) );
 
 	// Fast pass-throughs for the things we don't alter.
 	outPlug()->objectPlug()->setInput( inPlug()->objectPlug() );
@@ -66,69 +61,24 @@ ShaderAssignment::~ShaderAssignment()
 {
 }
 
-Gaffer::Plug *ShaderAssignment::shaderPlug()
+GafferScene::ShaderPlug *ShaderAssignment::shaderPlug()
 {
-	return getChild<Plug>( g_firstPlugIndex );
+	return getChild<ShaderPlug>( g_firstPlugIndex );
 }
 
-const Gaffer::Plug *ShaderAssignment::shaderPlug() const
+const GafferScene::ShaderPlug *ShaderAssignment::shaderPlug() const
 {
-	return getChild<Plug>( g_firstPlugIndex );
+	return getChild<ShaderPlug>( g_firstPlugIndex );
 }
 
 void ShaderAssignment::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	SceneElementProcessor::affects( input, outputs );
 
-	/// \todo This currently only works if the incoming shader connection is from
-	/// a Plug (and not a Color3fPlug or something of that sort). This covers us for
-	/// RenderManShaders and OpenGLShaders, but not for ArnoldShaders. The problem is
-	/// that dirtiness propagates along the leaf plugs (r,g,b) and not along the parent,
-	/// and we only have a connection from the parent. The leaf propagation rule was devised
-	/// with ComputeNodes in mind (where computation must occur at the leaf levels) so perhaps
-	/// we'll be able to relax the rule for non-ComputeNodes like this one.
 	if( input == shaderPlug() )
 	{
 		outputs.push_back( outPlug()->attributesPlug() );
 	}
-}
-
-bool ShaderAssignment::acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const
-{
-	if( !SceneElementProcessor::acceptsInput( plug, inputPlug ) )
-	{
-		return false;
-	}
-
-	if( !inputPlug )
-	{
-		return true;
-	}
-
-	if( plug == shaderPlug() )
-	{
-		const Node *sourceNode = inputPlug->source<Plug>()->node();
-		// we only really want to accept connections from
-		// shaders, because we can't assign anything else.
-		// but we also accept the unconnected inputs and outputs
-		// of subgraphs, so you can wrap shader assignments in boxes
-		// prior to connecting the other side. the same goes for
-		// shader switches - if a connection source is a switch,
-		// then that means the switch hasn't had a shader connected
-		// into it yet, but we'd still like to accept the connection
-		// in anticipation of a shader being connected later.
-		if(
-			runTimeCast<const Shader>( sourceNode ) ||
-			runTimeCast<const SubGraph>( sourceNode ) ||
-			runTimeCast<const ShaderSwitch>( sourceNode ) ||
-			runTimeCast<const Dot>( sourceNode )
-		)
-		{
-			return true;
-		}
-		return false;
-	}
-	return true;
 }
 
 bool ShaderAssignment::processesAttributes() const
@@ -138,29 +88,13 @@ bool ShaderAssignment::processesAttributes() const
 
 void ShaderAssignment::hashProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	const Shader *shader = shaderPlug()->source<Plug>()->ancestor<Shader>();
-	if( shader )
-	{
-		shader->stateHash( h );
-	}
+	h.append( shaderPlug()->attributesHash() );
 }
 
 IECore::ConstCompoundObjectPtr ShaderAssignment::computeProcessedAttributes( const ScenePath &path, const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputAttributes ) const
 {
-	const Shader *shader = shaderPlug()->source<Plug>()->ancestor<Shader>();
-	if( !shader )
-	{
-		return inputAttributes;
-	}
-
-	ConstObjectVectorPtr state = shader->state();
-	if( !state->members().size() )
-	{
-		return inputAttributes;
-	}
-
-	const IECore::Shader *primaryShader = runTimeCast<IECore::Shader>( state->members().back().get() );
-	if( !primaryShader || !primaryShader->getType().size() )
+	ConstCompoundObjectPtr attributes = shaderPlug()->attributes();
+	if( attributes->members().empty() )
 	{
 		return inputAttributes;
 	}
@@ -171,12 +105,10 @@ IECore::ConstCompoundObjectPtr ShaderAssignment::computeProcessedAttributes( con
 	// the input members in our result without copying. Be careful not to modify
 	// them though!
 	result->members() = inputAttributes->members();
-	// Shader::state() returns a const object, so that in the future it may
-	// come from a cached value. we're putting it into our result which, once
-	// returned, will also be treated as const and cached. for that reason the
-	// temporary const_cast needed to put it into the result is justified -
-	// we never change the object and nor can anyone after it is returned.
-	result->members()[primaryShader->getType()] = boost::const_pointer_cast<ObjectVector>( state );
+	for( CompoundObject::ObjectMap::const_iterator it = attributes->members().begin(), eIt = attributes->members().end(); it != eIt; ++it )
+	{
+		result->members()[it->first] = it->second;
+	}
 
 	return result;
 }

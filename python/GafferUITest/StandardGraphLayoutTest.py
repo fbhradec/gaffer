@@ -70,10 +70,10 @@ class LayoutNode( Gaffer.Node ) :
 
 IECore.registerRunTimeTyped( LayoutNode )
 
-Gaffer.Metadata.registerPlugValue( LayoutNode, "left*", "nodeGadget:nodulePosition", "left" )
-Gaffer.Metadata.registerPlugValue( LayoutNode, "right*", "nodeGadget:nodulePosition", "right" )
-Gaffer.Metadata.registerPlugValue( LayoutNode, "top*", "nodeGadget:nodulePosition", "top" )
-Gaffer.Metadata.registerPlugValue( LayoutNode, "bottom*", "nodeGadget:nodulePosition", "bottom" )
+Gaffer.Metadata.registerValue( LayoutNode, "left*", "noduleLayout:section", "left" )
+Gaffer.Metadata.registerValue( LayoutNode, "right*", "noduleLayout:section", "right" )
+Gaffer.Metadata.registerValue( LayoutNode, "top*", "noduleLayout:section", "top" )
+Gaffer.Metadata.registerValue( LayoutNode, "bottom*", "noduleLayout:section", "bottom" )
 
 class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 
@@ -729,6 +729,17 @@ class StandardGraphLayoutTest( GafferUITest.TestCase ) :
 		self.assertTrue( s["d"]["out"].source().isSame( s["n1"]["sum"] ) )
 		self.assertTrue( s["n2"]["op1"].getInput().isSame( s["d"]["out"] ) )
 
+	def testConnectSwitch( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferTest.AddNode()
+		s["s"] = Gaffer.SwitchComputeNode()
+
+		g = GafferUI.GraphGadget( s )
+		g.getLayout().connectNode( g, s["s"], Gaffer.StandardSet( [ s["n"] ] ) )
+
+		self.assertTrue( isinstance( s["s"]["in"][0], Gaffer.IntPlug ) )
+		self.assertTrue( s["s"]["in"][0].getInput().isSame( s["n"]["sum"] ) )
+
 if __name__ == "__main__":
 	unittest.main()
-

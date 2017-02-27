@@ -38,13 +38,15 @@ import os
 import unittest
 
 import IECore
+
 import Gaffer
 import GafferTest
 import GafferImage
+import GafferImageTest
 
-class DeleteChannelsTest( unittest.TestCase ) :
+class DeleteChannelsTest( GafferImageTest.ImageTestCase ) :
 
-	checkerFile = os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/checker.exr" )
+	checkerFile = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" )
 
 	def testDirtyPropagation( self ) :
 
@@ -161,7 +163,7 @@ class DeleteChannelsTest( unittest.TestCase ) :
 		self.assertEqual( di["R"].data, ri["R"].data )
 
 	def testPassThrough( self ) :
-		
+
 		i = GafferImage.ImageReader()
 		i["fileName"].setValue( self.checkerFile )
 
@@ -169,15 +171,15 @@ class DeleteChannelsTest( unittest.TestCase ) :
 		d["in"].setInput( i["out"] )
 		d["mode"].setValue( d.Mode.Keep )
 		d["channels"].setValue( IECore.StringVectorData( [ "R" ] ) )
-		
+
 		self.assertEqual( i["out"]["format"].hash(), d["out"]["format"].hash() )
 		self.assertEqual( i["out"]["dataWindow"].hash(), d["out"]["dataWindow"].hash() )
 		self.assertEqual( i["out"]["metadata"].hash(), d["out"]["metadata"].hash() )
-				
+
 		self.assertEqual( i["out"]["format"].getValue(), d["out"]["format"].getValue() )
 		self.assertEqual( i["out"]["dataWindow"].getValue(), d["out"]["dataWindow"].getValue() )
 		self.assertEqual( i["out"]["metadata"].getValue(), d["out"]["metadata"].getValue() )
-		
+
 		context = Gaffer.Context()
 		context["image:tileOrigin"] = IECore.V2i( 0 )
 		with context :

@@ -38,8 +38,9 @@
 #ifndef GAFFER_VALUEPLUG_H
 #define GAFFER_VALUEPLUG_H
 
+#include "IECore/Object.h"
+
 #include "Gaffer/Plug.h"
-#include "Gaffer/PlugIterator.h"
 
 namespace Gaffer
 {
@@ -111,6 +112,8 @@ class ValuePlug : public Plug
 		static void setCacheMemoryLimit( size_t bytes );
 		/// Returns the current memory usage of the cache in bytes.
 		static size_t cacheMemoryUsage();
+		/// Clears the cache.
+		static void clearCache();
 		//@}
 
 	protected :
@@ -153,29 +156,23 @@ class ValuePlug : public Plug
 		/// not be changed following the call.
 		void setObjectValue( IECore::ConstObjectPtr value );
 
-		/// Returns true if a computation is currently being performed on this thread -
-		/// if we are inside Node::compute().
-		bool inCompute() const;
-
-		/// Emits the appropriate Node::plugSetSignal() for this plug and all its
-		/// ancestors, then does the same for its output plugs. This is called
-		/// automatically by setObjectValue() where appropriate, and typically shouldn't
-		/// need to be called manually. It is exposed so that CompoundPlug can
-		/// simulate the behaviour of a plug being set when a child is added or removed.
-		void emitPlugSet();
-
 		/// Reimplemented for cache management.
 		virtual void dirty();
 
 	private :
 
-		class Computation;
+		class HashProcess;
+		class ComputeProcess;
 		class SetValueAction;
 
 		void setValueInternal( IECore::ConstObjectPtr value, bool propagateDirtiness );
+		void childAddedOrRemoved();
+		// Emits the appropriate Node::plugSetSignal() for this plug and all its
+		// ancestors, then does the same for its output plugs.
+		void emitPlugSet();
 
 		IECore::ConstObjectPtr m_defaultValue;
-		/// For holding the value of input plugs with no input connections.
+		// For holding the value of input plugs with no input connections.
 		IECore::ConstObjectPtr m_staticValue;
 
 };

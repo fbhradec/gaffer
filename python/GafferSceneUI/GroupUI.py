@@ -79,10 +79,3 @@ Gaffer.Metadata.registerNode(
 	}
 
 )
-
-##########################################################################
-# Widgets and nodules
-##########################################################################
-
-
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Group, "in[0-9]*", None )

@@ -41,16 +41,20 @@ import Gaffer
 import GafferUI
 import GafferScene
 import GafferSceneUI
+import GafferDispatch
+import GafferDispatchUI
 
 ##########################################################################
 # Colour
 ##########################################################################
 
-Gaffer.Metadata.registerNodeValue( Gaffer.ExecutableNode, "nodeGadget:color", IECore.Color3f( 0.61, 0.1525, 0.1525 ) )
-Gaffer.Metadata.registerPlugValue( Gaffer.ExecutableNode, "requirement", "nodule:color", IECore.Color3f( 0.645, 0.2483, 0.2483 ) )
-Gaffer.Metadata.registerPlugValue( Gaffer.ExecutableNode, "requirements.*", "nodule:color", IECore.Color3f( 0.645, 0.2483, 0.2483 ) )
-Gaffer.Metadata.registerPlugValue( Gaffer.ExecutableNode, "requirement", "connectionGadget:color", IECore.Color3f( 0.315, 0.0787, 0.0787 ) )
-Gaffer.Metadata.registerPlugValue( Gaffer.ExecutableNode, "requirements.*", "connectionGadget:color", IECore.Color3f( 0.315, 0.0787, 0.0787 ) )
+Gaffer.Metadata.registerNodeValue( GafferDispatch.TaskNode, "nodeGadget:color", IECore.Color3f( 0.61, 0.1525, 0.1525 ) )
+Gaffer.Metadata.registerPlugValue( GafferDispatch.TaskNode, "task", "nodule:color", IECore.Color3f( 0.645, 0.2483, 0.2483 ) )
+Gaffer.Metadata.registerPlugValue( GafferDispatch.TaskNode, "preTasks.*", "nodule:color", IECore.Color3f( 0.645, 0.2483, 0.2483 ) )
+Gaffer.Metadata.registerPlugValue( GafferDispatch.TaskNode, "postTasks.*", "nodule:color", IECore.Color3f( 0.645, 0.2483, 0.2483 ) )
+Gaffer.Metadata.registerPlugValue( GafferDispatch.TaskNode, "task", "connectionGadget:color", IECore.Color3f( 0.315, 0.0787, 0.0787 ) )
+Gaffer.Metadata.registerPlugValue( GafferDispatch.TaskNode, "preTasks.*", "connectionGadget:color", IECore.Color3f( 0.315, 0.0787, 0.0787 ) )
+Gaffer.Metadata.registerPlugValue( GafferDispatch.TaskNode, "postTasks.*", "connectionGadget:color", IECore.Color3f( 0.315, 0.0787, 0.0787 ) )
 
 Gaffer.Metadata.registerNodeValue( Gaffer.SubGraph, "nodeGadget:color", IECore.Color3f( 0.225 ) )
 
@@ -92,7 +96,7 @@ def __nodeDoubleClick( nodeGraph, node ) :
 
 	GafferUI.NodeEditor.acquire( node )
 
-__nodeDoubleClickConnection = GafferUI.NodeGraph.nodeDoubleClickSignal().connect( __nodeDoubleClick )
+GafferUI.NodeGraph.nodeDoubleClickSignal().connect( __nodeDoubleClick, scoped = False )
 
 def __nodeContextMenu( nodeGraph, node, menuDefinition ) :
 
@@ -100,16 +104,16 @@ def __nodeContextMenu( nodeGraph, node, menuDefinition ) :
 
 	GafferUI.NodeGraph.appendEnabledPlugMenuDefinitions( nodeGraph, node, menuDefinition )
 	GafferUI.NodeGraph.appendConnectionVisibilityMenuDefinitions( nodeGraph, node, menuDefinition )
-	GafferUI.DispatcherUI.appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition )
-	GafferUI.BoxUI.appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition )
+	GafferDispatchUI.DispatcherUI.appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition )
+	GafferUI.NodeGraph.appendContentsMenuDefinitions( nodeGraph, node, menuDefinition )
 	GafferUI.UIEditor.appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition )
 	GafferSceneUI.FilteredSceneProcessorUI.appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition )
 	GafferUI.GraphBookmarksUI.appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition )
 
-__nodeContextMenuConnection = GafferUI.NodeGraph.nodeContextMenuSignal().connect( __nodeContextMenu )
+GafferUI.NodeGraph.nodeContextMenuSignal().connect( __nodeContextMenu, scoped = False )
 
 def __plugContextMenu( nodeGraph, node, menuDefinition ) :
 
 	GafferUI.GraphBookmarksUI.appendPlugContextMenuDefinitions( nodeGraph, node, menuDefinition )
 
-__plugContextMenuConnection = GafferUI.NodeGraph.plugContextMenuSignal().connect( __plugContextMenu )
+GafferUI.NodeGraph.plugContextMenuSignal().connect( __plugContextMenu, scoped = False )

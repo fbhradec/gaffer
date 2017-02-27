@@ -37,9 +37,6 @@
 #include "OpenEXR/ImathBoxAlgo.h"
 
 #include "IECore/NullObject.h"
-#include "IECore/Camera.h"
-#include "IECore/CoordinateSystem.h"
-#include "IECore/ClippingPlane.h"
 
 #include "Gaffer/StringPlug.h"
 #include "Gaffer/TransformPlug.h"
@@ -121,6 +118,7 @@ void ObjectSource::affects( const Gaffer::Plug *input, Gaffer::DependencyNode::A
 	else if( input == setsPlug() )
 	{
 		outputs.push_back( outPlug()->setNamesPlug() );
+		outputs.push_back( outPlug()->setPlug() );
 	}
 
 }
@@ -178,29 +176,8 @@ void ObjectSource::hashBound( const SceneNode::ScenePath &path, const Gaffer::Co
 
 Imath::Box3f ObjectSource::computeBound( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	Imath::Box3f result;
 	IECore::ConstObjectPtr object = sourcePlug()->getValue();
-
-	if( const IECore::VisibleRenderable *renderable = IECore::runTimeCast<const IECore::VisibleRenderable>( object.get() ) )
-	{
-		result = renderable->bound();
-	}
-	else if( object->isInstanceOf( IECore::Camera::staticTypeId() ) )
-	{
-		result = Imath::Box3f( Imath::V3f( -0.5, -0.5, 0 ), Imath::V3f( 0.5, 0.5, 2.0 ) );
-	}
-	else if( object->isInstanceOf( IECore::CoordinateSystem::staticTypeId() ) )
-	{
-		result = Imath::Box3f( Imath::V3f( 0 ), Imath::V3f( 1 ) );
-	}
-	else if( object->isInstanceOf( IECore::ClippingPlane::staticTypeId() ) )
-	{
-		result = Imath::Box3f( Imath::V3f( -0.5, -0.5, 0 ), Imath::V3f( 0.5 ) );
-	}
-	else
-	{
-		result = Imath::Box3f( Imath::V3f( -0.5 ), Imath::V3f( 0.5 ) );
-	}
+	Imath::Box3f result = SceneAlgo::bound( object.get() );
 
 	if( path.size() == 0 )
 	{
@@ -260,6 +237,10 @@ void ObjectSource::hashChildNames( const SceneNode::ScenePath &path, const Gaffe
 	h = parent->childNamesPlug()->defaultValue()->Object::hash();
 }
 
+void ObjectSource::hashStandardSetNames( const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+}
+
 IECore::ConstInternedStringVectorDataPtr ObjectSource::computeChildNames( const SceneNode::ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	if( path.size() == 0 )
@@ -293,16 +274,17 @@ void ObjectSource::hashSetNames( const Gaffer::Context *context, const ScenePlug
 {
 	SceneNode::hashSetNames( context, parent, h );
 	setsPlug()->hash( h );
+	hashStandardSetNames( context, h );
 }
 
 IECore::ConstInternedStringVectorDataPtr ObjectSource::computeSetNames( const Gaffer::Context *context, const ScenePlug *parent ) const
 {
 	IECore::InternedStringVectorDataPtr result = new IECore::InternedStringVectorData;
-	Gaffer::tokenize( setsPlug()->getValue(), ' ', result->writable() );
-	IECore::InternedString n = standardSetName();
-	if( n.string().size() )
+	Gaffer::StringAlgo::tokenize( setsPlug()->getValue(), ' ', result->writable() );
+	IECore::ConstInternedStringVectorDataPtr setNames = computeStandardSetNames();
+	for(unsigned int i = 0; i < setNames->readable().size(); ++i)
 	{
-		result->writable().push_back( n );
+		result->writable().push_back( setNames->readable()[i] );
 	}
 	return result;
 }
@@ -334,19 +316,21 @@ GafferScene::ConstPathMatcherDataPtr ObjectSource::computeSet( const IECore::Int
 	}
 }
 
-IECore::InternedString ObjectSource::standardSetName() const
+IECore::ConstInternedStringVectorDataPtr ObjectSource::computeStandardSetNames() const
 {
-	return g_emptyString;
+	IECore::InternedStringVectorDataPtr result = new IECore::InternedStringVectorData();
+	return result;
 }
 
 bool ObjectSource::setNameValid( const IECore::InternedString &setName ) const
 {
-	if( setName != g_emptyString && setName == standardSetName() )
+	IECore::ConstInternedStringVectorDataPtr standardSets = computeStandardSetNames();
+	if( std::find( standardSets->readable().begin(), standardSets->readable().end(), setName ) != standardSets->readable().end() )
 	{
 		return true;
 	}
 
 	std::vector<IECore::InternedString> setNames;
-	Gaffer::tokenize( setsPlug()->getValue(), ' ', setNames );
+	Gaffer::StringAlgo::tokenize( setsPlug()->getValue(), ' ', setNames );
 	return std::find( setNames.begin(), setNames.end(), setName ) != setNames.end();
 }

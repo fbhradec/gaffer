@@ -38,15 +38,21 @@ import os
 import unittest
 import random
 import threading
+import subprocess32 as subprocess
 
 import IECore
 
 import Gaffer
+import GafferTest
+import GafferDispatch
 import GafferImage
+import GafferImageTest
 
-class DisplayTest( unittest.TestCase ) :
+class DisplayTest( GafferImageTest.ImageTestCase ) :
 
 	def setUp( self ) :
+
+		GafferTest.TestCase.setUp( self )
 
 		self.__dataReceivedSemaphore = threading.Semaphore( 0 )
 		self.__dataReceivedConnection = GafferImage.Display.dataReceivedSignal().connect( Gaffer.WeakMethod( self.__dataReceived ) )
@@ -68,28 +74,28 @@ class DisplayTest( unittest.TestCase ) :
 
 	def testDefaultFormat( self ) :
 
-		s = Gaffer.ScriptNode()
 		d = GafferImage.Display()
-		s.addChild( d )
 
-		p = GafferImage.ImagePlug( "in", Gaffer.Plug.Direction.In )
-		p.setInput( d["out"] )
-
-		with s.context() :
-			self.assertEqual( p["format"].getValue(), GafferImage.Format.getDefaultFormat( s ) )
-			GafferImage.Format.setDefaultFormat( s, GafferImage.Format( 200, 150, 1. ) )
-			self.assertEqual( p["format"].getValue(), GafferImage.Format.getDefaultFormat( s ) )
+		with Gaffer.Context() as c :
+			self.assertEqual( d["out"]["format"].getValue(), GafferImage.FormatPlug.getDefaultFormat( c ) )
+			GafferImage.FormatPlug.setDefaultFormat( c, GafferImage.Format( 200, 150, 1. ) )
+			self.assertEqual( d["out"]["format"].getValue(), GafferImage.FormatPlug.getDefaultFormat( c ) )
 
 	def testTileHashes( self ) :
 
 		node = GafferImage.Display()
 		node["port"].setValue( 2500 )
 
-		displayWindow = IECore.Box2i( IECore.V2i( -100, -200 ), IECore.V2i( 302, 556 ) )
-		dataWindow = displayWindow
+		gafferDisplayWindow = IECore.Box2i( IECore.V2i( -100, -200 ), IECore.V2i( 303, 557 ) )
+		gafferFormat = GafferImage.Format( gafferDisplayWindow, 1.0 )
+
+		externalDisplayWindow = gafferFormat.toEXRSpace( gafferDisplayWindow )
+
+		externalDataWindow = externalDisplayWindow
+		gafferDataWindow = gafferDisplayWindow
 		driver = IECore.ClientDisplayDriver(
-			displayWindow,
-			dataWindow,
+			externalDisplayWindow,
+			externalDataWindow,
 			[ "Y" ],
 			{
 				"displayHost" : "localHost",
@@ -103,42 +109,43 @@ class DisplayTest( unittest.TestCase ) :
 			h1 = self.__tileHashes( node, "Y" )
 			t1 = self.__tiles( node, "Y" )
 
-			bucketWindow = IECore.Box2i()
+			externalBucketWindow = IECore.Box2i()
 			for j in range( 0, 2 ) :
-				bucketWindow.extendBy(
+				externalBucketWindow.extendBy(
 					IECore.V2i(
-						int( random.uniform( displayWindow.min.x, displayWindow.max.x ) ),
-						int( random.uniform( displayWindow.min.y, displayWindow.max.y ) ),
+						int( random.uniform( externalDisplayWindow.min.x, externalDisplayWindow.max.x ) ),
+						int( random.uniform( externalDisplayWindow.min.y, externalDisplayWindow.max.y ) ),
 					)
 				)
 
-			numPixels = ( bucketWindow.size().x + 1 ) * ( bucketWindow.size().y + 1 )
+			numPixels = ( externalBucketWindow.size().x + 1 ) * ( externalBucketWindow.size().y + 1 )
 			bucketData = IECore.FloatVectorData()
 			bucketData.resize( numPixels, i + 1 )
-			driver.imageData( bucketWindow, bucketData )
+			driver.imageData( externalBucketWindow, bucketData )
 
 			self.__dataReceivedSemaphore.acquire()
 
 			h2 = self.__tileHashes( node, "Y" )
 			t2 = self.__tiles( node, "Y" )
 
-			bucketWindowYUp = GafferImage.Format( displayWindow, 1 ).yDownToFormatSpace( bucketWindow )
-			self.__assertTilesChangedInRegion( t1, t2, bucketWindowYUp )
-			self.__assertTilesChangedInRegion( h1, h2, bucketWindowYUp )
+			gafferBucketWindow = gafferFormat.fromEXRSpace( externalBucketWindow )
+
+			self.__assertTilesChangedInRegion( t1, t2, gafferBucketWindow )
+			self.__assertTilesChangedInRegion( h1, h2, gafferBucketWindow )
 
 		driver.imageClose()
 
 	def testTransferChecker( self ) :
 
-		self.__testTransferImage( "$GAFFER_ROOT/python/GafferTest/images/checker.exr" )
+		self.__testTransferImage( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" )
 
 	def testTransferWithDataWindow( self ) :
 
-		self.__testTransferImage( "$GAFFER_ROOT/python/GafferTest/images/checkerWithNegativeDataWindow.200x150.exr" )
+		self.__testTransferImage( "$GAFFER_ROOT/python/GafferImageTest/images/checkerWithNegativeDataWindow.200x150.exr" )
 
 	def testAccessOutsideDataWindow( self ) :
 
-		node = self.__testTransferImage( "$GAFFER_ROOT/python/GafferTest/images/checker.exr" )
+		node = self.__testTransferImage( "$GAFFER_ROOT/python/GafferImageTest/images/checker.exr" )
 
 		blackTile = IECore.FloatVectorData( [ 0 ] * GafferImage.ImagePlug.tileSize() * GafferImage.ImagePlug.tileSize() )
 
@@ -152,6 +159,22 @@ class DisplayTest( unittest.TestCase ) :
 			blackTile
 		)
 
+	def testNoErrorOnBackgroundDispatch( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["d"] = GafferImage.Display()
+		s["d"]["port"].setValue( 2500 )
+
+		s["p"] = GafferDispatch.PythonCommand()
+		s["p"]["command"].setValue( "pass" )
+
+		s["fileName"].setValue( self.temporaryDirectory() + "test.gfr" )
+		s.save()
+
+		output = subprocess.check_output( [ "gaffer", "execute", self.temporaryDirectory() + "test.gfr", "-nodes", "p" ], stderr = subprocess.STDOUT )
+		self.assertEqual( output, "" )
+
 	def __testTransferImage( self, fileName ) :
 
 		imageReader = GafferImage.ImageReader()
@@ -160,9 +183,15 @@ class DisplayTest( unittest.TestCase ) :
 		node = GafferImage.Display()
 		node["port"].setValue( 2500 )
 
+		externalDisplayWindow = gafferDisplayWindow = imageReader["out"]["format"].getValue().getDisplayWindow()
+		externalDisplayWindow.max -= IECore.V2i( 1 )
+
+		gafferDataWindow = imageReader["out"]["dataWindow"].getValue()
+		externalDataWindow = imageReader["out"]["format"].getValue().toEXRSpace( gafferDataWindow )
+
 		driver = IECore.ClientDisplayDriver(
-			imageReader["out"]["format"].getValue().getDisplayWindow(),
-			imageReader["out"]["format"].getValue().formatToYDownSpace( imageReader["out"]["dataWindow"].getValue() ),
+			externalDisplayWindow,
+			externalDataWindow,
 			list( imageReader["out"]["channelNames"].getValue() ),
 			{
 				"displayHost" : "localHost",
@@ -171,10 +200,9 @@ class DisplayTest( unittest.TestCase ) :
 			}
 		)
 
-		dataWindow = imageReader["out"]["dataWindow"].getValue()
 		tileSize = GafferImage.ImagePlug.tileSize()
-		minTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.min )
-		maxTileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.max )
+		minTileOrigin = GafferImage.ImagePlug.tileOrigin( gafferDataWindow.min )
+		maxTileOrigin = GafferImage.ImagePlug.tileOrigin( gafferDataWindow.max - IECore.V2i( 1 ) )
 		for y in range( minTileOrigin.y, maxTileOrigin.y + 1, tileSize ) :
 			for x in range( minTileOrigin.x, maxTileOrigin.x + 1, tileSize ) :
 				tileOrigin = IECore.V2i( x, y )
@@ -188,8 +216,8 @@ class DisplayTest( unittest.TestCase ) :
 						for c in channelData :
 							bucketData.append( c[i] )
 
-				bucketBound = IECore.Box2i( tileOrigin, tileOrigin + IECore.V2i( GafferImage.ImagePlug.tileSize() - 1 ) )
-				bucketBound = imageReader["out"]["format"].getValue().formatToYDownSpace( bucketBound )
+				bucketBound = IECore.Box2i( tileOrigin, tileOrigin + IECore.V2i( GafferImage.ImagePlug.tileSize() ) )
+				bucketBound = imageReader["out"]["format"].getValue().toEXRSpace( bucketBound )
 				driver.imageData( bucketBound, bucketData )
 
 		driver.imageClose()
@@ -234,13 +262,17 @@ class DisplayTest( unittest.TestCase ) :
 
 	def __assertTilesChangedInRegion( self, t1, t2, region ) :
 
+		# Box2i.intersect assumes inclusive bounds, so make region inclusive
+		inclusiveRegion = IECore.Box2i( region.min, region.max - IECore.V2i( 1 ) )
+
 		for tileOriginTuple in t1.keys() :
 			tileOrigin = IECore.V2i( *tileOriginTuple )
 			tileRegion = IECore.Box2i( tileOrigin, tileOrigin + IECore.V2i( GafferImage.ImagePlug.tileSize() - 1 ) )
-			if tileRegion.intersects( region ) :
-				self.assertNotEqual( t1[tileOriginTuple], t2[tileOriginTuple] )
+
+			if tileRegion.intersects( inclusiveRegion ) :
+				self.assertNotEqual( t1[tileOriginTuple], t2[tileOriginTuple], "REMOVE BEFORE RELEASE" )
 			else :
-				self.assertEqual( t1[tileOriginTuple], t2[tileOriginTuple] )
+				self.assertEqual( t1[tileOriginTuple], t2[tileOriginTuple], "REMOVE BEFORE RELEASE" )
 
 if __name__ == "__main__":
 	unittest.main()

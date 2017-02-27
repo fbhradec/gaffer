@@ -36,6 +36,8 @@
 ##########################################################################
 
 import os
+import sys
+import inspect
 import cProfile
 
 import IECore
@@ -46,21 +48,28 @@ class Application( IECore.Parameterised ) :
 
 	def __init__( self, description="" ) :
 
-		IECore.Parameterised.__init__( self, description )
+		IECore.Parameterised.__init__( self, inspect.cleandoc( description ) )
 
 		self.parameters().addParameters(
 
 			[
-				
+
+				IECore.BoolParameter(
+					name = "help",
+					description = "Prints names and descriptions of each parameter "
+						"rather than running the application.",
+					defaultValue = False,
+				),
+
 				IECore.IntParameter(
 					name = "threads",
 					description = "The maximum number of threads used for computation. "
 						"The default value of zero causes the number of threads to "
-						" be chosen automatically based on the available hardware.",		
+						" be chosen automatically based on the available hardware.",
 					defaultValue = 0,
 					minValue = 0,
 				),
-				
+
 				IECore.FileNameParameter(
 					name = "profileFileName",
 					description = "If this is specified, then the application "
@@ -74,7 +83,7 @@ class Application( IECore.Parameterised ) :
 
 		)
 
-		self.__root = Gaffer.ApplicationRoot( self.__class__.__name__ )
+		self.__root = _NonSlicingApplicationRoot( self.__class__.__name__ )
 
 	## All Applications have an ApplicationRoot which forms the root of the
 	# hierarchy for all scripts, preferences, nodes etc.
@@ -84,6 +93,10 @@ class Application( IECore.Parameterised ) :
 
 	## Called to run the application and return a status value.
 	def run( self ) :
+
+		if self.parameters()["help"].getTypedValue() :
+			self.__formatHelp()
+			return 0
 
 		args = self.parameters().getValidatedValue()
 
@@ -128,4 +141,36 @@ class Application( IECore.Parameterised ) :
 			self._executeStartupFiles( self.root().getName() )
 			return self._run( args )
 
+	def __formatHelp( self ) :
+
+		formatter = IECore.WrappedTextFormatter( sys.stdout )
+		formatter.paragraph( "Name : " + self.typeName() )
+		if self.description :
+			formatter.paragraph( self.description + "\n" )
+		if len( self.parameters().values() ):
+			formatter.heading( "Parameters" )
+			formatter.indent()
+			for p in self.parameters().values() :
+				IECore.formatParameterHelp( p, formatter )
+			formatter.unindent()
+
 IECore.registerRunTimeTyped( Application, typeName = "Gaffer::Application" )
+
+# Various parts of the UI try to store their state as attributes on
+# the root object, and therefore require it's identity in python to
+# be stable, even when acquiring it from separate calls to C++ methods
+# like `ancestor( ApplicationRoot )`. The IECorePython::RunTimeTypedWrapper
+# only guarantees this stability if we've derived from it in Python,
+# which is what we do here.
+## \todo Either :
+#
+# - Fix the object identity problem in Cortex
+# - Or at least add a way of requesting that identity be
+#   preserved without needing to derive.
+# - Or stop the UI relying on storing it's own members on
+#   the root.
+class _NonSlicingApplicationRoot( Gaffer.ApplicationRoot ) :
+
+	def __init__( self, name ) :
+
+		Gaffer.ApplicationRoot.__init__( self, name )

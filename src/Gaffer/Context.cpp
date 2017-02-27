@@ -116,11 +116,13 @@ Environment g_environment;
 //////////////////////////////////////////////////////////////////////////
 
 static InternedString g_frame( "frame" );
+static InternedString g_framesPerSecond( "framesPerSecond" );
 
 Context::Context()
 	:	m_changedSignal( NULL ), m_hashValid( false )
 {
 	set( g_frame, 1.0f );
+	set( g_framesPerSecond, 24.0f );
 }
 
 Context::Context( const Context &other, Ownership ownership )
@@ -172,6 +174,10 @@ void Context::remove( const IECore::InternedString &name )
 	{
 		m_map.erase( it );
 		m_hashValid = false;
+		if( m_changedSignal )
+		{
+			(*m_changedSignal)( this, name );
+		}
 	}
 }
 
@@ -202,6 +208,26 @@ void Context::setFrame( float frame )
 	set( g_frame, frame );
 }
 
+float Context::getFramesPerSecond() const
+{
+	return get<float>( g_framesPerSecond );
+}
+
+void Context::setFramesPerSecond( float framesPerSecond )
+{
+	set<float>( g_framesPerSecond, framesPerSecond );
+}
+
+float Context::getTime() const
+{
+	return getFrame() / getFramesPerSecond();
+}
+
+void Context::setTime( float timeInSeconds )
+{
+	setFrame( timeInSeconds * getFramesPerSecond() );
+}
+
 Context::ChangedSignal &Context::changedSignal()
 {
 	if( !m_changedSignal )
@@ -225,16 +251,20 @@ IECore::MurmurHash Context::hash() const
 	}
 
 	m_hash = IECore::MurmurHash();
-	for( Map::const_iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; it++ )
+	for( Map::const_iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; ++it )
 	{
 		/// \todo Perhaps at some point the UI should use a different container for
 		/// these "not computationally important" values, so we wouldn't have to skip
 		/// them here.
-		if( it->first.string().compare( 0, 3, "ui:" ) )
+		// Using a hardcoded comparison of the first three characters because
+		// it's quicker than `string::compare( 0, 3, "ui:" )`.
+		const std::string &name = it->first.string();
+		if(	name.size() > 2 && name[0] == 'u' && name[1] == 'i' && name[2] == ':' )
 		{
-			m_hash.append( it->first );
-			it->second.data->hash( m_hash );
+			continue;
 		}
+		m_hash.append( (uint64_t)&name );
+		it->second.data->hash( m_hash );
 	}
 	m_hashValid = true;
 	return m_hash;
@@ -475,21 +505,27 @@ void Context::substituteInternal( const char *s, std::string &result, const int 
 //////////////////////////////////////////////////////////////////////////
 
 typedef std::stack<const Context *> ContextStack;
-typedef tbb::enumerable_thread_specific<ContextStack> ThreadSpecificContextStack;
+typedef tbb::enumerable_thread_specific<ContextStack, tbb::cache_aligned_allocator<ContextStack>, tbb::ets_key_per_instance> ThreadSpecificContextStack;
 
 static ThreadSpecificContextStack g_threadContexts;
 static ContextPtr g_defaultContext = new Context;
 
-Context::Scope::Scope( const Context *context )
+Context::Scope::Scope( const Context *context ) : m_context( context )
 {
-	ContextStack &stack = g_threadContexts.local();
-	stack.push( context );
+	if( context )
+	{
+		ContextStack &stack = g_threadContexts.local();
+		stack.push( context );
+	}
 }
 
 Context::Scope::~Scope()
 {
-	ContextStack &stack = g_threadContexts.local();
-	stack.pop();
+	if( m_context )
+	{
+		ContextStack &stack = g_threadContexts.local();
+		stack.pop();
+	}
 }
 
 const Context *Context::current()

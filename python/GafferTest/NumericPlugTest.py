@@ -373,7 +373,7 @@ class NumericPlugTest( GafferTest.TestCase ) :
 		self.assertEqual( s["n"]["p"].getValue(), 0 )
 		self.assertFalse( s.undoAvailable() )
 
-	def testNoUndoMergingForDifferentPlugs( self ) :
+	def testUndoMergingForDifferentPlugs( self ) :
 
 		s = Gaffer.ScriptNode()
 		s["n"] = Gaffer.Node()
@@ -395,12 +395,6 @@ class NumericPlugTest( GafferTest.TestCase ) :
 		self.assertTrue( s.undoAvailable() )
 		self.assertEqual( s["n"]["p1"].getValue(), 20 )
 		self.assertEqual( s["n"]["p2"].getValue(), 30 )
-
-		s.undo()
-
-		self.assertTrue( s.undoAvailable() )
-		self.assertEqual( s["n"]["p1"].getValue(), 20 )
-		self.assertEqual( s["n"]["p2"].getValue(), 0 )
 
 		s.undo()
 
@@ -428,17 +422,17 @@ class NumericPlugTest( GafferTest.TestCase ) :
 		self.assertEqual( f.getValue(), 1 )
 
 	def testIntermediateConversions( self ) :
-	
+
 		f1 = Gaffer.FloatPlug()
 		i = Gaffer.IntPlug()
 		f2 = Gaffer.FloatPlug()
-		
+
 		i.setInput( f1 )
 		f2.setInput( i )
-		
+
 		f1.setValue( 10.2 )
 		self.assertEqual( f2.getValue(), 10 )
-		
+
 		f1.setValue( 100.8 )
 		self.assertEqual( f2.getValue(), 100 )
 
@@ -493,4 +487,3 @@ class NumericPlugTest( GafferTest.TestCase ) :
 
 if __name__ == "__main__":
 	unittest.main()
-

@@ -68,7 +68,7 @@ enum TypeId
 	M33fPlugTypeId = 110021,
 	M44fPlugTypeId = 110022,
 	BoolPlugTypeId = 110023,
-	ParameterisedHolderNodeTypeId = 110024, // obsolete - available for reuse
+	AtomicBox2fPlugTypeId = 110024,
 	IntVectorDataPlugTypeId = 110025,
 	FloatVectorDataPlugTypeId = 110026,
 	StringVectorDataPlugTypeId = 110027,
@@ -76,8 +76,8 @@ enum TypeId
 	StandardSetTypeId = 110029,
 	ChildSetTypeId = 110030,
 	BoolVectorDataPlugTypeId = 110031,
-	OpHolderTypeId = 110032, // obsolete - available for reuse
-	ProceduralHolderTypeId = 110033, // obsolete - available for reuse
+	AnimationTypeId = 110032,
+	AnimationCurvePlugTypeId = 110033,
 	PreferencesTypeId = 110034,
 	ObjectVectorPlugTypeId = 110035,
 	Box2iPlugTypeId = 110036,
@@ -96,12 +96,12 @@ enum TypeId
 	ContextVariablesComputeNodeTypeId = 110049,
 	RandomTypeId = 110050,
 	DependencyNodeTypeId = 110051,
-	ParameterisedHolderDependencyNodeTypeId = 110052, // obsolete - available for reuse
+	ExecutableNodeRequirementPlugTypeId = 110052, // obsolete - available for reuse
 	BoxTypeId = 110053,
 	InternedStringVectorDataPlugTypeId = 110054,
-	ExecutableNodeTypeId = 110055,
+	ExecutableNodeTypeId = 110055, // obsolete - available for reuse
 	ExecutableOpHolderTypeId = 110056, // obsolete - available for reuse
-	DispatcherTypeId = 110057,
+	DispatcherTypeId = 110057, // obsolete - available for reuse
 	Transform2DPlugTypeId = 110058,
 	ReferenceTypeId = 110059,
 	ComputeNodeTypeId = 110060,
@@ -125,8 +125,11 @@ enum TypeId
 	LeafPathFilterTypeId = 110078,
 	MatchPatternPathFilterTypeId = 110079,
 	FileSystemPathTypeId = 110080,
+	LoopComputeNodeTypeId = 110081,
+	FileSequencePathFilterTypeId = 110082,
+	M44fVectorDataPlugTypeId = 110083,
 
-	LastTypeId = 110180,
+	LastTypeId = 110159,
 
 };
 

@@ -34,27 +34,15 @@
 #
 ##########################################################################
 
-import os
 import unittest
+
 import IECore
+
 import Gaffer
 import GafferImage
-import sys
+import GafferImageTest
 
-class ChannelMaskPlugTest( unittest.TestCase ) :
-
-	def testChannelIndex( self ) :
-		# Check that the channelIndex method returns the correct index of a range of channels.
-		tests = [
-			("test.rgba.R",0),
-			("test.rgba.G",1),
-			("test.rgba.B",2),
-			("test.rgba.A",3),
-		]
-
-		for channel, expectedIdx in tests :
-			idx = GafferImage.ChannelMaskPlug.channelIndex( channel )
-			self.assertEqual( expectedIdx, idx )
+class ChannelMaskPlugTest( GafferImageTest.ImageTestCase ) :
 
 	def testDuplicateRemoval( self ) :
 		# Tests that the removeDuplicateIndices() call removes all duplicate channels which share an index with another.

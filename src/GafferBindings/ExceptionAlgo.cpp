@@ -45,6 +45,9 @@ using namespace boost::python;
 namespace GafferBindings
 {
 
+namespace ExceptionAlgo
+{
+
 std::string formatPythonException( bool withStacktrace, int *lineNumber )
 {
 	PyObject *exceptionPyObject, *valuePyObject, *tracebackPyObject;
@@ -72,12 +75,19 @@ std::string formatPythonException( bool withStacktrace, int *lineNumber )
 		traceback = object( handle<>( tracebackPyObject ) );
 	}
 
-	object tracebackModule( import( "traceback" ) );
-
 	if( lineNumber )
 	{
-		*lineNumber = extract<int>( traceback.attr( "tb_lineno" ) );
+		if( PyErr_GivenExceptionMatches( value.ptr(), PyExc_SyntaxError ) )
+		{
+			*lineNumber = extract<int>( value.attr( "lineno" ) );
+		}
+		else if( traceback )
+		{
+			*lineNumber = extract<int>( traceback.attr( "tb_lineno" ) );
+		}
 	}
+
+	object tracebackModule( import( "traceback" ) );
 
 	object formattedList;
 	if( withStacktrace )
@@ -89,7 +99,6 @@ std::string formatPythonException( bool withStacktrace, int *lineNumber )
 		formattedList = tracebackModule.attr( "format_exception_only" )( exception, value );
 	}
 
-
 	object formatted = str( "" ).join( formattedList );
 	std::string s = extract<std::string>( formatted );
 
@@ -100,5 +109,7 @@ void translatePythonException( bool withStacktrace )
 {
 	throw IECore::Exception( formatPythonException( withStacktrace ) );
 }
+
+} // namespace ExceptionAlgo
 
 } // namespace GafferBindings

@@ -1,7 +1,7 @@
 ##########################################################################
 #
 #  Copyright (c) 2011-2012, John Haddon. All rights reserved.
-#  Copyright (c) 2011-2014, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2011-2015, Image Engine Design Inc. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
 #  modification, are permitted provided that the following conditions are
@@ -81,7 +81,6 @@ from AboutTest import AboutTest
 from ChildSetTest import ChildSetTest
 from PythonApplicationTest import PythonApplicationTest
 from ApplicationRootTest import ApplicationRootTest
-from ExecuteApplicationTest import ExecuteApplicationTest
 from ContextTest import ContextTest
 from CompoundPathFilterTest import CompoundPathFilterTest
 from BadNode import BadNode
@@ -107,30 +106,31 @@ from ComputeNodeTest import ComputeNodeTest
 from BoxPlugTest import BoxPlugTest
 from BoxTest import BoxTest
 from OutputRedirectionTest import OutputRedirectionTest
-from ExecutableNodeTest import ExecutableNodeTest
-from DispatcherTest import DispatcherTest
-from TextWriter import TextWriter
-from LocalDispatcherTest import LocalDispatcherTest
 from RecursiveChildIteratorTest import RecursiveChildIteratorTest
 from FilteredRecursiveChildIteratorTest import FilteredRecursiveChildIteratorTest
 from ReferenceTest import ReferenceTest
 from OrphanRemoverTest import OrphanRemoverTest
 from GraphComponentPathTest import GraphComponentPathTest
-from InputGeneratorNode import InputGeneratorNode
-from InputGeneratorTest import InputGeneratorTest
 from ArrayPlugNode import ArrayPlugNode
 from ArrayPlugTest import ArrayPlugTest
 from SerialisationTest import SerialisationTest
 from SwitchTest import SwitchTest
 from MetadataTest import MetadataTest
 from StringAlgoTest import StringAlgoTest
-from SystemCommandTest import SystemCommandTest
-from TaskListTest import TaskListTest
 from NodeAlgoTest import NodeAlgoTest
 from DotTest import DotTest
 from ApplicationTest import ApplicationTest
 from LeafPathFilterTest import LeafPathFilterTest
 from MatchPatternPathFilterTest import MatchPatternPathFilterTest
+from LoopTest import LoopTest
+from SubGraphTest import SubGraphTest
+from FileSequencePathFilterTest import FileSequencePathFilterTest
+from AnimationTest import AnimationTest
+from StatsApplicationTest import StatsApplicationTest
+from DownstreamIteratorTest import DownstreamIteratorTest
+from PerformanceMonitorTest import PerformanceMonitorTest
+from MetadataAlgoTest import MetadataAlgoTest
+from ContextMonitorTest import ContextMonitorTest
 
 if __name__ == "__main__":
 	import unittest

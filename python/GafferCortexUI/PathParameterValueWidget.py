@@ -34,8 +34,6 @@
 #
 ##########################################################################
 
-import re
-
 import IECore
 
 import Gaffer
@@ -46,7 +44,7 @@ class PathParameterValueWidget( GafferCortexUI.ParameterValueWidget ) :
 
 	def __init__( self, parameterHandler, **kw ) :
 
-		self.__pathWidget = GafferUI.PathPlugValueWidget(
+		self.__pathWidget = GafferUI.FileSystemPathPlugValueWidget(
 			parameterHandler.plug(),
 			self._path(),
 			pathChooserDialogueKeywords = Gaffer.WeakMethod( self._pathChooserDialogueKeywords ),

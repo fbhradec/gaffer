@@ -1,6 +1,6 @@
 ##########################################################################
 #
-#  Copyright (c) 2011-2012, Image Engine Design Inc. All rights reserved.
+#  Copyright (c) 2011-2015, Image Engine Design Inc. All rights reserved.
 #  Copyright (c) 2011-2012, John Haddon. All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -52,7 +52,7 @@ __nodeTypes = (
 	GafferCortex.ParameterisedHolderNode,
 	GafferCortex.ParameterisedHolderComputeNode,
 	GafferCortex.ParameterisedHolderDependencyNode,
-	GafferCortex.ParameterisedHolderExecutableNode,
+	GafferCortex.ParameterisedHolderTaskNode,
 )
 
 ##########################################################################
@@ -70,15 +70,15 @@ class _ParameterisedHolderNodeUI( GafferUI.NodeUI ) :
 		column = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing = 4 )
 
 		GafferUI.NodeUI.__init__( self, node, column, **kw )
-		
+
 		headerVisible = True
 		parameterised = self.node().getParameterised()[0]
-		with IECore.IgnoredExceptions( KeyError ) :		
+		with IECore.IgnoredExceptions( KeyError ) :
 			headerVisible = parameterised.userData()["UI"]["headerVisible"].value
 
 		with column :
-			
-			if headerVisible :	
+
+			if headerVisible :
 				with GafferUI.ListContainer( orientation = GafferUI.ListContainer.Orientation.Horizontal ) :
 					GafferUI.Spacer( IECore.V2i( 10 ), parenting = { "expand"  : True } )
 					toolButton = GafferCortexUI.ToolParameterValueWidget( self.node().parameterHandler() )
@@ -129,8 +129,13 @@ class _InfoButton( GafferUI.Button ) :
 
 	def __infoText( self ) :
 
-		result = Gaffer.Metadata.nodeDescription( self.__node )
-		summary = Gaffer.Metadata.nodeValue( self.__node, "summary" )
+		## \todo: NodeUI should provide setContext()/getContext() methods
+		## and we should use those to get the proper context here.
+		context = self.__node.scriptNode().context() if self.__node.scriptNode() else Gaffer.Context.current()
+		with context :
+			result = Gaffer.Metadata.nodeDescription( self.__node )
+			summary = Gaffer.Metadata.value( self.__node, "summary" )
+
 		if summary :
 			if result :
 				result += "\n\n"
@@ -147,18 +152,6 @@ class _InfoButton( GafferUI.Button ) :
 
 		self.__window.getChild().setText( self.__infoText() )
 		self.__window.reveal()
-
-##########################################################################
-# Nodules
-##########################################################################
-
-def __parameterNoduleType( plug ) :
-
-	return "GafferUI::StandardNodule" if isinstance( plug, Gaffer.ObjectPlug ) else ""
-
-for nodeType in __nodeTypes :
-	GafferUI.Metadata.registerPlugValue( nodeType, "parameters", "nodule:type", "GafferUI::CompoundNodule" )
-	GafferUI.Metadata.registerPlugValue( nodeType, "parameters.*", "nodule:type", __parameterNoduleType )
 
 ##########################################################################
 # Metadata
@@ -189,10 +182,10 @@ def __nodeSummary( node ) :
 		parameterValues,
 	)
 
-def __plugDescription( plug ) :
+## \todo There should really be a method to map from plug to parameter.
+# The logic exists in ParameterisedHolder.plugSet() but isn't public.
+def __parameter( plug ) :
 
-	## \todo There should really be a method to map from plug to parameter.
-	# The logic exists in ParameterisedHolder.plugSet() but isn't public.
 	parameter = plug.node().parameterHandler().parameter()
 	for name in plug.relativeName( plug.node() ).split( "." )[1:] :
 		if not isinstance( parameter, IECore.CompoundParameter ) :
@@ -200,13 +193,99 @@ def __plugDescription( plug ) :
 		else :
 			parameter = parameter[name]
 
-	return parameter.description
+	return parameter
+
+def __plugDescription( plug ) :
+
+	parameter = __parameter( plug )
+	return parameter.description if parameter else None
+
+def __plugPresetNames( plug ) :
+
+	parameter = __parameter( plug )
+	if not parameter :
+		return None
+
+	presetNames = parameter.presetNames()
+	if presetNames and isinstance( plug, (
+		Gaffer.StringPlug,
+		Gaffer.BoolPlug,
+		Gaffer.IntPlug,
+		Gaffer.FloatPlug,
+		Gaffer.Color3fPlug,
+		Gaffer.V3fPlug,
+	) ) :
+		return IECore.StringVectorData( presetNames )
+
+	return None
+
+def __plugPresetValues( plug ) :
+
+	parameter = __parameter( plug )
+	if not parameter :
+		return None
+
+	# make sure to get the values in the same
+	# order that the names were given.
+	values = [ parameter.presets()[x] for x in parameter.presetNames() ]
+	if isinstance( plug, Gaffer.StringPlug ) :
+		return IECore.StringVectorData( [ v.value for v in values ] )
+	elif isinstance( plug, Gaffer.BoolPlug ) :
+		return IECore.BoolVectorData( [ v.value for v in values ] )
+	elif isinstance( plug, Gaffer.IntPlug ) :
+		return IECore.IntVectorData( [ v.value for v in values ] )
+	elif isinstance( plug, Gaffer.FloatPlug ) :
+		return IECore.FloatVectorData( [ v.value for v in values ] )
+	elif isinstance( plug, Gaffer.Color3fPlug ) :
+		return IECore.Color3fVectorData( [ v.value for v in values ] )
+	elif isinstance( plug, Gaffer.V3fPlug ) :
+		return IECore.V3fVectorData( [ v.value for v in values ] )
+
+	return None
+
+def __plugWidgetType( plug ) :
+
+	parameter = __parameter( plug )
+
+	if parameter and parameter.presetsOnly and __plugPresetNames( plug ) :
+		return "GafferUI.PresetsPlugValueWidget"
+
+	return None
+
+def __plugNoduleType( plug ) :
+
+	return "GafferUI::StandardNodule" if isinstance( plug, Gaffer.ObjectPlug ) else ""
 
 for nodeType in __nodeTypes :
 
-	Gaffer.Metadata.registerNodeDescription( nodeType, __nodeDescription )
-	Gaffer.Metadata.registerNodeValue( nodeType, "summary", __nodeSummary )
-	Gaffer.Metadata.registerPlugDescription( nodeType, "parameters.*", __plugDescription )
+	Gaffer.Metadata.registerNode(
+
+		nodeType,
+
+		"description", __nodeDescription,
+		"summary", __nodeSummary,
+
+		plugs = {
+
+			"parameters" : [
+
+				"nodule:type", "GafferUI::CompoundNodule",
+
+			],
+
+			"parameters.*" : [
+
+				"description", __plugDescription,
+				"presetNames", __plugPresetNames,
+				"presetValues", __plugPresetValues,
+				"plugValueWidget:type", __plugWidgetType,
+				"nodule:type", __plugNoduleType,
+
+			],
+
+		},
+
+	)
 
 ##########################################################################
 # Node menu

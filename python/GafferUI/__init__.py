@@ -98,7 +98,11 @@ def _qtAddress( o ) :
 		import sip
 		return sip.unwrapinstance( o )
 	else :
-		import shiboken
+		try :
+			import PySide.shiboken as shiboken
+		except ImportError :
+			import shiboken
+
 		return shiboken.getCppPointer( o )[0]
 
 ##########################################################################
@@ -114,7 +118,11 @@ def _qtObject( address, type ) :
 		import sip
 		return sip.wrapinstance( address, type )
 	else :
-		import shiboken
+		try :
+			import PySide.shiboken as shiboken
+		except ImportError :
+			import shiboken
+
 		return shiboken.wrapInstance( address, type )
 
 ##########################################################################
@@ -172,6 +180,7 @@ from PathFilterWidget import PathFilterWidget
 from CompoundPathFilterWidget import CompoundPathFilterWidget
 from InfoPathFilterWidget import InfoPathFilterWidget
 from MatchPatternPathFilterWidget import MatchPatternPathFilterWidget
+from FileSequencePathFilterWidget import FileSequencePathFilterWidget
 from BusyWidget import BusyWidget
 from NumericSlider import NumericSlider
 from ColorChooser import ColorChooser
@@ -205,6 +214,7 @@ from StringPlugValueWidget import StringPlugValueWidget
 from NumericPlugValueWidget import NumericPlugValueWidget
 from BoolPlugValueWidget import BoolPlugValueWidget
 from PathPlugValueWidget import PathPlugValueWidget
+from FileSystemPathPlugValueWidget import FileSystemPathPlugValueWidget
 from VectorDataPlugValueWidget import VectorDataPlugValueWidget
 from PathVectorDataPlugValueWidget import PathVectorDataPlugValueWidget
 from PlugWidget import PlugWidget
@@ -224,6 +234,7 @@ from NodeMenu import NodeMenu
 import FileMenu
 import LayoutMenu
 import EditMenu
+import UserPlugs
 from Frame import Frame
 from CompoundNumericPlugValueWidget import CompoundNumericPlugValueWidget
 from BoxPlugValueWidget import BoxPlugValueWidget
@@ -246,26 +257,21 @@ from GraphComponentBrowserMode import GraphComponentBrowserMode
 from ToolPlugValueWidget import ToolPlugValueWidget
 from LabelPlugValueWidget import LabelPlugValueWidget
 from CompoundDataPlugValueWidget import CompoundDataPlugValueWidget
-from SectionedCompoundDataPlugValueWidget import SectionedCompoundDataPlugValueWidget
 from LayoutPlugValueWidget import LayoutPlugValueWidget
 import ScriptNodeUI
-import DispatcherUI
-from DispatcherUI import DispatcherWindow
-import LocalDispatcherUI
-import ExecutableNodeUI
 from IncrementingPlugValueWidget import IncrementingPlugValueWidget
-from SectionedCompoundPlugValueWidget import SectionedCompoundPlugValueWidget
-from UserPlugValueWidget import UserPlugValueWidget
+from RefreshPlugValueWidget import RefreshPlugValueWidget
 import PreferencesUI
 from SplinePlugValueWidget import SplinePlugValueWidget
 from RampPlugValueWidget import RampPlugValueWidget
 from NodeFinderDialogue import NodeFinderDialogue
 from ConnectionPlugValueWidget import ConnectionPlugValueWidget
-import View3DToolbar
 import ViewUI
 from Playback import Playback
 from UIEditor import UIEditor
 import GraphBookmarksUI
+import DocumentationAlgo
+import _PlugAdder
 
 # and then specific node uis
 
@@ -276,13 +282,13 @@ import ExpressionUI
 import BoxUI
 import ReferenceUI
 import BackdropUI
-import SystemCommandUI
 import DotUI
-import TaskListUI
 import SubGraphUI
 import SwitchUI
 import ContextVariablesUI
 import TimeWarpUI
+import LoopUI
+import AnimationUI
 
 # backwards compatibility
 ## \todo Remove me

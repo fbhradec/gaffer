@@ -37,10 +37,15 @@
 #ifndef GAFFERIMAGE_IMAGEWRITER_H
 #define GAFFERIMAGE_IMAGEWRITER_H
 
-#include "Gaffer/ExecutableNode.h"
-#include "Gaffer/NumericPlug.h"
+#include "GafferDispatch/TaskNode.h"
 
 #include "GafferImage/TypeIds.h"
+
+namespace Gaffer
+{
+	IE_CORE_FORWARDDECLARE( ValuePlug )
+	IE_CORE_FORWARDDECLARE( StringPlug )
+} // namespace Gaffer
 
 namespace GafferImage
 {
@@ -48,12 +53,12 @@ namespace GafferImage
 IE_CORE_FORWARDDECLARE( ChannelMaskPlug )
 IE_CORE_FORWARDDECLARE( ImagePlug )
 
-class ImageWriter : public Gaffer::ExecutableNode
+class ImageWriter : public GafferDispatch::TaskNode
 {
 
 	public :
 
-		enum
+		enum Mode
 		{
 			Scanline = 0,
 			Tile = 1
@@ -62,7 +67,7 @@ class ImageWriter : public Gaffer::ExecutableNode
 		ImageWriter( const std::string &name=defaultName<ImageWriter>() );
 		virtual ~ImageWriter();
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageWriter, ImageWriterTypeId, ExecutableNode );
+		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageWriter, ImageWriterTypeId, TaskNode );
 
 		Gaffer::StringPlug *fileNamePlug();
 		const Gaffer::StringPlug *fileNamePlug() const;
@@ -73,22 +78,23 @@ class ImageWriter : public Gaffer::ExecutableNode
 		const GafferImage::ChannelMaskPlug *channelsPlug() const;
 		GafferImage::ChannelMaskPlug *channelsPlug();
 
-		Gaffer::IntPlug *writeModePlug();
-		const Gaffer::IntPlug *writeModePlug() const;
-
 		GafferImage::ImagePlug *outPlug();
 		const GafferImage::ImagePlug *outPlug() const;
+
+		Gaffer::ValuePlug *fileFormatSettingsPlug( const std::string &fileFormat );
+		const Gaffer::ValuePlug *fileFormatSettingsPlug( const std::string &fileFormat ) const;
 
 		virtual IECore::MurmurHash hash( const Gaffer::Context *context ) const;
 
 		virtual void execute() const;
 
+		const std::string currentFileFormat() const;
+
 	private :
 
-		void plugSet( Gaffer::Plug *plug );
+		void createFileFormatOptionsPlugs();
 
 		static size_t g_firstPlugIndex;
-
 };
 
 IE_CORE_DECLAREPTR( ImageWriter )
@@ -96,4 +102,3 @@ IE_CORE_DECLAREPTR( ImageWriter )
 } // namespace GafferImage
 
 #endif // GAFFERIMAGE_IMAGEWRITER_H
-

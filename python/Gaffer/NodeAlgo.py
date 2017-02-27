@@ -53,11 +53,11 @@ import Gaffer
 def presets( plug ) :
 
 	result = []
-	for n in Gaffer.Metadata.registeredPlugValues( plug ) :
+	for n in Gaffer.Metadata.registeredValues( plug ) :
 		if n.startswith( "preset:" ) :
 			result.append( n[7:] )
 
-	result.extend( Gaffer.Metadata.plugValue( plug, "presetNames" ) or [] )
+	result.extend( Gaffer.Metadata.value( plug, "presetNames" ) or [] )
 
 	return result
 
@@ -67,32 +67,32 @@ def currentPreset( plug ) :
 
 	if not hasattr( plug, "getValue" ) :
 		return None
-	
+
 	value = plug.getValue()
 	failedNames = set()
-	for n in Gaffer.Metadata.registeredPlugValues( plug ) :
+	for n in Gaffer.Metadata.registeredValues( plug ) :
 		if n.startswith( "preset:" ) :
 			presetName = n[7:]
-			if Gaffer.Metadata.plugValue( plug, n ) == value :
+			if Gaffer.Metadata.value( plug, n ) == value :
 				return presetName
 			else :
 				failedNames.add( presetName )
 
-	presetNames = Gaffer.Metadata.plugValue( plug, "presetNames" )
+	presetNames = Gaffer.Metadata.value( plug, "presetNames" )
 	if presetNames is not None :
-		for presetName, presetValue in zip( presetNames, Gaffer.Metadata.plugValue( plug, "presetValues" ) ) :
+		for presetName, presetValue in zip( presetNames, Gaffer.Metadata.value( plug, "presetValues" ) ) :
 			if value == presetValue and presetName not in failedNames :
 				return presetName
 
 	return None
-	
+
 ## Applies the named preset to the plug.
 def applyPreset( plug, presetName ) :
 
-	value = Gaffer.Metadata.plugValue( plug, "preset:" + presetName )
+	value = Gaffer.Metadata.value( plug, "preset:" + presetName )
 	if value is None :
-		presetNames = Gaffer.Metadata.plugValue( plug, "presetNames" )
-		presetValues = Gaffer.Metadata.plugValue( plug, "presetValues" )
+		presetNames = Gaffer.Metadata.value( plug, "presetNames" )
+		presetValues = Gaffer.Metadata.value( plug, "presetValues" )
 		value = presetValues[presetNames.index( presetName )]
 
 	plug.setValue( value )
@@ -102,39 +102,39 @@ def applyPreset( plug, presetName ) :
 ##########################################################################
 
 def applyUserDefaults( nodeOrNodes ) :
-	
+
 	if isinstance( nodeOrNodes, list ) :
 		for node in nodeOrNodes :
 			__applyUserDefaults( node )
-	
+
 	else :
 		__applyUserDefaults( nodeOrNodes )
 
 def hasUserDefault( plug ) :
-	
-	return Gaffer.Metadata.plugValue( plug, "userDefault" ) is not None
+
+	return Gaffer.Metadata.value( plug, "userDefault" ) is not None
 
 def isSetToUserDefault( plug ) :
-	
+
 	if not hasattr( plug, "getValue" ) :
 		return False
-	
-	userDefault = Gaffer.Metadata.plugValue( plug, "userDefault" )
+
+	userDefault = Gaffer.Metadata.value( plug, "userDefault" )
 	if userDefault is None :
-		return False 
-	
+		return False
+
 	return userDefault == plug.getValue()
 
 def applyUserDefault( plug ) :
-	
+
 	__applyUserDefaults( plug )
 
 def __applyUserDefaults( graphComponent ) :
-	
+
 	if isinstance( graphComponent, Gaffer.Plug ) :
-		plugValue = Gaffer.Metadata.plugValue( graphComponent, "userDefault" )
+		plugValue = Gaffer.Metadata.value( graphComponent, "userDefault" )
 		if plugValue is not None :
 			graphComponent.setValue( plugValue )
-	
-	for child in graphComponent.children() :
-		__applyUserDefaults( child )
+
+	for plug in graphComponent.children( Gaffer.Plug ) :
+		__applyUserDefaults( plug )

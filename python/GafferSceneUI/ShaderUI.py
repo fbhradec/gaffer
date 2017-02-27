@@ -38,12 +38,14 @@ import os
 import re
 import string
 import fnmatch
+import functools
 
 import IECore
 
 import Gaffer
 import GafferUI
 import GafferScene
+import GafferSceneUI
 
 ##########################################################################
 # Metadata
@@ -74,6 +76,7 @@ Gaffer.Metadata.registerNode(
 
 			"layout:section", "",
 			"nodule:type", "",
+			"plugValueWidget:type", "GafferSceneUI.ShaderUI._ShaderNamePlugValueWidget",
 
 		],
 
@@ -88,6 +91,7 @@ Gaffer.Metadata.registerNode(
 
 			"layout:section", "",
 			"nodule:type", "",
+			"plugValueWidget:type", "",
 
 		],
 
@@ -98,10 +102,10 @@ Gaffer.Metadata.registerNode(
 			Where the parameters for the shader are represented.
 			""",
 
-			"nodeGadget:nodulePosition", "left",
 			"nodule:type", "GafferUI::CompoundNodule",
-			"compoundNodule:orientation", "y",
-			"compoundNodule:spacing", 0.2,
+			"noduleLayout:section", "left",
+			"noduleLayout:spacing", 0.2,
+			"plugValueWidget:type", "GafferUI.LayoutPlugValueWidget",
 
 		],
 
@@ -112,7 +116,7 @@ Gaffer.Metadata.registerNode(
 			# appropriate values for each individual parameter,
 			# for the case where they get promoted to a box
 			# individually.
-			"nodeGadget:nodulePosition", "left",
+			"noduleLayout:section", "left",
 
 		],
 
@@ -123,7 +127,14 @@ Gaffer.Metadata.registerNode(
 			The output from the shader.
 			""",
 
-			"nodeGadget:nodulePosition", "right",
+			"noduleLayout:section", "right",
+			"plugValueWidget:type", "",
+
+		],
+
+		"out.*" : [
+
+			"noduleLayout:section", "right",
 
 		],
 
@@ -135,7 +146,7 @@ Gaffer.Metadata.registerNode(
 # PlugValueWidgets
 ##########################################################################
 
-class __ShaderNamePlugValueWidget( GafferUI.PlugValueWidget ) :
+class _ShaderNamePlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, **kw ) :
 
@@ -163,22 +174,17 @@ class __ShaderNamePlugValueWidget( GafferUI.PlugValueWidget ) :
 		with self.getContext() :
 			shaderName = self.getPlug().getValue()
 			self.__label.setText( "<h3>Shader : " + shaderName + "</h3>" )
-			## \todo Disable the type check once we've got all the shader types implementing reloading properly.
-			nodeType = self.getPlug().node().typeName()
-			self.__button.setEnabled( bool( shaderName ) and ( "RenderMan" in nodeType or "OSL" in nodeType ) )
+			## \todo Disable the type check once we've got OpenGLShader implementing reloading properly.
+			self.__button.setEnabled( not Gaffer.MetadataAlgo.readOnly( self.getPlug() ) and not isinstance( self.getPlug().node(), GafferScene.OpenGLShader ) )
 
 	def __buttonClicked( self, button ) :
 
 		node = self.getPlug().node()
-		node.shaderLoader().clear()
+		if hasattr( node, "shaderLoader" ) :
+			node.shaderLoader().clear()
 
 		with Gaffer.UndoContext( node.ancestor( Gaffer.ScriptNode ) ) :
 			node.loadShader( node["name"].getValue(), keepExistingValues = True )
-
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader, "name", __ShaderNamePlugValueWidget )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader, "parameters", GafferUI.LayoutPlugValueWidget )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader, "out", None )
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Shader, "type", None )
 
 ##########################################################################
 # NodeFinderDialogue mode
@@ -198,9 +204,9 @@ GafferUI.NodeFinderDialogue.registerMode( "Shader Names", __shaderNameExtractor 
 ##########################################################################
 
 ## Appends menu items for the creation of all shaders found on some searchpaths.
-def appendShaders( menuDefinition, prefix, searchPaths, extensions, nodeCreator, matchExpression = "*" ) :
+def appendShaders( menuDefinition, prefix, searchPaths, extensions, nodeCreator, matchExpression = "*", searchTextPrefix = "" ) :
 
-	menuDefinition.append( prefix, { "subMenu" : IECore.curry( __shaderSubMenu, searchPaths, extensions, nodeCreator, matchExpression ) } )
+	menuDefinition.append( prefix, { "subMenu" : IECore.curry( __shaderSubMenu, searchPaths, extensions, nodeCreator, matchExpression, searchTextPrefix ) } )
 
 def __nodeName( shaderName ) :
 
@@ -210,10 +216,11 @@ def __nodeName( shaderName ) :
 
 def __loadFromFile( menu, extensions, nodeCreator ) :
 
-	path = Gaffer.FileSystemPath( os.getcwd() )
+	bookmarks = GafferUI.Bookmarks.acquire( menu, category = "shader" )
+	path = Gaffer.FileSystemPath( bookmarks.getDefault( menu ) )
 	path.setFilter( Gaffer.FileSystemPath.createStandardFilter( extensions ) )
 
-	dialogue = GafferUI.PathChooserDialogue( path, title="Load Shader", confirmLabel = "Load", valid=True, leaf=True )
+	dialogue = GafferUI.PathChooserDialogue( path, title="Load Shader", confirmLabel = "Load", valid=True, leaf=True, bookmarks = bookmarks )
 	path = dialogue.waitForPath( parentWindow = menu.ancestor( GafferUI.ScriptWindow ) )
 
 	if not path :
@@ -223,7 +230,7 @@ def __loadFromFile( menu, extensions, nodeCreator ) :
 
 	return nodeCreator( __nodeName( shaderName ), shaderName )
 
-def __shaderSubMenu( searchPaths, extensions, nodeCreator, matchExpression ) :
+def __shaderSubMenu( searchPaths, extensions, nodeCreator, matchExpression, searchTextPrefix ) :
 
 	if isinstance( matchExpression, str ) :
 		matchExpression = re.compile( fnmatch.translate( matchExpression ) )
@@ -265,7 +272,7 @@ def __shaderSubMenu( searchPaths, extensions, nodeCreator, matchExpression ) :
 			menuPath,
 			{
 				"command" : GafferUI.NodeMenu.nodeCreatorWrapper( IECore.curry( nodeCreator, __nodeName( shader ), shader ) ),
-				"searchText" : menuPath.rpartition( "/" )[-1].replace( " ", "" ),
+				"searchText" : searchTextPrefix + menuPath.rpartition( "/" )[-1].replace( " ", "" ),
 			},
 		)
 
@@ -274,3 +281,34 @@ def __shaderSubMenu( searchPaths, extensions, nodeCreator, matchExpression ) :
 
 	return result
 
+##########################################################################
+# Interaction with ShaderNodeGadget
+##########################################################################
+
+def __setPlugMetadata( plug, key, value ) :
+
+	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+		Gaffer.Metadata.registerValue( plug, key, value )
+
+def __nodeGraphPlugContextMenu( nodeGraph, plug, menuDefinition ) :
+
+	if not isinstance( plug.node(), GafferScene.Shader ) :
+		return
+
+	if not plug.node()["parameters"].isAncestorOf( plug ) :
+		return
+
+	if len( menuDefinition.items() ) :
+		menuDefinition.append( "/HideDivider", { "divider" : True } )
+
+	menuDefinition.append(
+
+		"/Hide",
+		{
+			"command" : functools.partial( __setPlugMetadata, plug, "noduleLayout:visible", False ),
+			"active" : plug.getInput() is None and not Gaffer.readOnly( plug ),
+		}
+
+	)
+
+__nodeGraphPlugContextMenuConnection = GafferUI.NodeGraph.plugContextMenuSignal().connect( __nodeGraphPlugContextMenu )

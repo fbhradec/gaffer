@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2011-2014, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2011-2015, Image Engine Design Inc. All rights reserved.
 //  Copyright (c) 2011, John Haddon. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
@@ -35,11 +35,12 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "boost/container/flat_set.hpp"
+
 #include "IECore/MessageHandler.h"
 #include "IECore/SimpleTypedData.h"
 
 #include "Gaffer/CompoundPlug.h"
-#include "Gaffer/PlugIterator.h"
 
 #include "GafferCortex/CompoundParameterHandler.h"
 
@@ -106,33 +107,31 @@ Gaffer::Plug *CompoundParameterHandler::setupPlug( Gaffer::GraphComponent *plugP
 
 	setupPlugFlags( m_plug.get(), flags );
 
-	// remove any child plugs we don't need
+	// loop through the handlers and remove any that are not linked to a new parameter
+	const CompoundParameter::ParameterVector &children = m_parameter->orderedParameters();
+
+	// using a flat_set for fast searches
+	boost::container::flat_set<IECore::ParameterPtr> searchParameters(children.begin(), children.end());
 
 	std::vector<Gaffer::PlugPtr> toRemove;
-	for( Gaffer::PlugIterator pIt( m_plug->children().begin(), m_plug->children().end() ); pIt!=pIt.end(); pIt++ )
+	for( HandlerMap::iterator it = m_handlers.begin(), eIt = m_handlers.end(); it!=eIt; )
 	{
-		if( (*pIt)->getName().string().compare( 0, 2, "__" ) == 0 )
+		HandlerMap::iterator nextIt = it; nextIt++; // increment now because removing will invalidate iterator
+		if( searchParameters.find( it->first ) == searchParameters.end() )
 		{
-			// we leave any plugs prefixed with __ alone, on the assumption
-			// that they don't represent child parameters but instead are
-			// used for bookkeeping by a derived parameter handler (ClassParameterHandler
-			// or ClassVectorParameterHandler for instance).
-			continue;
+			toRemove.push_back( it->second->plug() );
+			m_handlers.erase( it );
 		}
-		if( !m_parameter->parameter<Parameter>( (*pIt)->getName() ) )
-		{
-			toRemove.push_back( *pIt );
-		}
+		it = nextIt;
 	}
 
+	// remove the old plugs
 	for( std::vector<Gaffer::PlugPtr>::const_iterator pIt = toRemove.begin(), eIt = toRemove.end(); pIt != eIt; pIt++ )
 	{
 		m_plug->removeChild( *pIt );
 	}
 
-	// and add or update the child plug for each child parameter
-
-	const CompoundParameter::ParameterVector &children = m_parameter->orderedParameters();
+	// loop through the new parameters, adding handlers to them
 	for( CompoundParameter::ParameterVector::const_iterator it = children.begin(); it!=children.end(); it++ )
 	{
 		ParameterHandler *h = handler( it->get(), true );
@@ -140,18 +139,6 @@ Gaffer::Plug *CompoundParameterHandler::setupPlug( Gaffer::GraphComponent *plugP
 		{
 			h->setupPlug( m_plug.get(), direction, flags );
 		}
-	}
-
-	// remove any old child handlers we don't need any more
-
-	for( HandlerMap::iterator it = m_handlers.begin(), eIt = m_handlers.end(); it!=eIt; )
-	{
-		HandlerMap::iterator nextIt = it; nextIt++; // increment now because removing will invalidate iterator
-		if( it->first != m_parameter->parameter<Parameter>( it->first->name() ) )
-		{
-			m_handlers.erase( it );
-		}
-		it = nextIt;
 	}
 
 	return m_plug.get();
@@ -185,10 +172,19 @@ void CompoundParameterHandler::setPlugValue()
 	const CompoundParameter::ParameterVector &children = m_parameter->orderedParameters();
 	for( CompoundParameter::ParameterVector::const_iterator it = children.begin(); it!=children.end(); it++ )
 	{
-		ParameterHandler *h = handler( it->get() );
-		if( h && !h->plug()->getFlags( Gaffer::Plug::ReadOnly ) )
+		if( ParameterHandler *h = handler( it->get() ) )
 		{
-			h->setPlugValue();
+			if( Gaffer::ValuePlug *plug = IECore::runTimeCast<Gaffer::ValuePlug>( h->plug() ) )
+			{
+				if( plug->settable() )
+				{
+					h->setPlugValue();
+				}
+			}
+			else
+			{
+				h->setPlugValue();
+			}
 		}
 	}
 }

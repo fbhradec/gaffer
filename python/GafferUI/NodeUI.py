@@ -35,10 +35,18 @@
 #
 ##########################################################################
 
+import os.path
+
 import IECore
 
 import Gaffer
 import GafferUI
+
+def __documentationURL( node ) :
+
+	fileName = "$GAFFER_ROOT/doc/gaffer/html/NodeReference/" + node.typeName().replace( "::", "/" ) + ".html"
+	fileName = os.path.expandvars( fileName )
+	return "file://" + fileName if os.path.isfile( fileName ) else ""
 
 Gaffer.Metadata.registerNode(
 
@@ -48,6 +56,8 @@ Gaffer.Metadata.registerNode(
 	"""
 	A container for plugs.
 	""",
+
+	"documentation:url", __documentationURL,
 
 	plugs = {
 
@@ -63,6 +73,16 @@ Gaffer.Metadata.registerNode(
 			"layout:index", -1, # Last
 			"layout:section", "User",
 			"nodule:type", "",
+			"plugValueWidget:type", "GafferUI.LayoutPlugValueWidget",
+
+			"layout:customWidget:addButton:widgetType", "GafferUI.UserPlugs.plugCreationWidget",
+			"layout:customWidget:addButton:index", -1, # Last
+
+		),
+
+		"user.*" : (
+
+			"labelPlugValueWidget:renameable", True,
 
 		),
 
@@ -81,6 +101,8 @@ Gaffer.Metadata.registerNode(
 ##########################################################################
 
 ## This class forms the base class for all uis for nodes.
+## \todo: We should provide setContext()/getContext() methods
+## as EditorWidget and PlugValueWidget do.
 class NodeUI( GafferUI.Widget ) :
 
 	def __init__( self, node, topLevelWidget, **kw ) :
@@ -141,3 +163,22 @@ class NodeUI( GafferUI.Widget ) :
 			nodeTypeId = nodeClassOrTypeId.staticTypeId()
 
 		cls.__nodeUIs[nodeTypeId] = nodeUICreator
+
+##########################################################################
+# Plug menu
+##########################################################################
+
+def __deletePlug( plug ) :
+
+	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+		plug.parent().removeChild( plug )
+
+def __plugPopupMenu( menuDefinition, plugValueWidget ) :
+
+	plug = plugValueWidget.getPlug()
+	node = plug.node()
+	if plug.parent().isSame( node["user"] ) :
+		menuDefinition.append( "/DeleteDivider", { "divider" : True } )
+		menuDefinition.append( "/Delete", { "command" : IECore.curry( __deletePlug, plug ), "active" : not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ) } )
+
+__plugPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu )

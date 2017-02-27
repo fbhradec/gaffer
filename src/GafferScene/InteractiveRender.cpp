@@ -38,12 +38,13 @@
 
 #include "tbb/task.h"
 #include "tbb/task_scheduler_init.h"
-#include "tbb/compat/thread"
+#include "tbb/tbb_thread.h"
 
 #include "IECore/WorldBlock.h"
 #include "IECore/EditBlock.h"
 #include "IECore/MessageHandler.h"
 #include "IECore/SceneInterface.h"
+#include "IECore/VisibleRenderable.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/ScriptNode.h"
@@ -51,7 +52,6 @@
 #include "GafferScene/InteractiveRender.h"
 #include "GafferScene/RendererAlgo.h"
 #include "GafferScene/PathMatcherData.h"
-#include "GafferScene/SceneProcedural.h"
 
 using namespace std;
 using namespace Imath;
@@ -94,7 +94,7 @@ class InteractiveRender::SceneGraph
 				delete *it;
 			}
 		}
-		
+
 		void path( ScenePlug::ScenePath &p )
 		{
 			if( !m_parent )
@@ -106,28 +106,28 @@ class InteractiveRender::SceneGraph
 		}
 
 	private :
-		
+
 		friend class SceneGraphBuildTask;
 		friend class ChildNamesUpdateTask;
-		
+
 		friend class SceneGraphIteratorFilter;
 		friend class SceneGraphEvaluatorFilter;
 		friend class SceneGraphOutputFilter;
-		
+
 		// scene structure data:
 		IECore::InternedString m_name;
 		SceneGraph *m_parent;
 		std::vector<InteractiveRender::SceneGraph *> m_children;
-		
+
 		// hashes as of the most recent evaluation:
 		IECore::MurmurHash m_attributesHash;
 		IECore::MurmurHash m_childNamesHash;
-		
+
 		// actual scene data:
 		IECore::ConstCompoundObjectPtr m_attributes;
 		IECore::ConstObjectPtr m_object;
 		Imath::M44f m_transform;
-		
+
 		// flag indicating if this location is currently present - (used
 		// when the child names change)
 		bool m_locationPresent;
@@ -260,22 +260,22 @@ class InteractiveRender::ChildNamesUpdateTask : public tbb::task
 			ContextPtr context = new Context( *m_context, Context::Borrowed );
 			context->set( ScenePlug::scenePathContextName, m_scenePath );
 			Context::Scope scopedContext( context.get() );
-			
+
 			IECore::MurmurHash childNamesHash = m_scene->childNamesPlug()->hash();
-			
+
 			if( childNamesHash != m_sceneGraph->m_childNamesHash )
 			{
 				// child names have changed - we need to update m_locationPresent on the children:
 				m_sceneGraph->m_childNamesHash = childNamesHash;
-				
+
 				// read updated child names:
 				IECore::ConstInternedStringVectorDataPtr childNamesData = m_scene->childNamesPlug()->getValue( &m_sceneGraph->m_childNamesHash );
 				std::vector<IECore::InternedString> childNames = childNamesData->readable();
-				
+
 				// m_sceneGraph->m_children should be sorted by name. Sort this list too so we can
 				// compare the two easily:
 				std::sort( childNames.begin(), childNames.end() );
-				
+
 				std::vector<InternedString>::iterator childNamesBegin = childNames.begin();
 				for( std::vector<SceneGraph *>::const_iterator it = m_sceneGraph->m_children.begin(), eIt = m_sceneGraph->m_children.end(); it != eIt; ++it )
 				{
@@ -285,7 +285,7 @@ class InteractiveRender::ChildNamesUpdateTask : public tbb::task
 					{
 						// ok, it's there - mark this child as still present
 						(*it)->m_locationPresent = true;
-						
+
 						// As both the name lists are sorted, no further child names will be found beyond nameIt
 						// in the list, nor will they be found at nameIt as there shouldn't be any duplicates.
 						// This means we can move the start of the child names list one position past nameIt
@@ -301,14 +301,14 @@ class InteractiveRender::ChildNamesUpdateTask : public tbb::task
 					}
 				}
 			}
-			
+
 			// count children currently present in the scene:
 			size_t numPresentChildren = 0;
 			for( std::vector<SceneGraph *>::const_iterator it = m_sceneGraph->m_children.begin(), eIt = m_sceneGraph->m_children.end(); it != eIt; ++it )
 			{
 				numPresentChildren += (*it)->m_locationPresent;
 			}
-			
+
 			// spawn child tasks:
 			set_ref_count( 1 + numPresentChildren );
 			ScenePlug::ScenePath childPath = m_scenePath;
@@ -470,9 +470,9 @@ class InteractiveRender::SceneGraphBuildTask : public tbb::task
 			// we might as well store them in the scene graph, along with the hash:
 
 			m_sceneGraph->m_attributesHash = m_scene->attributesPlug()->hash();
-			
+
 			// use the precomputed hash in getValue() to save a bit of time:
-			
+
 			m_sceneGraph->m_attributes = m_scene->attributesPlug()->getValue( &m_sceneGraph->m_attributesHash );
 			const BoolData *visibilityData = m_sceneGraph->m_attributes->member<BoolData>( SceneInterface::visibilityName );
 			if( visibilityData && !visibilityData->readable() )
@@ -493,7 +493,7 @@ class InteractiveRender::SceneGraphBuildTask : public tbb::task
 				// nothing more to do
 				return NULL;
 			}
-			
+
 			// sort the child names so we can compare child name lists easily in ChildNamesUpdateTask:
 			std::sort( childNames.begin(), childNames.end() );
 
@@ -520,12 +520,12 @@ class InteractiveRender::SceneGraphBuildTask : public tbb::task
 					(*it),
 					childPath
 				);
-				
+
 				spawn( *t );
 			}
 
 			wait_for_all();
-			
+
 			// add visible children to m_sceneGraph->m_children:
 			for( std::vector<SceneGraph *>::const_iterator it = children.begin(), eIt = children.end(); it != eIt; ++it )
 			{
@@ -536,7 +536,7 @@ class InteractiveRender::SceneGraphBuildTask : public tbb::task
 				}
 				m_sceneGraph->m_children.push_back( *it );
 			}
-			
+
 			return NULL;
 		}
 
@@ -565,7 +565,7 @@ class InteractiveRender::SceneGraphIteratorFilter : public tbb::filter
 		{
 			m_childIndices.push_back( 0 );
 		}
-		
+
 		virtual void *operator()( void *item )
 		{
 			if( m_childIndices.empty() )
@@ -577,9 +577,9 @@ class InteractiveRender::SceneGraphIteratorFilter : public tbb::filter
 			next();
 			return s;
 		}
-	
+
 	private:
-		
+
 		void next()
 		{
 			// go down one level in the hierarchy if we can:
@@ -593,16 +593,16 @@ class InteractiveRender::SceneGraphIteratorFilter : public tbb::filter
 					return;
 				}
 			}
-			
+
 			while( m_childIndices.size() )
 			{
-				
+
 				// increment child index:
 				++m_childIndices.back();
-				
+
 				// find parent's child count - for the root we define this as 1:
 				size_t parentNumChildren = m_current->m_parent ? m_current->m_parent->m_children.size() : 1;
-				
+
 				if( m_childIndices.back() == parentNumChildren )
 				{
 					// we've got to the end of the child list, jump up one level:
@@ -618,7 +618,7 @@ class InteractiveRender::SceneGraphIteratorFilter : public tbb::filter
 				}
 			}
 		}
-		
+
 		SceneGraph *m_current;
 		std::vector<size_t> m_childIndices;
 };
@@ -653,7 +653,7 @@ class InteractiveRender::SceneGraphEvaluatorFilter : public tbb::filter
 				ContextPtr context = new Context( *m_context, Context::Borrowed );
 				context->set( ScenePlug::scenePathContextName, path );
 				Context::Scope scopedContext( context.get() );
-			
+
 				if( m_update )
 				{
 					// we're re-traversing this location, so lets only recompute attributes where
@@ -680,7 +680,7 @@ class InteractiveRender::SceneGraphEvaluatorFilter : public tbb::filter
 			{
 				std::string name;
 				ScenePlug::pathToString( path, name );
-			
+
 				IECore::msg( IECore::Msg::Error, "InteractiveRender::update", name + ": " + e.what() );
 			}
 
@@ -707,15 +707,15 @@ class InteractiveRender::SceneGraphEvaluatorFilter : public tbb::filter
 class InteractiveRender::SceneGraphOutputFilter : public tbb::thread_bound_filter
 {
 	public:
-	
+
 		SceneGraphOutputFilter( Renderer *renderer, bool editMode ) :
-			tbb::thread_bound_filter( tbb::filter::serial_in_order ), 
+			tbb::thread_bound_filter( tbb::filter::serial_in_order ),
 			m_renderer( renderer ),
 			m_attrBlockCounter( 0 ),
 			m_editMode( editMode )
 		{
 		}
-		
+
 		virtual ~SceneGraphOutputFilter()
 		{
 			// close pending attribute blocks:
@@ -725,16 +725,16 @@ class InteractiveRender::SceneGraphOutputFilter : public tbb::thread_bound_filte
 				m_renderer->attributeEnd();
 			}
 		}
-		
+
 		virtual void *operator()( void *item )
 		{
 			SceneGraph *s = (SceneGraph*)item;
 			ScenePlug::ScenePath path;
 			s->path( path );
-			
+
 			std::string name;
 			ScenePlug::pathToString( path, name );
-			
+
 			try
 			{
 				if( !m_editMode )
@@ -775,7 +775,7 @@ class InteractiveRender::SceneGraphOutputFilter : public tbb::thread_bound_filte
 						m_renderer->editBegin( "attribute", parameters );
 					}
 
-					outputAttributes( s->m_attributes.get(), m_renderer );
+					RendererAlgo::outputAttributes( s->m_attributes.get(), m_renderer );
 					s->m_attributes = NULL;
 
 					if( m_editMode )
@@ -802,9 +802,9 @@ class InteractiveRender::SceneGraphOutputFilter : public tbb::thread_bound_filte
 
 			return NULL;
 		}
-		
+
 	private:
-		
+
 		Renderer *m_renderer;
 		ScenePlug::ScenePath m_previousPath;
 		int m_attrBlockCounter;
@@ -815,13 +815,13 @@ void InteractiveRender::runPipeline(tbb::pipeline *p)
 {
 	// \todo: tune this number to find a balance between memory and speed once
 	// we have a load of production data:
-	
+
 	p->run( 2 * tbb::task_scheduler_init::default_num_threads() );
 }
 
 void InteractiveRender::outputScene( bool update )
 {
-	
+
 	SceneGraphIteratorFilter iterator( m_sceneGraph.get() );
 
 	SceneGraphEvaluatorFilter evaluator(
@@ -830,7 +830,7 @@ void InteractiveRender::outputScene( bool update )
 		update // only recompute locations whose hashes have changed if true:
 	);
 
-	SceneGraphOutputFilter output( 
+	SceneGraphOutputFilter output(
 		m_renderer.get(),
 		update // edit mode if true
 	);
@@ -841,7 +841,7 @@ void InteractiveRender::outputScene( bool update )
 	p.add_filter( output );
 
 	 // Another thread initiates execution of the pipeline
-	std::thread pipelineThread( runPipeline, &p );
+	tbb::tbb_thread pipelineThread( runPipeline, &p );
 
 	// Process the SceneGraphOutputFilter with the current thread:
 	while( output.process_item() != tbb::thread_bound_filter::end_of_stream )
@@ -849,7 +849,7 @@ void InteractiveRender::outputScene( bool update )
 		continue;
 	}
 	pipelineThread.join();
-	
+
 }
 
 void InteractiveRender::update()
@@ -887,22 +887,22 @@ void InteractiveRender::update()
 		m_renderer->setOption( "editable", new BoolData( true ) );
 
 		ConstCompoundObjectPtr globals = inPlug()->globalsPlug()->getValue();
-		outputOptions( globals.get(), m_renderer.get() );
-		outputOutputs( globals.get(), m_renderer.get() );
-		outputCameras( inPlug(), globals.get(), m_renderer.get() );
-		outputClippingPlanes( inPlug(), globals.get(), m_renderer.get() );
+		RendererAlgo::outputOptions( globals.get(), m_renderer.get() );
+		RendererAlgo::outputOutputs( globals.get(), m_renderer.get() );
+		RendererAlgo::outputCameras( inPlug(), globals.get(), m_renderer.get() );
+		RendererAlgo::outputClippingPlanes( inPlug(), globals.get(), m_renderer.get() );
 		{
 			WorldBlock world( m_renderer );
 
-			outputGlobalAttributes( globals.get(), m_renderer.get() );
-			outputCoordinateSystems( inPlug(), globals.get(), m_renderer.get() );
+			RendererAlgo::outputGlobalAttributes( globals.get(), m_renderer.get() );
+			RendererAlgo::outputCoordinateSystems( inPlug(), globals.get(), m_renderer.get() );
 			outputLightsInternal( globals.get(), /* editing = */ false );
-			
+
 			// build the scene graph structure in parallel:
 			m_sceneGraph.reset( new SceneGraph );
 			SceneGraphBuildTask *task = new( tbb::task::allocate_root() ) SceneGraphBuildTask( inPlug(), m_context.get(), m_sceneGraph.get(), ScenePlug::ScenePath() );
 			tbb::task::spawn_root_and_wait( *task );
-			
+
 			// output the scene for the first time:
 			outputScene( false );
 		}
@@ -968,7 +968,7 @@ void InteractiveRender::outputLightsInternal( const IECore::CompoundObject *glob
 		if( !editing )
 		{
 			// defining the scene for the first time
-			if( outputLight( inPlug(), path, m_renderer.get() ) )
+			if( RendererAlgo::outputLight( inPlug(), path, m_renderer.get() ) )
 			{
 				m_lightHandles.insert( *it );
 			}
@@ -981,7 +981,7 @@ void InteractiveRender::outputLightsInternal( const IECore::CompoundObject *glob
 				bool visible = false;
 				{
 					EditBlock edit( m_renderer.get(), "light", CompoundDataMap() );
-					visible = outputLight( inPlug(), path, m_renderer.get() );
+					visible = RendererAlgo::outputLight( inPlug(), path, m_renderer.get() );
 				}
 				// we may have turned it off before, and need to turn
 				// it back on, or it may have been hidden and we need
@@ -995,7 +995,7 @@ void InteractiveRender::outputLightsInternal( const IECore::CompoundObject *glob
 			{
 				// we've not seen this light before - create a new one
 				EditBlock edit( m_renderer.get(), "attribute", CompoundDataMap() );
-				if( outputLight( inPlug(), path, m_renderer.get() ) )
+				if( RendererAlgo::outputLight( inPlug(), path, m_renderer.get() ) )
 				{
 					m_lightHandles.insert( *it );
 				}
@@ -1021,10 +1021,10 @@ void InteractiveRender::updateAttributes()
 	{
 		return;
 	}
-	
+
 	// output the scene, updating locations whose hashes have changed since last time:
 	outputScene( true );
-	
+
 	m_attributesDirty = false;
 }
 
@@ -1038,7 +1038,7 @@ void InteractiveRender::updateCameras()
 	IECore::ConstCompoundObjectPtr globals = inPlug()->globalsPlug()->getValue();
 	{
 		EditBlock edit( m_renderer.get(), "option", CompoundDataMap() );
-		outputCameras( inPlug(), globals.get(), m_renderer.get() );
+		RendererAlgo::outputCameras( inPlug(), globals.get(), m_renderer.get() );
 	}
 	m_camerasDirty = false;
 }
@@ -1053,7 +1053,7 @@ void InteractiveRender::updateCoordinateSystems()
 	IECore::ConstCompoundObjectPtr globals = inPlug()->globalsPlug()->getValue();
 	{
 		EditBlock edit( m_renderer.get(), "attribute", CompoundDataMap() );
-		outputCoordinateSystems( inPlug(), globals.get(), m_renderer.get() );
+		RendererAlgo::outputCoordinateSystems( inPlug(), globals.get(), m_renderer.get() );
 	}
 	m_coordinateSystemsDirty = false;
 }

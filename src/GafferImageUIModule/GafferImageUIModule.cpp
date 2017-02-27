@@ -38,6 +38,7 @@
 #include "boost/python.hpp"
 
 #include "GafferImageUIBindings/ImageViewBinding.h"
+#include "GafferImageUIBindings/ImageGadgetBinding.h"
 
 using namespace boost::python;
 
@@ -47,5 +48,6 @@ BOOST_PYTHON_MODULE( _GafferImageUI )
 {
 
 	bindImageView();
+	bindImageGadget();
 
 }

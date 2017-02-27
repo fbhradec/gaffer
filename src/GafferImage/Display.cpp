@@ -49,6 +49,7 @@
 #include "Gaffer/Context.h"
 
 #include "GafferImage/Display.h"
+#include "GafferImage/FormatPlug.h"
 
 using namespace std;
 using namespace Imath;
@@ -89,11 +90,11 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 		GafferDisplayDriver( const Imath::Box2i &displayWindow, const Imath::Box2i &dataWindow,
 			const vector<string> &channelNames, ConstCompoundDataPtr parameters )
 			:	DisplayDriver( displayWindow, dataWindow, channelNames, parameters ),
-				m_gafferFormat( displayWindow, 1 ),
-				m_gafferDataWindow( m_gafferFormat.yDownToFormatSpace( dataWindow ) )
+				m_gafferFormat( displayWindow, 1, /* fromEXRSpace = */ true ),
+				m_gafferDataWindow( m_gafferFormat.fromEXRSpace( dataWindow ) )
 		{
 			const V2i dataWindowMinTileIndex = ImagePlug::tileOrigin( m_gafferDataWindow.min ) / ImagePlug::tileSize();
-			const V2i dataWindowMaxTileIndex = ImagePlug::tileOrigin( m_gafferDataWindow.max ) / ImagePlug::tileSize();
+			const V2i dataWindowMaxTileIndex = ImagePlug::tileOrigin( m_gafferDataWindow.max - Imath::V2i( 1 ) ) / ImagePlug::tileSize();
 
 			m_tiles.resize(
 				TileArray::extent_gen()
@@ -127,9 +128,10 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 
 		virtual void imageData( const Imath::Box2i &box, const float *data, size_t dataSize )
 		{
-			Box2i yUpBox = m_gafferFormat.yDownToFormatSpace( box );
-			const V2i boxMinTileOrigin = ImagePlug::tileOrigin( yUpBox.min );
-			const V2i boxMaxTileOrigin = ImagePlug::tileOrigin( yUpBox.max );
+			Box2i gafferBox = m_gafferFormat.fromEXRSpace( box );
+
+			const V2i boxMinTileOrigin = ImagePlug::tileOrigin( gafferBox.min );
+			const V2i boxMaxTileOrigin = ImagePlug::tileOrigin( gafferBox.max - Imath::V2i( 1 ) );
 			for( int tileOriginY = boxMinTileOrigin.y; tileOriginY <= boxMaxTileOrigin.y; tileOriginY += ImagePlug::tileSize() )
 			{
 				for( int tileOriginX = boxMinTileOrigin.x; tileOriginX <= boxMaxTileOrigin.x; tileOriginX += ImagePlug::tileSize() )
@@ -150,15 +152,16 @@ class GafferDisplayDriver : public IECore::DisplayDriver
 						FloatVectorDataPtr updatedTileData = tileData->copy();
 						vector<float> &updatedTile = updatedTileData->writable();
 
-						const Box2i tileBound( tileOrigin, tileOrigin + Imath::V2i( GafferImage::ImagePlug::tileSize() - 1 ) );
-						const Box2i transferBound = IECore::boxIntersection( tileBound, yUpBox );
-						for( int y = transferBound.min.y; y<=transferBound.max.y; ++y )
+						const Box2i tileBound( tileOrigin, tileOrigin + Imath::V2i( GafferImage::ImagePlug::tileSize() ) );
+						const Box2i transferBound = IECore::boxIntersection( tileBound, gafferBox );
+
+						for( int y = transferBound.min.y; y<transferBound.max.y; ++y )
 						{
-							int srcY = m_gafferFormat.formatToYDownSpace( y );
+							int srcY = m_gafferFormat.toEXRSpace( y );
 							size_t srcIndex = ( ( srcY - box.min.y ) * ( box.size().x + 1 ) + ( transferBound.min.x - box.min.x ) ) * numChannels + channelIndex;
 							size_t dstIndex = ( y - tileBound.min.y ) * ImagePlug::tileSize() + transferBound.min.x - tileBound.min.x;
 							const size_t srcEndIndex = srcIndex + transferBound.size().x * numChannels;
-							while( srcIndex <= srcEndIndex )
+							while( srcIndex < srcEndIndex )
 							{
 								updatedTile[dstIndex] = data[srcIndex];
 								srcIndex += numChannels;
@@ -359,7 +362,7 @@ void Display::affects( const Gaffer::Plug *input, AffectedPlugsContainer &output
 
 	if( input == portPlug() || input == updateCountPlug() )
 	{
-		for( ValuePlugIterator it( outPlug() ); it != it.end(); it++ )
+		for( ValuePlugIterator it( outPlug() ); !it.done(); ++it )
 		{
 			outputs.push_back( it->get() );
 		}
@@ -389,9 +392,7 @@ void Display::hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Co
 	}
 	else
 	{
-		/// \todo We should not need the default value here - there should always be a default
-		/// format in the context - something is broken in the Format mechanism.
-		format = Context::current()->get<Format>( Format::defaultFormatContextName, Format() );
+		format = FormatPlug::getDefaultFormat( Context::current() );
 	}
 
 	h.append( format.getDisplayWindow() );
@@ -407,9 +408,7 @@ GafferImage::Format Display::computeFormat( const Gaffer::Context *context, cons
 	}
 	else
 	{
-		/// \todo We should not need the default value here - there should always be a default
-		/// format in the context - something is broken in the Format mechanism.
-		format = Context::current()->get<Format>( Format::defaultFormatContextName, Format() );
+		format = FormatPlug::getDefaultFormat( context );
 	}
 
 	return format;
@@ -497,6 +496,23 @@ void Display::plugSet( Gaffer::Plug *plug )
 
 void Display::setupServer()
 {
+	if( dataReceivedSignal().empty() )
+	{
+		// If the dataReceivedSignal is empty,
+		// it means that GafferImageUI hasn't
+		// been imported (see DisplayUI.py).
+		// If there's no UI then there's no point
+		// running a server because no-one will
+		// be looking anyway.
+		//
+		// This allows us to avoid confusing error output
+		// when the script is loaded in a separate process
+		// to do a local render dispatch, and the
+		// Display node trys to reuse the port that
+		// is already in use in the main GUI process.
+		return;
+	}
+
 	try
 	{
 		m_server = g_serverCache.get( portPlug()->getValue() );
@@ -504,6 +520,7 @@ void Display::setupServer()
 	catch( const std::exception &e )
 	{
 		m_server = 0;
+		g_serverCache.erase( portPlug()->getValue() );
 		msg( Msg::Error, "Display::setupServer", e.what() );
 	}
 }

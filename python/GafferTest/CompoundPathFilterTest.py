@@ -35,6 +35,7 @@
 ##########################################################################
 
 import unittest
+import itertools
 
 import Gaffer
 import GafferTest
@@ -175,6 +176,13 @@ class CompoundPathFilterTest( GafferTest.TestCase ) :
 		f = Gaffer.CompoundPathFilter( [ f1, f2 ] )
 		self.assertFilterListsEqual( f.getFilters(), [ f1, f2 ] )
 
+	def testConstructFromIterable( self ) :
+
+		f1 = Gaffer.FileNamePathFilter( [ "a.*" ] )
+		f2 = Gaffer.FileNamePathFilter( [ "b.*" ] )
+
+		f = Gaffer.CompoundPathFilter( itertools.chain( [ f1 ], [ f2 ] ) )
+		self.assertFilterListsEqual( f.getFilters(), [ f1, f2 ] )
+
 if __name__ == "__main__":
 	unittest.main()
-

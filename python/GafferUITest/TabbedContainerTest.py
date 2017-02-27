@@ -37,9 +37,6 @@
 
 import unittest
 
-import IECore
-
-import Gaffer
 import GafferUI
 import GafferUITest
 
@@ -230,8 +227,8 @@ class TabbedContainerTest( GafferUITest.TestCase ) :
 
 		with GafferUI.TabbedContainer() as t :
 
-			one = GafferUI.ListContainer( label = "One" )
-			two = GafferUI.ListContainer( label = "Two" )
+			one = GafferUI.ListContainer( parenting = { "label" : "One" } )
+			two = GafferUI.ListContainer( parenting = { "label" : "Two" } )
 
 		self.assertEqual( t.getLabel( one ), "One" )
 		self.assertEqual( t.getLabel( two ), "Two" )
@@ -265,4 +262,3 @@ class TabbedContainerTest( GafferUITest.TestCase ) :
 
 if __name__ == "__main__":
 	unittest.main()
-

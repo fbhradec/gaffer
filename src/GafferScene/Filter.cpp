@@ -37,6 +37,7 @@
 #include "Gaffer/Context.h"
 
 #include "GafferScene/Filter.h"
+#include "GafferScene/FilterPlug.h"
 
 using namespace GafferScene;
 using namespace Gaffer;
@@ -51,7 +52,7 @@ Filter::Filter( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new BoolPlug( "enabled", Gaffer::Plug::In, true ) );
-	addChild( new IntPlug( "out", Gaffer::Plug::Out, NoMatch, NoMatch, EveryMatch, Plug::Default & ( ~Plug::Cacheable ) ) );
+	addChild( new FilterPlug( "out", Gaffer::Plug::Out, Plug::Default & ( ~Plug::Cacheable ) ) );
 }
 
 Filter::~Filter()
@@ -68,24 +69,14 @@ const Gaffer::BoolPlug *Filter::enabledPlug() const
 	return getChild<Gaffer::BoolPlug>( g_firstPlugIndex );
 }
 
-Gaffer::IntPlug *Filter::outPlug()
+FilterPlug *Filter::outPlug()
 {
-	return getChild<Gaffer::IntPlug>( g_firstPlugIndex + 1 );
+	return getChild<FilterPlug>( g_firstPlugIndex + 1 );
 }
 
-const Gaffer::IntPlug *Filter::outPlug() const
+const FilterPlug *Filter::outPlug() const
 {
-	return getChild<Gaffer::IntPlug>( g_firstPlugIndex + 1 );
-}
-
-Gaffer::IntPlug *Filter::matchPlug()
-{
-	return outPlug();
-}
-
-const Gaffer::IntPlug *Filter::matchPlug() const
-{
-	return outPlug();
+	return getChild<FilterPlug>( g_firstPlugIndex + 1 );
 }
 
 void Filter::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
@@ -142,9 +133,19 @@ void Filter::compute( ValuePlug *output, const Context *context ) const
 		{
 			match = computeMatch( getInputScene( context ), context );
 		}
-		static_cast<IntPlug *>( output )->setValue( match );
+		static_cast<FilterPlug *>( output )->setValue( match );
 		return;
 	}
 
 	ComputeNode::compute( output, context );
+}
+
+void Filter::hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	/// \todo See comments in hash() method.
+}
+
+unsigned Filter::computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const
+{
+	return NoMatch;
 }

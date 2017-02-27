@@ -41,6 +41,7 @@
 #include "boost/bind.hpp"
 #include "boost/graph/adjacency_list.hpp"
 #include "boost/graph/topological_sort.hpp"
+#include "boost/unordered_map.hpp"
 
 #include "IECore/Exception.h"
 
@@ -49,6 +50,7 @@
 #include "Gaffer/Action.h"
 #include "Gaffer/ScriptNode.h"
 #include "Gaffer/Metadata.h"
+#include "Gaffer/DownstreamIterator.h"
 
 using namespace boost;
 using namespace Gaffer;
@@ -125,7 +127,14 @@ bool Plug::acceptsChild( const GraphComponent *potentialChild ) const
 	{
 		return false;
 	}
-	return p->direction()==direction();
+	/// \todo Having children of a different direction is useful,
+	/// but we're currently only allowing it if the parent doesn't
+	/// accept inputs. Figure out the correct logic for propagating
+	/// connections from parents to children (and vice versa), and
+	/// free things up to always allow differing directions. Should
+	/// a child with a different direction be connected in the
+	/// opposite direction?
+	return p->direction() == direction() || !getFlags( AcceptsInputs );
 }
 
 bool Plug::acceptsParent( const GraphComponent *potentialParent ) const
@@ -174,11 +183,25 @@ void Plug::setFlags( unsigned flags )
 		throw IECore::Exception( "Output plug cannot be read only" );
 	}
 
-	m_flags = flags;
-
-	if( Node *n = node() )
+	if( !refCount() )
 	{
-		n->plugFlagsChangedSignal()( this );
+		// No references to us - chances are we're being called
+		// from the constructor. We can't implement undo (if we
+		// have no references, we have no ScriptNode ancestor),
+		// and Action::enact will add and remove a reference and
+		// cause our premature destruction. Just set the flags
+		// directly.
+		setFlagsInternal( flags );
+	}
+	else
+	{
+		// We have references to us, so should implement things
+		// in an undoable manner.
+		Action::enact(
+			this,
+			boost::bind( &Plug::setFlagsInternal, this, flags ),
+			boost::bind( &Plug::setFlagsInternal, this, m_flags )
+		);
 	}
 }
 
@@ -187,7 +210,102 @@ void Plug::setFlags( unsigned flags, bool enable )
 	setFlags( (m_flags & ~flags) | ( enable ? flags : 0 ) );
 }
 
+void Plug::setFlagsInternal( unsigned flags )
+{
+	m_flags = flags;
+
+	if( Node *n = node() )
+	{
+		n->plugFlagsChangedSignal()( this );
+	}
+}
+
+// The implementation of acceptsInputInternal() checks
+// that the output plugs of a plug also accept the potential
+// input. This can yield performance linear in the number
+// of downstream connections, which is acceptable. However,
+// it also calls `Node::acceptsInput()`, which can lead to
+// greater complexity and unacceptable performance where an
+// upstream `acceptsInput()` call triggers multiple identical
+// downstream calls - see `GafferTest.SwitchTest.testAcceptsInputPerformance()`
+// for a particularly bad example. To avoid this problem, we
+// use a simple cache of results from `acceptsInputInternal()`,
+// which persists only for the duration of the outermost
+// `acceptsInput()` call.
+class Plug::AcceptsInputCache
+{
+
+	private :
+
+		struct ThreadData;
+		typedef std::pair<const Plug *, const Plug *> PlugPair;
+		typedef boost::unordered_map<PlugPair, bool> ResultMap;
+
+	public :
+
+		class Accessor
+		{
+
+			public :
+
+				Accessor( const Plug *plug, const Plug *input )
+					:	m_threadData( g_threadData.local() )
+				{
+					++m_threadData.depth;
+					std::pair<ResultMap::iterator, bool> i = m_threadData.cache.insert(
+						ResultMap::value_type( PlugPair( plug, input ), false )
+					);
+					if( i.second )
+					{
+						i.first->second = plug->acceptsInputInternal( input );
+					}
+					m_result = i.first->second;
+				}
+
+				~Accessor()
+				{
+					if( --m_threadData.depth == 0 )
+					{
+						// Outermost acceptsInput() call is
+						// completing, so we clear the cache.
+						m_threadData.cache.clear();
+					}
+				}
+
+				bool get() const
+				{
+					return m_result;
+				}
+
+			private :
+
+				bool m_result;
+				ThreadData &m_threadData;
+
+		};
+
+	private :
+
+		struct ThreadData
+		{
+			ThreadData() : depth( 0 ) {}
+			int depth;
+			ResultMap cache;
+		};
+
+		static tbb::enumerable_thread_specific<ThreadData> g_threadData;
+
+};
+
+tbb::enumerable_thread_specific<Plug::AcceptsInputCache::ThreadData> Plug::AcceptsInputCache::g_threadData;
+
 bool Plug::acceptsInput( const Plug *input ) const
+{
+	AcceptsInputCache::Accessor accessor( this, input );
+	return accessor.get();
+}
+
+bool Plug::acceptsInputInternal( const Plug *input ) const
 {
 	if( !getFlags( AcceptsInputs ) || getFlags( ReadOnly ) )
 	{
@@ -199,6 +317,19 @@ bool Plug::acceptsInput( const Plug *input ) const
 		return false;
 	}
 
+	// We should always accept a disconnection - how else could undo work?
+	if( !input )
+	{
+		return true;
+	}
+
+	// If we accepted it previously, we can't change our minds now.
+	if( input == getInput<Plug>() )
+	{
+		return true;
+	}
+
+	// Give the node a say.
 	if( const Node *n = node() )
 	{
 		if( !n->acceptsInput( this, input ) )
@@ -207,6 +338,8 @@ bool Plug::acceptsInput( const Plug *input ) const
 		}
 	}
 
+	// Give our outputs a chance to deny inputs they wouldn't accept themselves,
+	// because an input to us is indirectly an input to them.
 	for( OutputContainer::const_iterator it=m_outputs.begin(), eIt=m_outputs.end(); it!=eIt; ++it )
 	{
 		if( !(*it)->acceptsInput( input ) )
@@ -215,18 +348,16 @@ bool Plug::acceptsInput( const Plug *input ) const
 		}
 	}
 
-	if( input )
+	// Make sure our children are happy to accept the equivalent child inputs.
+	if( children().size() > input->children().size() )
 	{
-		if( children().size() > input->children().size() )
+		return false;
+	}
+	for( PlugIterator it1( this ), it2( input ); !it1.done(); ++it1, ++it2 )
+	{
+		if( !( *it1 )->acceptsInput( it2->get() ) )
 		{
 			return false;
-		}
-		for( PlugIterator it1( this ), it2( input ); it1!=it1.end(); ++it1, ++it2 )
-		{
-			if( !( *it1 )->acceptsInput( it2->get() ) )
-			{
-				return false;
-			}
 		}
 	}
 
@@ -265,14 +396,14 @@ void Plug::setInput( PlugPtr input, bool setChildInputs, bool updateParentInput 
 	{
 		if( !input )
 		{
-			for( PlugIterator it( this ); it!=it.end(); ++it )
+			for( PlugIterator it( this ); !it.done(); ++it )
 			{
 				(*it)->setInput( NULL, /* setChildInputs = */ true, /* updateParentInput = */ false );
 			}
 		}
 		else
 		{
-			for( PlugIterator it1( this ), it2( input.get() ); it1!=it1.end(); ++it1, ++it2 )
+			for( PlugIterator it1( this ), it2( input.get() ); !it1.done(); ++it1, ++it2 )
 			{
 				(*it1)->setInput( *it2, /* setChildInputs = */ true, /* updateParentInput = */ false );
 			}
@@ -325,12 +456,29 @@ void Plug::setInputInternal( PlugPtr input, bool emit )
 	}
 	if( emit )
 	{
-		Node *n = node();
-		if( n )
-		{
-			n->plugInputChangedSignal()( this );
-		}
+		// We must emit inputChanged prior to propagating
+		// dirtiness, because inputChanged slots may be
+		// used to rewire the graph, and we want to emit
+		// plugDirtied only after all the rewiring is done.
+		emitInputChanged();
 		propagateDirtiness( this );
+	}
+}
+
+void Plug::emitInputChanged()
+{
+	Node *n = node();
+	if( n )
+	{
+		n->plugInputChangedSignal()( this );
+	}
+
+	// Take a copy of the outputs, owning a reference - because who
+	// knows what will be added and removed by the connected slots.
+	std::vector<PlugPtr> o( outputs().begin(), outputs().end() );
+	for( std::vector<PlugPtr>::const_iterator it=o.begin(), eIt=o.end(); it!=eIt; ++it )
+	{
+		(*it)->emitInputChanged();
 	}
 }
 
@@ -370,8 +518,8 @@ void Plug::updateInputFromChildInputs( Plug *checkFirst )
 		return;
 	}
 
-	Plug *commonParent = input->parent<Plug>();
-	if( !acceptsInput( commonParent ) )
+	Plug *candidateInput = input->parent<Plug>();
+	if( !acceptsInput( candidateInput ) )
 	{
 		// if we're never going to accept the candidate input anyway, then
 		// don't even bother checking to see if all the candidate's children
@@ -380,17 +528,16 @@ void Plug::updateInputFromChildInputs( Plug *checkFirst )
 		return;
 	}
 
-	for( PlugIterator it( this ); it!=it.end(); ++it )
+	for( PlugIterator it1( this ), it2( candidateInput ); !it1.done(); ++it1, ++it2 )
 	{
-		input = (*it)->getInput<Plug>();
-		if( !input || input->parent<Plug>()!=commonParent )
+		if( (*it1)->getInput<Plug>() != it2->get() )
 		{
 			setInput( NULL, /* setChildInputs = */ false, /* updateParentInput = */ true );
 			return;
 		}
 	}
 
-	setInput( commonParent, /* setChildInputs = */ false, /* updateParentInput = */ true );
+	setInput( candidateInput, /* setChildInputs = */ false, /* updateParentInput = */ true );
 }
 
 void Plug::removeOutputs()
@@ -410,7 +557,7 @@ const Plug::OutputContainer &Plug::outputs() const
 PlugPtr Plug::createCounterpart( const std::string &name, Direction direction ) const
 {
 	PlugPtr result = new Plug( name, direction, getFlags() );
-	for( PlugIterator it( this ); it != it.end(); ++it )
+	for( PlugIterator it( this ); !it.done(); ++it )
 	{
 		result->addChild( (*it)->createCounterpart( (*it)->getName(), direction ) );
 	}
@@ -536,7 +683,7 @@ void Plug::propagateDirtinessForParentChange( Plug *plugToDirty )
 	// find them, propagating dirtiness at the leaves.
 	if( plugToDirty->children().size() )
 	{
-		for( PlugIterator it( plugToDirty ); it != it.end(); ++it )
+		for( PlugIterator it( plugToDirty ); !it.done(); ++it )
 		{
 			propagateDirtinessForParentChange( it->get() );
 		}
@@ -570,15 +717,42 @@ class Plug::DirtyPlugs
 	public :
 
 		DirtyPlugs()
-			:	m_scopeCount( 0 ), m_clearing( false )
+			:	m_scopeCount( 0 ), m_emitting( false )
 		{
 		}
 
 		void insert( Plug *plugToDirty )
 		{
-			if( !m_clearing ) // see comment in clear()
+			if( m_emitting ) // see comment in emit()
 			{
-				insertInternal( plugToDirty );
+				return;
+			}
+
+			if( !insertVertex( plugToDirty ).second )
+			{
+				// Previously inserted, so we'll already
+				// have visited the dependents.
+				return;
+			}
+
+			for( DownstreamIterator it( plugToDirty ); !it.done(); ++it )
+			{
+				InsertedVertex v = insertVertex( &*it );
+				if( !it->getFlags( Plug::AcceptsDependencyCycles ) )
+				{
+					add_edge(
+						v.first,
+						insertVertex( it.upstream() ).first,
+						m_graph
+					);
+				}
+
+				if( !v.second )
+				{
+					// Already visited this plug by another path,
+					// so we can prune the iteration.
+					it.prune();
+				}
 			}
 		}
 
@@ -592,10 +766,9 @@ class Plug::DirtyPlugs
 			assert( m_scopeCount );
 			if( --m_scopeCount == 0 )
 			{
-				if( !m_clearing ) // see comment in clear()
+				if( !m_emitting ) // see comment in emit()
 				{
 					emit();
-					clear();
 				}
 			}
 		}
@@ -620,125 +793,89 @@ class Plug::DirtyPlugs
 
 		typedef std::map<const Plug *, VertexDescriptor> PlugMap;
 
-		// Inserts a vertex representing plugToDirty into the graph, and
-		// then inserts all affected plugs.
-		VertexDescriptor insertInternal( Plug *plugToDirty )
+		// Equivalent to the return type for map::insert - the first
+		// field is the vertex descriptor, and the second field is
+		// false if the vertex was already there, true if it was
+		// inserted.
+		typedef std::pair<VertexDescriptor, bool> InsertedVertex;
+
+		InsertedVertex insertVertex( const Plug *plug )
 		{
 			// We need to hold a reference to the plug, because otherwise
 			// it might be deleted between now and emit(). But if there is
 			// no reference yet, the plug is still being constructed, and
-			// we'd end up deleting it in clear() since we'd have sole
+			// we'd end up deleting it in emit() since we'd have sole
 			// ownership. Nobody wants that. If we had weak pointers, this
 			// would make for an ideal use.
-			assert( plugToDirty->refCount() );
+			assert( plug->refCount() );
 
-			// If we've inserted this one before, then early out. There's
-			// no point repeating the propagation all over again, and our
-			// Graph isn't designed to have duplicate edges anyway.
-			PlugMap::const_iterator it = m_plugs.find( plugToDirty );
+			PlugMap::const_iterator it = m_plugs.find( plug );
 			if( it != m_plugs.end() )
 			{
-				return it->second;
+				return InsertedVertex( it->second, false );
 			}
 
-			// Insert a vertex for this plug.
 			VertexDescriptor result = add_vertex( m_graph );
-			m_graph[result] = plugToDirty;
-			m_plugs[plugToDirty] = result;
+			m_graph[result] = const_cast<Plug *>( plug );
+			m_plugs[plug] = result;
 
-			// Insert all ancestor plugs.
-			Plug *child = plugToDirty;
-			VertexDescriptor childVertex = result;
-			while( Plug *parent = child->parent<Plug>() )
+			// Insert parent plug.
+			if( const Plug *parent = plug->parent<Plug>() )
 			{
-				if( !parent->refCount() )
+				if( parent->refCount() )
+				{
+					VertexDescriptor parentVertex = insertVertex( parent ).first;
+					add_edge( parentVertex, result, m_graph );
+				}
+				else
 				{
 					// We can end up here when constructing a SplinePlug,
 					// because it calls setValue() in its constructor.
 					// We don't want to increment the reference count on
 					// an in-construction plug, because then we'll destroy
-					// it in clear(). And there's no point signalling dirtiness
+					// it in emit(). And there's no point signalling dirtiness
 					// because the plug has no parent and therefore can have
 					// no observers.
-					break;
-				}
-
-				VertexDescriptor parentVertex = insertInternal( parent );
-				add_edge( parentVertex, childVertex, m_graph );
-
-				child = parent;
-				childVertex = parentVertex;
-			}
-
-			// Propagate dirtiness to output plugs and affected plugs.
-			// We only propagate dirtiness along leaf level plugs, because
-			// they are the only plugs which can be the target of the affects(),
-			// and compute() methods. We must handle any exceptions thrown by
-			// DependencyNode::affects() so that we don't leave the graph in
-			// an unexpected state - propagateDirtiness() is called in the middle
-			// of addChild(), setInput() and setValue() methods, and we want those
-			// to succeed at all costs.
-			if( !plugToDirty->isInstanceOf( (IECore::TypeId)CompoundPlugTypeId ) )
-			{
-				for( Plug::OutputContainer::const_iterator it=plugToDirty->outputs().begin(), eIt=plugToDirty->outputs().end(); it!=eIt; ++it )
-				{
-					VertexDescriptor outputVertex = insertInternal( const_cast<Plug *>( *it ) );
-					add_edge( outputVertex, result, m_graph );
-				}
-
-				const DependencyNode *dependencyNode = plugToDirty->ancestor<DependencyNode>();
-				if( dependencyNode )
-				{
-					DependencyNode::AffectedPlugsContainer affected;
-					try
-					{
-						dependencyNode->affects( plugToDirty, affected );
-					}
-					catch( const std::exception &e )
-					{
-						IECore::msg(
-							IECore::Msg::Error,
-							dependencyNode->relativeName( dependencyNode->scriptNode() ) + "::affects()",
-							e.what()
-						);
-					}
-					catch( ... )
-					{
-						IECore::msg(
-							IECore::Msg::Error,
-							dependencyNode->relativeName( dependencyNode->scriptNode() ) + "::affects()",
-							"Unknown exception"
-						);
-					}
-
-					for( DependencyNode::AffectedPlugsContainer::const_iterator it=affected.begin(); it!=affected.end(); it++ )
-					{
-						if( ( *it )->isInstanceOf( (IECore::TypeId)Gaffer::CompoundPlugTypeId ) )
-						{
-							// DependencyNode::affects() implementations are only allowed to place leaf plugs in the outputs,
-							// so we helpfully report any mistakes.
-							IECore::msg(
-								IECore::Msg::Error,
-								dependencyNode->relativeName( dependencyNode->scriptNode() ) + "::affects()",
-								"Non-leaf plug " + (*it)->relativeName( dependencyNode ) + " returned by affects()"
-							);
-							continue;
-						}
-						// cast is ok - AffectedPlugsContainer only holds const pointers so that
-						// affects() can be const to discourage implementations from having side effects.
-						VertexDescriptor affectedVertex = insertInternal( const_cast<Plug *>( *it ) );
-						add_edge( affectedVertex, result, m_graph );
-					}
 				}
 			}
 
-			return result;
+			return InsertedVertex( result, true );
 		}
 
 		void emit()
 		{
+			// Because we hold a reference to the plugs via m_graph,
+			// we may be the last owner. This means that when we clear
+			// the graph below, those plugs may be destroyed, which can
+			// trigger another dirty propagation as their child plugs are
+			// removed etc.
+			//
+			// Additionally, emitting plugDirtiedSignal() can cause
+			// ill-behaved code to trigger another dirty propagation
+			// phase while we're emitting this one. This is explicitly
+			// disallowed in the documentation for the Node class, but
+			// unfortunately we can't control what the python interpreter
+			// does - entering python via plugDirtiedSignal() can
+			// trigger a garbage collection which might delete plugs
+			// and trigger dirty propagation again as their children
+			// and inputs are removed.
+			//
+			// We use the m_emitting flag to disable these unwanted
+			// secondary propagations during emit(), since they're not
+			// needed, and can cause crashes.
+
+			ScopedAssignment<bool> scopedAssignment( m_emitting, true );
+
 			std::vector<VertexDescriptor> sorted;
-			topological_sort( m_graph, std::back_inserter( sorted ) );
+			try
+			{
+				topological_sort( m_graph, std::back_inserter( sorted ) );
+			}
+			catch( const std::exception &e )
+			{
+				IECore::msg( IECore::Msg::Error, "Plug dirty propagation", e.what() );
+			}
+
 			for( std::vector<VertexDescriptor>::const_iterator it = sorted.begin(), eIt = sorted.end(); it != eIt; ++it )
 			{
 				Plug *plug = m_graph[*it].get();
@@ -748,20 +885,7 @@ class Plug::DirtyPlugs
 					node->plugDirtiedSignal()( plug );
 				}
 			}
-		}
 
-		void clear()
-		{
-			// Because we hold a reference to the plugs via the graph,
-			// we may be the last owner. This means that when we call
-			// clear, those plugs may be destroyed, which can trigger
-			// a dirty propagation as their child plugs are removed
-			// etc. We use the m_clearing flag to disable this propagation,
-			// since it's not needed, and can cause crashes. In an ideal
-			// world we'd have weak pointers, and could use those in
-			// the graph, so that we'd have no ownership of the plugs at
-			// all.
-			ScopedAssignment<bool> scopedAssignment( m_clearing, true );
 			m_graph.clear();
 			m_plugs.clear();
 		}
@@ -769,7 +893,7 @@ class Plug::DirtyPlugs
 		Graph m_graph;
 		PlugMap m_plugs;
 		size_t m_scopeCount;
-		bool m_clearing;
+		bool m_emitting;
 
 };
 

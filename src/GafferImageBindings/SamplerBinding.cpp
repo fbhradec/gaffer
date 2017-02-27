@@ -32,18 +32,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 #include "boost/python.hpp"
-#include "boost/format.hpp"
 
-#include "GafferImage/Filter.h"
-#include "GafferBindings/SignalBinding.h"
-#include "GafferBindings/Serialisation.h"
 #include "GafferImageBindings/SamplerBinding.h"
 
 using namespace boost::python;
-using namespace IECore;
-using namespace GafferBindings;
 using namespace GafferImage;
 
 namespace GafferImageBindings
@@ -51,20 +44,20 @@ namespace GafferImageBindings
 
 void bindSampler()
 {
-	enum_<Sampler::BoundingMode>( "BoundingMode" )
-		.value( "Black", Sampler::Black )
-		.value( "Clamp", Sampler::Clamp )
-	;
 
-	class_<Sampler>( "Sampler",
-			init< const GafferImage::ImagePlug *, const std::string &, const Imath::Box2i &, ConstFilterPtr, Sampler::BoundingMode >
-			(
-				(
-					arg( "boundingMode" ) = Sampler::Black
-				)
-			)
-		)
-		.def(
+	class_<Sampler> cls( "Sampler", no_init );
+
+	{
+		// Must bind the BoundingMode first, so that it can be used in the default
+		// arguments to the init methods.
+		scope s = cls;
+		enum_<Sampler::BoundingMode>( "BoundingMode" )
+			.value( "Black", Sampler::Black )
+			.value( "Clamp", Sampler::Clamp )
+		;
+	}
+
+	cls.def(
 			init<const GafferImage::ImagePlug *, const std::string &, const Imath::Box2i &, Sampler::BoundingMode>
 			(
 				(
@@ -72,13 +65,11 @@ void bindSampler()
 				)
 			)
 		)
-		.def( "setSampleWindow", &Sampler::setSampleWindow )
-		.def( "getSampleWindow", &Sampler::getSampleWindow )
-		.def( "hash", &Sampler::hash )
-		.def( "sample", (float (Sampler::*)( int, int ) )&Sampler::sample )
+		.def( "hash", (IECore::MurmurHash (Sampler::*)() const)&Sampler::hash )
+		.def( "hash", (void (Sampler::*)( IECore::MurmurHash & ) const)&Sampler::hash )
 		.def( "sample", (float (Sampler::*)( float, float ) )&Sampler::sample )
+		.def( "sample", (float (Sampler::*)( int, int ) )&Sampler::sample )
 	;
 }
 
 }; // namespace IECorePython
-

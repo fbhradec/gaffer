@@ -34,7 +34,8 @@
 #
 ##########################################################################
 
-import IECore
+import functools
+
 import Gaffer
 import GafferUI
 
@@ -141,6 +142,8 @@ Gaffer.Metadata.registerNode(
 			and float range plugs.
 			""",
 
+			"plugValueWidget:type", "",
+
 		],
 
 		"outColor" : [
@@ -151,12 +154,13 @@ Gaffer.Metadata.registerNode(
 			colour, hue, saturation and value plugs.
 			""",
 
+			"plugValueWidget:type", "GafferUI.RandomUI._RandomColorPlugValueWidget",
+
 		]
 
 	}
 
 )
-
 
 # PlugValueWidget registrations
 ##########################################################################
@@ -186,9 +190,6 @@ class _RandomColorPlugValueWidget( GafferUI.PlugValueWidget ) :
 			for y in range( 0, gridSize.y ) :
 				self.__grid[x,y].setColor( node.randomColor( seed ) )
 				seed += 1
-
-GafferUI.PlugValueWidget.registerCreator( Gaffer.Random, "outColor", _RandomColorPlugValueWidget )
-GafferUI.PlugValueWidget.registerCreator( Gaffer.Random, "outFloat", None )
 
 # PlugValueWidget popup menu
 ##########################################################################
@@ -223,6 +224,12 @@ def __popupMenu( menuDefinition, plugValueWidget ) :
 	input = plug.getInput()
 	if input is None and plugValueWidget._editable() :
 		menuDefinition.prepend( "/RandomiseDivider", { "divider" : True } )
-		menuDefinition.prepend( "/Randomise...", { "command" : IECore.curry( __createRandom, plug ) } )
+		menuDefinition.prepend(
+			"/Randomise...",
+			{
+				"command" : functools.partial( __createRandom, plug ),
+				"active" : not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ),
+			}
+		)
 
 __popupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __popupMenu )

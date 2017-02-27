@@ -35,6 +35,8 @@
 ##########################################################################
 
 import os
+import shlex
+import subprocess32 as subprocess
 
 import IECore
 import IECoreRI
@@ -61,7 +63,7 @@ class RenderManRender( GafferScene.ExecutableRender ) :
 				"ribFileName",
 			)
 		)
-		
+
 		self.addChild(
 			Gaffer.StringPlug(
 				"command",
@@ -69,9 +71,25 @@ class RenderManRender( GafferScene.ExecutableRender ) :
 			)
 		)
 
+	def execute( self ) :
+
+		GafferScene.ExecutableRender.execute( self )
+
+		if self["mode"].getValue() != "render" :
+			return
+
+		command = self["command"].getValue().strip()
+		if not command :
+			return
+
+		args = shlex.split( command )
+		args.append( self["ribFileName"].getValue() )
+
+		subprocess.check_call( args )
+
 	def _createRenderer( self ) :
 
-		fileName = self.__fileName()
+		fileName = self["ribFileName"].getValue()
 		directory = os.path.dirname( fileName )
 		if directory :
 			try :
@@ -90,7 +108,7 @@ class RenderManRender( GafferScene.ExecutableRender ) :
 
 	def _outputWorldProcedural( self, scenePlug, renderer ) :
 
-		# enable all visibility types - maybe this is something which'll
+		# Enable all visibility types - maybe this is something which'll
 		# get dealt with using attributes at the root level at some point.
 		renderer.setAttribute( "ri:visibility:camera", IECore.BoolData( True ) )
 		renderer.setAttribute( "ri:visibility:transmission", IECore.BoolData( True ) )
@@ -98,47 +116,45 @@ class RenderManRender( GafferScene.ExecutableRender ) :
 		renderer.setAttribute( "ri:visibility:specular", IECore.BoolData( True ) )
 		renderer.setAttribute( "ri:visibility:photon", IECore.BoolData( True ) )
 
+		# Create the ScriptProcedural that we want to load at render time.
 		scriptNode = scenePlug.node().scriptNode()
+		scriptContext = scriptNode.context()
+		currentContext = Gaffer.Context.current()
 
-		pythonString = "IECoreRI.executeProcedural( 'gaffer/script', 1, [ '-fileName', '%s', '-node', '%s', '-frame', '%f' ] )" % (
-			scriptNode["fileName"].getValue(),
-			scenePlug.node().relativeName( scriptNode ),
-			Gaffer.Context.current().getFrame()
-		)
+		procedural = GafferScene.ScriptProcedural()
+		procedural["fileName"].setTypedValue( scriptNode["fileName"].getValue() )
+		procedural["node"].setTypedValue( scenePlug.node().relativeName( scriptNode ) )
+		procedural["frame"].setNumericValue( currentContext.getFrame() )
 
-		dynamicLoadCommand = "Procedural \"DynamicLoad\" [ \"iePython\" \"%s\" ] [ -1e30 1e30 -1e30 1e30 -1e30 1e30 ]\n" % pythonString
+		# In practice when using the raytrace hider, 3delight always expands
+		# all procedurals before rendering begins, so computing bounds is
+		# a waste of time.
+		globals = scenePlug["globals"].getValue()
+		computeBound = True
+		with IECore.IgnoredExceptions( KeyError ) :
+			if globals["option:ri:hider"].value == "raytrace" :
+				computeBound = False
+		procedural["computeBound"].setTypedValue( computeBound )
 
-		renderer.command(
-			"ri:archiveRecord",
+		contextArgs = IECore.StringVectorData()
+		for entry in [ k for k in currentContext.keys() if k != "frame" and not k.startswith( "ui:" ) ] :
+			if entry not in scriptContext.keys() or currentContext[entry] != scriptContext[entry] :
+				contextArgs.extend( [
+					"-" + entry,
+					 repr( currentContext[entry] )
+				] )
+
+		procedural["context"].setValue( contextArgs )
+
+		# Output an ExternalProcedural that will load the ScriptProcedural.
+		pythonString = "IECoreRI.executeProcedural( \"gaffer/script\", 1, %s )" % str( IECore.ParameterParser().serialise( procedural.parameters(), procedural.parameters().getValue() ) )
+		externalProcedural = IECore.Renderer.ExternalProcedural(
+			"iePython",
+			IECore.Box3f( IECore.V3f( -1e30 ), IECore.V3f( 1e30 ) ) if computeBound else IECore.Renderer.Procedural.noBound,
 			{
-				"type" : "verbatim",
-				"record" : dynamicLoadCommand
+				"ri:data" : pythonString,
 			}
 		)
-
-	def _command( self ) :
-
-		if self["mode"].getValue() != "render" :
-			return ""
-		
-		result = self["command"].getValue()
-		result = Gaffer.Context.current().substitute( result ) ## \todo See __fileName()
-		result = result.strip()
-		if result == "" :
-			return
-		
-		result += " '" + self.__fileName() + "'"
-		
-		return result
-		
-	def __fileName( self ) :
-
-		result = self["ribFileName"].getValue()
-		# because execute() isn't called inside a compute(), we
-		# don't get string expansions automatically, and have to
-		# do them ourselves.
-		## \todo Can we improve this situation?
-		result = Gaffer.Context.current().substitute( result )
-		return result
+		renderer.procedural( externalProcedural )
 
 IECore.registerRunTimeTyped( RenderManRender, typeName = "GafferRenderMan::RenderManRender" )

@@ -52,7 +52,7 @@ def appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition ) :
 		{
 			"checkBox" : __getBookmarked( node ),
 			"command" : functools.partial( __setBookmarked, node ),
-			"active" : node.ancestor( Gaffer.Reference ) is None,
+			"active" : not Gaffer.MetadataAlgo.readOnly( node ),
 		}
 	)
 
@@ -61,7 +61,7 @@ def appendPlugContextMenuDefinitions( nodeGraph, plug, menuDefinition ) :
 	parent = nodeGraph.graphGadget().getRoot()
 	dividerAdded = False
 	for bookmark in __bookmarks( parent ) :
-		
+
 		nodeGadget = nodeGraph.graphGadget().nodeGadget( bookmark )
 		if nodeGadget is None :
 			continue
@@ -89,7 +89,7 @@ def appendPlugContextMenuDefinitions( nodeGraph, plug, menuDefinition ) :
 				"/Connect Bookmark/" + label,
 				{
 					"command" : functools.partial( __connect, inPlug, outPlug ),
-					"active" : not outPlug.isSame( inPlug.getInput() )
+					"active" : not outPlug.isSame( inPlug.getInput() ) and not Gaffer.MetadataAlgo.readOnly( inPlug )
 				}
 			)
 
@@ -99,12 +99,12 @@ def appendPlugContextMenuDefinitions( nodeGraph, plug, menuDefinition ) :
 
 def __getBookmarked( node ) :
 
-	return Gaffer.Metadata.nodeValue( node, "graphBookmarks:bookmarked" ) or False
+	return Gaffer.Metadata.value( node, "graphBookmarks:bookmarked" ) or False
 
 def __setBookmarked( node, bookmarked ) :
 
 	with Gaffer.UndoContext( node.scriptNode() ) :
-		Gaffer.Metadata.registerNodeValue( node, "graphBookmarks:bookmarked", bookmarked )
+		Gaffer.Metadata.registerValue( node, "graphBookmarks:bookmarked", bookmarked )
 
 def __bookmarks( parent ) :
 

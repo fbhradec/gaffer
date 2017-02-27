@@ -39,6 +39,7 @@
 #include "Gaffer/ScriptNode.h"
 
 #include "GafferImage/ImageNode.h"
+#include "GafferImage/FormatPlug.h"
 
 using namespace std;
 using namespace Imath;
@@ -89,7 +90,7 @@ bool ImageNode::enabled() const
 
 void ImageNode::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	const ImagePlug *imagePlug = output->ancestor<ImagePlug>();
+	const ImagePlug *imagePlug = output->parent<ImagePlug>();
 	if( imagePlug && enabled() )
 	{
 		// We don't call ComputeNode::hash() immediately here, because for subclasses which
@@ -159,17 +160,20 @@ void ImageNode::hashChannelData( const GafferImage::ImagePlug *parent, const Gaf
 
 void ImageNode::parentChanging( Gaffer::GraphComponent *newParent )
 {
-	// Initialise the default format and setup any format knobs that are on this node.
-	if( newParent )
+	ComputeNode::parentChanging( newParent );
+
+	// Set up the default format plug.
+	Node *parentNode = runTimeCast<Node>( newParent );
+	if( !parentNode )
 	{
-		if ( static_cast<Gaffer::TypeId>(newParent->typeId()) == ScriptNodeTypeId )
-		{
-			ScriptNode *scriptNode =  static_cast<Gaffer::ScriptNode*>( newParent );
-			Format::addDefaultFormatPlug( scriptNode );
-		}
+		return;
 	}
 
-	ComputeNode::parentChanging( newParent );
+	ScriptNode *scriptNode = parentNode->scriptNode();
+	if( scriptNode )
+	{
+		FormatPlug::acquireDefaultFormatPlug( scriptNode );
+	}
 }
 
 void ImageNode::compute( ValuePlug *output, const Context *context ) const
@@ -194,7 +198,7 @@ void ImageNode::compute( ValuePlug *output, const Context *context ) const
 
 	if( output == imagePlug->formatPlug() )
 	{
-		static_cast<FormatPlug *>( output )->setValue(
+		static_cast<AtomicFormatPlug *>( output )->setValue(
 			computeFormat( context, imagePlug )
 		);
 	}
@@ -268,7 +272,7 @@ void ImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outp
 
 	if( input == enabledPlug() )
 	{
-		for( ValuePlugIterator it( outPlug() ); it != it.end(); it++ )
+		for( ValuePlugIterator it( outPlug() ); !it.done(); ++it )
 		{
 			outputs.push_back( it->get() );
 		}

@@ -44,7 +44,7 @@ import GafferTest
 import GafferScene
 import GafferSceneTest
 
-class PathFilterTest( unittest.TestCase ) :
+class PathFilterTest( GafferSceneTest.SceneTestCase ) :
 
 	def testConstruct( self ) :
 
@@ -169,8 +169,7 @@ class PathFilterTest( unittest.TestCase ) :
 		s["f"] = GafferScene.PathFilter()
 
 		s["e"] = Gaffer.Expression()
-		s["e"]["engine"].setValue( "python" )
-		s["e"]["expression"].setValue(
+		s["e"].setExpression(
 			"import IECore\n"
 			"passName = context.get( 'passName', '' )\n"
 			"if passName == 'foreground' :\n"
@@ -207,6 +206,16 @@ class PathFilterTest( unittest.TestCase ) :
 
 		a = f.affects( f["enabled"] )
 		self.assertTrue( f["out"] in a )
+
+	def testEmptyStringMatchesNothing( self ) :
+
+		f = GafferScene.PathFilter()
+		f["paths"].setValue( IECore.StringVectorData( [ "" ] ) )
+
+		with Gaffer.Context() as c :
+
+			c["scene:path"] = IECore.InternedStringVectorData( [ "a" ] )
+			self.assertEqual( f["out"].getValue(), GafferScene.Filter.Result.NoMatch )
 
 if __name__ == "__main__":
 	unittest.main()

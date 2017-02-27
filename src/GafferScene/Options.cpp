@@ -79,6 +79,7 @@ void Options::affects( const Plug *input, AffectedPlugsContainer &outputs ) cons
 void Options::hashProcessedGlobals( const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	optionsPlug()->hash( h );
+	hashPrefix( context, h );
 }
 
 IECore::ConstCompoundObjectPtr Options::computeProcessedGlobals( const Gaffer::Context *context, IECore::ConstCompoundObjectPtr inputGlobals ) const
@@ -96,15 +97,26 @@ IECore::ConstCompoundObjectPtr Options::computeProcessedGlobals( const Gaffer::C
 	// them though!
 	result->members() = inputGlobals->members();
 
+	const std::string prefix = computePrefix( context );
+
 	std::string name;
-	for( CompoundDataPlug::MemberPlugIterator it( p ); it != it.end(); ++it )
+	for( CompoundDataPlug::MemberPlugIterator it( p ); !it.done(); ++it )
 	{
 		IECore::DataPtr d = p->memberDataAndName( it->get(), name );
 		if( d )
 		{
-			result->members()["option:" + name] = d;
+			result->members()[prefix + name] = d;
 		}
 	}
 
 	return result;
+}
+
+void Options::hashPrefix( const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+}
+
+std::string Options::computePrefix( const Gaffer::Context *context ) const
+{
+	return "option:";
 }

@@ -129,14 +129,14 @@ template<typename BaseType>
 void ContextProcessor<BaseType>::appendAffectedPlugs( DependencyNode::AffectedPlugsContainer &outputs ) const
 {
 	Node *n = const_cast<Node *>( static_cast<const Node *>( this ) );
-	for( OutputPlugIterator it( n ); it != it.end(); it++ )
+	for( OutputPlugIterator it( n ); !it.done(); ++it )
 	{
 		const ValuePlug *valuePlug = IECore::runTimeCast<const ValuePlug>( it->get() );
 		if( 0 == valuePlug->getName().string().compare( 0, 3, "out" ) && oppositePlug( valuePlug ) )
 		{
 			if( valuePlug->children().size() )
 			{
-				for( ValuePlugIterator cIt( valuePlug ); cIt != cIt.end(); cIt++ )
+				for( ValuePlugIterator cIt( valuePlug ); !cIt.done(); ++cIt )
 				{
 					outputs.push_back( cIt->get() );
 				}
@@ -157,7 +157,7 @@ void ContextProcessor<BaseType>::hash( const ValuePlug *output, const Context *c
 	{
 		if( enabledPlug()->getValue() )
 		{
-			ContextPtr modifiedContext = new Context( *context );
+			ContextPtr modifiedContext = new Context( *context, Context::Borrowed );
 			processContext( modifiedContext.get() );
 			Context::Scope scopedContext( modifiedContext.get() );
 			h = input->hash();
@@ -180,7 +180,7 @@ void ContextProcessor<BaseType>::compute( ValuePlug *output, const Context *cont
 	{
 		if( enabledPlug()->getValue() )
 		{
-			ContextPtr modifiedContext = new Context( *context );
+			ContextPtr modifiedContext = new Context( *context, Context::Borrowed );
 			processContext( modifiedContext.get() );
 			Context::Scope scopedContext( modifiedContext.get() );
 			output->setFrom( input );
@@ -196,25 +196,64 @@ void ContextProcessor<BaseType>::compute( ValuePlug *output, const Context *cont
 }
 
 template<typename BaseType>
+const ValuePlug *ContextProcessor<BaseType>::correspondingDescendant( const ValuePlug *plug, const ValuePlug *plugAncestor, const ValuePlug *oppositeAncestor )
+{
+	// this method recursively computes oppositeAncestor->descendant( plug->relativeName( plugAncestor ) ).
+	// ie it finds the relative path from plugAncestor to plug, and follows it from oppositeAncestor.
+
+	if( plug == plugAncestor )
+	{
+		// we're already at plugAncestor, so the relative path has zero length
+		// and we can return oppositeAncestor:
+		return oppositeAncestor;
+	}
+
+	// now we find the corresponding descendant of plug->parent(), and
+	// return its child with the same name as "plug" (if either of those things exist):
+
+	// get parent of this plug:
+	const ValuePlug *plugParent = plug->parent<ValuePlug>();
+	if( !plugParent )
+	{
+		// looks like the "plug" we initially called this function with wasn't
+		// a descendant of plugAncestor and we've recursed up into nothing, so
+		// we return NULL:
+		return NULL;
+	}
+
+	// find the corresponding plug for the parent:
+	const ValuePlug *oppositeParent = correspondingDescendant( plugParent, plugAncestor, oppositeAncestor );
+	if( !oppositeParent )
+	{
+		return NULL;
+	}
+
+	// find the child corresponding to "plug"
+	return oppositeParent->getChild<ValuePlug>( plug->getName() );
+}
+
+template<typename BaseType>
 const ValuePlug *ContextProcessor<BaseType>::oppositePlug( const ValuePlug *plug ) const
 {
-	std::string path = plug->relativeName( this );
-	std::string oppositePath;
+	const static IECore::InternedString inName( "in" );
+	const static IECore::InternedString outName( "out" );
 
-	if( 0 == path.compare( 0, 2, "in" ) )
+	const ValuePlug *inPlug = BaseType::template getChild<ValuePlug>( inName );
+	const ValuePlug *outPlug = BaseType::template getChild<ValuePlug>( outName );
+
+	if( !( outPlug && inPlug ) )
 	{
-		oppositePath = "out" + std::string( path, 2 );
-	}
-	else if( 0 == path.compare( 0, 3, "out" ) )
-	{
-		oppositePath = "in" + std::string( path, 3 );
+		return 0;
 	}
 
-	if( oppositePath.size() )
+	if( plug->direction() == Plug::Out )
 	{
-		return BaseType::template descendant<ValuePlug>( oppositePath );
+		return correspondingDescendant( plug, outPlug, inPlug );
 	}
-	return 0;
+	else
+	{
+		return correspondingDescendant( plug, inPlug, outPlug );
+	}
 }
 
 } // namespace Gaffer

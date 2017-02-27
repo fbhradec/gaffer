@@ -35,45 +35,53 @@
 #
 ##########################################################################
 
-import os
 import unittest
 
 import IECore
 
 import Gaffer
 import GafferImage
-import sys
+import GafferImageTest
 
-class ConstantTest( unittest.TestCase ) :
+class ConstantTest( GafferImageTest.ImageTestCase ) :
 
-	def testDefaultFormatHash( self ) :
-		s = Gaffer.ScriptNode()
-		n = GafferImage.Constant()
-		s.addChild( n )
+	def testChannelData( self ) :
 
-		with s.context():
-			h = n["out"].image().hash()
-			n["color"][0].setValue( .5 )
-			n["color"][1].setValue( .1 )
-			n["color"][2].setValue( .8 )
-			h2 = n["out"].image().hash()
-			self.assertNotEqual( h, h2 )
+		constant = GafferImage.Constant()
+		constant["format"].setValue( GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 511 ) ), 1 ) )
+		constant["color"].setValue( IECore.Color4f( 0, 0.25, 0.5, 1 ) )
 
-	def testColourHash( self ) :
-		# Check that the hash changes when the colour does.
-		s = Gaffer.ScriptNode()
-		n = GafferImage.Constant()
-		s.addChild( n )
+		for i, channel in enumerate( [ "R", "G", "B", "A" ] ) :
+			channelData = constant["out"].channelData( channel, IECore.V2i( 0 ) )
+			self.assertEqual( len( channelData ), constant["out"].tileSize() * constant["out"].tileSize() )
+			expectedValue = constant["color"][i].getValue()
+			for value in channelData :
+				self.assertEqual( value, expectedValue )
 
-		with s.context():
-			h = n["out"].image().hash()
-			n["color"][0].setValue( .5 )
-			n["color"][1].setValue( .1 )
-			n["color"][2].setValue( .8 )
-			h2 = n["out"].image().hash()
-			self.assertNotEqual( h, h2 )
+	def testChannelDataHash( self ) :
+
+		# The hash for each individual channel should only
+		# be affected by that particular channel of the colour plug.
+
+		constant = GafferImage.Constant()
+		constant["format"].setValue( GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 511 ) ), 1 ) )
+		constant["color"].setValue( IECore.Color4f( 0 ) )
+
+		channels = [ "R", "G", "B", "A" ]
+		for i, channel in enumerate( channels ) :
+
+			h1 = [ constant["out"].channelDataHash( c, IECore.V2i( 0 ) ) for c in channels ]
+			constant["color"][i].setValue( constant["color"][i].getValue() + .1 )
+			h2 = [ constant["out"].channelDataHash( c, IECore.V2i( 0 ) ) for c in channels ]
+
+			for j in range( 0, len( channels ) ) :
+				if j == i :
+					self.assertNotEqual( h1[j], h2[j] )
+				else :
+					self.assertEqual( h1[j], h2[j] )
 
 	def testFormatHash( self ) :
+
 		# Check that the data hash doesn't change when the format does.
 		c = GafferImage.Constant()
 		c["format"].setValue( GafferImage.Format( 2048, 1156, 1. ) )
@@ -83,6 +91,7 @@ class ConstantTest( unittest.TestCase ) :
 		self.assertEqual( h1, h2 )
 
 	def testTileHashes( self ) :
+
 		# Test that two tiles within the image have the same hash.
 		c = GafferImage.Constant()
 		c["format"].setValue( GafferImage.Format( 2048, 1156, 1. ) )
@@ -91,6 +100,27 @@ class ConstantTest( unittest.TestCase ) :
 		self.assertEqual(
 			c["out"].channelDataHash( "R", IECore.V2i( 0 ) ),
 			c["out"].channelDataHash( "R", IECore.V2i( GafferImage.ImagePlug().tileSize() ) ),
+		)
+
+	def testTileIdentity( self ) :
+
+		c = GafferImage.Constant()
+		c["format"].setValue( GafferImage.Format( 2048, 1156, 1. ) )
+
+		# The channelData() binding returns a copy by default, so we wouldn't
+		# expect two tiles to be referencing the same object.
+		self.assertFalse(
+			c["out"].channelData( "R", IECore.V2i( 0 ) ).isSame(
+				c["out"].channelData( "R", IECore.V2i( GafferImage.ImagePlug.tileSize() ) )
+			)
+		)
+
+		# But behind the scenes we do want them to be the same, so
+		# check that that is the case.
+		self.assertTrue(
+			c["out"].channelData( "R", IECore.V2i( 0 ), _copy = False ).isSame(
+				c["out"].channelData( "R", IECore.V2i( GafferImage.ImagePlug.tileSize() ), _copy = False )
+			)
 		)
 
 	def testEnableBehaviour( self ) :
@@ -120,6 +150,19 @@ class ConstantTest( unittest.TestCase ) :
 		s2.execute( s.serialise() )
 
 		self.assertEqual( s2["c"]["color"].getValue(), IECore.Color4f( 0, 1, 0, 0 ) )
+
+	def testFormatDependencies( self ) :
+
+		c = GafferImage.Constant()
+
+		self.assertEqual(
+			c.affects( c["format"]["displayWindow"]["min"]["x"] ),
+			[ c["out"]["format"], c["out"]["dataWindow"] ],
+		)
+		self.assertEqual(
+			c.affects( c["format"]["pixelAspect"] ),
+			[ c["out"]["format"] ],
+		)
 
 if __name__ == "__main__":
 	unittest.main()

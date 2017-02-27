@@ -53,6 +53,10 @@ def __nodeDescription( node ) :
 	description = node.shaderMetadata( "help" )
 	return description or __defaultDescription
 
+def __nodeUrl( node ) :
+
+	return node.shaderMetadata( "URL" )
+
 def __plugDescription( plug ) :
 
 	return plug.node().parameterMetadata( plug, "help" ) or ""
@@ -64,6 +68,10 @@ def __plugLabel( plug ) :
 def __plugDivider( plug ) :
 
 	return plug.node().parameterMetadata( plug, "divider" ) or False
+
+def __plugPage( plug ) :
+
+	return plug.node().parameterMetadata( plug, "page" ) or None
 
 def __plugPresetNames( plug ) :
 
@@ -109,7 +117,7 @@ __widgetTypes = {
 	"popup" : "GafferUI.PresetsPlugValueWidget",
 	"mapper" : "GafferUI.PresetsPlugValueWidget",
 	"filename" : "GafferUI.PathPlugValueWidget",
-	"null" : "None",
+	"null" : "",
 }
 
 def __plugWidgetType( plug ) :
@@ -118,23 +126,53 @@ def __plugWidgetType( plug ) :
 		plug.node().parameterMetadata( plug, "widget" )
 	)
 
-Gaffer.Metadata.registerNodeDescription( GafferOSL.OSLShader, __nodeDescription )
+def __plugNoduleType( plug ) :
 
-Gaffer.Metadata.registerPlugDescription( GafferOSL.OSLShader, "parameters.*", __plugDescription )
-Gaffer.Metadata.registerPlugValue( GafferOSL.OSLShader, "parameters.*", "label", __plugLabel )
-Gaffer.Metadata.registerPlugValue( GafferOSL.OSLShader, "parameters.*", "divider", __plugDivider )
-Gaffer.Metadata.registerPlugValue( GafferOSL.OSLShader, "parameters.*", "presetNames", __plugPresetNames )
-Gaffer.Metadata.registerPlugValue( GafferOSL.OSLShader, "parameters.*", "presetValues", __plugPresetValues )
-Gaffer.Metadata.registerPlugValue( GafferOSL.OSLShader, "parameters.*", "layout:widgetType", __plugWidgetType )
-
-##########################################################################
-# Nodules
-##########################################################################
+	return "" if plug.node().parameterMetadata( plug, "connectable" ) == 0 else "GafferUI::StandardNodule"
 
 def __outPlugNoduleType( plug ) :
 
 	return "GafferUI::CompoundNodule" if len( plug ) else "GafferUI::StandardNodule"
 
-Gaffer.Metadata.registerPlugValue( GafferOSL.OSLShader, "out", "nodule:type", __outPlugNoduleType )
-Gaffer.Metadata.registerPlugValue( GafferOSL.OSLShader, "out", "compoundNodule:spacing", 0.2 )
-Gaffer.Metadata.registerPlugValue( GafferOSL.OSLShader, "out", "compoundNodule:orientation", "y" )
+def __plugNoduleVisibility( plug ) :
+
+	node = plug.node()
+	visible = node.parameterMetadata( plug, "gafferNoduleLayoutVisible" )
+	if visible is None :
+		visible = node.shaderMetadata( "gafferNoduleLayoutDefaultVisibility" )
+
+	return bool( visible ) if visible is not None else True
+
+Gaffer.Metadata.registerNode(
+
+	GafferOSL.OSLShader,
+
+	"description", __nodeDescription,
+	"documentation:url", __nodeUrl,
+
+	plugs = {
+
+		"parameters.*" : [
+
+			"description", __plugDescription,
+			"label", __plugLabel,
+			"layout:divider", __plugDivider,
+			"layout:section", __plugPage,
+			"presetNames", __plugPresetNames,
+			"presetValues", __plugPresetValues,
+			"plugValueWidget:type", __plugWidgetType,
+			"nodule:type", __plugNoduleType,
+			"noduleLayout:visible", __plugNoduleVisibility,
+
+		],
+
+		"out" : [
+
+			"nodule:type", __outPlugNoduleType,
+			"noduleLayout:spacing", 0.2,
+
+		],
+
+	}
+
+)

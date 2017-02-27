@@ -34,64 +34,43 @@
 
 #include "boost/python.hpp"
 #include "boost/format.hpp"
+#include "boost/lexical_cast.hpp"
 
-#include "Gaffer/ScriptNode.h"
-
-#include "GafferBindings/SignalBinding.h"
 #include "GafferImageBindings/FormatBinding.h"
 
 using namespace boost::python;
-using namespace IECore;
-using namespace Gaffer;
-using namespace GafferBindings;
 using namespace GafferImage;
 
 namespace
 {
 
-struct UnaryFormatSlotCaller
-{
-	boost::signals::detail::unusable operator()( boost::python::object slot, const std::string &s )
-	{
-		try
-		{
-			slot( s );
-		}
-		catch( const error_already_set &e )
-		{
-			PyErr_PrintEx( 0 ); // clears the error status
-		}
-		return boost::signals::detail::unusable();
-	}
-};
-
-boost::python::str defaultFormatContextName()
-{
-	return boost::python::str( Format::defaultFormatContextName.string() );
-}
-
-boost::python::list formatNamesList()
+boost::python::list registeredFormats()
 {
 	std::vector<std::string> names;
-	Format::formatNames( names );
+	Format::registeredFormats( names );
 	boost::python::list result;
-	for( std::vector<std::string>::const_iterator it = names.begin(); it != names.end(); it++ )
+	for( std::vector<std::string>::const_iterator it = names.begin(), eIt = names.end(); it != eIt; ++it )
 	{
 		result.append( *it );
 	}
 	return result;
 }
 
-} // namespace
-
-namespace GafferImageBindings
-{
-
 std::string formatRepr( const GafferImage::Format &format )
 {
 	if ( format.getDisplayWindow().isEmpty() )
 	{
 		return std::string( "GafferImage.Format()" );
+	}
+	else if ( format.getDisplayWindow().min == Imath::V2i( 0 ) )
+	{
+		Imath::Box2i box( format.getDisplayWindow() );
+		return std::string(
+			boost::str( boost::format(
+				"GafferImage.Format( %d, %d, %.3f )" )
+				% box.max.x % box.max.y % format.getPixelAspect()
+			)
+		);
 	}
 	else
 	{
@@ -105,20 +84,30 @@ std::string formatRepr( const GafferImage::Format &format )
 	}
 }
 
-void bindFormat()
+} // namespace
+
+void GafferImageBindings::bindFormat()
 {
-	// Useful function pointers to the overloaded members
-	static const Format &(*registerFormatPtr1)( const Format &, const std::string & ) (&Format::registerFormat);
-	static const Format &(*registerFormatPtr2)( const Format & ) (&Format::registerFormat);
-	static void (*removeFormatPtr1)( const Format & ) (&Format::removeFormat);
-	static void (*removeFormatPtr2)( const std::string & ) (&Format::removeFormat);
-	static void (*setDefaultFormatPtr1)( ScriptNode *scriptNode, const Format & ) (&Format::setDefaultFormat);
-	static void (*setDefaultFormatPtr2)( ScriptNode *scriptNode, const std::string & ) (&Format::setDefaultFormat);
+	class_<Format>( "Format" )
 
-	class_<Format>( "Format", init<int, int, double>() )
-
-		.def( init< const Imath::Box2i &, double >() )
-		.def( init<>() )
+		.def(
+			init<int, int, double>(
+				(
+					boost::python::arg( "width" ),
+					boost::python::arg( "height" ),
+					boost::python::arg( "pixelAspect" ) = 1.0f
+				)
+			)
+		)
+		.def(
+			init<const Imath::Box2i &, double, bool>(
+				(
+					boost::python::arg( "displayWindow" ),
+					boost::python::arg( "pixelAspect" ) = 1.0f,
+					boost::python::arg( "fromEXRSpace" ) = false
+				)
+			)
+		)
 
 		.def( "width", &Format::width )
 		.def( "height", &Format::height )
@@ -127,36 +116,23 @@ void bindFormat()
 		.def( "getDisplayWindow", &Format::getDisplayWindow, return_value_policy<copy_const_reference>() )
 		.def( "setDisplayWindow", &Format::setDisplayWindow )
 
-		.def( "yDownToFormatSpace", ( int (Format::*)( int ) const )&Format::yDownToFormatSpace )
-		.def( "yDownToFormatSpace", ( Imath::V2i (Format::*)( const Imath::V2i & ) const )&Format::yDownToFormatSpace )
-		.def( "yDownToFormatSpace", ( Imath::Box2i (Format::*)( const Imath::Box2i & ) const )&Format::yDownToFormatSpace )
+		.def( "fromEXRSpace", ( int (Format::*)( int ) const )&Format::fromEXRSpace )
+		.def( "fromEXRSpace", ( Imath::V2i (Format::*)( const Imath::V2i & ) const )&Format::fromEXRSpace )
+		.def( "fromEXRSpace", ( Imath::Box2i (Format::*)( const Imath::Box2i & ) const )&Format::fromEXRSpace )
 
-		.def( "formatToYDownSpace", ( int (Format::*)( int ) const )&Format::formatToYDownSpace )
-		.def( "formatToYDownSpace", ( Imath::V2i (Format::*)( const Imath::V2i & ) const )&Format::formatToYDownSpace )
-		.def( "formatToYDownSpace", ( Imath::Box2i (Format::*)( const Imath::Box2i & ) const )&Format::formatToYDownSpace )
+		.def( "toEXRSpace", ( int (Format::*)( int ) const )&Format::toEXRSpace )
+		.def( "toEXRSpace", ( Imath::V2i (Format::*)( const Imath::V2i & ) const )&Format::toEXRSpace )
+		.def( "toEXRSpace", ( Imath::Box2i (Format::*)( const Imath::Box2i & ) const )&Format::toEXRSpace )
 
-		// Static bindings
-		.def( "formatAddedSignal", &Format::formatAddedSignal, return_value_policy<reference_existing_object>() ).staticmethod( "formatAddedSignal" )
-		.def( "formatRemovedSignal", &Format::formatRemovedSignal, return_value_policy<reference_existing_object>() ).staticmethod( "formatRemovedSignal" )
-		.def( "setDefaultFormat", setDefaultFormatPtr1, return_value_policy<reference_existing_object>() )
-		.def( "setDefaultFormat", setDefaultFormatPtr2, return_value_policy<reference_existing_object>() ).staticmethod( "setDefaultFormat" )
-		.def( "getDefaultFormat", &Format::getDefaultFormat, return_value_policy<return_by_value>() ).staticmethod( "getDefaultFormat" )
-		.def( "removeAllFormats", &Format::removeAllFormats ).staticmethod( "removeAllFormats" )
-		.def( "registerFormat", registerFormatPtr1, return_value_policy<reference_existing_object>() )
-		.def( "registerFormat", registerFormatPtr2, return_value_policy<reference_existing_object>() ).staticmethod( "registerFormat" )
-		.def( "removeFormat", removeFormatPtr1, return_value_policy<reference_existing_object>() )
-		.def( "removeFormat", removeFormatPtr2, return_value_policy<reference_existing_object>() ).staticmethod( "removeFormat" )
-		.def( "formatCount", &Format::formatCount, return_value_policy<return_by_value>() ).staticmethod( "formatCount" )
-		.def( "getFormat", &Format::getFormat, return_value_policy<reference_existing_object>() ).staticmethod( "getFormat" )
-		.def( "formatName", &Format::formatName ).staticmethod( "formatName" )
-		.def( "formatNames", &formatNamesList ).staticmethod( "formatNames" )
 		.def( "__eq__", &Format::operator== )
 		.def( "__repr__", &formatRepr )
-		.def( "defaultFormatContextName", &defaultFormatContextName ).staticmethod( "defaultFormatContextName" )
+		.def( "__str__", &boost::lexical_cast<std::string, Format> )
+
+		.def( "registerFormat", &Format::registerFormat ).staticmethod( "registerFormat" )
+		.def( "deregisterFormat", &Format::deregisterFormat ).staticmethod( "deregisterFormat" )
+		.def( "registeredFormats", &registeredFormats ).staticmethod( "registeredFormats" )
+		.def( "format", &Format::format ).staticmethod( "format" )
+		.def( "name", &Format::name ).staticmethod( "name" )
 	;
 
-	SignalClass<Format::UnaryFormatSignal, DefaultSignalCaller<Format::UnaryFormatSignal>, UnaryFormatSlotCaller >( "UnaryFormatSignal" );
-
 }
-
-} // namespace GafferImageBindings

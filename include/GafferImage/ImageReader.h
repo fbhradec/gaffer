@@ -1,7 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2012, John Haddon. All rights reserved.
-//  Copyright (c) 2012-2014, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2015, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -35,10 +34,10 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#ifndef GAFFERSCENE_IMAGEREADER_H
-#define GAFFERSCENE_IMAGEREADER_H
+#ifndef GAFFERIMAGE_IMAGEREADER_H
+#define GAFFERIMAGE_IMAGEREADER_H
 
-#include "Gaffer/NumericPlug.h"
+#include "Gaffer/CompoundNumericPlug.h"
 
 #include "GafferImage/ImageNode.h"
 
@@ -52,11 +51,9 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 namespace GafferImage
 {
 
-/// \todo Linearise images. Perhaps this should be done by a super-node which just
-/// packages up an internal ImageReader and OpenColorIO node? If so then perhaps
-/// we should rename this class to SimpleImageReader or something? Perhaps we could
-/// also have a metaData() plug in the ImagePlug, fill it with the file metadata,
-/// and use that to pass the input colorspace into the internal OpenColorIO node.
+IE_CORE_FORWARDDECLARE( ColorSpace )
+IE_CORE_FORWARDDECLARE( OpenImageIOReader )
+
 class ImageReader : public ImageNode
 {
 
@@ -67,37 +64,85 @@ class ImageReader : public ImageNode
 
 		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageReader, ImageReaderTypeId, ImageNode );
 
+		/// The MissingFrameMode controls how to handle missing images.
+		/// It is distinct from OpenImageIOReader::MissingFrameMode so
+		/// that we can provide alternate modes using higher
+		/// level approaches in the future (e.g interpolation).
+		enum MissingFrameMode
+		{
+			Error = 0,
+			Black,
+			Hold,
+		};
+
+		/// The FrameMaskMode controls how to handle images
+		/// outside of the values provided by the start
+		/// and end frame masks.
+		enum FrameMaskMode
+		{
+			None = 0,
+			BlackOutside,
+			ClampToFrame,
+		};
+
 		Gaffer::StringPlug *fileNamePlug();
 		const Gaffer::StringPlug *fileNamePlug() const;
 
 		/// Number of times the node has been refreshed.
 		Gaffer::IntPlug *refreshCountPlug();
 		const Gaffer::IntPlug *refreshCountPlug() const;
-		
+
+		Gaffer::IntPlug *missingFrameModePlug();
+		const Gaffer::IntPlug *missingFrameModePlug() const;
+
+		Gaffer::IntPlug *startModePlug();
+		const Gaffer::IntPlug *startModePlug() const;
+
+		Gaffer::IntPlug *startFramePlug();
+		const Gaffer::IntPlug *startFramePlug() const;
+
+		Gaffer::IntPlug *endModePlug();
+		const Gaffer::IntPlug *endModePlug() const;
+
+		Gaffer::IntPlug *endFramePlug();
+		const Gaffer::IntPlug *endFramePlug() const;
+
 		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
-		virtual bool enabled() const;
 
 		static size_t supportedExtensions( std::vector<std::string> &extensions );
 
 	protected :
 
-		virtual void hashFormat( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashDataWindow( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashMetadata( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-
-		virtual GafferImage::Format computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const;
-		virtual Imath::Box2i computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const;
-		virtual IECore::ConstCompoundObjectPtr computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const;
-		virtual IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const;
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
+		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
 
 	private :
 
-		void plugSet( Gaffer::Plug *plug );
-		
-		static size_t g_firstPlugIndex;
+		// We use internal nodes to do all the hard work,
+		// but we need to store intermediate results between
+		// those nodes in order to affect the outcome.
+
+		OpenImageIOReader *oiioReader();
+		const OpenImageIOReader *oiioReader() const;
+
+		Gaffer::CompoundObjectPlug *intermediateMetadataPlug();
+		const Gaffer::CompoundObjectPlug *intermediateMetadataPlug() const;
+
+		Gaffer::StringPlug *intermediateColorSpacePlug();
+		const Gaffer::StringPlug *intermediateColorSpacePlug() const;
+
+		ColorSpace *colorSpace();
+		const ColorSpace *colorSpace() const;
+
+		GafferImage::ImagePlug *intermediateImagePlug();
+		const GafferImage::ImagePlug *intermediateImagePlug() const;
+
+		void hashMaskedOutput( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h, bool alwaysClampToFrame = false ) const;
+		void computeMaskedOutput( Gaffer::ValuePlug *output, const Gaffer::Context *context, bool alwaysClampToFrame = false ) const;
+
+		bool computeFrameMask( const Gaffer::Context *context, Gaffer::ContextPtr &maskedContext ) const;
+
+		static size_t g_firstChildIndex;
 
 };
 
@@ -105,4 +150,4 @@ IE_CORE_DECLAREPTR( ImageReader )
 
 } // namespace GafferImage
 
-#endif // GAFFERSCENE_IMAGEREADER_H
+#endif // GAFFERIMAGE_IMAGEREADER_H

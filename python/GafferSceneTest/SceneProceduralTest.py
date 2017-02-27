@@ -47,7 +47,7 @@ import GafferTest
 import GafferScene
 import GafferSceneTest
 
-class SceneProceduralTest( unittest.TestCase ) :
+class SceneProceduralTest( GafferSceneTest.SceneTestCase ) :
 
 	class __WrappingProcedural( IECore.ParameterisedProcedural ) :
 
@@ -76,10 +76,15 @@ class SceneProceduralTest( unittest.TestCase ) :
 		renderer = IECoreGL.Renderer()
 		renderer.setOption( "gl:mode", IECore.StringData( "deferred" ) )
 
-		with IECore.WorldBlock( renderer ) :
+		with IECore.CapturingMessageHandler() as mh :
 
-			procedural = GafferScene.SceneProcedural( badNode["out"], Gaffer.Context(), "/" )
-			self.__WrappingProcedural( procedural ).render( renderer )
+			with IECore.WorldBlock( renderer ) :
+
+				procedural = GafferScene.SceneProcedural( badNode["out"], Gaffer.Context(), "/" )
+				self.__WrappingProcedural( procedural ).render( renderer )
+
+		self.assertTrue( len( mh.messages ) )
+		self.assertTrue( "Unable to find font" in mh.messages[0].message )
 
 	def testPythonComputationErrors( self ) :
 
@@ -90,16 +95,20 @@ class SceneProceduralTest( unittest.TestCase ) :
 		script["plane"] = GafferScene.Plane()
 
 		script["expression"] = Gaffer.Expression()
-		script["expression"]["engine"].setValue( "python" )
-		script["expression"]["expression"].setValue( 'parent["plane"]["transform"]["translate"]["x"] = iDontExist["andNorDoI"]' )
+		script["expression"].setExpression( 'parent["plane"]["transform"]["translate"]["x"] = iDontExist["andNorDoI"]' )
 
 		renderer = IECoreGL.Renderer()
 		renderer.setOption( "gl:mode", IECore.StringData( "deferred" ) )
 
-		with IECore.WorldBlock( renderer ) :
+		with IECore.CapturingMessageHandler() as mh :
 
-			procedural = GafferScene.SceneProcedural( script["plane"]["out"], Gaffer.Context(), "/" )
-			self.__WrappingProcedural( procedural ).render( renderer )
+			with IECore.WorldBlock( renderer ) :
+
+				procedural = GafferScene.SceneProcedural( script["plane"]["out"], Gaffer.Context(), "/" )
+				self.__WrappingProcedural( procedural ).render( renderer )
+
+		self.assertTrue( len( mh.messages ) )
+		self.assertTrue( "iDontExist" in mh.messages[0].message )
 
 	def testMotionBlurredBounds( self ) :
 
@@ -108,12 +117,10 @@ class SceneProceduralTest( unittest.TestCase ) :
 		script["plane"] = GafferScene.Plane()
 
 		script["expression1"] = Gaffer.Expression()
-		script["expression1"]["engine"].setValue( "python" )
-		script["expression1"]["expression"].setValue( 'parent["plane"]["transform"]["translate"]["x"] = context.getFrame()' )
+		script["expression1"].setExpression( 'parent["plane"]["transform"]["translate"]["x"] = context.getFrame()' )
 
 		script["expression2"] = Gaffer.Expression()
-		script["expression2"]["engine"].setValue( "python" )
-		script["expression2"]["expression"].setValue( 'parent["plane"]["dimensions"]["x"] = 1 + context.getFrame()' )
+		script["expression2"].setExpression( 'parent["plane"]["dimensions"]["x"] = 1 + context.getFrame()' )
 
 		script["options"] = GafferScene.StandardOptions()
 		script["options"]["in"].setInput( script["plane"]["out"] )
@@ -178,73 +185,123 @@ class SceneProceduralTest( unittest.TestCase ) :
 			return None
 
 		self.assertNotEqual( findMesh( renderer.world() ), None )
-	
+
 	def testAllRenderedSignal( self ) :
-		
-		class AllRenderedTest :
+
+		class AllRenderedTest( object ) :
 			allRenderedSignalCalled = False
 			def allRendered( self ):
 				self.allRenderedSignalCalled = True
-		
+
 		script = Gaffer.ScriptNode()
 		script["plane"] = GafferScene.Plane()
-		
+
 		# test creating/deleting a single procedural:
 		t = AllRenderedTest()
 		allRenderedConnection = GafferScene.SceneProcedural.allRenderedSignal().connect( t.allRendered )
-		
+
 		procedural = GafferScene.SceneProcedural( script["plane"]["out"], Gaffer.Context(), "/" )
 		self.assertEqual( t.allRenderedSignalCalled, False )
 		del procedural
 		self.assertEqual( t.allRenderedSignalCalled, True )
-		
+
 		# create/delete two of 'em:
 		t = AllRenderedTest()
 		allRenderedConnection = GafferScene.SceneProcedural.allRenderedSignal().connect( t.allRendered )
 		procedural1 = GafferScene.SceneProcedural( script["plane"]["out"], Gaffer.Context(), "/" )
 		procedural2 = GafferScene.SceneProcedural( script["plane"]["out"], Gaffer.Context(), "/" )
-		
+
 		self.assertEqual( t.allRenderedSignalCalled, False )
 		del procedural1
 		self.assertEqual( t.allRenderedSignalCalled, False )
 		del procedural2
 		self.assertEqual( t.allRenderedSignalCalled, True )
-		
-		
+
+
 		# now actually render them:
 		renderer = IECore.CapturingRenderer()
 		t = AllRenderedTest()
 		allRenderedConnection = GafferScene.SceneProcedural.allRenderedSignal().connect( t.allRendered )
 		procedural1 = GafferScene.SceneProcedural( script["plane"]["out"], Gaffer.Context(), "/" )
 		procedural2 = GafferScene.SceneProcedural( script["plane"]["out"], Gaffer.Context(), "/" )
-		
+
 		self.assertEqual( t.allRenderedSignalCalled, False )
 		with IECore.WorldBlock( renderer ) :
 			renderer.procedural( procedural1 )
-		
+
 		self.assertEqual( t.allRenderedSignalCalled, False )
 		with IECore.WorldBlock( renderer ) :
 			renderer.procedural( procedural2 )
-		
+
 		self.assertEqual( t.allRenderedSignalCalled, True )
-		
+
 		# now render one and delete one:
 		renderer = IECore.CapturingRenderer()
 		t = AllRenderedTest()
 		allRenderedConnection = GafferScene.SceneProcedural.allRenderedSignal().connect( t.allRendered )
 		procedural1 = GafferScene.SceneProcedural( script["plane"]["out"], Gaffer.Context(), "/" )
 		procedural2 = GafferScene.SceneProcedural( script["plane"]["out"], Gaffer.Context(), "/" )
-		
+
 		self.assertEqual( t.allRenderedSignalCalled, False )
 		del procedural1
 		self.assertEqual( t.allRenderedSignalCalled, False )
 		with IECore.WorldBlock( renderer ) :
 			renderer.procedural( procedural2 )
-		
+
 		self.assertEqual( t.allRenderedSignalCalled, True )
-		
-		
-		
+
+	def testTransformBlurAttributeScope( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["sphere"] = GafferScene.Sphere()
+		script["sphere"]["type"].setValue( GafferScene.Sphere.Type.Primitive )
+
+		script["expression1"] = Gaffer.Expression()
+		script["expression1"].setExpression( 'parent["sphere"]["transform"]["translate"]["x"] = context.getFrame()' )
+
+		script["filter"] = GafferScene.PathFilter()
+		script["filter"]["paths"].setValue( IECore.StringVectorData( [ "/sphere" ] ) )
+
+		script["attributes"] = GafferScene.StandardAttributes()
+		script["attributes"]["in"].setInput( script["sphere"]["out"] )
+		script["attributes"]["filter"].setInput( script["filter"]["out"] )
+		script["attributes"]["attributes"]["transformBlur"]["enabled"].setValue( True )
+
+		script["options"] = GafferScene.StandardOptions()
+		script["options"]["in"].setInput( script["attributes"]["out"] )
+		script["options"]["options"]["transformBlur"]["enabled"].setValue( True )
+		script["options"]["options"]["transformBlur"]["value"].setValue( True )
+		script["options"]["options"]["shutter"]["enabled"].setValue( True )
+		script["options"]["options"]["shutter"]["value"].setValue( IECore.V2f( -0.5, 0.5 ) )
+
+		sphereBound = IECore.Box3f( IECore.V3f( -1 ), IECore.V3f( 1 ) )
+		velocity = IECore.V3f( 1, 0, 0 )
+
+		context = Gaffer.Context()
+		for frame in range( 0, 10 ) :
+			for transformBlur in ( False, True ) :
+
+				context.setFrame( frame )
+				script["attributes"]["attributes"]["transformBlur"]["value"].setValue( transformBlur )
+
+				procedural = GafferScene.SceneProcedural( script["options"]["out"], context, "/sphere" )
+				bound = procedural.bound()
+				if transformBlur :
+					self.assertEqual( bound, IECore.Box3f( sphereBound.min + velocity * ( frame - 0.5 ), sphereBound.max + velocity * ( frame + 0.5 ) ) )
+				else :
+					self.assertEqual( bound, IECore.Box3f( sphereBound.min + velocity * frame, sphereBound.max + velocity * frame ) )
+
+	def testComputeBound( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["p"] = GafferScene.Plane()
+
+		proc1 = GafferScene.SceneProcedural( script["p"]["out"], script.context(), "/" )
+		proc2 = GafferScene.SceneProcedural( script["p"]["out"], script.context(), "/", computeBound = False )
+
+		self.assertEqual( proc1.bound(), script["p"]["out"].bound( "/" ) )
+		self.assertEqual( proc2.bound(), IECore.Renderer.Procedural.noBound )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -59,11 +59,11 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 	def testLightOutput( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["l"] = GafferSceneTest.TestLight()
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["l"]["out"] )
+		s["g"]["in"][0].setInput( s["l"]["out"] )
 
 		self.assertSceneValid( s["g"]["out"] )
 
@@ -73,7 +73,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 		# CapturingRenderer outputs some spurious errors which
 		# we suppress by capturing them.
 		with IECore.CapturingMessageHandler() :
-			s["r"].execute()
+			s["r"]["task"].execute()
 
 		w = s["r"].world()
 		lights = self.__allState( s["r"].world(), IECore.Light )
@@ -84,11 +84,11 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 	def testLightVisibility( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["l"] = GafferSceneTest.TestLight()
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["l"]["out"] )
+		s["g"]["in"][0].setInput( s["l"]["out"] )
 
 		s["v"] = GafferScene.StandardAttributes()
 		s["v"]["in"].setInput( s["g"]["out"] )
@@ -103,7 +103,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 		# CapturingRenderer outputs some spurious errors which
 		# we suppress by capturing them.
 		with IECore.CapturingMessageHandler() :
-			s["r"].execute()
+			s["r"]["task"].execute()
 
 		w = s["r"].world()
 		lights = self.__allState( s["r"].world(), IECore.Light )
@@ -113,7 +113,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 
 		s["v"]["attributes"]["visibility"]["value"].setValue( False )
 		with IECore.CapturingMessageHandler() :
-			s["r"].execute()
+			s["r"]["task"].execute()
 
 		w = s["r"].world()
 		lights = self.__allState( s["r"].world(), IECore.Light )
@@ -122,7 +122,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 	def testLightAttributes( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["l"] = GafferSceneTest.TestLight()
 
@@ -136,22 +136,23 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 		# CapturingRenderer outputs some spurious errors which
 		# we suppress by capturing them.
 		with IECore.CapturingMessageHandler() :
-			s["r"].execute()
+			s["r"]["task"].execute()
 
 		w = s["r"].world()
 		l = w.children()[0].state()
 		self.assertTrue( isinstance( l[0], IECore.AttributeState ) )
 		self.assertEqual( l[0].attributes["user:test"], IECore.IntData( 10 ) )
-		self.assertTrue( isinstance( l[1], IECore.Light ) )
+		l2 = w.children()[0].children()[0].state()
+		self.assertTrue( isinstance( l2[0], IECore.Light ) )
 
 	def testLightName( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["l"] = GafferSceneTest.TestLight()
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["l"]["out"] )
+		s["g"]["in"][0].setInput( s["l"]["out"] )
 
 		self.assertSceneValid( s["g"]["out"] )
 
@@ -161,9 +162,37 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 		# CapturingRenderer outputs some spurious errors which
 		# we suppress by capturing them.
 		with IECore.CapturingMessageHandler() :
-			s["r"].execute()
+			s["r"]["task"].execute()
 
 		w = s["r"].world()
+		self.assertEqual( w.children()[0].state()[0].attributes["name"].value, "/group/light" )
+		self.assertEqual( w.children()[0].children()[0].state()[0].handle, "/group/light" )
+
+	def testAreaLight( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
+
+		s["l"] = GafferSceneTest.TestLight()
+		s["l"]["parameters"]["areaLight"].setValue( True );
+
+		s["g"] = GafferScene.Group()
+		s["g"]["in"][0].setInput( s["l"]["out"] )
+
+		self.assertSceneValid( s["g"]["out"] )
+
+		s["r"] = GafferSceneTest.TestRender()
+		s["r"]["in"].setInput( s["g"]["out"] )
+
+		# CapturingRenderer outputs some spurious errors which
+		# we suppress by capturing them.
+		with IECore.CapturingMessageHandler() :
+			s["r"]["task"].execute()
+
+		w = s["r"].world()
+
+		# Check that we get just one group with both attributes and the light when writing area lights,
+		# instead of the extra attribute block
 		self.assertEqual( w.children()[0].state()[0].attributes["name"].value, "/group/light" )
 		self.assertEqual( w.children()[0].state()[1].handle, "/group/light" )
 
@@ -173,8 +202,8 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 		s["c"] = GafferScene.Camera()
 		s["s"] = GafferScene.Sphere()
 		s["g"] = GafferScene.Group()
-		s["g"]["in"].setInput( s["c"]["out"] )
-		s["g"]["in1"].setInput( s["s"]["out"] )
+		s["g"]["in"][0].setInput( s["c"]["out"] )
+		s["g"]["in"][1].setInput( s["s"]["out"] )
 
 		s["o"] = GafferScene.StandardOptions()
 		s["o"]["in"].setInput( s["g"]["out"] )
@@ -189,7 +218,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 			# we suppress by capturing them.
 			with IECore.CapturingMessageHandler() :
 				with s.context() :
-					s["r"].execute()
+					s["r"]["task"].execute()
 
 		self.assertTrue( "/group/invalid" in str( a.exception ) )
 
@@ -199,7 +228,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 			# we suppress by capturing them.
 			with IECore.CapturingMessageHandler() :
 				with s.context() :
-					s["r"].execute()
+					s["r"]["task"].execute()
 
 		self.assertTrue( "/group/invalid" in str( a.exception ) )
 		self.assertTrue( "does not exist" in str( a.exception ) )
@@ -208,7 +237,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 		with self.assertRaises( RuntimeError ) as a :
 			with IECore.CapturingMessageHandler() :
 				with s.context() :
-					s["r"].execute()
+					s["r"]["task"].execute()
 
 		self.assertTrue( "/group/sphere" in str( a.exception ) )
 		self.assertTrue( "is not a camera" in str( a.exception ) )
@@ -216,7 +245,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 	def testOptions( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( "/tmp/test.gfr" )
+		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 
 		s["p"] = GafferScene.Plane()
 		s["o"] = GafferScene.CustomOptions()
@@ -228,7 +257,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 		# CapturingRenderer outputs some spurious errors which
 		# we suppress by capturing them.
 		with IECore.CapturingMessageHandler() :
-			s["r"].execute()
+			s["r"]["task"].execute()
 
 		self.assertEqual( s["r"].renderer().getOption( "user:test" ), IECore.IntData( 10 ) )
 
@@ -249,7 +278,7 @@ class RenderTest( GafferSceneTest.SceneTestCase ) :
 		# CapturingRenderer outputs some spurious errors which
 		# we suppress by capturing them.
 		with IECore.CapturingMessageHandler() :
-			s["r"].execute()
+			s["r"]["task"].execute()
 
 		self.assertEqual( s["r"].world().state()[0].attributes["doubleSided"], IECore.BoolData( False ) )
 

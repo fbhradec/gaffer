@@ -67,6 +67,8 @@ Gaffer.Metadata.registerNode(
 			modified since it was last saved.
 			""",
 
+			"plugValueWidget:type", "",
+
 		),
 
 		"frameRange" : (
@@ -79,6 +81,8 @@ Gaffer.Metadata.registerNode(
 			ranges, and by the UI to define the range of the
 			time slider.
 			""",
+
+			"plugValueWidget:type", "GafferUI.CompoundNumericPlugValueWidget",
 
 		),
 
@@ -106,6 +110,16 @@ Gaffer.Metadata.registerNode(
 
 		),
 
+		"framesPerSecond" : (
+
+			"description",
+			"""
+			The framerate used to convert between the current
+			frame number and the time in seconds.
+			""",
+
+		),
+
 		"variables" : (
 
 			"description",
@@ -120,22 +134,4 @@ Gaffer.Metadata.registerNode(
 
 	},
 
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	Gaffer.ScriptNode,
-	"unsavedChanges",
-	None
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	Gaffer.ScriptNode,
-	"frameRange",
-	GafferUI.CompoundNumericPlugValueWidget
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	Gaffer.ScriptNode,
-	"variables",
-	lambda plug : GafferUI.CompoundDataPlugValueWidget( plug, collapsed=None ),
 )

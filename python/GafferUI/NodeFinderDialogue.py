@@ -37,8 +37,6 @@
 import re
 import fnmatch
 
-import IECore
-
 import Gaffer
 import GafferUI
 
@@ -241,4 +239,3 @@ def __nodeTypeExtractor( node ) :
 
 NodeFinderDialogue.registerMode( "Node Names", __nodeNameExtractor )
 NodeFinderDialogue.registerMode( "Node Types", __nodeTypeExtractor )
-

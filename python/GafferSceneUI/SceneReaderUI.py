@@ -50,7 +50,15 @@ Gaffer.Metadata.registerNode(
 
 	"description",
 	"""
-	Reads scenes in any of the formats supported by Cortex's SceneInterface.
+	The primary means of loading external assets (models, animation and cameras etc)
+	from caches into Gaffer. Gaffer's native file format is the .scc (SceneCache) format
+	provided by Cortex, but other formats may be supported by registering a new implementation
+	of Cortex's abstract SceneInterface.
+
+	> Note :
+	>
+	> Currently the SceneReader does not support Alembic caches - for those, the AlembicSource
+	> node should be used instead.
 	""",
 
 	plugs = {
@@ -63,6 +71,13 @@ Gaffer.Metadata.registerNode(
 			in any of the formats supported by Cortex's SceneInterfaces.
 			""",
 
+			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
+			"pathPlugValueWidget:leaf", True,
+			"pathPlugValueWidget:valid", True,
+			"pathPlugValueWidget:bookmarks", "sceneCache",
+			"fileSystemPathPlugValueWidget:extensions", lambda plug : IECore.StringVectorData( IECore.SceneInterface.supportedExtensions() ),
+			"fileSystemPathPlugValueWidget:extensionsLabel", "Show only cache files",
+
 		],
 
 		"refreshCount" : [
@@ -73,6 +88,10 @@ Gaffer.Metadata.registerNode(
 			changed on disk - otherwise old contents may still
 			be loaded via Gaffer's cache.
 			""",
+
+			"plugValueWidget:type", "GafferUI.RefreshPlugValueWidget",
+			"layout:label", "",
+			"layout:accessory", True,
 
 		],
 
@@ -89,32 +108,6 @@ Gaffer.Metadata.registerNode(
 	}
 
 )
-
-##########################################################################
-# Widgets
-##########################################################################
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.SceneReader,
-	"fileName",
-	lambda plug : GafferUI.PathPlugValueWidget( plug,
-		path = Gaffer.FileSystemPath( "/", filter = Gaffer.FileSystemPath.createStandardFilter( extensions = IECore.SceneInterface.supportedExtensions() ) ),
-		pathChooserDialogueKeywords = {
-			"bookmarks" : GafferUI.Bookmarks.acquire( plug, category = "sceneCache" ),
-			"leaf" : True,
-		},
-	)
-)
-
-GafferUI.PlugValueWidget.registerCreator(
-	GafferScene.SceneReader,
-	"refreshCount",
-	GafferUI.IncrementingPlugValueWidget,
-	label = "Refresh",
-	undoable = False
-)
-
-## \todo Once it's possible to register Widgets to go on the right of a PlugWidget, place the refresh button there.
 
 ##########################################################################
 # Right click menu for tags
@@ -163,7 +156,7 @@ def __tagsPopupMenu( menuDefinition, plugValueWidget ) :
 			{
 				"command" : IECore.curry( __toggleTag, plug, tag ),
 				"checkBox" : tag in currentTags,
-				"active" : plug.settable() and not plugValueWidget.getReadOnly(),
+				"active" : plug.settable() and not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ),
 			}
 		)
 

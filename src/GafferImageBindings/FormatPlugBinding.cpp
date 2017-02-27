@@ -1,6 +1,6 @@
 //////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2012-2013, Image Engine Design Inc. All rights reserved.
+//  Copyright (c) 2015, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -37,59 +37,49 @@
 #include "boost/python.hpp"
 #include "boost/format.hpp"
 
-#include "GafferBindings/Serialisation.h"
+#include "Gaffer/ScriptNode.h"
+#include "Gaffer/Context.h"
+
 #include "GafferBindings/ValuePlugBinding.h"
-#include "GafferBindings/TypedPlugBinding.h"
 
 #include "GafferImage/FormatPlug.h"
-#include "GafferImageBindings/FormatBinding.h"
 #include "GafferImageBindings/FormatPlugBinding.h"
 
-using namespace std;
 using namespace boost::python;
+using namespace IECorePython;
 using namespace Gaffer;
 using namespace GafferBindings;
 using namespace GafferImage;
-using namespace GafferImageBindings;
 
 namespace
 {
+
+void setValue( FormatPlug *plug, const Format &value )
+{
+	// we use a GIL release here to prevent a lock in the case where this triggers a graph
+	// evaluation which decides to go back into python on another thread:
+	IECorePython::ScopedGILRelease r;
+	plug->setValue( value );
+}
+
+Format getValue( const FormatPlug *plug )
+{
+	// Must release GIL in case computation spawns threads which need
+	// to reenter Python.
+	IECorePython::ScopedGILRelease r;
+	return plug->getValue();
+}
 
 class FormatPlugSerialiser : public GafferBindings::ValuePlugSerialiser
 {
 
 	public :
 
-		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules ) const
+		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const
 		{
-			ValuePlugSerialiser::moduleDependencies( graphComponent, modules );
+			// IECore is needed when reloading Format values which reference Box2i.
+			ValuePlugSerialiser::moduleDependencies( graphComponent, modules, serialisation );
 			modules.insert( "IECore" );
-		}
-
-		virtual std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
-		{
-			std::string result;
-
-			const Plug *plug = static_cast<const Plug *>( graphComponent );
-			if( plug->node()->typeId() == static_cast<IECore::TypeId>(ScriptNodeTypeId) )
-			{
-				// If this is the default format plug then write out all of the formats.
-				/// \todo Why do we do this? Unfortunately it's very hard to tell because
-				/// there are no unit tests for it. Why don't we allow the config files to
-				/// just recreate the formats next time?
-				vector<string> names;
-				GafferImage::Format::formatNames( names );
-				for( vector<string>::const_iterator it = names.begin(), eIt = names.end(); it != eIt; ++it )
-				{
-					result +=
-						"GafferImage.Format.registerFormat( " +
-						formatRepr( Format::getFormat( *it ) ) +
-						", \"" + *it + "\" )\n";
-				}
-			}
-
-			result += ValuePlugSerialiser::postConstructor( graphComponent, identifier, serialisation );
-			return result;
 		}
 
 };
@@ -98,7 +88,29 @@ class FormatPlugSerialiser : public GafferBindings::ValuePlugSerialiser
 
 void GafferImageBindings::bindFormatPlug()
 {
-	TypedPlugClass<FormatPlug>();
 
-	Serialisation::registerSerialiser( static_cast<IECore::TypeId>(FormatPlugTypeId), new FormatPlugSerialiser );
+	PlugClass<FormatPlug>()
+		.def(
+			boost::python::init<const std::string &, Gaffer::Plug::Direction, const Format &, unsigned>(
+				(
+					boost::python::arg_( "name" ) = GraphComponent::defaultName<FormatPlug>(),
+					boost::python::arg_( "direction" ) = Plug::In,
+					boost::python::arg_( "defaultValue" ) = Format(),
+					boost::python::arg_( "flags" ) = Plug::Default
+				)
+			)
+		)
+		.def( "defaultValue", &FormatPlug::defaultValue, return_value_policy<boost::python::copy_const_reference>() )
+		.def( "setValue", &setValue )
+		.def( "getValue", &getValue )
+		.def( "setDefaultFormat", &FormatPlug::setDefaultFormat )
+		.staticmethod( "setDefaultFormat" )
+		.def( "getDefaultFormat", &FormatPlug::getDefaultFormat )
+		.staticmethod( "getDefaultFormat" )
+		.def( "acquireDefaultFormatPlug", &FormatPlug::acquireDefaultFormatPlug, return_value_policy<CastToIntrusivePtr>() )
+		.staticmethod( "acquireDefaultFormatPlug" )
+	;
+
+	Serialisation::registerSerialiser( FormatPlug::staticTypeId(), new FormatPlugSerialiser );
+
 }

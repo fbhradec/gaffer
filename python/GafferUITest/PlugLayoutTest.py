@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import IECore
+
 import Gaffer
 import GafferTest
 import GafferUI
@@ -71,9 +73,9 @@ class PlugLayoutTest( GafferUITest.TestCase ) :
 			[ n["user"]["a"], n["user"]["b"], n["user"]["c"] ],
 		)
 
-		Gaffer.Metadata.registerPlugValue( n["user"]["a"], "layout:index", 3 )
-		Gaffer.Metadata.registerPlugValue( n["user"]["b"], "layout:index", 2 )
-		Gaffer.Metadata.registerPlugValue( n["user"]["c"], "layout:index", 1 )
+		Gaffer.Metadata.registerValue( n["user"]["a"], "layout:index", 3 )
+		Gaffer.Metadata.registerValue( n["user"]["b"], "layout:index", 2 )
+		Gaffer.Metadata.registerValue( n["user"]["c"], "layout:index", 1 )
 
 		self.assertEqual(
 			GafferUI.PlugLayout.layoutOrder( n["user"] ),
@@ -91,7 +93,7 @@ class PlugLayoutTest( GafferUITest.TestCase ) :
 	def testCustomWidgets( self ) :
 
 		n = Gaffer.Node()
-		Gaffer.Metadata.registerNodeValue( n, "layout:customWidget:test:widgetType", "GafferUITest.PlugLayoutTest.CustomWidget" )
+		Gaffer.Metadata.registerValue( n, "layout:customWidget:test:widgetType", "GafferUITest.PlugLayoutTest.CustomWidget" )
 
 		p = GafferUI.PlugLayout( n )
 
@@ -121,13 +123,13 @@ class PlugLayoutTest( GafferUITest.TestCase ) :
 
 		self.assertEqual( GafferUI.PlugLayout.layoutSections( n["user"] ), [ "" ] )
 
-		Gaffer.Metadata.registerPlugValue( n["user"]["a"], "layout:section", "A" )
-		Gaffer.Metadata.registerPlugValue( n["user"]["b"], "layout:section", "B" )
-		Gaffer.Metadata.registerPlugValue( n["user"]["c"], "layout:section", "C" )
+		Gaffer.Metadata.registerValue( n["user"]["a"], "layout:section", "A" )
+		Gaffer.Metadata.registerValue( n["user"]["b"], "layout:section", "B" )
+		Gaffer.Metadata.registerValue( n["user"]["c"], "layout:section", "C" )
 
 		self.assertEqual( GafferUI.PlugLayout.layoutSections( n["user"] ), [ "A", "B", "C" ] )
 
-		Gaffer.Metadata.registerPlugValue( n["user"]["a"], "layout:index", 3 )
+		Gaffer.Metadata.registerValue( n["user"]["a"], "layout:index", 3 )
 		self.assertEqual( GafferUI.PlugLayout.layoutSections( n["user"] ), [ "B", "C", "A" ] )
 
 	def testLayoutOrderSectionArgument( self ) :
@@ -142,9 +144,9 @@ class PlugLayoutTest( GafferUITest.TestCase ) :
 			[ n["user"]["a"], n["user"]["b"], n["user"]["c"] ],
 		)
 
-		Gaffer.Metadata.registerPlugValue( n["user"]["a"], "layout:section", "AB" )
-		Gaffer.Metadata.registerPlugValue( n["user"]["b"], "layout:section", "AB" )
-		Gaffer.Metadata.registerPlugValue( n["user"]["c"], "layout:section", "C" )
+		Gaffer.Metadata.registerValue( n["user"]["a"], "layout:section", "AB" )
+		Gaffer.Metadata.registerValue( n["user"]["b"], "layout:section", "AB" )
+		Gaffer.Metadata.registerValue( n["user"]["c"], "layout:section", "C" )
 
 		self.assertEqual(
 			GafferUI.PlugLayout.layoutOrder( n["user"], section = "AB" ),
@@ -155,6 +157,154 @@ class PlugLayoutTest( GafferUITest.TestCase ) :
 			GafferUI.PlugLayout.layoutOrder( n["user"], section = "C" ),
 			[ n["user"]["c"] ],
 		)
+
+	def testChangingWidgetType( self ) :
+
+		n = Gaffer.Node()
+		n["p1"] = Gaffer.IntPlug()
+		n["p2"] = Gaffer.IntPlug()
+
+		l = GafferUI.PlugLayout( n )
+		self.assertTrue( isinstance( l.plugValueWidget( n["p1"], lazy = False ), GafferUI.NumericPlugValueWidget ) )
+		w2 = l.plugValueWidget( n["p2"], lazy = False )
+		self.assertTrue( isinstance( w2, GafferUI.NumericPlugValueWidget ) )
+
+		Gaffer.Metadata.registerValue( n["p1"], "plugValueWidget:type", "GafferUI.ConnectionPlugValueWidget" )
+		self.assertTrue( isinstance( l.plugValueWidget( n["p1"], lazy = False ), GafferUI.ConnectionPlugValueWidget ) )
+		self.assertTrue( w2 is l.plugValueWidget( n["p2"], lazy = False ) )
+
+		Gaffer.Metadata.deregisterValue( n["p1"], "plugValueWidget:type" )
+		self.assertTrue( isinstance( l.plugValueWidget( n["p1"], lazy = False ), GafferUI.NumericPlugValueWidget ) )
+		self.assertTrue( w2 is l.plugValueWidget( n["p2"], lazy = False ) )
+
+	def testRemovingAndAddingWidget( self ) :
+
+		n = Gaffer.Node()
+		n["p"] = Gaffer.IntPlug()
+
+		l = GafferUI.PlugLayout( n )
+		self.assertTrue( isinstance( l.plugValueWidget( n["p"], lazy = False ), GafferUI.NumericPlugValueWidget ) )
+
+		Gaffer.Metadata.registerValue( n["p"], "plugValueWidget:type", "" )
+		self.assertTrue( l.plugValueWidget( n["p"], lazy = False ) is None )
+
+		Gaffer.Metadata.deregisterValue( n["p"], "plugValueWidget:type" )
+		self.assertTrue( isinstance( l.plugValueWidget( n["p"], lazy = False ), GafferUI.NumericPlugValueWidget ) )
+
+	def testContext( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["p"] = Gaffer.IntPlug()
+
+		l = GafferUI.PlugLayout( s["n"] )
+		self.assertTrue( l.getContext().isSame( s.context() ) )
+		self.assertTrue( l.plugValueWidget( s["n"]["p"], lazy = False ).getContext().isSame( s.context() ) )
+
+		c = Gaffer.Context()
+		l.setContext( c )
+		self.assertTrue( l.getContext().isSame( c ) )
+		self.assertTrue( l.plugValueWidget( s["n"]["p"] ).getContext().isSame( c ) )
+
+		l = GafferUI.PlugLayout( s )
+		self.assertTrue( l.getContext().isSame( s.context() ) )
+
+	def testContextWithoutScriptNode( self ) :
+
+		n = Gaffer.Node()
+		n["p"] = Gaffer.Plug()
+
+		l = GafferUI.PlugLayout( n )
+		self.assertTrue( isinstance( l.getContext(), Gaffer.Context ) )
+
+		l = GafferUI.PlugLayout( n["p"] )
+		self.assertTrue( isinstance( l.getContext(), Gaffer.Context ) )
+
+	def testContextSensitiveSummariesAndActivators( self ) :
+
+		class SummaryAndActivatorTestNode( Gaffer.Node ) :
+
+			def __init__( self, name = "SummaryAndActivatorTestNode" ) :
+
+				Gaffer.Node.__init__( self, name )
+
+				self["b"] = Gaffer.BoolPlug()
+				self["s"] = Gaffer.StringPlug()
+
+		IECore.registerRunTimeTyped( SummaryAndActivatorTestNode )
+
+		Gaffer.Metadata.registerNode(
+
+			SummaryAndActivatorTestNode,
+
+			"layout:activator:bIsOn", lambda node : node["b"].getValue(),
+			"layout:section:Settings:summary", lambda node : str( node["b"].getValue() ) + " " + node["s"].getValue(),
+
+			plugs = {
+
+				"s" : [
+
+					"layout:activator", "bIsOn",
+
+				]
+
+			},
+
+		)
+
+		s = Gaffer.ScriptNode()
+		p = s["variables"].addMember( "bVariable", False )
+
+		s["n"] = SummaryAndActivatorTestNode()
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( 'parent["n"]["b"] = context["bVariable"]' )
+
+		l = GafferUI.PlugLayout( s["n"] )
+		self.assertEqual( l.plugValueWidget( s["n"]["s"], lazy = False ).enabled(), False )
+
+		p["value"].setValue( True )
+		self.assertEqual( l.plugValueWidget( s["n"]["s"], lazy = False ).enabled(), True )
+
+	def testMultipleLayouts( self ) :
+
+		n = Gaffer.Node()
+		n["p1"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["p2"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		Gaffer.Metadata.registerValue( n, "layout1:activator:true", True )
+		Gaffer.Metadata.registerValue( n, "layout1:activator:false", False )
+
+		Gaffer.Metadata.registerValue( n, "layout2:activator:true", True )
+		Gaffer.Metadata.registerValue( n, "layout2:activator:false", False )
+
+		Gaffer.Metadata.registerValue( n["p1"], "layout1:activator", "true" )
+		Gaffer.Metadata.registerValue( n["p1"], "layout2:activator", "false" )
+
+		Gaffer.Metadata.registerValue( n["p2"], "layout1:activator", "false" )
+		Gaffer.Metadata.registerValue( n["p2"], "layout2:activator", "true" )
+
+		l1 = GafferUI.PlugLayout( n, layoutName = "layout1" )
+		l2 = GafferUI.PlugLayout( n, layoutName = "layout2" )
+
+		self.assertTrue( l1.plugValueWidget( n["p1"], lazy = False ).enabled() )
+		self.assertFalse( l1.plugValueWidget( n["p2"], lazy = False ).enabled() )
+
+		self.assertFalse( l2.plugValueWidget( n["p1"], lazy = False ).enabled() )
+		self.assertTrue( l2.plugValueWidget( n["p2"], lazy = False ).enabled() )
+
+	def testRootSection( self ) :
+
+		n = Gaffer.Node()
+		n["p1"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		n["p2"] = Gaffer.Plug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+
+		Gaffer.Metadata.registerValue( n["p2"], "layout:section", "sectionA" )
+
+		l = GafferUI.PlugLayout( n, rootSection = "sectionA" )
+
+		self.assertTrue( l.plugValueWidget( n["p1"], lazy = False ) is None )
+		self.assertTrue( l.plugValueWidget( n["p2"], lazy = False ) is not None )
 
 if __name__ == "__main__":
 	unittest.main()

@@ -35,10 +35,6 @@
 #
 ##########################################################################
 
-import os
-
-import IECore
-
 import Gaffer
 import GafferUI
 
@@ -53,6 +49,8 @@ class Collapsible( GafferUI.ContainerWidget ) :
 	def __init__( self, label="", child=None, collapsed=False, borderWidth=0, cornerWidget=None, cornerWidgetExpanded=False, **kw ) :
 
 		GafferUI.ContainerWidget.__init__( self, QtGui.QWidget(), **kw )
+
+		self._qtWidget().setObjectName( "gafferCollapsible" )
 
 		layout = _VBoxLayout()
 		self._qtWidget().setLayout( layout )
@@ -164,6 +162,10 @@ class Collapsible( GafferUI.ContainerWidget ) :
 	def stateChangedSignal( self ) :
 
 		return self.__stateChangedSignal
+
+	def _revealDescendant( self, descendant ) :
+
+		self.setCollapsed( False )
 
 	def __toggled( self, value ) :
 

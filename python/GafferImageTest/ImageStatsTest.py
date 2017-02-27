@@ -36,19 +36,16 @@
 
 import os
 import unittest
+
 import IECore
-import Gaffer
-import GafferImage
+
 import GafferTest
-import sys
-import math
+import GafferImage
+import GafferImageTest
 
-class ImageStatsTest( unittest.TestCase ) :
+class ImageStatsTest( GafferImageTest.ImageTestCase ) :
 
-	__rgbFilePath = os.path.expandvars( "$GAFFER_ROOT/python/GafferTest/images/rgb.100x100.exr" )
-
-	def testHash( self ) :
-		pass
+	__rgbFilePath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/rgb.100x100.exr" )
 
 	# Test that the outputs change when different channels are selected.
 	def testChannels( self ) :
@@ -58,6 +55,7 @@ class ImageStatsTest( unittest.TestCase ) :
 
 		s = GafferImage.ImageStats()
 		s["in"].setInput( r["out"] )
+		s["regionOfInterest"].setValue( r["out"]["format"].getValue().getDisplayWindow() )
 
 		s["channels"].setValue( IECore.StringVectorData( [ "G", "B" ] ) )
 		self.__assertColour( s["average"].getValue(), IECore.Color4f( 0., 0.0744, 0.1250, 1. ) )
@@ -127,43 +125,6 @@ class ImageStatsTest( unittest.TestCase ) :
 		self.assertNotEqual( maxHash, s["max"].hash() )
 		self.assertNotEqual( averageHash, s["average"].hash() )
 
-	def testImageDisconnectValue( self ) :
-
-		r = GafferImage.ImageReader()
-		r["fileName"].setValue( self.__rgbFilePath )
-		s = GafferImage.ImageStats()
-
-		# Connect.
-		s["in"].setInput( r["out"] )
-		self.__assertColour( s["average"].getValue(), IECore.Color4f( 0.0544, 0.0744, 0.1250, 1. ) )
-		self.__assertColour( s["min"].getValue(), IECore.Color4f( 0, 0, 0, 1. ) )
-		self.__assertColour( s["max"].getValue(), IECore.Color4f( 0.5, 0.5, 0.5, 1. ) )
-
-		# Disconnect.
-		s["in"].setInput( None )
-		self.__assertColour( s["average"].getValue(), IECore.Color4f( 0, 0, 0, 1 ) )
-		self.__assertColour( s["min"].getValue(), IECore.Color4f( 0, 0, 0, 1 ) )
-		self.__assertColour( s["max"].getValue(), IECore.Color4f( 0, 0, 0, 1 ) )
-
-		# Connect again.
-		s["in"].setInput( r["out"] )
-		self.__assertColour( s["average"].getValue(), IECore.Color4f( 0.0544, 0.0744, 0.1250, 1. ) )
-		self.__assertColour( s["min"].getValue(), IECore.Color4f( 0, 0, 0, 1. ) )
-		self.__assertColour( s["max"].getValue(), IECore.Color4f( 0.5, 0.5, 0.5, 1. ) )
-
-	def testRoiDefault( self ) :
-
-		reader = GafferImage.ImageReader()
-		script = Gaffer.ScriptNode()
-		stats = GafferImage.ImageStats()
-		script.addChild( reader )
-		script.addChild( stats )
-
-		with script.context() :
-			reader["fileName"].setValue( self.__rgbFilePath )
-			stats["in"].setInput( reader["out"] )
-			self.assertEqual( stats["regionOfInterest"].getValue(), reader["out"]["format"].getValue().getDisplayWindow() )
-
 	def testStats( self ) :
 
 		r = GafferImage.ImageReader()
@@ -188,15 +149,24 @@ class ImageStatsTest( unittest.TestCase ) :
 		s["in"].setInput( r["out"] )
 		s["channels"].setValue( IECore.StringVectorData( [ "R", "G", "B", "A" ] ) )
 
-		s["regionOfInterest"].setValue( IECore.Box2i( IECore.V2i( 20, 20 ), IECore.V2i( 24, 24 ) ) )
+		s["regionOfInterest"].setValue( IECore.Box2i( IECore.V2i( 20, 20 ), IECore.V2i( 25, 25 ) ) )
 		self.__assertColour( s["average"].getValue(), IECore.Color4f( 0.5, 0, 0, 0.5 ) )
 		self.__assertColour( s["max"].getValue(), IECore.Color4f( 0.5, 0, 0, 0.5 ) )
 		self.__assertColour( s["min"].getValue(), IECore.Color4f( 0.5, 0, 0, 0.5 ) )
 
-		s["regionOfInterest"].setValue( IECore.Box2i( IECore.V2i( 20, 20 ), IECore.V2i( 40, 29 ) ) )
+		s["regionOfInterest"].setValue( IECore.Box2i( IECore.V2i( 20, 20 ), IECore.V2i( 41, 30 ) ) )
 		self.__assertColour( s["average"].getValue(), IECore.Color4f( 0.4048, 0.1905, 0, 0.5952 ) )
 		self.__assertColour( s["min"].getValue(), IECore.Color4f( 0.25, 0, 0, 0.5 ) )
 		self.__assertColour( s["max"].getValue(), IECore.Color4f( 0.5, 0.5, 0, 0.75 ) )
+
+	def testMin( self ) :
+
+		c = GafferImage.Constant()
+		s = GafferImage.ImageStats()
+		s["in"].setInput( c["out"] )
+		s["regionOfInterest"].setValue( c["out"]["format"].getValue().getDisplayWindow() )
+
+		self.assertEqual( s["max"]["r"].getValue(), 0 )
 
 	def __assertColour( self, colour1, colour2 ) :
 		for i in range( 0, 4 ):
@@ -204,4 +174,3 @@ class ImageStatsTest( unittest.TestCase ) :
 
 if __name__ == "__main__":
 	unittest.main()
-

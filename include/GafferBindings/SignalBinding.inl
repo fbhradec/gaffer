@@ -210,7 +210,7 @@ struct SlotBase<0, Signal, Caller>
 		}
 		catch( const boost::python::error_already_set& e )
 		{
-			translatePythonException();
+			ExceptionAlgo::translatePythonException();
 		}
 		return typename Signal::slot_result_type();
 	}
@@ -242,7 +242,7 @@ struct SlotBase<1, Signal, Caller>
 		}
 		catch( const boost::python::error_already_set& e )
 		{
-			translatePythonException();
+			ExceptionAlgo::translatePythonException();
 		}
 		return typename Signal::slot_result_type();
 	}
@@ -274,7 +274,7 @@ struct SlotBase<2, Signal, Caller>
 		}
 		catch( const boost::python::error_already_set& e )
 		{
-			translatePythonException();
+			ExceptionAlgo::translatePythonException();
 		}
 		return typename Signal::slot_result_type();
 	}
@@ -306,7 +306,7 @@ struct SlotBase<3, Signal, Caller>
 		}
 		catch( const boost::python::error_already_set& e )
 		{
-			translatePythonException();
+			ExceptionAlgo::translatePythonException();
 		}
 		return typename Signal::slot_result_type();
 	}
@@ -338,7 +338,7 @@ struct SlotBase<4, Signal, Caller>
 		}
 		catch( const boost::python::error_already_set& e )
 		{
-			translatePythonException();
+			ExceptionAlgo::translatePythonException();
 		}
 		return typename Signal::slot_result_type();
 	}
@@ -390,12 +390,6 @@ SignalClass<Signal, SignalCaller, SlotCaller>::SignalClass( const char *classNam
 	this->def( "num_slots", &Signal::num_slots );
 	this->def( "empty", &Signal::empty );
 	this->def( "__call__", &SignalCaller::call );
-}
-
-template<typename Signal, typename SignalCaller, typename SlotCaller>
-boost::python::class_<Signal, boost::noncopyable> SignalBinder<Signal, SignalCaller, SlotCaller>::bind( const char *className )
-{
-	return SignalClass<Signal, SignalCaller, SlotCaller>( className );
 }
 
 } // namespace GafferBindings

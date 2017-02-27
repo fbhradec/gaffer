@@ -36,6 +36,7 @@
 
 #include "Gaffer/Dot.h"
 #include "Gaffer/Metadata.h"
+#include "Gaffer/StringPlug.h"
 
 using namespace IECore;
 using namespace Gaffer;
@@ -44,11 +45,16 @@ IE_CORE_DEFINERUNTIMETYPED( Dot );
 
 static InternedString g_inPlugName( "in" );
 static InternedString g_outPlugName( "out" );
-static InternedString g_nodulePositionName( "nodeGadget:nodulePosition" );
+static InternedString g_sectionName( "noduleLayout:section" );
+
+size_t Dot::g_firstPlugIndex = 0;
 
 Dot::Dot( const std::string &name )
 	:	DependencyNode( name )
 {
+	storeIndexOfNextChild( g_firstPlugIndex );
+	addChild( new IntPlug( "labelType", Plug::In, None, None, Custom ) );
+	addChild( new StringPlug( "label" ) );
 }
 
 Dot::~Dot()
@@ -67,50 +73,50 @@ void Dot::setup( const Plug *plug )
 	Gaffer::PlugPtr in = plug->createCounterpart( g_inPlugName, Plug::In );
 	Gaffer::PlugPtr out = plug->createCounterpart( g_outPlugName, Plug::Out );
 
-	in->setFlags( Plug::Dynamic, true );
-	out->setFlags( Plug::Dynamic, true );
+	in->setFlags( Plug::Dynamic | Plug::Serialisable, true );
+	out->setFlags( Plug::Dynamic | Plug::Serialisable, true );
 
 	// Set up Metadata so our plugs appear in the right place. We must do this now rather
 	// than later because the NodeGraph will add a Nodule for the plug as soon as the plug
 	// is added as a child.
 
-	ConstStringDataPtr nodulePosition;
+	ConstStringDataPtr sectionData;
 	for( const Plug *metadataPlug = plug; metadataPlug; metadataPlug = metadataPlug->parent<Plug>() )
 	{
-		if( ( nodulePosition = Metadata::plugValue<StringData>( metadataPlug, g_nodulePositionName ) ) )
+		if( ( sectionData = Metadata::value<StringData>( metadataPlug, g_sectionName ) ) )
 		{
 			break;
 		}
 	}
 
-	if( nodulePosition )
+	if( sectionData )
 	{
-		const std::string &position = nodulePosition->readable();
-		std::string oppositePosition;
-		if( position == "left" )
+		const std::string &section = sectionData->readable();
+		std::string oppositeSection;
+		if( section == "left" )
 		{
-			oppositePosition = "right";
+			oppositeSection = "right";
 		}
-		else if( position == "right" )
+		else if( section == "right" )
 		{
-			oppositePosition = "left";
+			oppositeSection = "left";
 		}
-		else if( position == "bottom" )
+		else if( section == "bottom" )
 		{
-			oppositePosition = "top";
+			oppositeSection = "top";
 		}
 		else
 		{
-			oppositePosition = "bottom";
+			oppositeSection = "bottom";
 		}
 
-		Metadata::registerPlugValue(
+		Metadata::registerValue(
 			plug->direction() == Plug::In ? in.get() : out.get(),
-			g_nodulePositionName, nodulePosition
+			g_sectionName, sectionData
 		);
-		Metadata::registerPlugValue(
+		Metadata::registerValue(
 			plug->direction() == Plug::In ? out.get() : in.get(),
-			g_nodulePositionName, new StringData( oppositePosition )
+			g_sectionName, new StringData( oppositeSection )
 		);
 	}
 
@@ -118,6 +124,24 @@ void Dot::setup( const Plug *plug )
 	setChild( g_outPlugName, out );
 
 	out->setInput( in );
+}
+
+IntPlug *Dot::labelTypePlug()
+{
+	return getChild<IntPlug>( g_firstPlugIndex );
+}
+const IntPlug *Dot::labelTypePlug() const
+{
+	return getChild<IntPlug>( g_firstPlugIndex );
+}
+
+StringPlug *Dot::labelPlug()
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 1 );
+}
+const StringPlug *Dot::labelPlug() const
+{
+	return getChild<StringPlug>( g_firstPlugIndex + 1 );
 }
 
 void Dot::affects( const Plug *input, AffectedPlugsContainer &outputs ) const

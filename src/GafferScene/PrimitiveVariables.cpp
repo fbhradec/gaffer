@@ -34,6 +34,8 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "IECore/Primitive.h"
+
 #include "GafferScene/PrimitiveVariables.h"
 
 using namespace IECore;
@@ -49,7 +51,7 @@ PrimitiveVariables::PrimitiveVariables( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new CompoundDataPlug( "primitiveVariables" ) );
-	
+
 	// Fast pass-throughs for things we don't modify
 	outPlug()->attributesPlug()->setInput( inPlug()->attributesPlug() );
 	outPlug()->transformPlug()->setInput( inPlug()->transformPlug() );
@@ -107,7 +109,7 @@ IECore::ConstObjectPtr PrimitiveVariables::computeProcessedObject( const ScenePa
 	PrimitivePtr result = inputPrimitive->copy();
 
 	std::string name;
-	for( CompoundDataPlug::MemberPlugIterator it( p ); it != it.end(); ++it )
+	for( CompoundDataPlug::MemberPlugIterator it( p ); !it.done(); ++it )
 	{
 		IECore::DataPtr d = p->memberDataAndName( it->get(), name );
 		if( d )

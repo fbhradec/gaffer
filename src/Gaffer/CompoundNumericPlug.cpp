@@ -49,9 +49,10 @@ CompoundNumericPlug<T>::CompoundNumericPlug(
 	T defaultValue,
 	T minValue,
 	T maxValue,
-	unsigned flags
+	unsigned flags,
+	IECore::GeometricData::Interpretation interpretation
 )
-	:	CompoundPlug( name, direction, flags )
+	:	ValuePlug( name, direction, flags ), m_interpretation( interpretation )
 {
 	const char **n = childNames();
 	unsigned childFlags = flags & ~Dynamic;
@@ -76,7 +77,7 @@ bool CompoundNumericPlug<T>::acceptsChild( const GraphComponent *potentialChild 
 template<class T>
 PlugPtr CompoundNumericPlug<T>::createCounterpart( const std::string &name, Direction direction ) const
 {
-	return new CompoundNumericPlug<T>( name, direction, defaultValue(), minValue(), maxValue(), getFlags() );
+	return new CompoundNumericPlug<T>( name, direction, defaultValue(), minValue(), maxValue(), getFlags(), interpretation() );
 }
 
 template<typename T>
@@ -171,6 +172,31 @@ T CompoundNumericPlug<T>::getValue() const
 }
 
 template<typename T>
+IECore::GeometricData::Interpretation CompoundNumericPlug<T>::interpretation() const
+{
+	return m_interpretation;
+}
+
+template<typename T>
+IECore::MurmurHash CompoundNumericPlug<T>::hash() const
+{
+	IECore::MurmurHash result = ValuePlug::hash();
+
+	if( m_interpretation != IECore::GeometricData::None )
+	{
+		result.append( m_interpretation );
+	}
+
+	return result;
+}
+
+template<typename T>
+void CompoundNumericPlug<T>::hash( IECore::MurmurHash &h ) const
+{
+	h.append( hash() );
+}
+
+template<typename T>
 const char **CompoundNumericPlug<T>::childNames()
 {
 	static const char *names[] = { "x", "y", "z", "w" };
@@ -259,8 +285,6 @@ IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::V3iPlug, V3iPlugTypeId
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::Color3fPlug, Color3fPlugTypeId )
 IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::Color4fPlug, Color4fPlugTypeId )
 
-}
-
 // explicit instantiations
 
 template class CompoundNumericPlug<Imath::V2f>;
@@ -269,3 +293,6 @@ template class CompoundNumericPlug<Imath::V2i>;
 template class CompoundNumericPlug<Imath::V3i>;
 template class CompoundNumericPlug<Imath::Color3f>;
 template class CompoundNumericPlug<Imath::Color4f>;
+
+}
+

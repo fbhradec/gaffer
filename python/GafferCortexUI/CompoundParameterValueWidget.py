@@ -39,7 +39,6 @@ from __future__ import with_statement
 
 import IECore
 
-import Gaffer
 import GafferUI
 import GafferCortexUI
 
@@ -87,6 +86,16 @@ class _PlugValueWidget( GafferUI.CompoundPlugValueWidget ) :
 		GafferUI.CompoundPlugValueWidget.__init__( self, parameterHandler.plug(), collapsed )
 
 		self.__parameterHandler = parameterHandler
+
+	def _childPlugs( self ) :
+
+		plug = self.getPlug()
+		orderedChildren = []
+		for childName in self.__parameterHandler.parameter().keys() :
+			if childName in plug :
+				orderedChildren.append( plug[childName] )
+
+		return orderedChildren
 
 	def _childPlugWidget( self, childPlug ) :
 

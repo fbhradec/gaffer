@@ -153,7 +153,7 @@ struct ExecuteOnUIThreadSlotCaller
 		}
 		catch( const error_already_set &e )
 		{
-			translatePythonException();
+			ExceptionAlgo::translatePythonException();
 		}
 		return boost::signals::detail::unusable();
 	}
@@ -167,6 +167,12 @@ StylePtr getStyle( Gadget &g )
 StylePtr style( Gadget &g )
 {
 	return const_cast<Style *>( g.style() );
+}
+
+void setVisible( Gadget &g, bool visible )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	g.setVisible( visible );
 }
 
 void render( const Gadget &g, const Style *currentStyle )
@@ -189,9 +195,10 @@ void GafferUIBindings::bindGadget()
 		.def( "setStyle", &Gadget::setStyle )
 		.def( "getStyle", &getStyle )
 		.def( "style", &style )
-		.def( "setVisible", &Gadget::setVisible )
+		.def( "setVisible", &setVisible )
 		.def( "getVisible", &Gadget::getVisible )
 		.def( "visible", &Gadget::visible, ( arg_( "relativeTo" ) = object() ) )
+		.def( "visibilityChangedSignal", &Gadget::visibilityChangedSignal, return_internal_reference<1>() )
 		.def( "getHighlighted", &Gadget::getHighlighted )
 		.def( "getTransform", &Gadget::getTransform, return_value_policy<copy_const_reference>() )
 		.def( "setTransform", &Gadget::setTransform )
