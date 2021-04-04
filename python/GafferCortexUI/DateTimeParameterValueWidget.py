@@ -35,16 +35,15 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import IECore
 
 import Gaffer
 import GafferUI
 import GafferCortexUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
 
 class DateTimeParameterValueWidget( GafferCortexUI.ParameterValueWidget ) :
 
@@ -58,10 +57,10 @@ class _DateTimePlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, **kw ) :
 
-		GafferUI.PlugValueWidget.__init__( self, QtGui.QDateTimeEdit(), plug, **kw )
+		GafferUI.PlugValueWidget.__init__( self, QtWidgets.QDateTimeEdit(), plug, **kw )
 
 		self._qtWidget().setCalendarPopup( True )
-		self._qtWidget().setSizePolicy( QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed )
+		self._qtWidget().setSizePolicy( QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed )
 		self._qtWidget().calendarWidget().setGridVisible( True )
 
 		headerFormat = QtGui.QTextCharFormat()
@@ -72,7 +71,7 @@ class _DateTimePlugValueWidget( GafferUI.PlugValueWidget ) :
 		self._qtWidget().calendarWidget().setWeekdayTextFormat( QtCore.Qt.Saturday, QtGui.QTextCharFormat() )
 		self._qtWidget().calendarWidget().setWeekdayTextFormat( QtCore.Qt.Sunday, QtGui.QTextCharFormat() )
 
-		self.__dateTimeChangedConnection = self._qtWidget().dateTimeChanged.connect( Gaffer.WeakMethod( self.__dateTimeChanged ) )
+		self._qtWidget().dateTimeChanged.connect( Gaffer.WeakMethod( self.__dateTimeChanged ) )
 
 		self._addPopupMenu()
 
@@ -108,5 +107,5 @@ class _DateTimePlugValueWidget( GafferUI.PlugValueWidget ) :
 			delimited[17:19],
 		)
 
-		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			self.getPlug().setValue( undelimited )

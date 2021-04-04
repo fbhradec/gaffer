@@ -127,9 +127,9 @@ class DeleteSetsTest( GafferSceneTest.SceneTestCase ) :
 
 		d = GafferScene.DeleteSets()
 
-		self.failUnless( d["out"]["setNames"] in d.affects( d["in"]["setNames"] ) )
-		self.failUnless( d["out"]["setNames"] in d.affects( d["names"] ) )
-		self.failUnless( d["out"]["setNames"] in d.affects( d["invertNames"] ) )
+		self.assertIn( d["out"]["setNames"], d.affects( d["in"]["setNames"] ) )
+		self.assertIn( d["out"]["setNames"], d.affects( d["names"] ) )
+		self.assertIn( d["out"]["setNames"], d.affects( d["invertNames"] ) )
 
 	def testWithSetFilter( self ) :
 
@@ -140,11 +140,11 @@ class DeleteSetsTest( GafferSceneTest.SceneTestCase ) :
 		d["in"].setInput( p["out"] )
 
 		f = GafferScene.SetFilter()
-		f["set"].setValue( "test" )
+		f["setExpression"].setValue( "test" )
 
 		a = GafferScene.CustomAttributes()
 		a["in"].setInput( d["out"] )
-		a["attributes"].addMember( "user:a", 10 )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "user:a", 10 ) )
 		a["filter"].setInput( f["out"] )
 
 		# We haven't deleted the set yet, so we should get
@@ -154,6 +154,33 @@ class DeleteSetsTest( GafferSceneTest.SceneTestCase ) :
 		# Delete the set, and the attribute should go away.
 		d["names"].setValue( "test" )
 		self.assertFalse( "user:a" in a["out"].attributes( "/plane" ) )
+
+	def testCantDeleteInternalSets( self ) :
+
+		light = GafferSceneTest.TestLight()
+		camera = GafferScene.Camera()
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( light["out"] )
+		group["in"][1].setInput( camera["out"] )
+
+		deleteSets = GafferScene.DeleteSets()
+		deleteSets["in"].setInput( group["out"] )
+		deleteSets["names"].setValue( "*" )
+
+		self.assertEqual( deleteSets["out"].setNames(), IECore.InternedStringVectorData( [ "__lights", "__cameras" ] ) )
+		self.assertEqual( deleteSets["out"].set( "__lights").value.paths(), [ "/group/light" ] )
+		self.assertEqual( deleteSets["out"].set( "__cameras").value.paths(), [ "/group/camera" ] )
+
+	def testHashPassThrough( self ) :
+
+		cube = GafferScene.Cube()
+		cube["sets"].setValue( "test" )
+
+		deleteSets = GafferScene.DeleteSets()
+		deleteSets["in"].setInput( cube["out"] )
+
+		self.assertEqual( deleteSets["out"].setHash( "test" ), cube["out"].setHash( "test" ) )
 
 if __name__ == "__main__":
 	unittest.main()

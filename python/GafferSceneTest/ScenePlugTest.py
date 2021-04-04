@@ -36,6 +36,7 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
 
@@ -49,7 +50,7 @@ class ScenePlugTest( GafferSceneTest.SceneTestCase ) :
 
 		p = GafferScene.ScenePlug()
 
-		self.failUnless( p.isInstanceOf( Gaffer.ValuePlug.staticTypeId() ) )
+		self.assertTrue( p.isInstanceOf( Gaffer.ValuePlug.staticTypeId() ) )
 		self.assertEqual( IECore.RunTimeTyped.baseTypeId( p.typeId() ), Gaffer.ValuePlug.staticTypeId() )
 
 	def testDynamicSerialisation( self ) :
@@ -65,8 +66,8 @@ class ScenePlugTest( GafferSceneTest.SceneTestCase ) :
 
 	def testFullTransform( self ) :
 
-		translation = IECore.M44f.createTranslated( IECore.V3f( 1 ) )
-		scaling = IECore.M44f.createScaled( IECore.V3f( 10 ) )
+		translation = imath.M44f().translate( imath.V3f( 1 ) )
+		scaling = imath.M44f().scale( imath.V3f( 10 ) )
 
 		n = GafferSceneTest.CompoundObjectSource()
 		n["in"].setValue(
@@ -84,16 +85,19 @@ class ScenePlugTest( GafferSceneTest.SceneTestCase ) :
 			} )
 		)
 
-		self.assertEqual( n["out"].transform( "/" ), IECore.M44f() )
+		self.assertEqual( n["out"].transform( "/" ), imath.M44f() )
 		self.assertEqual( n["out"].transform( "/group" ), translation )
 		self.assertEqual( n["out"].transform( "/group/ball" ), scaling )
 
-		self.assertEqual( n["out"].fullTransform( "/" ), IECore.M44f() )
+		self.assertEqual( n["out"].fullTransform( "/" ), imath.M44f() )
 		self.assertEqual( n["out"].fullTransform( "/group" ), translation )
 
 		m = n["out"].fullTransform( "/group/ball" )
-		self.assertEqual( m.translation(), IECore.V3f( 1 ) )
-		self.assertEqual( m.extractScaling(), IECore.V3f( 10 ) )
+		self.assertEqual( m.translation(), imath.V3f( 1 ) )
+
+		extractedScaling = imath.V3f()
+		m.extractScaling( extractedScaling )
+		self.assertEqual( extractedScaling, imath.V3f( 10 ) )
 		self.assertEqual( m, scaling * translation )
 
 	def testFullAttributes( self ) :
@@ -169,17 +173,17 @@ class ScenePlugTest( GafferSceneTest.SceneTestCase ) :
 		b = Gaffer.Box()
 		b["n"] = GafferScene.StandardAttributes()
 
-		self.assertTrue( b.canPromotePlug( b["n"]["in"] ) )
-		self.assertTrue( b.canPromotePlug( b["n"]["out"] ) )
+		self.assertTrue( Gaffer.PlugAlgo.canPromote( b["n"]["in"] ) )
+		self.assertTrue( Gaffer.PlugAlgo.canPromote( b["n"]["out"] ) )
 
-		i = b.promotePlug( b["n"]["in"] )
-		o = b.promotePlug( b["n"]["out"] )
+		i = Gaffer.PlugAlgo.promote( b["n"]["in"] )
+		o = Gaffer.PlugAlgo.promote( b["n"]["out"] )
 
 		self.assertEqual( b["n"]["in"].getInput(), i )
 		self.assertEqual( o.getInput(), b["n"]["out"] )
 
-		self.assertTrue( b.plugIsPromoted( b["n"]["in"] ) )
-		self.assertTrue( b.plugIsPromoted( b["n"]["out"] ) )
+		self.assertTrue( Gaffer.PlugAlgo.isPromoted( b["n"]["in"] ) )
+		self.assertTrue( Gaffer.PlugAlgo.isPromoted( b["n"]["out"] ) )
 
 	def testNoneAsPath( self ) :
 
@@ -215,8 +219,8 @@ class ScenePlugTest( GafferSceneTest.SceneTestCase ) :
 		self.assertTrue( isinstance( p["setNames"], Gaffer.InternedStringVectorDataPlug ) )
 		self.assertEqual( p["setNames"].defaultValue(), IECore.InternedStringVectorData() )
 
-		self.assertTrue( isinstance( p["set"], GafferScene.PathMatcherDataPlug ) )
-		self.assertEqual( p["set"].defaultValue(), GafferScene.PathMatcherData() )
+		self.assertTrue( isinstance( p["set"], Gaffer.PathMatcherDataPlug ) )
+		self.assertEqual( p["set"].defaultValue(), IECore.PathMatcherData() )
 
 	def testGlobalsAccessors( self ) :
 

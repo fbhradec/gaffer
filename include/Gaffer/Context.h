@@ -37,12 +37,17 @@
 #ifndef GAFFER_CONTEXT_H
 #define GAFFER_CONTEXT_H
 
+#include "Gaffer/Export.h"
+#include "Gaffer/ThreadState.h"
+
+#include "IECore/Canceller.h"
+#include "IECore/Data.h"
+#include "IECore/InternedString.h"
+#include "IECore/MurmurHash.h"
+#include "IECore/StringAlgo.h"
+
 #include "boost/container/flat_map.hpp"
 #include "boost/signals.hpp"
-
-#include "IECore/InternedString.h"
-#include "IECore/Data.h"
-#include "IECore/MurmurHash.h"
 
 namespace Gaffer
 {
@@ -57,13 +62,17 @@ namespace Gaffer
 /// maintains a stack of contexts, allowing computations in different contexts to be performed
 /// in parallel, and allowing contexts to be changed temporarily for a specific computation.
 ///
+/// It is common for Nodes to need to evaluate their upstream inputs in a modified context.
+/// The EditableScope class should be used for this purpose since it is more efficient than
+/// copy constructing a new Context.
+///
 /// \note The various UI components currently use "ui:" prefixed context variables for their
 /// own purposes. These variables are expected to never affect computation, and are therefore
 /// excluded from hash(). Other code may find that it too needs to ignore them in order to
 /// avoid unnecessary recomputation. In the future we may explore having the UI use a separate
 /// container for such variables, or a more general mechanism for variables guaranteed to be
 /// unrelated to computation.
-class Context : public IECore::RefCounted
+class GAFFER_API Context : public IECore::RefCounted
 {
 
 	public :
@@ -98,14 +107,17 @@ class Context : public IECore::RefCounted
 		};
 
 		Context();
-		/// Copy constructor. The ownership argument determines whether the
-		/// new context copies, shares or borrows the values from the original.
-		/// When constructing a temporary context within a compute() method,
-		/// using Borrowed provides the best performance, and because the original
-		/// context is const and outlives the temporary context, the constraints
-		/// required of client code are met with little effort.
+		/// Copy constructor. The ownership argument is deprecated - use
+		/// an EditableScope instead of Borrowed ownership.
 		Context( const Context &other, Ownership ownership = Copied );
-		~Context();
+		/// Copy constructor for creating a cancellable context.
+		/// The canceller is referenced, not copied, and must remain
+		/// alive for as long as the context is in use.
+		Context( const Context &other, const IECore::Canceller &canceller );
+		/// Copy constructor which can optionally omit an existing canceller
+		/// if `omitCanceller = true` is passed.
+		Context( const Context &other, bool omitCanceller );
+		~Context() override;
 
 		IE_CORE_DECLAREMEMBERPTR( Context )
 
@@ -131,6 +143,10 @@ class Context : public IECore::RefCounted
 
 		/// Removes an entry from the context if it exists
 		void remove( const IECore::InternedString& name );
+
+		/// Removes any entries whose names match the space separated patterns
+		/// provided. Matching is performed using `StringAlgo::matchMultiple()`.
+		void removeMatching( const IECore::StringAlgo::MatchPattern &pattern );
 
 		/// When a Shared or Borrowed value is changed behind the scenes, this method
 		/// must be called to notify the Context of the change.
@@ -176,46 +192,21 @@ class Context : public IECore::RefCounted
 		bool operator == ( const Context &other ) const;
 		bool operator != ( const Context &other ) const;
 
-		/// Enum to specify what sort of substitutions may
-		/// be performed on a string.
-		enum Substitutions
-		{
-			NoSubstitutions = 0,
-			/// Substituting one or more '#' characters with the frame
-			/// number, with the number of '#' characters determining
-			/// the padding. Note that this substitution is entirely
-			/// separate from ${frame} and $frame substitutions, which
-			/// are covered by the VariableSubstitutions flag.
-			FrameSubstitutions = 1,
-			/// Substituting $name or ${name} with the
-			/// value of a variable of that name.
-			VariableSubstitutions = 2,
-			/// Escaping of special characters using a preceding '\'.
-			EscapeSubstitutions = 4,
-			/// Substituting ~ with the path to the user's home directory.
-			TildeSubstitutions = 8,
-			AllSubstitutions = FrameSubstitutions | VariableSubstitutions | EscapeSubstitutions | TildeSubstitutions
-		};
+		/// Uses `IECore::StringAlgo::substitute()` to perform variable
+		/// substitutions using values from the context.
+		std::string substitute( const std::string &input, unsigned substitutions = IECore::StringAlgo::AllSubstitutions ) const;
+		/// An `IECore::StringAlgo::VariableProvider` that can be used to
+		/// pass context variables to `IECore::StringAlgo::substitute()`.
+		class SubstitutionProvider;
 
-		/// Performs variable substitution of $name, ${name} and ###
-		/// keys in input, using values from the context.
-		/// \todo I'm not entirely sure this belongs here. If we had
-		/// an abstract base class for dictionary-style access to things
-		/// then we could have a separate substitute() function capable
-		/// of accepting Contexts, CompoundData, CompoundObjects etc.
-		std::string substitute( const std::string &input, unsigned substitutions = AllSubstitutions ) const;
-		/// Returns a bitmask of Substitutions values containing the
-		/// sorts of substitutions contained in the string. If this returns
-		/// NoSubstitutions, it is guaranteed that substitute( input ) == input.
-		static unsigned substitutions( const std::string &input );
-		/// Returns true if the specified string contains substitutions
-		/// which can be performed by the substitute() method. If it returns
-		/// false, it is guaranteed that substitute( input ) == input.
-		static bool hasSubstitutions( const std::string &input );
+		/// Used to request cancellation of long running background operations.
+		/// May be null. Nodes that perform expensive work should check for
+		/// cancellation periodically by calling `Canceller::check( context->canceller() )`.
+		inline const IECore::Canceller *canceller() const;
 
 		/// The Scope class is used to push and pop the current context on
 		/// the calling thread.
-		class Scope : boost::noncopyable
+		class Scope : private ThreadState::Scope
 		{
 
 			public :
@@ -225,9 +216,47 @@ class Context : public IECore::RefCounted
 				/// Destruction of the Scope pops the previously pushed context.
 				~Scope();
 
+		};
+
+		/// Creates a lightweight editable copy of a context,
+		/// scoping it as the current context on the calling
+		/// thread. Typically used in Node internals to
+		/// evaluate upstream inputs in a modified context.
+		/// Note that there are no Python bindings for this class,
+		/// because it is harder to provide the necessary lifetime
+		/// guarantees there, and performance critical code should
+		/// not be implemented in Python in any case.
+		class EditableScope : private ThreadState::Scope
+		{
+
+			public :
+
+				/// It is the caller's responsibility to
+				/// guarantee that `context` outlives
+				/// the EditableScope.
+				EditableScope( const Context *context );
+				/// Copies the specified thread state to this thread,
+				/// and scopes an editable copy of the context contained
+				/// therein. It is the caller's responsibility to ensure
+				/// that `threadState` outlives the EditableScope.
+				EditableScope( const ThreadState &threadState );
+				~EditableScope();
+
+				template<typename T>
+				void set( const IECore::InternedString &name, const T &value );
+
+				void setFrame( float frame );
+				void setFramesPerSecond( float framesPerSecond );
+				void setTime( float timeInSeconds );
+
+				void remove( const IECore::InternedString &name );
+				void removeMatching( const IECore::StringAlgo::MatchPattern &pattern );
+
+				const Context *context() const { return m_context.get(); }
+
 			private :
 
-				const Context *m_context;
+				Ptr m_context;
 
 		};
 
@@ -236,19 +265,23 @@ class Context : public IECore::RefCounted
 
 	private :
 
-		void substituteInternal( const char *s, std::string &result, const int recursionDepth, unsigned substitutions ) const;
-
 		// Storage for each entry.
 		struct Storage
 		{
-			Storage() : data( NULL ), ownership( Copied ) {}
+			Storage() : data( nullptr ), ownership( Copied ) {}
+			inline void updateHash( const IECore::InternedString &name );
 			// We reference the data with a raw pointer to avoid the compulsory
 			// overhead of an intrusive pointer.
 			const IECore::Data *data;
 			// And use this ownership flag to tell us when we need to do explicit
 			// reference count management.
 			Ownership ownership;
+			// Hash value of this entry's data and name - these will be summed to produce
+			// a total hash for the context
+			IECore::MurmurHash hash;
 		};
+
+		void validateHashes();
 
 		typedef boost::container::flat_map<IECore::InternedString, Storage> Map;
 
@@ -256,6 +289,7 @@ class Context : public IECore::RefCounted
 		ChangedSignal *m_changedSignal;
 		mutable IECore::MurmurHash m_hash;
 		mutable bool m_hashValid;
+		const IECore::Canceller *m_canceller;
 
 };
 

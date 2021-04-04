@@ -34,19 +34,21 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "GafferScene/SetFilter.h"
+
+#include "GafferScene/SceneAlgo.h"
+#include "GafferScene/ScenePlug.h"
+#include "GafferScene/SetAlgo.h"
+
 #include "Gaffer/Context.h"
 #include "Gaffer/StringPlug.h"
-
-#include "GafferScene/ScenePlug.h"
-#include "GafferScene/PathMatcherData.h"
-#include "GafferScene/SetFilter.h"
 
 using namespace GafferScene;
 using namespace Gaffer;
 using namespace IECore;
 using namespace std;
 
-IE_CORE_DEFINERUNTIMETYPED( SetFilter );
+GAFFER_NODE_DEFINE_TYPE( SetFilter );
 
 size_t SetFilter::g_firstPlugIndex = 0;
 
@@ -55,41 +57,74 @@ SetFilter::SetFilter( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
-	addChild( new StringPlug( "set" ) );
+	addChild( new StringPlug( "setExpression" ) );
+	addChild( new PathMatcherDataPlug( "__expressionResult", Gaffer::Plug::Out, new PathMatcherData ) );
 }
 
 SetFilter::~SetFilter()
 {
 }
 
-Gaffer::StringPlug *SetFilter::setPlug()
+Gaffer::StringPlug *SetFilter::setExpressionPlug()
 {
 	return getChild<StringPlug>( g_firstPlugIndex );
 }
 
-const Gaffer::StringPlug *SetFilter::setPlug() const
+const Gaffer::StringPlug *SetFilter::setExpressionPlug() const
 {
 	return getChild<StringPlug>( g_firstPlugIndex );
+}
+
+Gaffer::PathMatcherDataPlug *SetFilter::expressionResultPlug()
+{
+	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 1 );
+}
+
+const Gaffer::PathMatcherDataPlug *SetFilter::expressionResultPlug() const
+{
+	return getChild<PathMatcherDataPlug>( g_firstPlugIndex + 1 );
 }
 
 void SetFilter::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	Filter::affects( input, outputs );
 
-	if( input == setPlug() )
+	if(
+		input == setExpressionPlug() ||
+		( input->parent<ScenePlug>() && SetAlgo::affectsSetExpression( input ) )
+	)
+	{
+		outputs.push_back( expressionResultPlug() );
+	}
+
+	if( input == expressionResultPlug() )
 	{
 		outputs.push_back( outPlug() );
 	}
+
 }
 
-bool SetFilter::sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const
+void SetFilter::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	if( Filter::sceneAffectsMatch( scene, child ) )
-	{
-		return true;
-	}
+	Filter::hash( output, context, h );
 
-	return child == scene->setPlug();
+	if( output == expressionResultPlug() )
+	{
+		ScenePlug::GlobalScope globalScope( context ); // Removes `scene:filter:inputScene`
+		SetAlgo::setExpressionHash( setExpressionPlug()->getValue(), getInputScene( context ), h );
+	}
+}
+
+void SetFilter::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const
+{
+	Filter::compute( output, context );
+
+	if( output == expressionResultPlug() )
+	{
+		ScenePlug::GlobalScope globalScope( context ); // Removes `scene:filter:inputScene`
+		PathMatcherDataPtr data = new PathMatcherData( SetAlgo::evaluateSetExpression( setExpressionPlug()->getValue(), getInputScene( context ) ) );
+		static_cast<PathMatcherDataPlug *>( output )->setValue( data );
+	}
 }
 
 void SetFilter::hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const
@@ -111,25 +146,42 @@ void SetFilter::hashMatch( const ScenePlug *scene, const Gaffer::Context *contex
 	/// of filters. If we manage that, then we should go back to throwing an exception here if
 	/// the context doesn't contain a path. We should then do the same in the PathFilter.
 	typedef IECore::TypedData<ScenePlug::ScenePath> ScenePathData;
-	const ScenePathData *pathData = context->get<ScenePathData>( ScenePlug::scenePathContextName, 0 );
+	const ScenePathData *pathData = context->get<ScenePathData>( ScenePlug::scenePathContextName, nullptr );
 	if( pathData )
 	{
 		const ScenePlug::ScenePath &path = pathData->readable();
 		h.append( &(path[0]), path.size() );
 	}
 
-	h.append( scene->setHash( setPlug()->getValue() ) );
+	Gaffer::Context::EditableScope expressionResultScope( context );
+	expressionResultScope.remove( ScenePlug::scenePathContextName );
+	// Remove unique value used by `SceneAlgo::history()` to disable caching.
+	// This is OK because `history()` would discard this branch of computation
+	// anyway. The benefit is that we avoid cache misses for potentially
+	// expensive set computations.
+	//
+	// \todo Ideally we would deal with this in `history()` itself, perhaps
+	// with a mechanism for enabling/disabling caching on the fly.
+	expressionResultScope.remove( SceneAlgo::historyIDContextName() );
+
+	expressionResultPlug()->hash( h );
 }
 
 unsigned SetFilter::computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const
 {
 	if( !scene )
 	{
-		return NoMatch;
+		return IECore::PathMatcher::NoMatch;
 	}
 
 	const ScenePlug::ScenePath &path = context->get<ScenePlug::ScenePath>( ScenePlug::scenePathContextName );
-	ConstPathMatcherDataPtr set = scene->set( setPlug()->getValue() );
+
+	Gaffer::Context::EditableScope expressionResultScope( context );
+	expressionResultScope.remove( ScenePlug::scenePathContextName );
+	// See comments in `hashMatch()`.
+	expressionResultScope.remove( SceneAlgo::historyIDContextName() );
+
+	ConstPathMatcherDataPtr set = expressionResultPlug()->getValue();
 
 	return set->readable().match( path );
 }

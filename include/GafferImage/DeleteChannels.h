@@ -37,15 +37,15 @@
 #ifndef GAFFERIMAGE_DELETECHANNELS_H
 #define GAFFERIMAGE_DELETECHANNELS_H
 
-#include "Gaffer/NumericPlug.h"
-
 #include "GafferImage/ImageProcessor.h"
-#include "GafferImage/ChannelMaskPlug.h"
+
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
 
 namespace GafferImage
 {
 
-class DeleteChannels : public ImageProcessor
+class GAFFERIMAGE_API DeleteChannels : public ImageProcessor
 {
 
 	public :
@@ -57,9 +57,9 @@ class DeleteChannels : public ImageProcessor
 		};
 
 		DeleteChannels( const std::string &name=defaultName<DeleteChannels>() );
-		virtual ~DeleteChannels();
+		~DeleteChannels() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::DeleteChannels, DeleteChannelsTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::DeleteChannels, DeleteChannelsTypeId, ImageProcessor );
 
 		//! @name Plug Accessors
 		//////////////////////////////////////////////////////////////
@@ -67,17 +67,17 @@ class DeleteChannels : public ImageProcessor
 		Gaffer::IntPlug *modePlug();
 		const Gaffer::IntPlug *modePlug() const;
 
-		GafferImage::ChannelMaskPlug *channelsPlug();
-		const GafferImage::ChannelMaskPlug *channelsPlug() const;
+		Gaffer::StringPlug *channelsPlug();
+		const Gaffer::StringPlug *channelsPlug() const;
 		//@}
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
 		// Reimplemented to perform the deletion.
-		virtual void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashChannelNames( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstStringVectorDataPtr computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 	private :
 

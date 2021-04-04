@@ -34,15 +34,18 @@
 #
 ##########################################################################
 
+import inspect
 import unittest
+import imath
 
 import IECore
 
 import Gaffer
 import GafferTest
 import GafferScene
+import GafferSceneTest
 
-class SceneProcessorTest( GafferTest.TestCase ) :
+class SceneProcessorTest( GafferSceneTest.SceneTestCase ) :
 
 	def testNumberOfInputs( self ) :
 
@@ -83,13 +86,13 @@ class SceneProcessorTest( GafferTest.TestCase ) :
 
 				self["__red"] = GafferScene.StandardAttributes()
 				self["__red"]["in"].setInput( self["in"] )
-				self["__red"]["attributes"].addMember( "user:matteColor", IECore.Color3f( 1, 0, 0 ) )
+				self["__red"]["attributes"].addChild( Gaffer.NameValuePlug( "user:matteColor", imath.Color3f( 1, 0, 0 ) ) )
 				self["redFilter"] = self["__red"]["filter"].createCounterpart( "redFilter", Gaffer.Plug.Direction.In )
 				self["__red"]["filter"].setInput( self["redFilter"] )
 
 				self["__green"] = GafferScene.StandardAttributes()
 				self["__green"]["in"].setInput( self["__red"]["out"] )
-				self["__green"]["attributes"].addMember( "user:matteColor", IECore.Color3f( 0, 1, 0 ) )
+				self["__green"]["attributes"].addChild( Gaffer.NameValuePlug( "user:matteColor", imath.Color3f( 0, 1, 0 ) ) )
 				self["greenFilter"] = self["__green"]["filter"].createCounterpart( "greenFilter", Gaffer.Plug.Direction.In )
 				self["__green"]["filter"].setInput( self["greenFilter"] )
 
@@ -115,8 +118,75 @@ class SceneProcessorTest( GafferTest.TestCase ) :
 		a["greenFilter"].setInput( f2["out"] )
 
 		self.assertEqual( a["out"].attributes( "/group" ), IECore.CompoundObject() )
-		self.assertEqual( a["out"].attributes( "/group/sphere" )["user:matteColor"].value, IECore.Color3f( 1, 0, 0 ) )
-		self.assertEqual( a["out"].attributes( "/group/sphere1" )["user:matteColor"].value, IECore.Color3f( 0, 1, 0 ) )
+		self.assertEqual( a["out"].attributes( "/group/sphere" )["user:matteColor"].value, imath.Color3f( 1, 0, 0 ) )
+		self.assertEqual( a["out"].attributes( "/group/sphere1" )["user:matteColor"].value, imath.Color3f( 0, 1, 0 ) )
+
+	def testScriptedSubGraph( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["plane"] = GafferScene.Plane()
+
+		s["processor"] = GafferScene.SceneProcessor()
+		s["processor"]["a"] = GafferScene.StandardAttributes()
+		s["processor"]["a"]["in"].setInput( s["processor"]["in"] )
+		s["processor"]["a"]["enabled"].setInput( s["processor"]["enabled"] )
+		s["processor"]["a"]["attributes"]["visibility"]["enabled"].setValue( True )
+		Gaffer.PlugAlgo.promoteWithName( s["processor"]["a"]["attributes"]["visibility"]["value"], name = "visibility" )
+		s["processor"]["out"].setInput( s["processor"]["a"]["out"] )
+		s["processor"]["in"].setInput( s["plane"]["out"] )
+
+		self.assertEqual( s["processor"]["out"].attributes( "/plane" )["scene:visible"].value, True )
+		s["processor"]["visibility"].setValue( False )
+		self.assertEqual( s["processor"]["out"].attributes( "/plane" )["scene:visible"].value, False )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		self.assertEqual( s2["processor"].keys(), s["processor"].keys() )
+		self.assertEqual( s2["processor"]["out"].attributes( "/plane" )["scene:visible"].value, False )
+		s2["processor"]["visibility"].setValue( True )
+		self.assertEqual( s2["processor"]["out"].attributes( "/plane" )["scene:visible"].value, True )
+
+	def testEnabledEvaluationUsesGlobalContext( self ) :
+
+		script = Gaffer.ScriptNode()
+		script["plane"] = GafferScene.Plane()
+		script["processor"] = GafferScene.StandardAttributes()
+		script["processor"]["in"].setInput( script["plane"]["out"] )
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( inspect.cleandoc(
+			"""
+			path = context.get("scene:path", None )
+			assert( path is None )
+			parent["processor"]["enabled"] = True
+			"""
+		) )
+
+		with Gaffer.ContextMonitor( script["expression"] ) as monitor :
+			self.assertSceneValid( script["processor"]["out"] )
+
+		self.assertEqual( monitor.combinedStatistics().numUniqueValues( "scene:path" ), 0 )
+
+	def testEnabledPlugTypeConversion( self ) :
+
+		plane = GafferScene.Plane()
+		string = GafferTest.StringInOutNode()
+
+		processor = GafferScene.StandardAttributes()
+		processor["in"].setInput( plane["out"] )
+		processor["attributes"]["doubleSided"]["enabled"].setValue( True )
+		processor["attributes"]["doubleSided"]["value"].setValue( True )
+		processor["enabled"].setInput( string["out"] )
+
+		string["in"].setValue( "" )
+		self.assertScenesEqual( processor["in"], processor["out"] )
+		self.assertSceneHashesEqual( processor["in"], processor["out"] )
+
+		string["in"].setValue( "x" )
+		self.assertNotEqual( processor["in"].attributes( "/plane" ), processor["out"].attributes( "/plane" ) )
+		self.assertNotEqual( processor["in"].attributesHash( "/plane" ), processor["out"].attributesHash( "/plane" ) )
 
 if __name__ == "__main__":
 	unittest.main()

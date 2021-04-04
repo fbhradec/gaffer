@@ -48,6 +48,13 @@ enum TypeId
 	CropWindowToolTypeId = 110654,
 	ShaderViewTypeId = 110655,
 	ShaderNodeGadgetTypeId = 110656,
+	TransformToolTypeId = 110657,
+	TranslateToolTypeId = 110658,
+	ScaleToolTypeId = 110659,
+	RotateToolTypeId = 110660,
+	CameraToolTypeId = 110661,
+	UVViewTypeId = 110662,
+	UVSceneTypeId = 110663,
 
 	LastTypeId = 110700
 };

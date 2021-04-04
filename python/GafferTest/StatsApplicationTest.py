@@ -49,7 +49,7 @@ class StatsApplicationTest( GafferTest.TestCase ) :
 
 		script["frameRange"]["start"].setValue( 10 )
 		script["frameRange"]["end"].setValue( 50 )
-		script["variables"].addMember( "test", 20.5 )
+		script["variables"].addChild( Gaffer.NameValuePlug( "test", 20.5, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		script["n"] = GafferTest.AddNode()
 		script["b"] = Gaffer.Box()
@@ -58,7 +58,7 @@ class StatsApplicationTest( GafferTest.TestCase ) :
 		script["fileName"].setValue( self.temporaryDirectory() + "/script.gfr" )
 		script.save()
 
-		o = subprocess.check_output( [ "gaffer", "stats", script["fileName"].getValue() ] )
+		o = subprocess.check_output( [ "gaffer", "stats", script["fileName"].getValue() ], universal_newlines = True )
 
 		self.assertTrue( Gaffer.About.versionString() in o )
 		self.assertTrue( re.search( r"frameRange\.start\s*10", o ) )

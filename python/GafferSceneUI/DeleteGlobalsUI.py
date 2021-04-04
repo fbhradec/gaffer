@@ -34,7 +34,7 @@
 #
 ##########################################################################
 
-import IECore
+import functools
 
 import Gaffer
 import GafferUI
@@ -94,7 +94,7 @@ def __toggleName( plug, name, active ) :
 	else :
 		names.remove( name )
 
-	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+	with Gaffer.UndoScope( plug.ancestor( Gaffer.ScriptNode ) ) :
 		plug.setValue( " ".join( names ) )
 
 def __namesPopupMenu( menuDefinition, plugValueWidget ) :
@@ -124,10 +124,10 @@ def __namesPopupMenu( menuDefinition, plugValueWidget ) :
 		menuDefinition.prepend(
 			menuPrefix + nameWithoutPrefix,
 			{
-				"command" : IECore.curry( __toggleName, plug, nameWithoutPrefix ),
+				"command" : functools.partial( __toggleName, plug, nameWithoutPrefix ),
 				"active" : plug.settable() and not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ),
 				"checkBox" : nameWithoutPrefix in currentNames,
 			}
 		)
 
-__namesPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __namesPopupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __namesPopupMenu, scoped = False )

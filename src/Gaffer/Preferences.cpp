@@ -39,7 +39,7 @@
 
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( Preferences );
+GAFFER_NODE_DEFINE_TYPE( Preferences );
 
 Preferences::Preferences( const std::string &name )
 	:	Node( name )

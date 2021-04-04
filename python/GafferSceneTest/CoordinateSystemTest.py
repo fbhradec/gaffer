@@ -35,8 +35,10 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferTest
@@ -50,10 +52,10 @@ class CoordinateSystemTest( GafferSceneTest.SceneTestCase ) :
 		c = GafferScene.CoordinateSystem()
 		self.assertSceneValid( c["out"] )
 
-		self.assertEqual( c["out"].bound( "/coordinateSystem" ), IECore.Box3f( IECore.V3f( 0 ), IECore.V3f( 1 ) ) )
+		self.assertEqual( c["out"].bound( "/coordinateSystem" ), imath.Box3f( imath.V3f( 0 ), imath.V3f( 1 ) ) )
 
 		o = c["out"].object( "/coordinateSystem" )
-		self.assertTrue( isinstance( o, IECore.CoordinateSystem ) )
+		self.assertTrue( isinstance( o, IECoreScene.CoordinateSystem ) )
 
 		s = c["out"].set( "__coordinateSystems" )
 		self.assertEqual( s.value.paths(), [ "/coordinateSystem" ] )
@@ -64,12 +66,12 @@ class CoordinateSystemTest( GafferSceneTest.SceneTestCase ) :
 
 		dirtied = GafferTest.CapturingSlot( c.plugDirtiedSignal() )
 		c["transform"]["translate"]["x"].setValue( 10 )
-		self.failUnless( c["out"]["transform"] in [ p[0] for p in dirtied ] )
+		self.assertIn( c["out"]["transform"], [ p[0] for p in dirtied ] )
 
 		dirtied = GafferTest.CapturingSlot( c.plugDirtiedSignal() )
 		c["name"].setValue( "yupyup" )
-		self.failUnless( c["out"]["childNames"] in [ p[0] for p in dirtied ] )
-		self.failUnless( c["out"]["set"] in [ p[0] for p in dirtied ] )
+		self.assertIn( c["out"]["childNames"], [ p[0] for p in dirtied ] )
+		self.assertIn( c["out"]["set"], [ p[0] for p in dirtied ] )
 
 if __name__ == "__main__":
 	unittest.main()

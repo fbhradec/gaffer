@@ -39,10 +39,10 @@
 using namespace GafferScene;
 using namespace GafferAppleseed;
 
-IE_CORE_DEFINERUNTIMETYPED( AppleseedRender );
+GAFFER_NODE_DEFINE_TYPE( AppleseedRender );
 
 AppleseedRender::AppleseedRender( const std::string &name )
-	:	Render( "IECoreAppleseed::Renderer", name )
+	:	Render( "Appleseed", name )
 {
 }
 

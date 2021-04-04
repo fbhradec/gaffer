@@ -38,24 +38,60 @@ import Gaffer
 
 Gaffer.Metadata.registerNode(
 
-	Gaffer.ContextVariablesComputeNode,
+	Gaffer.ContextVariables,
 
 	"description",
 	"""
-	Adds variables which can be referenced by upstream expressions.
+	Adds variables which can be referenced by upstream expressions
+	and string substitutions.
 	""",
 
 	plugs = {
+
+		"in" : [
+
+			"plugValueWidget:type", "",
+
+		],
+
+		"out" : [
+
+			"plugValueWidget:type", "",
+
+		],
 
 		"variables" : [
 
 			"description",
 			"""
-			The variables to be added - arbitrary numbers of variables
-			can be added here.
-			"""
+			The variables to be added. Each variable is represented
+			as a child plug, created either through the UI or using the
+			CompoundDataPlug API.
+			""",
 
-		]
+			"nodule:type", "",
+
+		],
+
+		"extraVariables" : [
+
+			"description",
+			"""
+			An additional set of variables to be added. Arbitrary numbers
+			of variables may be specified within a single IECore::CompoundData
+			object, where each key/value pair in the object defines a variable.
+			This is convenient when using an expression to define the variables
+			and the variable count might be dynamic.
+
+			If the same variable is defined by both the variables and the
+			extraVariables plugs, then the value from the extraVariables
+			is taken.
+			""",
+
+			"layout:section", "Extra",
+			"nodule:type", "",
+
+		],
 
 	}
 

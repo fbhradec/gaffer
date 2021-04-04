@@ -35,11 +35,13 @@
 #
 ##########################################################################
 
-import StringIO
 import unittest
 import weakref
 import sys
+import six
 import gc
+import functools
+import imath
 
 import IECore
 
@@ -76,9 +78,9 @@ class SignalsTest( GafferTest.TestCase ) :
 
 		s = Gaffer.Signal1()
 		c = s.connect( f )
-		self.assert_( c.connected() )
+		self.assertTrue( c.connected() )
 		del s
-		self.assert_( not c.connected() )
+		self.assertFalse( c.connected() )
 
 	def test2( self ) :
 
@@ -96,11 +98,11 @@ class SignalsTest( GafferTest.TestCase ) :
 
 			return -1
 
-		class A( IECore.V3f ) :
+		class A( imath.V3f ) :
 
 			def __init__( self ) :
 
-				IECore.V3f.__init__( self )
+				imath.V3f.__init__( self )
 				self.signal = Gaffer.Signal1()
 
 			def f( self, n ) :
@@ -120,7 +122,7 @@ class SignalsTest( GafferTest.TestCase ) :
 
 		# connect a method of a2 to the signal on a1
 		a2.c = a1.signal.connect( Gaffer.WeakMethod( a2.f ) )
-		self.assert_( a2.c.connected() )
+		self.assertTrue( a2.c.connected() )
 
 		self.assertEqual( a1.signal( 2 ), 4 )
 
@@ -132,7 +134,7 @@ class SignalsTest( GafferTest.TestCase ) :
 
 		# as a1 is now dead, a2's connection to a1.signal
 		# should have died.
-		self.assert_( not a2.c.connected() )
+		self.assertFalse( a2.c.connected() )
 
 	def testDeletionOfConnectionDisconnects( self ) :
 
@@ -156,13 +158,13 @@ class SignalsTest( GafferTest.TestCase ) :
 
 	def testMany( self ) :
 
-		class S( IECore.V3f ) :
+		class S( imath.V3f ) :
 
 			instances = 0
 
 			def __init__( self, parent ) :
 
-				IECore.V3f.__init__( self )
+				imath.V3f.__init__( self )
 
 				S.instances += 1
 
@@ -221,7 +223,7 @@ class SignalsTest( GafferTest.TestCase ) :
 		w = weakref.ref( t )
 
 		realStdErr = sys.stderr
-		sio = StringIO.StringIO()
+		sio = six.moves.cStringIO()
 		try :
 			sys.stderr = sio
 			s.add( Gaffer.Node() )
@@ -230,8 +232,8 @@ class SignalsTest( GafferTest.TestCase ) :
 
 		del t
 
-		self.assert_( w() is None )
-		self.assert_( "Exception" in sio.getvalue() )
+		self.assertIsNone( w(), None )
+		self.assertIn( "Exception", sio.getvalue() )
 
 	def test0Arity( self ) :
 
@@ -311,6 +313,36 @@ class SignalsTest( GafferTest.TestCase ) :
 		self.assertEqual( s(), True )
 		self.assertEqual( self.numCalls, 1 )
 
+	def testPythonResultCombinerCanHandleExceptions( self ) :
+
+		def myCombiner( slotResults ) :
+
+			results = []
+			exceptions = []
+
+			while True :
+
+				try :
+					results.append( next( slotResults ) )
+				except StopIteration :
+					return results, exceptions
+				except Exception as e :
+					exceptions.append( e )
+
+		def badSlot() :
+
+			raise RuntimeError()
+
+		s = Gaffer.Signal0( myCombiner )
+		s.connect( lambda : 10, scoped = False )
+		s.connect( badSlot, scoped = False )
+		s.connect( lambda : 20, scoped = False )
+
+		results, exceptions = s()
+		self.assertEqual( results, [ 10, 20 ] )
+		self.assertEqual( len( exceptions ), 1 )
+		self.assertIsInstance( exceptions[0], RuntimeError )
+
 	def testGroupingAndOrdering( self ) :
 
 		values = []
@@ -319,24 +351,24 @@ class SignalsTest( GafferTest.TestCase ) :
 			values.append( value )
 
 		s = Gaffer.Signal0()
-		c1 = s.connect( IECore.curry( f, "one" ) )
-		c2 = s.connect( IECore.curry( f, "two" ) )
+		c1 = s.connect( functools.partial( f, "one" ) )
+		c2 = s.connect( functools.partial( f, "two" ) )
 		s()
 
 		self.assertEqual( values, [ "one", "two" ] )
 
 		del values[:]
 
-		c1 = s.connect( 1, IECore.curry( f, "one" ) )
-		c2 = s.connect( 0, IECore.curry( f, "two" ) )
+		c1 = s.connect( 1, functools.partial( f, "one" ) )
+		c2 = s.connect( 0, functools.partial( f, "two" ) )
 		s()
 
 		self.assertEqual( values, [ "two", "one" ] )
 
 		del values[:]
 
-		c1 = s.connect( IECore.curry( f, "one" ) )
-		c2 = s.connect( 0, IECore.curry( f, "two" ) )
+		c1 = s.connect( functools.partial( f, "one" ) )
+		c2 = s.connect( 0, functools.partial( f, "two" ) )
 		s()
 
 		self.assertEqual( values, [ "two", "one" ] )
@@ -395,6 +427,27 @@ class SignalsTest( GafferTest.TestCase ) :
 		# signal dies.
 		del s
 		self.assertTrue( w() is None )
+
+	def testTrackable( self ) :
+
+		class TrackableTest( Gaffer.Trackable ) :
+
+			def f( self ) :
+
+				pass
+
+		s = Gaffer.Signal0()
+		t = TrackableTest()
+		w = weakref.ref( t )
+
+		c = s.connect( Gaffer.WeakMethod( t.f ), scoped = False )
+
+		self.assertTrue( c.connected() )
+		del t
+		self.assertIsNone( w() )
+		self.assertFalse( c.connected() )
+
+		s() # Would throw if an expired WeakMethod remained connected
 
 if __name__ == "__main__":
 	unittest.main()

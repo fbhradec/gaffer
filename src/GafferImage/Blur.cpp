@@ -34,21 +34,25 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringPlug.h"
-
 #include "GafferImage/Blur.h"
+
+#include "GafferImage/FilterAlgo.h"
 #include "GafferImage/Resample.h"
+
+#include "Gaffer/StringPlug.h"
 
 using namespace Imath;
 using namespace Gaffer;
 using namespace GafferImage;
 
-IE_CORE_DEFINERUNTIMETYPED( Blur );
+GAFFER_NODE_DEFINE_TYPE( Blur );
+
+const char *g_blurFilterName = "smoothGaussian";
 
 size_t Blur::g_firstPlugIndex = 0;
 
 Blur::Blur( const std::string &name )
-	:   ImageProcessor( name )
+	:   FlatImageProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -58,7 +62,7 @@ Blur::Blur( const std::string &name )
 	addChild( resample->boundingModePlug()->createCounterpart( "boundingMode", Plug::In ) );
 	addChild( new BoolPlug( "expandDataWindow" ) );
 
-	addChild( new V2fPlug( "__filterWidth", Plug::Out ) );
+	addChild( new V2fPlug( "__filterScale", Plug::Out ) );
 
 	addChild( new AtomicBox2iPlug( "__resampledDataWindow", Plug::In, Box2i(), Plug::Default & ~Plug::Serialisable ) );
 	addChild( new FloatVectorDataPlug( "__resampledChannelData", Plug::In, ImagePlug::blackTile(), Plug::Default & ~Plug::Serialisable ) );
@@ -66,9 +70,9 @@ Blur::Blur( const std::string &name )
 	addChild( resample );
 
 	resample->inPlug()->setInput( inPlug() );
-	resample->filterPlug()->setValue( "smoothGaussian" );
+	resample->filterPlug()->setValue( g_blurFilterName );
 	resample->boundingModePlug()->setInput( boundingModePlug() );
-	resample->filterWidthPlug()->setInput( filterWidthPlug() );
+	resample->filterScalePlug()->setInput( filterScalePlug() );
 	resample->expandDataWindowPlug()->setValue( true );
 
 	resampledDataWindowPlug()->setInput( resample->outPlug()->dataWindowPlug() );
@@ -113,12 +117,12 @@ const Gaffer::BoolPlug *Blur::expandDataWindowPlug() const
 	return getChild<BoolPlug>( g_firstPlugIndex + 2 );
 }
 
-Gaffer::V2fPlug *Blur::filterWidthPlug()
+Gaffer::V2fPlug *Blur::filterScalePlug()
 {
 	return getChild<V2fPlug>( g_firstPlugIndex + 3 );
 }
 
-const Gaffer::V2fPlug *Blur::filterWidthPlug() const
+const Gaffer::V2fPlug *Blur::filterScalePlug() const
 {
 	return getChild<V2fPlug>( g_firstPlugIndex + 3 );
 }
@@ -155,7 +159,7 @@ const Resample *Blur::resample() const
 
 void Blur::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	ImageProcessor::affects( input, outputs );
+	FlatImageProcessor::affects( input, outputs );
 
 	if(
 		input == expandDataWindowPlug() ||
@@ -166,7 +170,7 @@ void Blur::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs )
 	}
 	else if( input->parent<V2fPlug>() == radiusPlug() )
 	{
-		outputs.push_back( filterWidthPlug()->getChild<ValuePlug>( input->getName() ) );
+		outputs.push_back( filterScalePlug()->getChild<ValuePlug>( input->getName() ) );
 		outputs.push_back( outPlug()->dataWindowPlug() );
 		outputs.push_back( outPlug()->channelDataPlug() );
 	}
@@ -180,9 +184,9 @@ void Blur::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs )
 
 void Blur::hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hash( output, context, h );
+	FlatImageProcessor::hash( output, context, h );
 
-	if( output->parent<ValuePlug>() == filterWidthPlug() )
+	if( output->parent<ValuePlug>() == filterScalePlug() )
 	{
 		radiusPlug()->getChild<ValuePlug>( output->getName() )->hash( h );
 	}
@@ -190,15 +194,27 @@ void Blur::hash( const ValuePlug *output, const Context *context, IECore::Murmur
 
 void Blur::compute( ValuePlug *output, const Context *context ) const
 {
-	if( output->parent<ValuePlug>() == filterWidthPlug() )
+	if( output->parent<ValuePlug>() == filterScalePlug() )
 	{
+		const OIIO::Filter2D *filter = FilterAlgo::acquireFilter( g_blurFilterName );
+		float filterSupport = filter->width();
+
+		// We want the final support of the filter to start from exactly 2 here, so that it just barely
+		// doesn't pick up adjacent pixels when radius = 0.  So we multiply by 2 divided by the
+		// support width of the filter.  Note that for the smooth gaussian we are actually using, this
+		// means we start with a filter that is narrower than the default we would use for resampling:
+		// our smooth gaussian has a support width of 3, so we scale it down.  This would produce more
+		// aliasing than is expected with a gaussian if we used it for resampling, but because we know
+		// that we are just sampling straight back onto the same pixel centers, we know this isn't a
+		// problem for blur.
+
 		static_cast<FloatPlug *>( output )->setValue(
-			2.0f * ( 1.0f + radiusPlug()->getChild<FloatPlug>( output->getName() )->getValue() )
+			2.0f / filterSupport * ( 1.0f + radiusPlug()->getChild<FloatPlug>( output->getName() )->getValue() )
 		);
 		return;
 	}
 
-	ImageProcessor::compute( output, context );
+	FlatImageProcessor::compute( output, context );
 }
 
 void Blur::hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const

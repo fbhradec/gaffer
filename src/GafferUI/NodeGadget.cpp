@@ -35,18 +35,19 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/algorithm/string/find.hpp"
+#include "GafferUI/NodeGadget.h"
+
+#include "GafferUI/LinearContainer.h"
+#include "GafferUI/NameGadget.h"
+#include "GafferUI/Nodule.h"
+#include "GafferUI/Style.h"
+
+#include "Gaffer/Metadata.h"
+#include "Gaffer/ScriptNode.h"
 
 #include "IECore/SimpleTypedData.h"
 
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/Metadata.h"
-
-#include "GafferUI/NodeGadget.h"
-#include "GafferUI/NameGadget.h"
-#include "GafferUI/Style.h"
-#include "GafferUI/LinearContainer.h"
-#include "GafferUI/Nodule.h"
+#include "boost/algorithm/string/find.hpp"
 
 using namespace GafferUI;
 using namespace Imath;
@@ -54,7 +55,39 @@ using namespace IECore;
 using namespace std;
 using namespace boost;
 
-IE_CORE_DEFINERUNTIMETYPED( NodeGadget );
+//////////////////////////////////////////////////////////////////////////
+// Factory internals
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+typedef std::map<std::string, NodeGadget::NodeGadgetCreator> TypeCreatorMap;
+TypeCreatorMap &typeCreators()
+{
+	// We tactically "leak" this map. NodeGadgetCreators are
+	// registered from Python, meaning we hold python objects in the TypeCreatorMap.
+	// Python completes shutdown before static destructors are run, and trying
+	// to destroy a Python object after Python shutdown can lead to crashes.
+	static auto c = new TypeCreatorMap;
+	return *c;
+}
+
+typedef std::map<IECore::TypeId, NodeGadget::NodeGadgetCreator> NodeCreatorMap;
+NodeCreatorMap &nodeCreators()
+{
+	// See `typeCreators()` for note on "leak".
+	static auto c = new NodeCreatorMap;
+	return *c;
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// NodeGadget
+//////////////////////////////////////////////////////////////////////////
+
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( NodeGadget );
 
 NodeGadget::NodeGadget( Gaffer::NodePtr node )
 	:	m_node( node.get() )
@@ -67,12 +100,31 @@ NodeGadget::~NodeGadget()
 
 NodeGadgetPtr NodeGadget::create( Gaffer::NodePtr node )
 {
-	const CreatorMap &cr = creators();
+	IECore::ConstStringDataPtr nodeGadgetType = Gaffer::Metadata::value<IECore::StringData>( node.get(), "nodeGadget:type" );
+	if( nodeGadgetType )
+	{
+		if( nodeGadgetType->readable() == "" )
+		{
+			return nullptr;
+		}
+		const TypeCreatorMap &m = typeCreators();
+		TypeCreatorMap::const_iterator it = m.find( nodeGadgetType->readable() );
+		if( it != m.end() )
+		{
+			return it->second( node );
+		}
+		else
+		{
+			IECore::msg( IECore::Msg::Warning, "NodeGadget::create", boost::format( "Nonexistent type \"%s\" requested for node \"%s\"" ) % nodeGadgetType->readable() % node->fullName() );
+		}
+	}
+
+	const NodeCreatorMap &cr = nodeCreators();
 
 	IECore::TypeId typeId = node->typeId();
 	while( typeId != IECore::InvalidTypeId )
 	{
-		const CreatorMap::const_iterator it = cr.find( typeId );
+		const NodeCreatorMap::const_iterator it = cr.find( typeId );
 		if( it != cr.end() )
 		{
 			return it->second( node );
@@ -80,12 +132,21 @@ NodeGadgetPtr NodeGadget::create( Gaffer::NodePtr node )
 		typeId = IECore::RunTimeTyped::baseTypeId( typeId );
 	}
 
-	return NULL;
+	return nullptr;
+}
+
+void NodeGadget::registerNodeGadget( const std::string &nodeGadgetType, NodeGadgetCreator creator, IECore::TypeId nodeType )
+{
+	typeCreators()[nodeGadgetType] = creator;
+	if( nodeType != IECore::InvalidTypeId )
+	{
+		nodeCreators()[nodeType] = creator;
+	}
 }
 
 void NodeGadget::registerNodeGadget( IECore::TypeId nodeType, NodeGadgetCreator creator )
 {
-	creators()[nodeType] = creator;
+	nodeCreators()[nodeType] = creator;
 }
 
 Gaffer::Node *NodeGadget::node()
@@ -100,15 +161,15 @@ const Gaffer::Node *NodeGadget::node() const
 
 Nodule *NodeGadget::nodule( const Gaffer::Plug *plug )
 {
-	return 0;
+	return nullptr;
 }
 
 const Nodule *NodeGadget::nodule( const Gaffer::Plug *plug ) const
 {
-	return 0;
+	return nullptr;
 }
 
-Imath::V3f NodeGadget::noduleTangent( const Nodule *nodule ) const
+Imath::V3f NodeGadget::connectionTangent( const ConnectionCreator *creator ) const
 {
 	return V3f( 0, 1, 0 );
 }
@@ -121,12 +182,6 @@ NodeGadget::NoduleSignal &NodeGadget::noduleAddedSignal()
 NodeGadget::NoduleSignal &NodeGadget::noduleRemovedSignal()
 {
 	return m_noduleRemovedSignal;
-}
-
-NodeGadget::CreatorMap &NodeGadget::creators()
-{
-	static CreatorMap c;
-	return c;
 }
 
 std::string NodeGadget::getToolTip( const IECore::LineSegment3f &line ) const
@@ -144,12 +199,11 @@ std::string NodeGadget::getToolTip( const IECore::LineSegment3f &line ) const
 		title = &*(r.end());
 	}
 
-	result = "<h3>" + title + "</h3>";
+	result = "# " + title;
 
-	std::string description = Gaffer::Metadata::nodeDescription( m_node );
-	if( description.size() )
+	if( ConstStringDataPtr description = Gaffer::Metadata::value<StringData>( m_node, "description" ) )
 	{
-		result += "\n\n" + description;
+		result += "\n\n" + description->readable();
 	}
 
 	if( ConstStringDataPtr summary = Gaffer::Metadata::value<StringData>( m_node, "summary" ) )

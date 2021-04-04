@@ -35,31 +35,36 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
-#include "boost/algorithm/string/predicate.hpp"
+#include "GafferUI/StandardNodeGadget.h"
 
-#include "OpenEXR/ImathBoxAlgo.h"
+#include "GafferUI/CompoundNodule.h"
+#include "GafferUI/GraphGadget.h"
+#include "GafferUI/ImageGadget.h"
+#include "GafferUI/LinearContainer.h"
+#include "GafferUI/NameGadget.h"
+#include "GafferUI/Nodule.h"
+#include "GafferUI/NoduleLayout.h"
+#include "GafferUI/PlugAdder.h"
+#include "GafferUI/SpacerGadget.h"
+#include "GafferUI/StandardNodule.h"
+#include "GafferUI/Style.h"
 
-#include "IECoreGL/Selector.h"
-
-#include "Gaffer/TypedObjectPlug.h"
-#include "Gaffer/StandardSet.h"
 #include "Gaffer/DependencyNode.h"
 #include "Gaffer/Metadata.h"
 #include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/ParallelAlgo.h"
 #include "Gaffer/ScriptNode.h"
+#include "Gaffer/StandardSet.h"
+#include "Gaffer/TypedObjectPlug.h"
 
-#include "GafferUI/StandardNodeGadget.h"
-#include "GafferUI/Nodule.h"
-#include "GafferUI/NameGadget.h"
-#include "GafferUI/LinearContainer.h"
-#include "GafferUI/Style.h"
-#include "GafferUI/CompoundNodule.h"
-#include "GafferUI/StandardNodule.h"
-#include "GafferUI/SpacerGadget.h"
-#include "GafferUI/ImageGadget.h"
-#include "GafferUI/PlugAdder.h"
-#include "GafferUI/NoduleLayout.h"
+#include "IECoreGL/Selector.h"
+
+#include "IECore/MessageHandler.h"
+
+#include "OpenEXR/ImathBoxAlgo.h"
+
+#include "boost/algorithm/string/predicate.hpp"
+#include "boost/bind.hpp"
 
 using namespace std;
 using namespace Imath;
@@ -85,19 +90,10 @@ class StandardNodeGadget::ErrorGadget : public Gadget
 		void addError( PlugPtr plug, const std::string &error )
 		{
 			PlugEntry &entry = m_errors[plug];
-			if( entry.error.empty() || !boost::ends_with( error, "Previous attempt to get item failed." ) )
-			{
-				// Update the error message. Unfortunately the IECore::LRUCache at the
-				// heart of Gaffer's caching  does not remember the details of exceptions that
-				// occurred when the cache entry is in error - instead it throws a different
-				// exception saying "Previous attempt to get item failed.". We ignore these less
-				// helpful messages in favour of a previous messages if one exists.
-				/// \todo Improve LRUCache behaviour and remove this workaround.
-				entry.error = error;
-			}
+			entry.error = error;
 			if( !entry.parentChangedConnection.connected() )
 			{
-				entry.parentChangedConnection = plug->parentChangedSignal().connect( boost::bind( &ErrorGadget::parentChanged, this, ::_1 ) );
+				entry.parentChangedConnection = plug->parentChangedSignal().connect( boost::bind( &ErrorGadget::plugParentChanged, this, ::_1 ) );
 			}
 			m_image->setVisible( true );
 		}
@@ -108,7 +104,7 @@ class StandardNodeGadget::ErrorGadget : public Gadget
 			m_image->setVisible( m_errors.size() );
 		}
 
-		virtual std::string getToolTip( const IECore::LineSegment3f &position ) const
+		std::string getToolTip( const IECore::LineSegment3f &position ) const override
 		{
 			std::string result = Gadget::getToolTip( position );
 			if( !result.empty() )
@@ -121,6 +117,10 @@ class StandardNodeGadget::ErrorGadget : public Gadget
 			{
 				if( reported.find( it->second.error ) == reported.end() )
 				{
+					if( result.size() )
+					{
+						result += "\n";
+					}
 					result += it->second.error;
 					reported.insert( it->second.error );
 				}
@@ -130,9 +130,9 @@ class StandardNodeGadget::ErrorGadget : public Gadget
 
 	private :
 
-		void parentChanged( GraphComponent *plug )
+		void plugParentChanged( GraphComponent *plug )
 		{
-			if( !plug->parent<GraphComponent>() )
+			if( !plug->parent() )
 			{
 				removeError( static_cast<Plug *>( plug ) );
 			}
@@ -152,35 +152,53 @@ class StandardNodeGadget::ErrorGadget : public Gadget
 };
 
 //////////////////////////////////////////////////////////////////////////
-// Utilities
+// Internal utilities
 //////////////////////////////////////////////////////////////////////////
 
 namespace
 {
 
-/// Used for sorting nodules for layout
-struct IndexAndNodule
+bool canConnect( const DragDropEvent &event, const ConnectionCreator *destination )
 {
-
-	IndexAndNodule()
-		:	index( 0 ), nodule( NULL )
+	if( auto plug = IECore::runTimeCast<const Plug>( event.data.get() ) )
 	{
+		if( destination->canCreateConnection( plug ) )
+		{
+			return true;
+		}
 	}
 
-	IndexAndNodule( int index, Nodule *nodule )
-		:	index( index ), nodule( nodule )
+	if( auto sourceCreator = IECore::runTimeCast<const ConnectionCreator>( event.sourceGadget.get() ) )
 	{
+		if( auto destinationNodule = IECore::runTimeCast<const Nodule>( destination ) )
+		{
+			return sourceCreator->canCreateConnection( destinationNodule->plug() );
+		}
+	}
+	return false;
+}
+
+void connect( const DragDropEvent &event, ConnectionCreator *destination )
+{
+	if( auto plug = IECore::runTimeCast<Plug>( event.data.get() ) )
+	{
+		if( destination->canCreateConnection( plug ) )
+		{
+			UndoScope undoScope( plug->ancestor<ScriptNode>() );
+			destination->createConnection( plug );
+			return;
+		}
 	}
 
-	bool operator < ( const IndexAndNodule &rhs ) const
+	if( auto sourceCreator = IECore::runTimeCast<ConnectionCreator>( event.sourceGadget.get() ) )
 	{
-		return index < rhs.index;
+		if( auto destinationNodule = IECore::runTimeCast<Nodule>( destination ) )
+		{
+			UndoScope undoScope( destinationNodule->plug()->ancestor<ScriptNode>() );
+			sourceCreator->createConnection( destinationNodule->plug() );
+		}
 	}
-
-	int index;
-	Nodule *nodule;
-
-};
+}
 
 } // namespace
 
@@ -188,7 +206,7 @@ struct IndexAndNodule
 // StandardNodeGadget implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( StandardNodeGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( StandardNodeGadget );
 
 NodeGadget::NodeGadgetTypeDescription<StandardNodeGadget> StandardNodeGadget::g_nodeGadgetTypeDescription( Gaffer::Node::staticTypeId() );
 
@@ -196,14 +214,18 @@ static const float g_borderWidth = 0.5f;
 static IECore::InternedString g_minWidthKey( "nodeGadget:minWidth"  );
 static IECore::InternedString g_paddingKey( "nodeGadget:padding"  );
 static IECore::InternedString g_colorKey( "nodeGadget:color" );
+static IECore::InternedString g_shapeKey( "nodeGadget:shape" );
+static IECore::InternedString g_iconKey( "icon" );
+static IECore::InternedString g_iconScaleKey( "iconScale" );
 static IECore::InternedString g_errorGadgetName( "__error" );
 
 StandardNodeGadget::StandardNodeGadget( Gaffer::NodePtr node )
 	:	NodeGadget( node ),
 		m_nodeEnabled( true ),
 		m_labelsVisibleOnHover( true ),
-		m_dragDestinationProxy( 0 ),
-		m_userColor( 0 )
+		m_dragDestination( nullptr ),
+		m_userColor( 0 ),
+		m_oval( false )
 {
 
 	// build our ui structure
@@ -275,11 +297,23 @@ StandardNodeGadget::StandardNodeGadget( Gaffer::NodePtr node )
 	);
 	row->addChild( contentsColumn );
 
+	LinearContainerPtr contentsRow = new LinearContainer(
+		"paddingRow",
+		LinearContainer::X,
+		LinearContainer::Centre,
+		0.5f
+	);
+
+	IndividualContainerPtr iconContainer = new IndividualContainer();
+	iconContainer->setName( "iconContainer" );
+	contentsRow->addChild( iconContainer );
+
 	IndividualContainerPtr contentsContainer = new IndividualContainer();
 	contentsContainer->setName( "contentsContainer" );
+	contentsRow->addChild( contentsContainer );
 
 	contentsColumn->addChild( new SpacerGadget( Box3f( V3f( 0 ), V3f( minWidth, 0, 0 ) ) ) );
-	contentsColumn->addChild( contentsContainer );
+	contentsColumn->addChild( contentsRow );
 	contentsColumn->addChild( new SpacerGadget( Box3f( V3f( 0 ), V3f( minWidth, 0, 0 ) ) ) );
 
 	row->addChild( rightNoduleContainer );
@@ -314,6 +348,8 @@ StandardNodeGadget::StandardNodeGadget( Gaffer::NodePtr node )
 	updateUserColor();
 	updatePadding();
 	updateNodeEnabled();
+	updateIcon();
+	updateShape();
 }
 
 StandardNodeGadget::~StandardNodeGadget()
@@ -333,30 +369,55 @@ Imath::Box3f StandardNodeGadget::bound() const
 	return b;
 }
 
-void StandardNodeGadget::doRender( const Style *style ) const
+void StandardNodeGadget::doRenderLayer( Layer layer, const Style *style ) const
 {
-	// decide what state we're rendering in
-	Style::State state = getHighlighted() ? Style::HighlightedState : Style::NormalState;
+	NodeGadget::doRenderLayer( layer, style );
 
-	// draw our background frame
-	Box3f b = bound();
-	style->renderNodeFrame(
-		Box2f( V2f( b.min.x, b.min.y ) + V2f( g_borderWidth ), V2f( b.max.x, b.max.y ) - V2f( g_borderWidth ) ),
-		g_borderWidth,
-		state,
-		m_userColor.get_ptr()
-	);
-
-	// draw our contents
-	NodeGadget::doRender( style );
-
-	// draw a strikethrough if we're disabled
-	if( !m_nodeEnabled && !IECoreGL::Selector::currentSelector() )
+	switch( layer )
 	{
-		/// \todo Replace renderLine() with a specific method (renderNodeStrikeThrough?) on the Style class
-		/// so that styles can do customised drawing based on knowledge of what is being drawn.
-		style->renderLine( IECore::LineSegment3f( V3f( b.min.x, b.min.y, 0 ), V3f( b.max.x, b.max.y, 0 ) ) );
+		case GraphLayer::Nodes :
+		{
+			// decide what state we're rendering in
+			Style::State state = getHighlighted() ? Style::HighlightedState : Style::NormalState;
+
+			// draw our background frame
+			const Box3f b = bound();
+			float borderWidth = g_borderWidth;
+			if( m_oval )
+			{
+				const V3f s = b.size();
+				borderWidth = std::min( s.x, s.y ) / 2.0f;
+			}
+
+			style->renderNodeFrame(
+				Box2f( V2f( b.min.x, b.min.y ) + V2f( borderWidth ), V2f( b.max.x, b.max.y ) - V2f( borderWidth ) ),
+				borderWidth,
+				state,
+				m_userColor.get_ptr()
+			);
+
+			break;
+		}
+		case GraphLayer::Overlay :
+		{
+			const Box3f b = bound();
+
+			if( !m_nodeEnabled && !IECoreGL::Selector::currentSelector() )
+			{
+				/// \todo Replace renderLine() with a specific method (renderNodeStrikeThrough?) on the Style class
+				/// so that styles can do customised drawing based on knowledge of what is being drawn.
+				style->renderLine( IECore::LineSegment3f( V3f( b.min.x, b.min.y, 0 ), V3f( b.max.x, b.max.y, 0 ) ) );
+			}
+			break;
+		}
+		default :
+			break;
 	}
+}
+
+bool StandardNodeGadget::hasLayer( Layer layer ) const
+{
+	return layer != GraphLayer::Backdrops;
 }
 
 const Imath::Color3f *StandardNodeGadget::userColor() const
@@ -374,7 +435,7 @@ Nodule *StandardNodeGadget::nodule( const Gaffer::Plug *plug )
 			return n;
 		}
 	}
-	return NULL;
+	return nullptr;
 }
 
 const Nodule *StandardNodeGadget::nodule( const Gaffer::Plug *plug ) const
@@ -383,17 +444,17 @@ const Nodule *StandardNodeGadget::nodule( const Gaffer::Plug *plug ) const
 	return const_cast<StandardNodeGadget *>( this )->nodule( plug );
 }
 
-Imath::V3f StandardNodeGadget::noduleTangent( const Nodule *nodule ) const
+Imath::V3f StandardNodeGadget::connectionTangent( const ConnectionCreator *creator ) const
 {
-	if( noduleContainer( LeftEdge )->isAncestorOf( nodule ) )
+	if( noduleContainer( LeftEdge )->isAncestorOf( creator ) )
 	{
 		return V3f( -1, 0, 0 );
 	}
-	else if( noduleContainer( RightEdge )->isAncestorOf( nodule ) )
+	else if( noduleContainer( RightEdge )->isAncestorOf( creator ) )
 	{
 		return V3f( 1, 0, 0 );
 	}
-	else if( noduleContainer( TopEdge )->isAncestorOf( nodule ) )
+	else if( noduleContainer( TopEdge )->isAncestorOf( creator ) )
 	{
 		return V3f( 0, 1, 0 );
 	}
@@ -442,17 +503,38 @@ const NoduleLayout *StandardNodeGadget::noduleLayout( Edge edge ) const
 	return noduleContainer( edge )->getChild<NoduleLayout>( 1 );
 }
 
-IndividualContainer *StandardNodeGadget::contentsContainer()
+LinearContainer *StandardNodeGadget::paddingRow()
 {
 	return getChild<Gadget>( 0 ) // column
 		->getChild<Gadget>( 1 ) // row
 		->getChild<Gadget>( 1 ) // contentsColumn
-		->getChild<IndividualContainer>( 1 );
+		->getChild<LinearContainer>( 1 )
+	;
+}
+
+const LinearContainer *StandardNodeGadget::paddingRow() const
+{
+	return const_cast<StandardNodeGadget *>( this )->paddingRow();
+}
+
+IndividualContainer *StandardNodeGadget::iconContainer()
+{
+	return paddingRow()->getChild<IndividualContainer>( 0 );
+}
+
+const IndividualContainer *StandardNodeGadget::iconContainer() const
+{
+	return paddingRow()->getChild<IndividualContainer>( 0 );
+}
+
+IndividualContainer *StandardNodeGadget::contentsContainer()
+{
+	return paddingRow()->getChild<IndividualContainer>( 1 );
 }
 
 const IndividualContainer *StandardNodeGadget::contentsContainer() const
 {
-	return const_cast<StandardNodeGadget *>( this )->contentsContainer();
+	return paddingRow()->getChild<IndividualContainer>( 1 );
 }
 
 void StandardNodeGadget::setContents( GadgetPtr contents )
@@ -462,12 +544,12 @@ void StandardNodeGadget::setContents( GadgetPtr contents )
 
 Gadget *StandardNodeGadget::getContents()
 {
-	return contentsContainer()->getChild<Gadget>();
+	return contentsContainer()->getChild();
 }
 
 const Gadget *StandardNodeGadget::getContents() const
 {
-	return contentsContainer()->getChild<Gadget>();
+	return contentsContainer()->getChild();
 }
 
 void StandardNodeGadget::setEdgeGadget( Edge edge, GadgetPtr gadget )
@@ -504,7 +586,7 @@ Gadget *StandardNodeGadget::getEdgeGadget( Edge edge )
 	const size_t s = c->children().size();
 	if( s != 4 )
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	return c->getChild<Gadget>( s - 2 );
@@ -559,11 +641,15 @@ void StandardNodeGadget::leave( Gadget *gadget )
 
 bool StandardNodeGadget::dragEnter( GadgetPtr gadget, const DragDropEvent &event )
 {
-	// we'll accept the drag if we know we can forward it on to a nodule
-	// we own. we don't actually start the forwarding until dragMove, here we
-	// just check there is something to forward to.
-	if( closestDragDestinationProxy( event ) )
+	// Accept the drag if there's something we can connect it to.
+	if( closestDragDestination( event ) )
 	{
+		// Display the labels for all the compatible nodules so the
+		// user can see their options.
+		for( RecursiveStandardNoduleIterator it( this ); !it.done(); ++it )
+		{
+			(*it)->setLabelVisible( canConnect( event, it->get() ) );
+		}
 		return true;
 	}
 
@@ -572,90 +658,95 @@ bool StandardNodeGadget::dragEnter( GadgetPtr gadget, const DragDropEvent &event
 
 bool StandardNodeGadget::dragMove( GadgetPtr gadget, const DragDropEvent &event )
 {
-	Gadget *closest = closestDragDestinationProxy( event );
-	if( closest != m_dragDestinationProxy )
+	ConnectionCreator *closest = closestDragDestination( event );
+	if( closest != m_dragDestination )
 	{
-		if( closest->dragEnterSignal()( closest, event ) )
+		if( m_dragDestination )
 		{
-			if( m_dragDestinationProxy )
+			m_dragDestination->setHighlighted( false );
+		}
+		m_dragDestination = closest;
+		if( m_dragDestination )
+		{
+			if( ConnectionCreator *creator = IECore::runTimeCast<ConnectionCreator>( event.sourceGadget.get() ) )
 			{
-				m_dragDestinationProxy->dragLeaveSignal()( m_dragDestinationProxy, event );
+				V3f centre = V3f( 0 ) * m_dragDestination->fullTransform();
+				centre = centre * creator->fullTransform().inverse();
+				creator->updateDragEndPoint( centre, connectionTangent( m_dragDestination ) );
 			}
-			m_dragDestinationProxy = closest;
+			m_dragDestination->setHighlighted( true );
 		}
 	}
-	return m_dragDestinationProxy;
+	return m_dragDestination;
 }
 
 bool StandardNodeGadget::dragLeave( GadgetPtr gadget, const DragDropEvent &event )
 {
-	if( !m_dragDestinationProxy )
+	if( !m_dragDestination )
 	{
 		return false;
 	}
 
-	if( m_dragDestinationProxy != event.destinationGadget )
+	if( m_dragDestination != event.destinationGadget )
 	{
-		m_dragDestinationProxy->dragLeaveSignal()( m_dragDestinationProxy, event );
+		m_dragDestination->setHighlighted( false );
+		for( RecursiveStandardNoduleIterator it( this ); !it.done(); ++it )
+		{
+			(*it)->setLabelVisible( false );
+		}
 	}
-	m_dragDestinationProxy = NULL;
+	m_dragDestination = nullptr;
 
 	return true;
 }
 
 bool StandardNodeGadget::drop( GadgetPtr gadget, const DragDropEvent &event )
 {
-	if( !m_dragDestinationProxy )
+	if( !m_dragDestination )
 	{
 		return false;
 	}
 
-	const bool result = m_dragDestinationProxy->dropSignal()( m_dragDestinationProxy, event );
-	m_dragDestinationProxy = NULL;
-	return result;
+	connect( event, m_dragDestination );
+
+	m_dragDestination->setHighlighted( false );
+	for( RecursiveStandardNoduleIterator it( this ); !it.done(); ++it )
+	{
+		(*it)->setLabelVisible( false );
+	}
+	m_dragDestination = nullptr;
+	return true;
 }
 
-Gadget *StandardNodeGadget::closestDragDestinationProxy( const DragDropEvent &event ) const
+ConnectionCreator *StandardNodeGadget::closestDragDestination( const DragDropEvent &event ) const
 {
 	if( event.buttons != DragDropEvent::Left )
 	{
 		// See comments in StandardNodule::dragEnter()
-		return NULL;
+		return nullptr;
 	}
 
-	Gadget *result = 0;
+	ConnectionCreator *result = nullptr;
 	float maxDist = Imath::limits<float>::max();
-	for( RecursiveGadgetIterator it( this ); !it.done(); it++ )
+
+	for( RecursiveConnectionCreatorIterator it( this ); !it.done(); it++ )
 	{
 		if( !(*it)->getVisible() )
 		{
 			it.prune();
 			continue;
 		}
-
-		/// \todo It's a bit ugly that we have to have these
-		/// `*IsCompatible()` methods - can we just use dragEnterSignal
-		/// to find out if the potential proxy accepts the drag?
-		if( const Nodule *nodule = IECore::runTimeCast<const Nodule>( it->get() ) )
-		{
-			if( !noduleIsCompatible( nodule, event ) )
-			{
-				continue;
-			}
-		}
-		else if( const PlugAdder *plugAdder = IECore::runTimeCast<const PlugAdder>( it->get() ) )
-		{
-			if( !plugAdderIsCompatible( plugAdder, event ) )
-			{
-				continue;
-			}
-		}
-		else
+		if( !canConnect( event, it->get() ) )
 		{
 			continue;
 		}
 
 		const Box3f bound = (*it)->transformedBound( this );
+		if( bound.isEmpty() )
+		{
+			continue;
+		}
+
 		const V3f closestPoint = closestPointOnBox( event.line.p0, bound );
 		const float dist = ( closestPoint - event.line.p0 ).length2();
 		if( dist < maxDist )
@@ -666,45 +757,6 @@ Gadget *StandardNodeGadget::closestDragDestinationProxy( const DragDropEvent &ev
 	}
 
 	return result;
-}
-
-bool StandardNodeGadget::noduleIsCompatible( const Nodule *nodule, const DragDropEvent &event ) const
-{
-	if( const PlugAdder *plugAdder = IECore::runTimeCast<PlugAdder>( event.sourceGadget.get() ) )
-	{
-		return plugAdder->acceptsPlug( nodule->plug() );
-	}
-
-	const Plug *dropPlug = IECore::runTimeCast<Gaffer::Plug>( event.data.get() );
-	if( !dropPlug || dropPlug->node() == node() )
-	{
-		return false;
-	}
-
-	const Plug *nodulePlug = nodule->plug();
-	if( MetadataAlgo::readOnly( nodulePlug ) )
-	{
-		return false;
-	}
-
-	if( dropPlug->direction() == Plug::Out )
-	{
-		return nodulePlug->direction() == Plug::In && nodulePlug->acceptsInput( dropPlug );
-	}
-	else
-	{
-		return nodulePlug->direction() == Plug::Out && dropPlug->acceptsInput( nodulePlug );
-	}
-}
-
-bool StandardNodeGadget::plugAdderIsCompatible( const PlugAdder *plugAdder, const DragDropEvent &event ) const
-{
-	Gaffer::Plug *plug = IECore::runTimeCast<Gaffer::Plug>( event.data.get() );
-	if( !plug )
-	{
-		return false;
-	}
-	return plugAdder->acceptsPlug( plug );
 }
 
 void StandardNodeGadget::nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore::InternedString key, const Gaffer::Node *node )
@@ -723,12 +775,23 @@ void StandardNodeGadget::nodeMetadataChanged( IECore::TypeId nodeTypeId, IECore:
 	{
 		if( updateUserColor() )
 		{
- 			requestRender();
+			dirty( DirtyType::Render );
 		}
 	}
 	else if( key == g_paddingKey )
 	{
 		updatePadding();
+	}
+	else if( key == g_iconKey || key == g_iconScaleKey )
+	{
+		updateIcon();
+	}
+	else if( key == g_shapeKey )
+	{
+		if( updateShape() )
+		{
+			dirty( DirtyType::Render );
+		}
 	}
 }
 
@@ -757,7 +820,7 @@ void StandardNodeGadget::updatePadding()
 		padding = d->readable();
 	}
 
-	contentsContainer()->setPadding( Box3f( V3f( -padding ), V3f( padding ) ) );
+	paddingRow()->setPadding( Box3f( V3f( -padding ), V3f( padding ) ) );
 }
 
 void StandardNodeGadget::updateNodeEnabled( const Gaffer::Plug *dirtiedPlug )
@@ -797,7 +860,52 @@ void StandardNodeGadget::updateNodeEnabled( const Gaffer::Plug *dirtiedPlug )
 	}
 
 	m_nodeEnabled = enabled;
-	requestRender();
+	dirty( DirtyType::Render );
+}
+
+void StandardNodeGadget::updateIcon()
+{
+	float scale = 1.5f;
+	if( IECore::ConstFloatDataPtr d = Metadata::value<IECore::FloatData>( node(), g_iconScaleKey ) )
+	{
+		scale = d->readable();
+	}
+
+
+	ImageGadgetPtr image;
+	if( IECore::ConstStringDataPtr d = Metadata::value<IECore::StringData>( node(), g_iconKey ) )
+	{
+		try
+		{
+			image = new ImageGadget( d->readable() );
+		}
+		catch( const std::exception &e )
+		{
+			IECore::msg( IECore::Msg::Error, "StandardNodeGadget::updateIcon", e.what() );
+		}
+	}
+
+	if( image )
+	{
+		image->setTransform( M44f().scale( V3f( scale ) / image->bound().size().y ) );
+	}
+
+	iconContainer()->setChild( image );
+}
+
+bool StandardNodeGadget::updateShape()
+{
+	bool oval = false;
+	if( IECore::ConstStringDataPtr s = Metadata::value<IECore::StringData>( node(), g_shapeKey ) )
+	{
+		oval = s->readable() == "oval";
+	}
+	if( oval == m_oval )
+	{
+		return false;
+	}
+	m_oval = oval;
+	return true;
 }
 
 StandardNodeGadget::ErrorGadget *StandardNodeGadget::errorGadget( bool createIfMissing )
@@ -809,7 +917,7 @@ StandardNodeGadget::ErrorGadget *StandardNodeGadget::errorGadget( bool createIfM
 
 	if( !createIfMissing )
 	{
-		return NULL;
+		return nullptr;
 	}
 
 	ErrorGadgetPtr g = new ErrorGadget;
@@ -832,14 +940,14 @@ void StandardNodeGadget::error( const Gaffer::Plug *plug, const Gaffer::Plug *so
 	{
 		header = "Error on upstream node " + source->node()->relativeName( source->ancestor<ScriptNode>() );
 	}
-	header = "<h3>" + header + "</h3>";
+	header = "# " + header + "\n\n";
 
 	// We could be on any thread at this point, so we
 	// use an idle callback to do the work of displaying the error
 	// on the main thread. We _must_ use smart pointers for both
 	// this and plug, because otherwise we have no guarantee that
 	// they'll be alive later when the UI thread does its thing.
-	executeOnUIThread( boost::bind( &StandardNodeGadget::displayError, StandardNodeGadgetPtr( this ), ConstPlugPtr( plug ), header + message ) );
+	ParallelAlgo::callOnUIThread( boost::bind( &StandardNodeGadget::displayError, StandardNodeGadgetPtr( this ), ConstPlugPtr( plug ), header + message ) );
 }
 
 void StandardNodeGadget::displayError( ConstPlugPtr plug, const std::string &message )

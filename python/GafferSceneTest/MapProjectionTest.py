@@ -36,6 +36,8 @@
 
 import os
 import unittest
+import imath
+import six
 
 import IECore
 
@@ -52,8 +54,12 @@ class MapProjectionTest( GafferSceneTest.SceneTestCase ) :
 		camera = GafferScene.Camera()
 		camera["transform"]["translate"]["z"].setValue( 2 )
 
+		deleteUV = GafferScene.DeletePrimitiveVariables()
+		deleteUV["in"].setInput( cube["out"] )
+		deleteUV["names"].setValue( "uv" )
+
 		group = GafferScene.Group()
-		group["in"][0].setInput( cube["out"] )
+		group["in"][0].setInput( deleteUV["out"] )
 		group["in"][1].setInput( camera["out"] )
 
 		map = GafferScene.MapProjection()
@@ -61,16 +67,13 @@ class MapProjectionTest( GafferSceneTest.SceneTestCase ) :
 		map["camera"].setValue( "/group/camera" )
 
 		oIn = group["out"].object( "/group/cube" )
-		self.assertTrue( "s" not in oIn )
-		self.assertTrue( "t" not in oIn )
+		self.assertTrue( "uv" not in oIn )
 
 		oOut = map["out"].object( "/group/cube" )
-		self.assertTrue( "s" in oOut )
-		self.assertTrue( "t" in oOut )
+		self.assertTrue( "uv" in oOut )
 		self.assertTrue( oOut.arePrimitiveVariablesValid() )
 
-		oIn["s"] = oOut["s"]
-		oIn["t"] = oOut["t"]
+		oIn["uv"] = oOut["uv"]
 		self.assertEqual( oIn, oOut )
 
 		camera["transform"]["translate"]["z"].setValue( 3 )
@@ -123,6 +126,98 @@ class MapProjectionTest( GafferSceneTest.SceneTestCase ) :
 		cube["transform"]["translate"]["y"].setValue( 1 )
 		h2 = map["out"].objectHash( "/group/cube" )
 		self.assertNotEqual( h, h2 )
+
+	def testCustomPosition( self ) :
+
+		littleCube = GafferScene.Cube()
+		littleCube["name"].setValue( "little" )
+
+		bigCube = GafferScene.Cube()
+		bigCube["dimensions"].setValue( imath.V3f( 10, 10, 10 ) )
+		bigCube["name"].setValue( "big" )
+
+		camera = GafferScene.Camera()
+		camera["transform"]["translate"]["z"].setValue( 10 )
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( littleCube["out"] )
+		group["in"][1].setInput( bigCube["out"] )
+		group["in"][2].setInput( camera["out"] )
+
+		self.assertNotEqual(
+			group["out"].object( "/group/little" )["P"].data,
+			group["out"].object( "/group/big" )["P"].data,
+		)
+
+		bigCubeFilter = GafferScene.PathFilter()
+		bigCubeFilter["paths"].setValue( IECore.StringVectorData( [ "/group/big" ] ) )
+
+		shuffle = GafferScene.ShufflePrimitiveVariables()
+		shuffle["in"].setInput( group["out"] )
+		shuffle["filter"].setInput( bigCubeFilter["out"] )
+		shuffle["shuffles"].addChild( Gaffer.ShufflePlug( "P", "Pref" ) )
+
+		littleCubeFilter = GafferScene.PathFilter()
+		littleCubeFilter["paths"].setValue( IECore.StringVectorData( [ "/group/little" ] ) )
+
+		copy = GafferScene.CopyPrimitiveVariables()
+		copy["in"].setInput( shuffle["out"] )
+		copy["source"].setInput( shuffle["out"] )
+		copy["filter"].setInput( littleCubeFilter["out"] )
+		copy["sourceLocation"].setValue( "/group/big" )
+		copy["primitiveVariables"].setValue( "Pref" )
+
+		self.assertEqual(
+			copy["out"].object( "/group/little" )["Pref"].data,
+			copy["out"].object( "/group/big" )["Pref"].data,
+		)
+
+		unionFilter = GafferScene.UnionFilter()
+		unionFilter["in"][0].setInput( littleCubeFilter["out"] )
+		unionFilter["in"][1].setInput( bigCubeFilter["out"] )
+
+		projection = GafferScene.MapProjection()
+		projection["in"].setInput( copy["out"] )
+		projection["filter"].setInput( unionFilter["out"] )
+		projection["camera"].setValue( "/group/camera" )
+		projection["uvSet"].setValue( "projectedUV" )
+
+		self.assertNotEqual(
+			projection["out"].object( "/group/little" )["projectedUV"].data,
+			projection["out"].object( "/group/big" )["projectedUV"].data,
+		)
+
+		projection["position"].setValue( "Pref" )
+
+		self.assertEqual(
+			projection["out"].object( "/group/little" )["projectedUV"].data[0],
+			projection["out"].object( "/group/big" )["projectedUV"].data[0],
+		)
+
+		self.assertEqual(
+			projection["out"].object( "/group/little" )["projectedUV"].data,
+			projection["out"].object( "/group/big" )["projectedUV"].data,
+		)
+
+	def testWrongPositionType( self ) :
+
+		cube = GafferScene.Cube()
+		camera = GafferScene.Camera()
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( cube["out"] )
+		group["in"][1].setInput( camera["out"] )
+
+		cubeFilter = GafferScene.PathFilter()
+		cubeFilter["paths"].setValue( IECore.StringVectorData( [ "/group/cube" ] ) )
+
+		projection = GafferScene.MapProjection()
+		projection["in"].setInput( group["out"] )
+		projection["filter"].setInput( cubeFilter["out"] )
+		projection["position"].setValue( "uv" )
+
+		with six.assertRaisesRegex( self, RuntimeError, r'Position primitive variable "uv" on object "/group/cube" should be V3fVectorData \(but is V2fVectorData\)' ) :
+			projection["out"].object( "/group/cube" )
 
 if __name__ == "__main__":
 	unittest.main()

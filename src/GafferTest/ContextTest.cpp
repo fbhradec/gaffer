@@ -34,14 +34,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/lexical_cast.hpp"
+#include "GafferTest/ContextTest.h"
 
-#include "IECore/Timer.h"
+#include "GafferTest/Assert.h"
 
 #include "Gaffer/Context.h"
 
-#include "GafferTest/Assert.h"
-#include "GafferTest/ContextTest.h"
+#include "IECore/Timer.h"
+
+#include "boost/lexical_cast.hpp"
+#include "tbb/parallel_for.h"
+#include <unordered_set>
 
 using namespace std;
 using namespace boost;
@@ -70,16 +73,13 @@ void GafferTest::testManyContexts()
 	// change a value or two, and then continue.
 
 	Timer t;
-	for( int i = 0; i < 100000; ++i )
+	for( int i = 0; i < 1000000; ++i )
 	{
 		ContextPtr tmp = new Context( *base, Context::Borrowed );
 		tmp->set( keys[i%numKeys], i );
 		GAFFERTEST_ASSERT( tmp->get<int>( keys[i%numKeys] ) == i );
 		GAFFERTEST_ASSERT( tmp->hash() != baseHash );
 	}
-
-	// uncomment to get timing information
-	//std::cerr << t.stop() << std::endl;
 }
 
 // Useful for assessing the performance of substitutions.
@@ -93,14 +93,11 @@ void GafferTest::testManySubstitutions()
 	const std::string expectedResult( "smoke me a kipper" );
 
 	Timer t;
-	for( int i = 0; i < 100000; ++i )
+	for( int i = 0; i < 1000000; ++i )
 	{
 		const std::string s = context->substitute( phrase );
 		GAFFERTEST_ASSERT( s == expectedResult );
 	}
-
-	// uncomment to get timing information
-	//std::cerr << t.stop() << std::endl;
 }
 
 // Useful for assessing the performance of environment variable substitutions.
@@ -117,9 +114,6 @@ void GafferTest::testManyEnvironmentSubstitutions()
 		const std::string s = context->substitute( phrase );
 		GAFFERTEST_ASSERT( s == expectedResult );
 	}
-
-	// uncomment to get timing information
-	//std::cerr << t.stop() << std::endl;
 }
 
 // Tests that scoping a null context is a no-op
@@ -137,11 +131,192 @@ void GafferTest::testScopingNullContext()
 		const std::string s = Context::current()->substitute( phrase );
 		GAFFERTEST_ASSERT( s == expectedResult );
 
-		const Context *nullContext = NULL;
+		const Context *nullContext = nullptr;
 		{
 			Context::Scope scope( nullContext );
 			const std::string s = Context::current()->substitute( phrase );
 			GAFFERTEST_ASSERT( s == expectedResult );
 		}
 	}
+}
+
+void GafferTest::testEditableScope()
+{
+	ContextPtr baseContext = new Context();
+	baseContext->set( "a", 10 );
+	baseContext->set( "b", 20 );
+
+	const IntData *aData = baseContext->get<IntData>( "a" );
+	size_t aRefCount = aData->refCount();
+
+	const IntData *bData = baseContext->get<IntData>( "b" );
+	size_t bRefCount = bData->refCount();
+
+	{
+		// Scope an editable copy of the context
+		Context::EditableScope scope( baseContext.get() );
+
+		const Context *currentContext = Context::current();
+		GAFFERTEST_ASSERT( currentContext != baseContext );
+
+		// The editable copy should be identical to the original,
+		// and the original should be unchanged.
+		GAFFERTEST_ASSERT( baseContext->get<int>( "a" ) == 10 );
+		GAFFERTEST_ASSERT( baseContext->get<int>( "b" ) == 20 );
+		GAFFERTEST_ASSERT( currentContext->get<int>( "a" ) == 10 );
+		GAFFERTEST_ASSERT( currentContext->get<int>( "b" ) == 20 );
+		GAFFERTEST_ASSERT( currentContext->hash() == baseContext->hash() );
+
+		// The copy should even be referencing the exact same data
+		// as the original.
+		GAFFERTEST_ASSERT( baseContext->get<Data>( "a" ) == aData );
+		GAFFERTEST_ASSERT( baseContext->get<Data>( "b" ) == bData );
+		GAFFERTEST_ASSERT( currentContext->get<Data>( "a" ) == aData );
+		GAFFERTEST_ASSERT( currentContext->get<Data>( "b" ) == bData );
+
+		// But it shouldn't have affected the reference counts, because
+		// we rely on the base context to maintain the lifetime for us
+		// as an optimisation.
+		GAFFERTEST_ASSERT( aData->refCount() == aRefCount );
+		GAFFERTEST_ASSERT( bData->refCount() == bRefCount );
+
+		// Editing the copy shouldn't affect the original
+		scope.set( "c", 30 );
+		GAFFERTEST_ASSERT( baseContext->get<int>( "c", -1 ) == -1 );
+		GAFFERTEST_ASSERT( currentContext->get<int>( "c" ) == 30 );
+
+		// Even if we're editing a variable that exists in
+		// the original.
+		scope.set( "a", 40 );
+		GAFFERTEST_ASSERT( baseContext->get<int>( "a" ) == 10 );
+		GAFFERTEST_ASSERT( currentContext->get<int>( "a" ) == 40 );
+
+		// And we should be able to remove a variable from the
+		// copy without affecting the original too.
+		scope.remove( "b" );
+		GAFFERTEST_ASSERT( baseContext->get<int>( "b" ) == 20 );
+		GAFFERTEST_ASSERT( currentContext->get<int>( "b", -1 ) == -1 );
+
+		// And none of the edits should have affected the original
+		// data at all.
+		GAFFERTEST_ASSERT( baseContext->get<Data>( "a" ) == aData );
+		GAFFERTEST_ASSERT( baseContext->get<Data>( "b" ) == bData );
+		GAFFERTEST_ASSERT( aData->refCount() == aRefCount );
+		GAFFERTEST_ASSERT( bData->refCount() == bRefCount );
+	}
+
+}
+
+// Create the number of contexts specified, and return counts for how many collisions there are
+// in each of the four 32 bit sections of the context hash.  MurmurHash performs good mixing, so
+// the four sections should be independent, and as long as collisions within each section occur only
+// at the expected rate, the chance of a full collision across all 4 should be infinitesimal
+// ( we don't want to check for collisions in the whole 128 bit hash, since it would take years
+// for one to occur randomly )
+// "mode" switches betwen 4 modes for creating contexts:
+//   0 :  1 entry with a single increment int
+//   1 :  40 fixed strings, plus a single incrementing int
+//   2 :  20 random floats
+//   3 :  an even mixture of the previous 3 modes
+// "seed" can be used to perform different runs to get an average number.
+// The goal is that regardless of how we create the contexts, they are all unique, and should therefore
+// have an identical chance of collisions if our hashing performs ideally.
+std::tuple<int,int,int,int> GafferTest::countContextHash32Collisions( int contexts, int mode, int seed )
+{
+	std::unordered_set<uint32_t> used[4];
+
+	InternedString a( "a" );
+	InternedString numberNames[40];
+	for( int i = 0; i < 40; i++ )
+	{
+		numberNames[i] = InternedString( i );
+	}
+
+	unsigned int rand_seed = seed;
+	int collisions[4] = {0,0,0,0};
+	for( int i = 0; i < contexts; i++ )
+	{
+		int curMode = mode;
+		int elementSeed = seed * contexts + i;
+		if( curMode == 3 )
+		{
+			curMode = i % 3;
+			elementSeed = seed * contexts + i / 3;
+		}
+
+		Context c;
+		if( curMode == 0 )
+		{
+			c.set( a, elementSeed );
+		}
+		else if( curMode == 1 )
+		{
+			for( int j = 0; j < 40; j++ )
+			{
+				c.set( numberNames[j], j );
+			}
+			c.set( a, elementSeed );
+		}
+		else if( curMode == 2 )
+		{
+			for( int j = 0; j < 20; j++ )
+			{
+				c.set( numberNames[j], rand_r( &rand_seed ) );
+			}
+		}
+
+		if( !used[0].insert( (uint32_t)( c.hash().h1() ) ).second )
+		{
+			collisions[0]++;
+		}
+		if( !used[1].insert( (uint32_t)( c.hash().h1() >> 32 ) ).second )
+		{
+			collisions[1]++;
+		}
+		if( !used[2].insert( (uint32_t)( c.hash().h2() ) ).second )
+		{
+			collisions[2]++;
+		}
+		if( !used[3].insert( (uint32_t)( c.hash().h2() >> 32 ) ).second )
+		{
+			collisions[3]++;
+		}
+	}
+
+	return std::make_tuple( collisions[0], collisions[1], collisions[2], collisions[3] );
+}
+
+void GafferTest::testContextHashPerformance( int numEntries, int entrySize, bool startInitialized )
+{
+	// We usually deal with contexts that already have some stuff in them, so adding some entries
+	// to the context makes this test more realistic
+	ContextPtr baseContext = new Context();
+	for( int i = 0; i < numEntries; i++ )
+	{
+		baseContext->set( InternedString( i ), std::string( entrySize, 'x') );
+	}
+
+	const InternedString varyingVarName = "varyVar";
+	if( startInitialized )
+	{
+		baseContext->set( varyingVarName, -1 );
+	}
+
+	Context::Scope baseScope( baseContext.get() );
+
+	const ThreadState &threadState = ThreadState::current();
+
+	tbb::parallel_for( tbb::blocked_range<size_t>( 0, 10000000 ), [&threadState, &varyingVarName]( const tbb::blocked_range<size_t> &r )
+		{
+			for( size_t i = r.begin(); i != r.end(); ++i )
+			{
+				Context::EditableScope scope( threadState );
+				scope.set( varyingVarName, (int)i );
+
+				// This call is relied on by ValuePlug's HashCacheKey, so it is crucial that it be fast
+				scope.context()->hash();
+			}
+		}
+	);
+
 }

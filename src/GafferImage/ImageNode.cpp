@@ -35,11 +35,12 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "GafferImage/ImageNode.h"
+
+#include "GafferImage/FormatPlug.h"
+
 #include "Gaffer/Context.h"
 #include "Gaffer/ScriptNode.h"
-
-#include "GafferImage/ImageNode.h"
-#include "GafferImage/FormatPlug.h"
 
 using namespace std;
 using namespace Imath;
@@ -47,7 +48,7 @@ using namespace IECore;
 using namespace GafferImage;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( ImageNode );
+GAFFER_NODE_DEFINE_TYPE( ImageNode );
 
 size_t ImageNode::g_firstPlugIndex = 0;
 
@@ -91,7 +92,12 @@ bool ImageNode::enabled() const
 void ImageNode::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	const ImagePlug *imagePlug = output->parent<ImagePlug>();
-	if( imagePlug && enabled() )
+	bool enabledValue;
+	{
+		ImagePlug::GlobalScope c( context );
+		enabledValue = enabled();
+	}
+	if( imagePlug && enabledValue )
 	{
 		// We don't call ComputeNode::hash() immediately here, because for subclasses which
 		// want to pass through a specific hash in the hash*() methods it's a waste of time (the
@@ -122,6 +128,14 @@ void ImageNode::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *co
 		{
 			hashMetadata( imagePlug, context, h );
 		}
+		else if( output == imagePlug->deepPlug() )
+		{
+			hashDeep( imagePlug, context, h );
+		}
+		else if( output == imagePlug->sampleOffsetsPlug() )
+		{
+			hashSampleOffsets( imagePlug, context, h );
+		}
 		else if( output == imagePlug->channelNamesPlug() )
 		{
 			hashChannelNames( imagePlug, context, h );
@@ -148,6 +162,16 @@ void ImageNode::hashMetadata( const GafferImage::ImagePlug *parent, const Gaffer
 	ComputeNode::hash( parent->metadataPlug(), context, h );
 }
 
+void ImageNode::hashDeep( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ComputeNode::hash( parent->deepPlug(), context, h );
+}
+
+void ImageNode::hashSampleOffsets( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	ComputeNode::hash( parent->sampleOffsetsPlug(), context, h );
+}
+
 void ImageNode::hashChannelNames( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	ComputeNode::hash( parent->channelNamesPlug(), context, h );
@@ -156,24 +180,6 @@ void ImageNode::hashChannelNames( const GafferImage::ImagePlug *parent, const Ga
 void ImageNode::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	ComputeNode::hash( parent->channelDataPlug(), context, h );
-}
-
-void ImageNode::parentChanging( Gaffer::GraphComponent *newParent )
-{
-	ComputeNode::parentChanging( newParent );
-
-	// Set up the default format plug.
-	Node *parentNode = runTimeCast<Node>( newParent );
-	if( !parentNode )
-	{
-		return;
-	}
-
-	ScriptNode *scriptNode = parentNode->scriptNode();
-	if( scriptNode )
-	{
-		FormatPlug::acquireDefaultFormatPlug( scriptNode );
-	}
 }
 
 void ImageNode::compute( ValuePlug *output, const Context *context ) const
@@ -187,7 +193,13 @@ void ImageNode::compute( ValuePlug *output, const Context *context ) const
 
 	// we're computing part of an ImagePlug
 
-	if( !enabled() )
+	bool enabledValue;
+	{
+		ImagePlug::GlobalScope c( context );
+		enabledValue = enabled();
+	}
+
+	if( !enabledValue )
 	{
 		// disabled nodes just output a default black image.
 		output->setToDefault();
@@ -210,8 +222,25 @@ void ImageNode::compute( ValuePlug *output, const Context *context ) const
 	}
 	else if( output == imagePlug->metadataPlug() )
 	{
-		static_cast<CompoundObjectPlug *>( output )->setValue(
+		static_cast<AtomicCompoundDataPlug *>( output )->setValue(
 			computeMetadata( context, imagePlug )
+		);
+	}
+	else if( output == imagePlug->deepPlug() )
+	{
+		static_cast<BoolPlug *>( output )->setValue(
+			computeDeep( context, imagePlug )
+		);
+	}
+	else if( output == imagePlug->sampleOffsetsPlug() )
+	{
+		V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
+		if( tileOrigin.x % ImagePlug::tileSize() || tileOrigin.y % ImagePlug::tileSize() )
+		{
+			throw Exception( "The image:tileOrigin must be a multiple of ImagePlug::tileSize()" );
+		}
+		static_cast<IntVectorDataPlug *>( output )->setValue(
+			computeSampleOffsets( tileOrigin, context, imagePlug )
 		);
 	}
 	else if( output == imagePlug->channelNamesPlug() )
@@ -251,9 +280,19 @@ Imath::Box2i ImageNode::computeDataWindow( const Gaffer::Context *context, const
 	throw IECore::NotImplementedException( string( typeName() ) + "::computeDataWindow" );
 }
 
-IECore::ConstCompoundObjectPtr ImageNode::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
+IECore::ConstCompoundDataPtr ImageNode::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	throw IECore::NotImplementedException( string( typeName() ) + "::computeMetadata" );
+}
+
+bool ImageNode::computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	throw IECore::NotImplementedException( string( typeName() ) + "::computeDeep" );
+}
+
+IECore::ConstIntVectorDataPtr ImageNode::computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	throw IECore::NotImplementedException( string( typeName() ) + "::computeSampleOffsets" );
 }
 
 IECore::ConstStringVectorDataPtr ImageNode::computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const
@@ -274,6 +313,13 @@ void ImageNode::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outp
 	{
 		for( ValuePlugIterator it( outPlug() ); !it.done(); ++it )
 		{
+			if( (*it)->getInput() )
+			{
+				// If the output gets its value from an input connection.
+				// there will be no compute for it, so we shouldn't declare
+				// a dependency.
+				continue;
+			}
 			outputs.push_back( it->get() );
 		}
 	}

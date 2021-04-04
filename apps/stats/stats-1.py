@@ -38,8 +38,10 @@ import os
 import gc
 import sys
 import time
+import tempfile
 import resource
 import collections
+import six
 
 import IECore
 
@@ -52,13 +54,13 @@ class stats( Gaffer.Application ) :
 		Gaffer.Application.__init__(
 			self,
 			"""
-			Prints statistics about a Gaffer script, including the version of
+			Outputs statistics about a Gaffer script, including the version of
 			Gaffer that created it, the values of all setting and variables and
 			the types of node in use. May also be used to perform performance
 			analysis of image and scene processing nodes within the script, using
 			a performance monitor to generate advanced statistics.
 
-			To print basic information about a script :
+			To output basic information about a script :
 
 			```
 			gaffer stats fileName.gfr
@@ -90,16 +92,79 @@ class stats( Gaffer.Application ) :
 					check = IECore.FileNameParameter.CheckType.MustExist,
 				),
 
-				IECore.FloatParameter(
-					name = "frame",
-					description = "The frame to evaluate statistics at.",
-					defaultValue = 1,
+				IECore.FileNameParameter(
+					name = "postLoadScript",
+					description = "A python script to run after loading `script`. This "
+						"can be used to modify the node graph before stats are gathered. "
+						"The root ScriptNode is accessible via a variable named `root`.",
+					defaultValue = "",
+					allowEmptyString = True,
+					extensions = "py",
+					check = IECore.FileNameParameter.CheckType.MustExist,
+				),
+
+				IECore.FileNameParameter(
+					name = "outputFile",
+					description = "Output the results to this file on disk rather than stdout",
+					defaultValue = "",
+					allowEmptyString = True,
+					extensions = "",
+				),
+
+				IECore.FrameListParameter(
+					name = "frames",
+					description = "The frames to evaluate statistics for. The default value "
+						"uses the current frame as stored in the script.",
+					defaultValue = "",
+					allowEmptyList = True,
+				),
+
+				IECore.StringVectorParameter(
+					name = "context",
+					description = "The Context used during stats evaluation. Note that the frames "
+						"parameter will be used to vary the Context frame entry. Arguments are specified "
+						"in the same format as used by the `execute` app.",
+					defaultValue = IECore.StringVectorData( [] ),
+					userData = {
+						"parser" : {
+							"acceptFlags" : IECore.BoolData( True ),
+						},
+					},
+				),
+
+				IECore.BoolParameter(
+					name = "nodeSummary",
+					description = "Turns on a summary of nodes in the script.",
+					defaultValue = True,
+				),
+
+				IECore.BoolParameter(
+					name = "serialise",
+					description = "Reports serialisation time for the script.",
+					defaultValue = False,
 				),
 
 				IECore.StringParameter(
 					name = "scene",
-					description = "The name of a SceneNode or ScenePlug to examine.",
+					description = "The name of a SceneNode or ScenePlug to examine. "
+						"A Render node or TaskPlug on a Render node may also be passed, "
+						"to perform profiling of the render output process without "
+						"performing the actual image generation.",
 					defaultValue = "",
+				),
+
+				IECore.StringParameter(
+					name = "location",
+					description = "The path to a location in the scene. If this is specified "
+						"then that single location will be generated profiled, otherwise "
+						"the entire scene will generated.",
+					defaultValue = "",
+				),
+
+				IECore.StringVectorParameter(
+					name = "sets",
+					description = "The names of scene sets to be examined.",
+					defaultValue = IECore.StringVectorData(),
 				),
 
 				IECore.StringParameter(
@@ -109,8 +174,21 @@ class stats( Gaffer.Application ) :
 				),
 
 				IECore.BoolParameter(
+					name = "preCache",
+					description = "Prepopulates the cache by evaluating the scene or image "
+						"once prior to measuring the second evaluation.",
+					defaultValue = False,
+				),
+
+				IECore.StringParameter(
+					name = "task",
+					description = "The name of a TaskNode or TaskPlug to dispatch.",
+					defaultValue = "",
+				),
+
+				IECore.BoolParameter(
 					name = "performanceMonitor",
-					description = "Turns on a performance monitor to provide additional"
+					description = "Turns on a performance monitor to provide additional "
 						"statistics about the operation of the node graph.",
 					defaultValue = False,
 				),
@@ -124,7 +202,7 @@ class stats( Gaffer.Application ) :
 
 				IECore.BoolParameter(
 					name = "contextMonitor",
-					description = "Turns on a context monitor to provide additional "
+					description = "Turns on a Context monitor to provide additional "
 						"statistics about the operation of the node graph.",
 					defaultValue = False,
 				),
@@ -132,10 +210,58 @@ class stats( Gaffer.Application ) :
 				IECore.StringParameter(
 					name = "contextMonitorRoot",
 					description = "The name of a node or plug to provide a root for the "
-						"context monitor. Statistics will only be captured for this root "
+						"Context monitor. Statistics will only be captured for this root "
 						"downwards.",
 					defaultValue = "",
-				)
+				),
+
+				IECore.FileNameParameter(
+					name = "annotatedScript",
+					description = "Filename used to save a copy of the script containing "
+						"annotations from the performance and Context monitors.",
+					defaultValue = "",
+					allowEmptyString = True,
+					extensions = "gfr",
+				),
+
+				IECore.BoolParameter(
+					name = "vtune",
+					description = "Enables VTune instrumentation. When enabled, the VTune "
+						"'Tasks & Frames' view will be broken down by node type.",
+					defaultValue = False,
+				),
+
+				IECore.BoolParameter(
+					name = "contextSanitiser",
+					description = "Checks for Contexts containing \"leaked\" variables that "
+						"may affect performance. Any problems are reported as warnings to "
+						"stderr.",
+					defaultValue = False,
+				),
+
+				IECore.BoolParameter(
+					name = "canceller",
+					description = "Adds an IECore.Canceller to the Context used for computations. "
+						"This can be used to measure any overhead generated by nodes checking for "
+						"cancellation.",
+					defaultValue = False
+				),
+
+				IECore.IntParameter(
+					name = "cacheMemoryLimit",
+					description = "The memory limit for the ValuePlug cache, measured in Mb. "
+						"If this is not specified, the default limit will be used, or a limit "
+						"specified by an application startup file.",
+					defaultValue = 0,
+				),
+
+				IECore.IntParameter(
+					name = "hashCacheSizeLimit",
+					description = "The size limit for the per-thread hash cache. If this is not "
+						"specified, the default limit will be used, or a limit specified by an "
+						"application startup file.",
+					defaultValue = 0,
+				),
 
 			]
 
@@ -149,6 +275,11 @@ class stats( Gaffer.Application ) :
 
 	def _run( self, args ) :
 
+		if args["cacheMemoryLimit"].value :
+			Gaffer.ValuePlug.setCacheMemoryLimit( 1024 * 1024 * args["cacheMemoryLimit"].value )
+		if args["hashCacheSizeLimit"].value :
+			Gaffer.ValuePlug.setHashCacheSizeLimit( args["hashCacheSizeLimit"].value )
+
 		self.__timers = collections.OrderedDict()
 		self.__memory = collections.OrderedDict()
 
@@ -161,7 +292,17 @@ class stats( Gaffer.Application ) :
 			script.load( continueOnError = True )
 		self.__timers["Loading"] = loadingTimer
 
+		self.root()["scripts"].addChild( script )
+
 		self.__memory["Script"] = _Memory.maxRSS() - self.__memory["Application"]
+
+		if args["postLoadScript"].value :
+			postLoadScriptExecutionContext = { "root" : script }
+			with Gaffer.DirtyPropagationScope() :
+				exec(
+					compile( open( args["postLoadScript"].value ).read(), args["postLoadScript"].value, "exec" ),
+					postLoadScriptExecutionContext, postLoadScriptExecutionContext
+				)
 
 		if args["performanceMonitor"].value :
 			self.__performanceMonitor = Gaffer.PerformanceMonitor()
@@ -179,55 +320,84 @@ class stats( Gaffer.Application ) :
 		else :
 			self.__contextMonitor = None
 
-		with Gaffer.Context( script.context() ) as context :
+		if args["vtune"].value :
+			try:
+				self.__vtuneMonitor = Gaffer.VTuneMonitor()
+			except AttributeError:
+				self.__vtuneMonitor = None
+				IECore.msg( IECore.Msg.Level.Error, "gui", "unable to create requested VTune monitor" )
+		else :
+			self.__vtuneMonitor = None
 
-			context.setFrame( args["frame"].value )
+		self.__output = open( args["outputFile"].value, "w" ) if args["outputFile"].value else sys.stdout
 
-			self.__printVersion( script )
+		self.__writeVersion( script )
 
-			print ""
+		self.__output.write( "\n" )
 
-			self.__printArgs( args )
+		self.__writeArgs( args )
 
-			print ""
+		self.__output.write( "\n" )
 
-			self.__printSettings( script )
+		self.__writeSettings( script )
 
-			print ""
+		self.__output.write( "\n" )
 
-			self.__printVariables( script )
+		self.__writeVariables( script )
 
-			print ""
+		self.__output.write( "\n" )
 
-			self.__printNodes( script )
+		if args["nodeSummary"].value :
 
-			if args["scene"].value :
+			self.__writeNodes( script )
 
-				self.__printScene( script, args )
+		if args["serialise"].value :
+			self.__serialise( script, args )
 
-			if args["image"].value :
+		if args["scene"].value :
 
-				self.__printImage( script, args )
+			self.__writeScene( script, args )
 
-		print ""
+		if args["image"].value :
 
-		self.__printMemory()
+			self.__writeImage( script, args )
 
-		print ""
+		if args["task"].value :
 
-		self.__printPerformance( script, args )
+			self.__writeTask( script, args )
 
-		print ""
+		self.__output.write( "\n" )
 
-		self.__printContext( script, args )
+		self.__writeMemory()
 
-		print
+		self.__output.write( "\n" )
+
+		self.__writePerformance( script, args )
+
+		self.__output.write( "\n" )
+
+		self.__writeContext( script, args )
+
+		self.__output.write( "\n" )
+
+		self.__output.close()
+
+		if args["annotatedScript"].value :
+
+			if self.__performanceMonitor is not None :
+				Gaffer.MonitorAlgo.annotate( script, self.__performanceMonitor, Gaffer.MonitorAlgo.PerformanceMetric.TotalDuration )
+				Gaffer.MonitorAlgo.annotate( script, self.__performanceMonitor, Gaffer.MonitorAlgo.PerformanceMetric.HashCount )
+				Gaffer.MonitorAlgo.annotate( script, self.__performanceMonitor, Gaffer.MonitorAlgo.PerformanceMetric.ComputeCount )
+			if self.__contextMonitor is not None :
+				Gaffer.MonitorAlgo.annotate( script, self.__contextMonitor )
+
+			script.serialiseToFile( args["annotatedScript"].value )
 
 		return 0
 
-	def __printVersion( self, script ) :
+	def __writeVersion( self, script ) :
 
-		numbers = [ Gaffer.Metadata.nodeValue( script, "serialiser:" + x + "Version" ) for x in ( "milestone", "major", "minor", "patch" ) ]
+		numbers = [ Gaffer.Metadata.value( script, "serialiser:" + x + "Version" ) for x in ( "milestone", "major", "minor", "patch" ) ]
 		if None not in numbers :
 			version = ".".join( str( x ) for x in numbers )
 		else :
@@ -238,24 +408,24 @@ class stats( Gaffer.Application ) :
 			( "Current", Gaffer.About.versionString() ),
 		)
 
-		print "Gaffer Version :\n"
-		self.__printItems( versions )
+		self.__output.write( "Gaffer Version :\n\n" )
+		self.__writeItems( versions )
 
-	def __printItems( self, items ) :
+	def __writeItems( self, items ) :
 
 		if not len( items ) :
 			return
 
 		width = max( [ len( x[0] ) for x in items ] ) + 4
 		for name, value in items :
-			print "  {name:<{width}}{value}".format( name = name, width = width, value = value )
+			self.__output.write( "  {name:<{width}}{value}\n".format( name = name, width = width, value = value ) )
 
-	def __printArgs( self, args ) :
+	def __writeArgs( self, args ) :
 
-		print "Args :\n"
-		self.__printItems( args.items() )
+		self.__output.write( "Args :\n\n" )
+		self.__writeItems( sorted( args.items() ) )
 
-	def __printSettings( self, script ) :
+	def __writeSettings( self, script ) :
 
 		plugsToIgnore = {
 			script["fileName"],
@@ -277,10 +447,10 @@ class stats( Gaffer.Application ) :
 
 		itemsWalk( script )
 
-		print "Settings :\n"
-		self.__printItems( items )
+		self.__output.write( "Settings :\n\n" )
+		self.__writeItems( items )
 
-	def __printVariables( self, script ) :
+	def __writeVariables( self, script ) :
 
 		items = []
 		for p in script["variables"] :
@@ -288,21 +458,14 @@ class stats( Gaffer.Application ) :
 			if data is not None :
 				items.append( ( name, data ) )
 
-		print "Variables :\n"
-		self.__printItems( items )
+		self.__output.write( "Variables :\n\n" )
+		self.__writeItems( items )
 
-	def __printNodes( self, script ) :
-
-		def countWalk( node, counter ) :
-
-			if not isinstance( node, Gaffer.ScriptNode ) :
-				counter[node.typeName()] += 1
-
-			for c in node.children( Gaffer.Node ) :
-				countWalk( c, counter )
+	def __writeNodes( self, script ) :
 
 		counter = collections.Counter()
-		countWalk( script, counter )
+		for node in Gaffer.Node.RecursiveRange( script ) :
+			counter[node.typeName()] += 1
 
 		items = [ ( nodeType.rpartition( ":" )[2], count ) for nodeType, count in counter.most_common() ]
 		items.extend( [
@@ -310,69 +473,183 @@ class stats( Gaffer.Application ) :
 			( "Total", sum( counter.values() ) ),
 		] )
 
-		print "Nodes :\n"
-		self.__printItems( items )
+		self.__output.write( "Nodes :\n\n" )
+		self.__writeItems( items )
 
-	def __printScene( self, script, args ) :
+	def __context( self, script, args ) :
 
+		context = Gaffer.Context( script.context() )
+
+		for i in range( 0, len( args["context"] ), 2 ) :
+			entry = args["context"][i].lstrip( "-" )
+			context[entry] = eval( args["context"][i+1] )
+
+		if args["canceller"].value :
+			self.__canceller = IECore.Canceller()
+			return Gaffer.Context( context, self.__canceller )
+		else :
+			return context
+
+	def __frames( self, script, args ) :
+
+		frames = self.parameters()["frames"].getFrameListValue().asList()
+		if not frames :
+			frames = [ script.context().getFrame() ]
+
+		return frames
+
+	def __serialise( self, script, args ) :
+
+		memory = _Memory.maxRSS()
+		# We don't expect serialisation to trigger any processes that the monitors would see,
+		# but we definitely want to know if they do.
+		with self.__performanceMonitor or _NullContextManager(), self.__contextMonitor or _NullContextManager(), self.__vtuneMonitor or _NullContextManager() :
+			with _Timer() as timer :
+				script.serialise()
+
+		self.__timers["Serialisation"] = timer
+		self.__memory["Serialisation"] = _Memory.maxRSS() - memory
+
+	def __writeScene( self, script, args ) :
+
+		import GafferDispatch
 		import GafferScene
 		import GafferSceneTest
 
 		scene = script.descendant( args["scene"].value )
-		if isinstance( scene, Gaffer.Node ) :
-			scene = next( ( x for x in scene.children( GafferScene.ScenePlug ) ), None )
+		if isinstance( scene, GafferScene.Render ) :
+			scene = scene["task"]
+		elif isinstance( scene, Gaffer.Node ) :
+			scene = next( GafferScene.ScenePlug.RecursiveOutputRange( scene ), None )
 
 		if scene is None :
 			IECore.msg( IECore.Msg.Level.Error, "stats", "Scene \"%s\" does not exist" % args["scene"].value )
 			return
 
+		contextSanitiser = _NullContextManager()
+		if args["contextSanitiser"].value :
+			contextSanitiser = GafferSceneTest.ContextSanitiser()
+
+		frames = self.__frames( script, args )
+
+		def computeScene() :
+
+			with self.__context( script, args ) as context :
+				for frame in frames :
+					context.setFrame( frame )
+
+					if isinstance( scene, GafferDispatch.TaskNode.TaskPlug ) :
+						if args["location"].value :
+							IECore.msg( IECore.Msg.Level.Warning, "stats", "`-location` argument is not compatible with TaskPlugs" )
+						context["scene:render:sceneTranslationOnly"] = IECore.BoolData( True )
+						scene.execute()
+					else :
+						if args["sets"] :
+							GafferScene.SceneAlgo.sets( scene, args["sets"] )
+						else :
+							if args["location"].value :
+								scene.transform( args["location"].value )
+								scene.bound( args["location"].value )
+								scene.attributes( args["location"].value )
+								scene.object( args["location"].value )
+							else :
+								GafferSceneTest.traverseScene( scene )
+
+		if args["preCache"].value :
+			computeScene()
+
 		memory = _Memory.maxRSS()
-		with _Timer() as sceneTimer :
-			with self.__performanceMonitor or _NullContextManager(), self.__contextMonitor or _NullContextManager() :
-				GafferSceneTest.traverseScene( scene )
+		with self.__performanceMonitor or _NullContextManager(), self.__contextMonitor or _NullContextManager(), self.__vtuneMonitor or _NullContextManager() :
+			with contextSanitiser :
+				with _Timer() as sceneTimer :
+					computeScene()
+
 		self.__timers["Scene generation"] = sceneTimer
 		self.__memory["Scene generation"] = _Memory.maxRSS() - memory
 
-		## \todo Calculate and print scene stats
+		## \todo Calculate and write scene stats
 		#  - Locations
 		#  - Unique objects, attributes etc
 
-	def __printImage( self, script, args ) :
+	def __writeImage( self, script, args ) :
 
 		import GafferImage
 		import GafferImageTest
 
 		image = script.descendant( args["image"].value )
 		if isinstance( image, Gaffer.Node ) :
-			image = next( ( x for x in image.children( GafferImage.ImagePlug ) ), None )
+			image = next( GafferImage.ImagePlug.RecursiveOutputRange( image ), None )
 
 		if image is None :
 			IECore.msg( IECore.Msg.Level.Error, "stats", "Image \"%s\" does not exist" % args["image"].value )
 			return
 
+		contextSanitiser = _NullContextManager()
+		if args["contextSanitiser"].value :
+			contextSanitiser = GafferImageTest.ContextSanitiser()
+
+		frames = self.__frames( script, args )
+
+		def computeImage() :
+
+			with self.__context( script, args ) as context :
+				for frame in frames :
+					context.setFrame( frame )
+					GafferImageTest.processTiles( image )
+
+		if args["preCache"].value :
+			computeImage()
+
 		memory = _Memory.maxRSS()
-		with _Timer() as imageTimer :
-			with self.__performanceMonitor or _NullContextManager(), self.__contextMonitor or _NullContextManager() :
-				GafferImageTest.processTiles( image )
+		with self.__performanceMonitor or _NullContextManager(), self.__contextMonitor or _NullContextManager(), self.__vtuneMonitor or _NullContextManager() :
+			with contextSanitiser :
+				with _Timer() as imageTimer :
+					computeImage()
+
 		self.__timers["Image generation"] = imageTimer
 		self.__memory["Image generation"] = _Memory.maxRSS() - memory
-		self.__memory["OIIO cache limit"] = _Memory( GafferImage.OpenImageIOReader.getCacheMemoryLimit() )
-		self.__memory["OIIO cache usage"] = _Memory( GafferImage.OpenImageIOReader.cacheMemoryUsage() )
 
-		items = [
-			( "Format", image["format"].getValue() ),
-			( "Data window", image["dataWindow"].getValue() ),
-			( "Channel names", image["channelNames"].getValue() ),
-		]
+		with self.__context( script, args ) as context :
+			items = [
+				( "Format", image["format"].getValue() ),
+				( "Data window", image["dataWindow"].getValue() ),
+				( "Channel names", image["channelNames"].getValue() ),
+			]
 
-		print "\nImage :\n"
-		self.__printItems( items )
+		self.__output.write( "\nImage :\n\n" )
+		self.__writeItems( items )
 
-	def __printMemory( self ) :
+	def __writeTask( self, script, args ) :
+
+		import GafferDispatch
+
+		task = script.descendant( args["task"].value )
+		if isinstance( task, GafferDispatch.TaskNode.TaskPlug ) :
+			task = task.node()
+
+		if task is None :
+			IECore.msg( IECore.Msg.Level.Error, "stats", "Task \"%s\" does not exist" % args["task"].value )
+			return
+
+		dispatcher = GafferDispatch.LocalDispatcher()
+		dispatcher["jobsDirectory"].setValue( tempfile.mkdtemp( prefix = "gafferStats" ) )
+
+		memory = _Memory.maxRSS()
+		with _Timer() as taskTimer :
+			with self.__performanceMonitor or _NullContextManager(), self.__contextMonitor or _NullContextManager(), self.__vtuneMonitor or _NullContextManager() :
+				with self.__context( script, args ) as context :
+					for frame in self.__frames( script, args ) :
+						context.setFrame( frame )
+						dispatcher.dispatch( [ task ] )
+
+		self.__timers["Task execution"] = taskTimer
+		self.__memory["Task execution"] = _Memory.maxRSS() - memory
+
+	def __writeMemory( self ) :
 
 		objectPool = IECore.ObjectPool.defaultObjectPool()
 
-		items = self.__memory.items()
+		items = list( self.__memory.items() )
 
 		items.extend( [
 			( "", "" ),
@@ -381,36 +658,49 @@ class stats( Gaffer.Application ) :
 			( "", "" ),
 			( "Object pool limit", _Memory( objectPool.getMaxMemoryUsage() ) ),
 			( "Object pool usage", _Memory( objectPool.memoryUsage() ) ),
+		] )
+
+		import IECoreScene
+		if "IECoreScene" in sys.modules :
+			items.extend( [
+				( "", "" ),
+				( "Scene interface limit", IECoreScene.SharedSceneInterfaces.getMaxScenes() ),
+				( "Scene interfaces", IECoreScene.SharedSceneInterfaces.numScenes() ),
+			] )
+
+		items.extend( [
 			( "", "" ),
 			( "Max resident size", _Memory.maxRSS() ),
 		] )
 
-		print "Memory :\n"
-		self.__printItems( items )
+		self.__output.write( "Memory :\n\n" )
+		self.__writeItems( items )
 
-	def __printStatisticsItems( self, script, stats, key, n ) :
+	def __writeStatisticsItems( self, script, stats, key, n ) :
 
 		stats.sort( key = key, reverse = True )
 		items = [ ( x[0].relativeName( script ), key( x ) ) for x in stats[:n] ]
-		self.__printItems( items )
+		self.__writeItems( items )
 
-	def __printPerformance( self, script, args ) :
+	def __writePerformance( self, script, args ) :
 
-			print "Performance :\n"
-			self.__printItems( self.__timers.items() )
+			self.__output.write( "Performance :\n\n" )
+			self.__writeItems( self.__timers.items() )
 
 			if self.__performanceMonitor is not None :
-				print "\n" + Gaffer.MonitorAlgo.formatStatistics(
-					self.__performanceMonitor,
-					maxLinesPerMetric = args["maxLinesPerMetric"].value
+				self.__output.write(
+					"\n" + Gaffer.MonitorAlgo.formatStatistics(
+						self.__performanceMonitor,
+						maxLinesPerMetric = args["maxLinesPerMetric"].value
+					)
 				)
 
-	def __printContext( self, script, args ) :
+	def __writeContext( self, script, args ) :
 
 			if self.__contextMonitor is None :
 				return
 
-			print "Contexts :\n"
+			self.__output.write( "Contexts :\n\n" )
 
 			stats = self.__contextMonitor.combinedStatistics()
 
@@ -420,25 +710,30 @@ class stats( Gaffer.Application ) :
 				( "Unique contexts", stats.numUniqueContexts() ),
 			]
 
-			self.__printItems( items )
+			self.__writeItems( items )
 
 class _Timer( object ) :
+
+	if six.PY3 :
+		__cpuClock = time.process_time
+	else :
+		__cpuClock = time.clock
 
 	def __enter__( self ) :
 
 		self.__time = time.time()
-		self.__clock = time.clock()
+		self.__cpuTime = self.__cpuClock()
 
 		return self
 
 	def __exit__( self, type, value, traceBack ) :
 
 		self.__time = time.time() - self.__time
-		self.__clock = time.clock() - self.__clock
+		self.__cpuTime = self.__cpuClock() - self.__cpuTime
 
 	def __str__( self ) :
 
-		return "%.3fs (wall), %.3fs (CPU)" % ( self.__time, self.__clock )
+		return "%.3fs (wall), %.3fs (CPU)" % ( self.__time, self.__cpuTime )
 
 class _Memory( object ) :
 

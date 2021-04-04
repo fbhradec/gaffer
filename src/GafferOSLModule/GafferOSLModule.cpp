@@ -36,22 +36,26 @@
 
 #include "boost/python.hpp"
 
-#include "OSL/oslversion.h"
-
-#include "IECorePython/ScopedGILRelease.h"
-#include "IECorePython/IECoreBinding.h"
-
-#include "Gaffer/StringPlug.h"
-
-#include "GafferBindings/DependencyNodeBinding.h"
-#include "GafferBindings/DataBinding.h"
-#include "GafferBindings/SignalBinding.h"
-
+#include "GafferOSL/ClosurePlug.h"
+#include "GafferOSL/OSLCode.h"
+#include "GafferOSL/OSLImage.h"
+#include "GafferOSL/OSLLight.h"
+#include "GafferOSL/OSLObject.h"
 #include "GafferOSL/OSLShader.h"
 #include "GafferOSL/ShadingEngine.h"
-#include "GafferOSL/OSLImage.h"
-#include "GafferOSL/OSLObject.h"
-#include "GafferOSL/OSLCode.h"
+#include "GafferOSL/ShadingEngineAlgo.h"
+
+#include "GafferBindings/DataBinding.h"
+#include "GafferBindings/DependencyNodeBinding.h"
+#include "GafferBindings/PlugBinding.h"
+#include "GafferBindings/SignalBinding.h"
+
+#include "Gaffer/Plug.h"
+
+#include "IECorePython/IECoreBinding.h"
+#include "IECorePython/ScopedGILRelease.h"
+
+#include "OSL/oslversion.h"
 
 using namespace boost::python;
 using namespace GafferBindings;
@@ -59,28 +63,6 @@ using namespace GafferOSL;
 
 namespace
 {
-
-/// \todo Move this serialisation to the bindings for GafferScene::Shader, once we've made Shader::loadShader() virtual
-/// and implemented it so reloading works in OpenGLShader.
-class OSLShaderSerialiser : public GafferBindings::NodeSerialiser
-{
-
-	virtual std::string postScript( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const
-	{
-		const OSLShader *oslShader = static_cast<const OSLShader *>( graphComponent );
-		const std::string shaderName = oslShader->namePlug()->getValue();
-		// We don't serialise a `loadShader()` call for OSLCode nodes
-		// because the OSLCode node generates the shader from the plugs,
-		// and not the other way around.
-		if( shaderName.size() && !IECore::runTimeCast<const OSLCode>( oslShader ) )
-		{
-			return boost::str( boost::format( "%s.loadShader( \"%s\", keepExistingValues=True )\n" ) % identifier % shaderName );
-		}
-
-		return "";
-	}
-
-};
 
 object shaderMetadata( const OSLShader &s, const char *key, bool copy = true )
 {
@@ -159,21 +141,42 @@ IECore::CompoundDataPtr shadeWrapper( ShadingEngine &shadingEngine, const IECore
 	return shadingEngine.shade( points, transforms );
 }
 
+IECore::CompoundDataPtr shadeUVTextureWrapper( const IECoreScene::ShaderNetwork &shaderNetwork, const Imath::V2i &resolution, const IECoreScene::ShaderNetwork::Parameter &output )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	return ShadingEngineAlgo::shadeUVTexture( &shaderNetwork, resolution, output );
+}
+
+void loadShader( OSLLight &l, const std::string &shaderName )
+{
+	IECorePython::ScopedGILRelease gilRelease;
+	l.loadShader( shaderName );
+}
+
 } // namespace
 
 BOOST_PYTHON_MODULE( _GafferOSL )
 {
 
 	GafferBindings::DependencyNodeClass<OSLShader>()
-		.def( "loadShader", &OSLShader::loadShader, ( arg_( "shaderName" ), arg_( "keepExistingValues" ) = false ) )
 		.def( "shaderMetadata", &shaderMetadata, ( boost::python::arg_( "_copy" ) = true ) )
 		.def( "parameterMetadata", &parameterMetadata, ( boost::python::arg_( "plug" ), boost::python::arg_( "_copy" ) = true ) )
 	;
 
-	Serialisation::registerSerialiser( OSLShader::staticTypeId(), new OSLShaderSerialiser() );
-
 	GafferBindings::DependencyNodeClass<OSLImage>();
 	GafferBindings::DependencyNodeClass<OSLObject>();
+
+	PlugClass<ClosurePlug>()
+		.def( init<const std::string &, Gaffer::Plug::Direction, unsigned>(
+				(
+					arg( "name" ) = Gaffer::GraphComponent::defaultName<ClosurePlug>(),
+					arg( "direction" ) = Gaffer::Plug::In,
+					arg( "flags" ) = Gaffer::Plug::Default
+				)
+			)
+		)
+	;
+
 
 	def( "oslLibraryVersionMajor", &oslLibraryVersionMajor );
 	def( "oslLibraryVersionMinor", &oslLibraryVersionMinor );
@@ -183,13 +186,16 @@ BOOST_PYTHON_MODULE( _GafferOSL )
 
 	{
 		scope s = IECorePython::RefCountedClass<ShadingEngine, IECore::RefCounted>( "ShadingEngine" )
-			.def( init<const IECore::ObjectVector *>() )
+			.def( init<const IECoreScene::ShaderNetwork *>() )
+			.def( "hash", &ShadingEngine::hash )
 			.def( "shade", &shadeWrapper,
 				(
 					boost::python::arg( "points" ),
 					boost::python::arg( "transforms" ) = boost::python::dict()
 				)
 			)
+			.def( "needsAttribute", &ShadingEngine::needsAttribute )
+			.def( "hasDeformation", &ShadingEngine::hasDeformation )
 		;
 
 		class_<ShadingEngine::Transform>( "Transform" )
@@ -201,11 +207,43 @@ BOOST_PYTHON_MODULE( _GafferOSL )
 		;
 	}
 
-	scope s = GafferBindings::DependencyNodeClass<OSLCode>()
-		.def( "source", &oslCodeSource, ( arg_( "shaderName" ) = "" ) )
-		.def( "shaderCompiledSignal", &OSLCode::shaderCompiledSignal, return_internal_reference<1>() )
-	;
+	{
+		object module( borrowed( PyImport_AddModule( "GafferOSL.ShadingEngineAlgo" ) ) );
+		scope().attr( "ShadingEngineAlgo" ) = module;
+		scope moduleScope( module );
 
-	SignalClass<OSLCode::ShaderCompiledSignal>( "ShaderCompiledSignal" );
+		def( "shadeUVTexture", &shadeUVTextureWrapper,
+			(
+				boost::python::arg( "shaderNetwork" ),
+				boost::python::arg( "resolution" ),
+				boost::python::arg( "output" ) = IECoreScene::ShaderNetwork::Parameter()
+			)
+		);
+	}
+
+	{
+		scope s = GafferBindings::DependencyNodeClass<OSLCode>()
+			.def( "source", &oslCodeSource, ( arg_( "shaderName" ) = "" ) )
+			.def( "shaderCompiledSignal", &OSLCode::shaderCompiledSignal, return_internal_reference<1>() )
+		;
+
+		SignalClass<OSLCode::ShaderCompiledSignal>( "ShaderCompiledSignal" );
+
+		// Use a default serialiser for OSLCode, so that we don't get a
+		// loadShader call like every other kind of shader.
+		GafferBindings::Serialisation::registerSerialiser( OSLCode::staticTypeId(), new GafferBindings::NodeSerialiser() );
+	}
+
+	{
+		scope s = GafferBindings::DependencyNodeClass<OSLLight>()
+			.def( "loadShader", &loadShader )
+		;
+
+		enum_<OSLLight::Shape>( "Shape" )
+			.value( "Disk", OSLLight::Disk )
+			.value( "Sphere", OSLLight::Sphere )
+			.value( "Geometry", OSLLight::Geometry )
+		;
+	}
 
 }

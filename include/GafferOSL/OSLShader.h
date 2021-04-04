@@ -37,32 +37,34 @@
 #ifndef GAFFEROSL_OSLSHADER_H
 #define GAFFEROSL_OSLSHADER_H
 
-#include "GafferScene/Shader.h"
-
+#include "GafferOSL/Export.h"
 #include "GafferOSL/TypeIds.h"
+
+#include "GafferScene/Shader.h"
 
 namespace GafferOSL
 {
 
 IE_CORE_FORWARDDECLARE( ShadingEngine )
 
-class OSLShader : public GafferScene::Shader
+class GAFFEROSL_API OSLShader : public GafferScene::Shader
 {
 
 	public :
 
 		OSLShader( const std::string &name=defaultName<OSLShader>() );
-		virtual ~OSLShader();
+		~OSLShader() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferOSL::OSLShader, OSLShaderTypeId, GafferScene::Shader );
+		GAFFER_NODE_DECLARE_TYPE( GafferOSL::OSLShader, OSLShaderTypeId, GafferScene::Shader );
 
 		/// Returns a plug based on the "correspondingInput" metadata of each output plug
-		virtual Gaffer::Plug *correspondingInput( const Gaffer::Plug *output );
-		virtual const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const;
+		Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) override;
+		const Gaffer::Plug *correspondingInput( const Gaffer::Plug *output ) const override;
 
 		/// \undoable.
-		/// \todo Make this method virtual and define it on the Shader base class.
-		void loadShader( const std::string &shaderName, bool keepExistingValues=false );
+		void loadShader( const std::string &shaderName, bool keepExistingValues=false ) override;
+
+		void reloadShader() override;
 
 		ConstShadingEnginePtr shadingEngine() const;
 
@@ -71,9 +73,43 @@ class OSLShader : public GafferScene::Shader
 		/// Returns an OSL metadata item from the specified shader parameter.
 		const IECore::Data *parameterMetadata( const Gaffer::Plug *plug, const IECore::InternedString &name ) const;
 
+		/// TODO - decide what to call this and where it should live
+		template< typename X, typename Y >
+		static void prepareSplineCVsForOSL( std::vector<X> &positions, std::vector<Y> &values, const char *basis )
+		{
+			int numDuplicates = 0;
+			if( strcmp( basis, "linear" ) == 0 )
+			{
+				// OSL discards the first and last segment of linear curves
+				// "To maintain consistency with the other spline types"
+				numDuplicates = 1;
+			}
+			else if( strcmp( basis, "bezier" ) == 0 )
+			{
+				// OSL currently has a bug that effects the first and last segments of bezier curves:
+				// https://github.com/imageworks/OpenShadingLanguage/issues/778
+				// The only work around I've found so far is to add a complete extra first and last segment,
+				// with 3 CVs each.  This can be removed once that bug is fixed
+				numDuplicates = 3;
+			}
+
+			for( int i = 0; i < numDuplicates; i++ )
+			{
+				positions.insert( positions.begin(), positions[0] );
+				positions.insert( positions.end(), positions[positions.size() - 1] );
+				values.insert( values.begin(), values[0] );
+				values.insert( values.end(), values[values.size() - 1] );
+			}
+		}
+
+		/// Allows other renderer shaders to connect to OSL shaders by registering them.
+		/// Returns true on success, false if already added.
+		static bool registerCompatibleShader( const IECore::InternedString shaderType );
+
+
 	protected :
 
-		virtual bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const;
+		bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const override;
 
 	private :
 

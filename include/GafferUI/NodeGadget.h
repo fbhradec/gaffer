@@ -42,21 +42,24 @@
 
 #include "Gaffer/Set.h"
 
+#include <functional>
+
 namespace GafferUI
 {
 
 IE_CORE_FORWARDDECLARE( Nodule )
 IE_CORE_FORWARDDECLARE( NodeGadget )
+IE_CORE_FORWARDDECLARE( ConnectionCreator )
 
 /// A base class for representing nodes within a GraphGadget.
-class NodeGadget : public Gadget
+class GAFFERUI_API NodeGadget : public Gadget
 {
 
 	public :
 
-		virtual ~NodeGadget();
+		~NodeGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::NodeGadget, NodeGadgetTypeId, Gadget );
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::NodeGadget, NodeGadgetTypeId, Gadget );
 
 		Gaffer::Node *node();
 		const Gaffer::Node *node() const;
@@ -68,7 +71,7 @@ class NodeGadget : public Gadget
 		/// Returns the tangent for a nodule - this is a direction which
 		/// can be considered to be "away" from the NodeGadget for the
 		/// purposes of drawing connections.
-		virtual Imath::V3f noduleTangent( const Nodule *nodule ) const;
+		virtual Imath::V3f connectionTangent( const ConnectionCreator *creator ) const;
 
 		typedef boost::signal<void ( NodeGadget *, Nodule * )> NoduleSignal;
 		/// Emitted when a nodule is added. It is the responsibility
@@ -80,15 +83,24 @@ class NodeGadget : public Gadget
 		/// appropriate.
 		NoduleSignal &noduleRemovedSignal();
 
-		/// Creates a NodeGadget for the specified node.
+		/// Creates a NodeGadget for the specified node. The type of
+		/// NodeGadget created can be controlled by registering a
+		/// "nodeGadget:type" metadata value for the node. Registering
+		/// "" suppresses creation of a NodeGadget, in which case
+		/// nullptr will be returned.
 		static NodeGadgetPtr create( Gaffer::NodePtr node );
 
-		typedef boost::function<NodeGadgetPtr ( Gaffer::NodePtr )> NodeGadgetCreator;
-		/// Registers a function which will return a NodeGadget instance for a node of a specific
-		/// type. This can be used to customise the NodeGadget for specific node types.
+		typedef std::function<NodeGadgetPtr ( Gaffer::NodePtr )> NodeGadgetCreator;
+		/// Registers a named NodeGadget creator, optionally registering it as the default
+		/// creator for a particular type of node. The nodeGadgetType may subsequently be
+		/// used in a "nodeGadget:type" metadata registration to register the creator with
+		/// other nodes or node instances.
+		static void registerNodeGadget( const std::string &nodeGadgetType, NodeGadgetCreator creator, IECore::TypeId nodeType = IECore::InvalidTypeId );
+
+		/// \deprecated Use the function above, or register "nodeGadget:type" metadata instead.
 		static void registerNodeGadget( IECore::TypeId nodeType, NodeGadgetCreator creator );
 
-		virtual std::string getToolTip( const IECore::LineSegment3f &line ) const;
+		std::string getToolTip( const IECore::LineSegment3f &line ) const override;
 
 	protected :
 
@@ -98,7 +110,7 @@ class NodeGadget : public Gadget
 		template<class T>
 		struct NodeGadgetTypeDescription
 		{
-			NodeGadgetTypeDescription( IECore::TypeId nodeType ) { NodeGadget::registerNodeGadget( nodeType, &creator ); };
+			NodeGadgetTypeDescription( IECore::TypeId nodeType ) { NodeGadget::registerNodeGadget( T::staticTypeName(), &creator, nodeType ); };
 			static NodeGadgetPtr creator( Gaffer::NodePtr node ) { return new T( node ); };
 		};
 
@@ -107,9 +119,6 @@ class NodeGadget : public Gadget
 		Gaffer::Node *m_node;
 		NoduleSignal m_noduleAddedSignal;
 		NoduleSignal m_noduleRemovedSignal;
-
-		typedef std::map<IECore::TypeId, NodeGadgetCreator> CreatorMap;
-		static CreatorMap &creators();
 
 };
 

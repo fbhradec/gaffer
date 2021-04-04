@@ -38,6 +38,7 @@
 import unittest
 import threading
 import collections
+import six
 
 import IECore
 
@@ -60,16 +61,16 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 
 		self.assertEqual( len( set ), 0 )
 		self.assertEqual( len( dirtied ), 2 )
-		self.failUnless( dirtied[0][0].isSame( n2["op1"] ) )
-		self.failUnless( dirtied[1][0].isSame( n2["sum"] ) )
+		self.assertTrue( dirtied[0][0].isSame( n2["op1"] ) )
+		self.assertTrue( dirtied[1][0].isSame( n2["sum"] ) )
 
 		n2["op1"].setInput( None )
 
 		self.assertEqual( len( set ), 1 )
-		self.failUnless( set[0][0].isSame( n2["op1"] ) )
+		self.assertTrue( set[0][0].isSame( n2["op1"] ) )
 		self.assertEqual( len( dirtied ), 4 )
-		self.failUnless( dirtied[2][0].isSame( n2["op1"] ) )
-		self.failUnless( dirtied[3][0].isSame( n2["sum"] ) )
+		self.assertTrue( dirtied[2][0].isSame( n2["op1"] ) )
+		self.assertTrue( dirtied[3][0].isSame( n2["sum"] ) )
 
 	def testDirtyPropagationForCompoundPlugs( self ) :
 
@@ -80,7 +81,7 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 				Gaffer.DependencyNode.__init__( self, name )
 
 				self["in"] = Gaffer.IntPlug()
-				self["out"] = Gaffer.CompoundPlug( direction = Gaffer.Plug.Direction.Out )
+				self["out"] = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out )
 				self["out"]["one"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
 				self["out"]["two"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
 
@@ -92,7 +93,7 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 
 				if input.isSame( self["in"] ) :
 					if self["behaveBadly"].getValue() :
-						# we're not allowed to return a CompoundPlug in affects() - we're
+						# we're not allowed to return a compound plug in affects() - we're
 						# just doing it here to make sure we can see that the error is detected.
 						outputs.append( self["out"] )
 					else :
@@ -107,7 +108,7 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 
 				Gaffer.DependencyNode.__init__( self, name )
 
-				self["in"] = Gaffer.CompoundPlug()
+				self["in"] = Gaffer.Plug()
 				self["in"]["one"] = Gaffer.IntPlug()
 				self["in"]["two"] = Gaffer.IntPlug()
 
@@ -115,7 +116,7 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 
 			def affects( self, input ) :
 
-				# affects should never be called with a CompoundPlug - only
+				# affects should never be called with a compound plug - only
 				# leaf level plugs.
 				assert( not input.isSame( self["in"] ) )
 
@@ -332,6 +333,7 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 		self.assertTrue( cs[3][0].isSame( n["o"]["z"] ) )
 		self.assertTrue( cs[4][0].isSame( n["o"] ) )
 
+	@GafferTest.TestRunner.PerformanceTestMethod()
 	def testEfficiency( self ) :
 
 		# Node with compound plugs where every child
@@ -345,8 +347,8 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 
 				Gaffer.DependencyNode.__init__( self, name )
 
-				self["in"] = Gaffer.CompoundPlug()
-				self["out"] = Gaffer.CompoundPlug( direction = Gaffer.Plug.Direction.Out )
+				self["in"] = Gaffer.Plug()
+				self["out"] = Gaffer.Plug( direction = Gaffer.Plug.Direction.Out )
 
 				for i in range( 0, 10 ) :
 
@@ -415,14 +417,14 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 
 		cs = GafferTest.CapturingSlot( s["n"].plugDirtiedSignal() )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 
 			s["n"]["op1"].setValue( 20 )
 			s["n"]["op2"].setValue( 21 )
 
 		# Even though we made two changes, we only want
 		# dirtiness to have been signalled once, because
-		# we grouped them logically in an UndoContext.
+		# we grouped them logically in an UndoScope.
 
 		self.assertEqual( len( cs ), 3 )
 		self.assertTrue( cs[0][0].isSame( s["n"]["op1"] ) )
@@ -553,6 +555,22 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 		del n["in"]
 		self.assertEqual( valuesWhenDirtied, [ 0 ] )
 
+		# Check that dirty propagation still operates even if
+		# the plugs don't have the Dynamic flag set. Although
+		# DynamicAddNode would require the flag for serialisation
+		# to work, other nodes may not, and we don't want to mix
+		# up dirty propagation with serialisation.
+
+		del valuesWhenDirtied[:]
+		n["in"] = Gaffer.IntPlug( defaultValue = 1 )
+		n["in1"] = Gaffer.IntPlug( defaultValue = 2 )
+		self.assertEqual( valuesWhenDirtied, [ 1, 3 ] )
+
+		del valuesWhenDirtied[:]
+		del n["in"]
+		del n["in1"]
+		self.assertEqual( valuesWhenDirtied, [ 2, 0 ] )
+
 	def testThrowInAffects( self ) :
 		# Dirty propagation is a secondary process that
 		# is triggered by primary operations like adding
@@ -613,6 +631,100 @@ class DependencyNodeTest( GafferTest.TestCase ) :
 		c = s["n2"].plugInputChangedSignal().connect( inputChanged )
 
 		s["n2"]["op1"].setInput( s["n1"]["product"] )
+
+	def testDependencyCycleReporting( self ) :
+
+		class CycleNode( Gaffer.DependencyNode ) :
+
+			def __init__( self, name="CycleNode" ) :
+
+				Gaffer.DependencyNode.__init__( self, name )
+
+				self["in"] = Gaffer.IntPlug()
+				self["out"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out )
+
+			def affects( self, input ) :
+
+				outputs = Gaffer.DependencyNode.affects( self, input )
+
+				if input == self["in"] :
+					outputs.append( self["out"] )
+				elif input == self["out"] :
+					outputs.append( self["in"] )
+
+				return outputs
+
+		n = CycleNode()
+		with IECore.CapturingMessageHandler() as mh :
+			n["in"].setValue( 10 )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertEqual( mh.messages[0].context, "Plug dirty propagation" )
+		self.assertEqual( mh.messages[0].message, "Cycle detected between CycleNode.in and CycleNode.out" )
+
+	def testBadAffects( self ) :
+
+		class BadAffects( Gaffer.DependencyNode ) :
+
+			def __init__( self, name = "BadAffects" ) :
+
+				Gaffer.DependencyNode.__init__( self, name )
+
+				self["in"] = Gaffer.IntPlug()
+
+			def affects( self, input ) :
+
+				outputs = Gaffer.DependencyNode.affects( self, input )
+				if input == self["in"] :
+					outputs.append( None ) # Error!
+
+				return outputs
+
+		IECore.registerRunTimeTyped( BadAffects )
+
+		n = BadAffects()
+
+		with IECore.CapturingMessageHandler() as mh :
+			n["in"].setValue( 1 )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertEqual( mh.messages[0].context, "BadAffects::affects()" )
+		self.assertEqual( mh.messages[0].message, "TypeError: No registered converter was able to extract a C++ reference to type Gaffer::Plug from this Python object of type NoneType\n" )
+
+	def testDependencyCyclesDontStopPlugsDirtying( self ) :
+
+		nodes = [ GafferTest.MultiplyNode( "node{}".format( i ) ) for i in range( 0, 10 ) ]
+		cs = GafferTest.CapturingSlot( *[ n.plugDirtiedSignal() for n in nodes ] )
+
+		with IECore.CapturingMessageHandler() as mh :
+			for i, node in enumerate( nodes ) :
+				node["op1"].setInput( nodes[i-1]["product"] )
+
+		self.assertEqual(
+			{ x[0] for x in cs },
+			{ n["op1"] for n in nodes } | { n["product"] for n in nodes }
+		)
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertEqual( mh.messages[0].context, "Plug dirty propagation" )
+		six.assertRegex( self, mh.messages[0].message, r"Cycle detected between node.* and node.*" )
+
+		del cs[:]
+		with IECore.CapturingMessageHandler() as mh :
+			nodes[0]["op2"].setValue( 10 )
+
+		self.assertEqual(
+			{ x[0] for x in cs },
+			{ n["op1"] for n in nodes } | { n["product"] for n in nodes } | { nodes[0]["op2"] }
+		)
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertEqual( mh.messages[0].context, "Plug dirty propagation" )
+		six.assertRegex( self, mh.messages[0].message, r"Cycle detected between node.* and node.*" )
 
 if __name__ == "__main__":
 	unittest.main()

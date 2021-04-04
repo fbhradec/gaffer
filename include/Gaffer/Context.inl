@@ -37,9 +37,9 @@
 #ifndef GAFFER_CONTEXT_INL
 #define GAFFER_CONTEXT_INL
 
-#include "boost/format.hpp"
-
 #include "IECore/SimpleTypedData.h"
+
+#include "boost/format.hpp"
 
 namespace Gaffer
 {
@@ -182,6 +182,8 @@ void Context::set( const IECore::InternedString &name, const T &value )
 	if( Accessor<T>().set( s, value ) )
 	{
 		m_hashValid = false;
+		s.updateHash( name );
+
 		if( m_changedSignal )
 		{
 			(*m_changedSignal)( this, name );
@@ -210,6 +212,54 @@ typename Context::Accessor<T>::ResultType Context::get( const IECore::InternedSt
 	}
 	return Accessor<T>().get( it->second.data );
 }
+
+template<typename T>
+void Context::EditableScope::set( const IECore::InternedString &name, const T &value )
+{
+	m_context->set( name, value );
+}
+
+const IECore::Canceller *Context::canceller() const
+{
+	return m_canceller;
+}
+
+class Context::SubstitutionProvider : public IECore::StringAlgo::VariableProvider
+{
+
+	public :
+
+		SubstitutionProvider( const Context *context );
+
+		int frame() const override;
+		const std::string &variable( const boost::string_view &name, bool &recurse ) const override;
+
+	private :
+
+		const Context *m_context;
+		mutable std::string m_formattedString;
+
+};
+
+void Context::Storage::updateHash( const IECore::InternedString &name )
+{
+	/// \todo Perhaps at some point the UI should use a different container for
+	/// these "not computationally important" values, so we wouldn't have to set
+	/// a zero value here so that it won't affect the total sum hash.
+	// Using a hardcoded comparison of the first three characters because
+	// it's quicker than `string::compare( 0, 3, "ui:" )`.
+	const std::string &nameStr = name.string();
+	if( nameStr.size() > 2 && nameStr[0] == 'u' && nameStr[1] == 'i' && nameStr[2] == ':' )
+	{
+		hash = IECore::MurmurHash( 0, 0 );
+	}
+	else
+	{
+		hash = data->Object::hash();
+		hash.append( (uint64_t)&nameStr );
+	}
+}
+
 
 } // namespace Gaffer
 

@@ -35,26 +35,30 @@
 #
 ##########################################################################
 
+import sys
 import logging
+import collections
 
 # the OpenGL module loves spewing things into logs, and for some reason
 # when running in maya 2012 the default log level allows info messages through.
 # so we set a specific log level on the OpenGL logger to keep it quiet.
 logging.getLogger( "OpenGL" ).setLevel( logging.WARNING )
+import imath
 
 import IECore
+import IECoreGL
 
 import Gaffer
 import GafferUI
-import _GafferUI
+from . import _GafferUI
 
-# import lazily to improve startup of apps which don't use GL functionality
-GL = Gaffer.lazyImport( "OpenGL.GL" )
-IECoreGL = Gaffer.lazyImport( "IECoreGL" )
+import OpenGL.GL as GL
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
-QtOpenGL = GafferUI._qtImport( "QtOpenGL", lazy=True )
+import Qt
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
+from Qt import QtOpenGL
 
 ## The GLWidget is a base class for all widgets which wish to draw using OpenGL.
 # Derived classes override the _draw() method to achieve this.
@@ -65,7 +69,8 @@ class GLWidget( GafferUI.Widget ) :
 	BufferOptions = IECore.Enum.create(
 		"Alpha",
 		"Depth",
-		"Double"
+		"Double",
+		"AntiAlias"
 	)
 
 	## Note that you won't always get the buffer options you ask for - a best fit is found
@@ -80,6 +85,11 @@ class GLWidget( GafferUI.Widget ) :
 		format.setDepth( self.BufferOptions.Depth in bufferOptions )
 		format.setDoubleBuffer( self.BufferOptions.Double in bufferOptions )
 
+		self.__multisample = self.BufferOptions.AntiAlias in bufferOptions
+		if self.__multisample:
+			format.setSampleBuffers( True )
+			format.setSamples( 8 )
+
 		if hasattr( format, "setVersion" ) : # setVersion doesn't exist in qt prior to 4.7.
 			format.setVersion( 2, 1 )
 
@@ -89,39 +99,47 @@ class GLWidget( GafferUI.Widget ) :
 
 		GafferUI.Widget.__init__( self, graphicsView, **kw )
 
-		self.__overlay = None
+		self.__overlays = set()
 
-	## Specifies a widget to be overlaid on top of the GL rendering,
-	# stretched to fill the frame. To add multiple widgets and/or gain
-	# more control over the layout, use a Container as the overlay and
-	# use it to layout multiple child widgets.
-	def setOverlay( self, overlay ) :
+	## Adds a widget to be overlaid on top of the GL rendering,
+	# stretched to fill the frame.
+	def addOverlay( self, overlay ) :
 
-		if overlay is self.__overlay :
+		if overlay in self.__overlays :
 			return
 
-		if self.__overlay is not None :
-			self.removeChild( self.__overlay )
+		oldParent = overlay.parent()
+		if oldParent is not None :
+			oldParent.removeChild( child )
 
-		if overlay is not None :
-			oldParent = overlay.parent()
-			if oldParent is not None :
-				oldParent.removeChild( child )
+		self.__overlays.add( overlay )
+		overlay._setStyleSheet()
+		if Qt.__binding__ in ( "PySide2", "PyQt5" ) :
+			# Force Qt to use a raster drawing path for the overlays.
+			#
+			# - On Mac, this avoids "QMacCGContext:: Unsupported painter devtype type 1"
+			#   errors. See https://bugreports.qt.io/browse/QTBUG-32639 for
+			#   further details.
+			# - On Linux, this avoids an unknown problem which manifests as
+			#   a GL error that appears to occur inside Qt's code, and which
+			#   is accompanied by text drawing being scrambled in the overlay.
+			#
+			## \todo When we no longer need to support Qt4, we should be
+			# able to stop using a QGLWidget for the viewport, and this
+			# should no longer be needed.
+			overlay._qtWidget().setWindowOpacity( 0.9999 )
 
-		self.__overlay = overlay
-		self.__overlay._setStyleSheet()
+		self.__graphicsScene.addOverlay( overlay )
 
-		self.__graphicsScene.setOverlay( self.__overlay )
+	def removeOverlay( self, overlay ) :
 
-	def getOverlay( self ) :
-
-		return self.__overlay
+		self.removeChild( overlay )
 
 	def removeChild( self, child ) :
 
-		assert( child is self.__overlay )
-		self.__overlay = None
-		self.__graphicsScene.setOverlay( None )
+		assert( child in self.__overlays )
+		self.__graphicsScene.removeOverlay( child )
+		self.__overlays.remove( child )
 
 	## Called whenever the widget is resized. May be reimplemented by derived
 	# classes if necessary. The appropriate OpenGL context will already be current
@@ -170,12 +188,6 @@ class GLWidget( GafferUI.Widget ) :
 
 	def __draw( self ) :
 
-		# Qt sometimes enters our GraphicsScene.drawBackground() method
-		# with a GL error flag still set. We unset it here so it won't
-		# trigger our own error checking.
-		while GL.glGetError() :
-			pass
-
 		if not self.__framebufferValid() :
 			return
 
@@ -187,15 +199,20 @@ class GLWidget( GafferUI.Widget ) :
 		# is always called first.
 		IECoreGL.init( True )
 
-		self._draw()
+		if self.__multisample:
+			GL.glEnable( GL.GL_MULTISAMPLE )
 
-class _GLGraphicsView( QtGui.QGraphicsView ) :
+		try :
+			self._draw()
+		except Exception as e :
+			IECore.msg( IECore.Msg.Level.Error, "GLWidget", str( e ) )
+
+class _GLGraphicsView( QtWidgets.QGraphicsView ) :
 
 	def __init__( self, format ) :
 
-		QtGui.QGraphicsView.__init__( self )
+		QtWidgets.QGraphicsView.__init__( self )
 
-		self.setObjectName( "gafferGLWidget" )
 		self.setHorizontalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
 		self.setVerticalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
 
@@ -227,7 +244,7 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 			# hid in our constructor.
 			self.viewport().show()
 
-		return QtGui.QGraphicsView.event( self, event )
+		return QtWidgets.QGraphicsView.event( self, event )
 
 	def resizeEvent( self, event ) :
 
@@ -254,7 +271,7 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 			# but it's safe.
 			IECoreGL.init( True )
 
-			owner._resize( IECore.V2i( event.size().width(), event.size().height() ) )
+			owner._resize( imath.V2i( event.size().width(), event.size().height() ) )
 
 	def keyPressEvent( self, event ) :
 
@@ -267,11 +284,11 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 		# passes unused events to QFrame, bypassing QAbstractScrollArea.
 
 		if self.scene() is not None and self.isInteractive() :
-			QtGui.QApplication.sendEvent( self.scene(), event )
+			QtWidgets.QApplication.sendEvent( self.scene(), event )
 			if event.isAccepted() :
 				return
 
-		QtGui.QFrame.keyPressEvent( self, event )
+		QtWidgets.QFrame.keyPressEvent( self, event )
 
 	# We keep a single hidden widget which owns the texture and display lists
 	# and then share those with all the widgets we really want to make.
@@ -338,84 +355,121 @@ class _GLGraphicsView( QtGui.QGraphicsView ) :
 
 		import IECoreHoudini
 
-		# Prior to Houdini 14 we are running embedded on the hou.ui idle loop,
-		# so we needed to force the Houdini GL context to be current, and share
-		# it, similar to how we do this in Maya.
-		if hou.applicationVersion()[0] < 14 :
-			IECoreHoudini.makeMainGLContextCurrent()
-			return cls.__createHostedQGLWidget( format )
+		if hasattr( IECoreHoudini, "sharedGLWidget" ) :
+			# In Houdini 14 and 15, Qt is the native UI, and we can access
+			# Houdini's shared QGLWidget directly.
+			return QtOpenGL.QGLWidget( format, shareWidget = GafferUI._qtObject( IECoreHoudini.sharedGLWidget(), QtOpenGL.QGLWidget ) )
 
-		# In Houdini 14 and beyond, Qt is the native UI, and we can access
-		# Houdini's shared QGLWidget directly, provided we are using a recent
-		# Cortex version.
-		return QtOpenGL.QGLWidget( format, shareWidget = GafferUI._qtObject( IECoreHoudini.sharedGLWidget(), QtOpenGL.QGLWidget ) )
+		# While Qt is the native UI in Houdini 16.0, they have moved away
+		# from QGLWidgets for their Qt5 builds, so we need to force the
+		# Houdini GL context to be current, and share it.
+		IECoreHoudini.makeMainGLContextCurrent()
+		return cls.__createHostedQGLWidget( format )
 
-class _GLGraphicsScene( QtGui.QGraphicsScene ) :
+class _GLGraphicsScene( QtWidgets.QGraphicsScene ) :
+
+	__Overlay = collections.namedtuple( "__Overlay", [ "widget", "proxy" ] )
 
 	def __init__( self, parent, backgroundDrawFunction ) :
 
-		QtGui.QGraphicsScene.__init__( self, parent )
+		QtWidgets.QGraphicsScene.__init__( self, parent )
 
 		self.__backgroundDrawFunction = backgroundDrawFunction
 		self.sceneRectChanged.connect( self.__sceneRectChanged )
 
-		self.__overlay = None # Stores the GafferUI.Widget
-		self.__overlayProxy = None # Stores the _OverlayProxyWidget
+		self.__overlays = {} # Mapping from GafferUI.Widget to _OverlayProxyWidget
 
-	def setOverlay( self, widget ) :
+	def addOverlay( self, widget ) :
 
-		if self.__overlay is not None :
-			self.__overlayProxy.setWidget( None )
-			self.removeItem( self.__overlayProxy )
-			self.__overlay = None
-			self.__overlayProxy = None
-
-		if widget is None :
-			return
-
-		self.__overlay = widget
 		if widget._qtWidget().layout() is not None :
 			# removing the size constraint is necessary to keep the widget the
 			# size we tell it to be in __updateItemGeometry.
-			widget._qtWidget().layout().setSizeConstraint( QtGui.QLayout.SetNoConstraint )
+			widget._qtWidget().layout().setSizeConstraint( QtWidgets.QLayout.SetNoConstraint )
 
-		self.__overlayProxy = _OverlayProxyWidget()
-		self.__overlayProxy.setWidget( self.__overlay._qtWidget() )
+		proxy = _OverlayProxyWidget()
+		proxy.setWidget( widget._qtWidget() )
+		self.__overlays[widget] = proxy
 
-		self.addItem( self.__overlayProxy )
-		self.__updateItemGeometry( self.__overlayProxy, self.sceneRect() )
+		self.addItem( proxy )
+		self.__updateItemGeometry( proxy, self.sceneRect() )
+
+	def removeOverlay( self, widget ) :
+
+		item = self.__overlays[widget]
+		item.setWidget( None )
+		self.removeItem( item )
+		del self.__overlays[widget]
 
 	def drawBackground( self, painter, rect ) :
 
+		painter.beginNativePainting()
+
+		# Qt sometimes enters this method with a GL error flag still set.
+		# We unset it here so it won't trigger our own error checking.
+		while GL.glGetError() :
+			pass
+
+		GL.glPushAttrib( GL.GL_ALL_ATTRIB_BITS )
+		GL.glPushClientAttrib( GL.GL_CLIENT_ALL_ATTRIB_BITS )
+
 		self.__backgroundDrawFunction()
 
-		# Reset pixel store setting back to the default. IECoreGL
-		# (and the ImageGadget) meddle with this, and it throws off
-		# the QGraphicsEffects.
-		GL.glPixelStorei( GL.GL_UNPACK_ALIGNMENT, 4 );
+		GL.glPopClientAttrib()
+		GL.glPopAttrib()
+
+		painter.endNativePainting()
+
+	## QGraphicsScene consumes all drag events by default, which is unhelpful
+	# for us as it breaks any Qt based drag-drop we may be attempting.
+	def dragEnterEvent( self, event ) :
+
+		event.ignore()
 
 	def __sceneRectChanged( self, sceneRect ) :
 
-		if self.__overlayProxy is not None :
-			self.__updateItemGeometry( self.__overlayProxy, sceneRect )
+		for proxy in self.__overlays.values() :
+			self.__updateItemGeometry( proxy, sceneRect )
 
 	def __updateItemGeometry( self, item, sceneRect ) :
 
-		geometry = item.widget().geometry()
 		item.widget().setGeometry( QtCore.QRect( 0, 0, sceneRect.width(), sceneRect.height() ) )
 
-## A QGraphicsProxyWidget whose shape is composed from the
-# bounds of its child widgets. This allows our overlays to
-# pass through events in the regions where there isn't a
-# child widget.
-class _OverlayProxyWidget( QtGui.QGraphicsProxyWidget ) :
+## A QGraphicsProxyWidget whose shape is derived from the opaque parts of its
+# child widgets. This allows our overlays to pass through events in the regions
+# where there isn't a visible child widget.
+#
+# shape() is called frequently but our mask is relatively expensive to calculate.
+# As transparency is stylesheet dependent, we need to render our child widgets
+# and work out a mask from the resultant alpha.
+#
+# To minimise impact, We only re-calculate our mask whenever our layout
+# changes. This covers 99% of common use cases, with the only exception that
+# mouse-driven opacity changes won't be considered.
+class _OverlayProxyWidget( QtWidgets.QGraphicsProxyWidget ) :
 
 	def __init__( self ) :
 
-		QtGui.QGraphicsProxyWidget.__init__( self )
+		QtWidgets.QGraphicsProxyWidget.__init__( self )
+		self.__shape = None
+
+	def setWidget( self, widget ) :
+
+		QtWidgets.QGraphicsProxyWidget.setWidget( self, widget )
+		self.__shape = None
 
 	def shape( self ) :
 
-		path = QtGui.QPainterPath()
-		path.addRegion( self.widget().childrenRegion() )
-		return path
+		if self.__shape is None :
+
+			self.__shape = QtGui.QPainterPath()
+			if self.widget() :
+				pixmap = self.widget().grab()
+				self.__shape.addRegion( QtGui.QRegion( pixmap.mask() ) )
+
+		return self.__shape
+
+	# This covers re-layouts due to child changes, and parent changes (such as window resizing)
+	def setGeometry( self, *args, **kwargs ) :
+
+		QtWidgets.QGraphicsProxyWidget.setGeometry( self, *args, **kwargs )
+		self.__shape = None

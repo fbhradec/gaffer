@@ -35,18 +35,18 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import warnings
 
 import IECore
 
 import Gaffer
-import _GafferUI
+from . import _GafferUI
 import GafferUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+import Qt
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
 
 # PyQt unfortunately uses an implementation-specific 
 # naming scheme for its new-style signal and slot classes.
@@ -99,6 +99,8 @@ class PathListingWidget( GafferUI.Widget ) :
 		columns = defaultFileSystemColumns,
 		allowMultipleSelection = False,
 		displayMode = DisplayMode.List,
+		sortable = True,
+		horizontalScrollMode = GafferUI.ScrollMode.Never,
 		**kw
 	) :
 
@@ -106,11 +108,17 @@ class PathListingWidget( GafferUI.Widget ) :
 
 		self._qtWidget().setAlternatingRowColors( True )
 		self._qtWidget().setUniformRowHeights( True )
-		self._qtWidget().setEditTriggers( QtGui.QTreeView.NoEditTriggers )
+		self._qtWidget().setEditTriggers( QtWidgets.QTreeView.NoEditTriggers )
 		self._qtWidget().activated.connect( Gaffer.WeakMethod( self.__activated ) )
-		self._qtWidget().header().setMovable( False )
+		self._qtWidget().setHorizontalScrollBarPolicy( GafferUI.ScrollMode._toQt( horizontalScrollMode ) )
+
+		if Qt.__binding__ in ( "PySide2", "PyQt5" ) :
+			self._qtWidget().header().setSectionsMovable( False )
+		else :
+			self._qtWidget().header().setMovable( False )
+
 		self._qtWidget().header().setSortIndicator( 0, QtCore.Qt.AscendingOrder )
-		self._qtWidget().setSortingEnabled( True )
+		self._qtWidget().setSortingEnabled( sortable )
 
 		self._qtWidget().expansionChanged.connect( Gaffer.WeakMethod( self.__expansionChanged ) )
 
@@ -119,12 +127,12 @@ class PathListingWidget( GafferUI.Widget ) :
 		_GafferUI._pathListingWidgetUpdateModel( GafferUI._qtAddress( self._qtWidget() ), None )
 		_GafferUI._pathListingWidgetSetColumns( GafferUI._qtAddress( self._qtWidget() ), columns )
 
-		self.__selectionModel = QtGui.QItemSelectionModel( self._qtWidget().model() )
+		self.__selectionModel = QtCore.QItemSelectionModel( self._qtWidget().model() )
 		self._qtWidget().setSelectionModel( self.__selectionModel )
 		self.__selectionChangedSlot = Gaffer.WeakMethod( self.__selectionChanged )
 		self._qtWidget().selectionModel().selectionChanged.connect( self.__selectionChangedSlot )
 		if allowMultipleSelection :
-			self._qtWidget().setSelectionMode( QtGui.QAbstractItemView.ExtendedSelection )
+			self._qtWidget().setSelectionMode( QtWidgets.QAbstractItemView.ExtendedSelection )
 
 		self.__pathSelectedSignal = GafferUI.WidgetSignal()
 		self.__selectionChangedSignal = GafferUI.WidgetSignal()
@@ -134,11 +142,11 @@ class PathListingWidget( GafferUI.Widget ) :
 		# members for implementing drag and drop
 		self.__emittingButtonPress = False
 		self.__borrowedButtonPress = None
-		self.__buttonPressConnection = self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
-		self.__buttonReleaseConnection = self.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ) )
-		self.__mouseMoveConnection = self.mouseMoveSignal().connect( Gaffer.WeakMethod( self.__mouseMove ) )
-		self.__dragBeginConnection = self.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ) )
-		self.__dragEndConnection = self.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ) )
+		self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
+		self.buttonReleaseSignal().connect( Gaffer.WeakMethod( self.__buttonRelease ), scoped = False )
+		self.mouseMoveSignal().connect( Gaffer.WeakMethod( self.__mouseMove ), scoped = False )
+		self.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ), scoped = False )
+		self.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ), scoped = False )
 		self.__dragPointer = "paths"
 
 		self.__path = None
@@ -172,16 +180,29 @@ class PathListingWidget( GafferUI.Widget ) :
 	# exists at that position.
 	def pathAt( self, position ) :
 
-		position = self._qtWidget().viewport().mapFrom(
+		point = self._qtWidget().viewport().mapFrom(
 			self._qtWidget(),
 			QtCore.QPoint( position.x, position.y )
 		)
 
-		index = self._qtWidget().indexAt( position )
+		index = self._qtWidget().indexAt( point )
 		if not index.isValid() :
 			return None
 
 		return self.__pathForIndex( index )
+
+	## Sets which paths are currently expanded
+	# using an `IECore.PathMatcher` object.
+	def setExpansion( self, paths ) :
+
+		assert( isinstance( paths, IECore.PathMatcher ) )
+		self._qtWidget().setExpansion( paths )
+
+	## Returns an `IECore.PathMatcher` object containing
+	# the currently expanded paths.
+	def getExpansion( self ) :
+
+		return _GafferUI._pathListingWidgetGetExpansion( GafferUI._qtAddress( self._qtWidget() ) )
 
 	def setPathExpanded( self, path, expanded ) :
 
@@ -197,23 +218,22 @@ class PathListingWidget( GafferUI.Widget ) :
 
 		return False
 
-	## \todo Improve performance of this method by making
-	# a complete implementation in C++. This might be best
-	# done by using a PathMatcher do define the expanded
-	# paths, rather than a huge list.
+	## \deprecated Use `setExpansion()` instead
 	def setExpandedPaths( self, paths ) :
 
-		indices = []
-		for path in paths :
-			index = self.__indexForPath( path )
-			if index.isValid() :
-				indices.append( index )
+		self.setExpansion(
+			IECore.PathMatcher(
+				[ str( x ) for x in paths ]
+			)
+		)
 
-		self._qtWidget().setExpandedIndices( indices )
-
+	## \deprecated Use `getExpansion()` instead
 	def getExpandedPaths( self ) :
 
-		return _GafferUI._pathListingWidgetGetExpandedPaths( GafferUI._qtAddress( self._qtWidget() ) )
+		return _GafferUI._pathListingWidgetPathsForPathMatcher(
+			GafferUI._qtAddress( self._qtWidget() ),
+			self.getExpansion()
+		)
 
 	def expansionChangedSignal( self ) :
 
@@ -271,6 +291,7 @@ class PathListingWidget( GafferUI.Widget ) :
 
 		return not self._qtWidget().header().isHidden()
 
+	## \deprecated Use constructor argument instead.
 	def setSortable( self, sortable ) :
 
 		if sortable == self.getSortable() :
@@ -280,53 +301,66 @@ class PathListingWidget( GafferUI.Widget ) :
 		if not sortable :
 			self._qtWidget().model().sort( -1 )
 
+	## \deprecated
 	def getSortable( self ) :
 
 		return self._qtWidget().isSortingEnabled()
 
-	## Returns a list of all currently selected paths. Note that a list is returned
-	# even when in single selection mode.
-	def getSelectedPaths( self ) :
+	## Sets the currently selected paths using an
+	# `IECore.PathMatcher` object.
+	def setSelection( self, paths, scrollToFirst=True, expandNonLeaf=True ) :
 
-		selectedRows = self._qtWidget().selectionModel().selectedRows()
-		return [ self.__pathForIndex( index ) for index in selectedRows ]
-
-	## Sets the currently selected paths. Paths which are not currently being displayed
-	# will be discarded, such that subsequent calls to getSelectedPaths will not include them.
-	def setSelectedPaths( self, pathOrPaths, scrollToFirst=True, expandNonLeaf=True ) :
+		assert( isinstance( paths, IECore.PathMatcher ) )
 
 		# If there are pending changes to our path model, we must perform
 		# them now, so that the model is valid with respect to the paths
 		# we're trying to select.
 		self.__updateLazily.flush( self )
 
-		paths = pathOrPaths
-		if isinstance( pathOrPaths, Gaffer.Path ) :
-			paths = [ pathOrPaths ]
-
-		if self._qtWidget().selectionMode() != QtGui.QAbstractItemView.ExtendedSelection :
-			assert( len( paths ) <= 1 )
+		assert( isinstance( paths, IECore.PathMatcher ) )
 
 		selectionModel = self._qtWidget().selectionModel()
 		selectionModel.selectionChanged.disconnect( self.__selectionChangedSlot )
 
 		selectionModel.clear()
 
-		for path in paths :
-
-			indexToSelect = self.__indexForPath( path )
-			if indexToSelect.isValid() :
-				selectionModel.select( indexToSelect, selectionModel.Select | selectionModel.Rows )
-				if scrollToFirst :
-					self._qtWidget().scrollTo( indexToSelect, self._qtWidget().EnsureVisible )
-					selectionModel.setCurrentIndex( indexToSelect, selectionModel.Current )
-					scrollToFirst = False
-				if expandNonLeaf and not path.isLeaf() :
-					self._qtWidget().setExpanded( indexToSelect, True )
+		_GafferUI._pathListingWidgetSetSelection(
+			GafferUI._qtAddress( self._qtWidget() ),
+			paths, scrollToFirst, expandNonLeaf
+		)
 
 		selectionModel.selectionChanged.connect( self.__selectionChangedSlot )
 
 		self.selectionChangedSignal()( self )
+
+	## Returns an `IECore.PathMatcher` object containing
+	# the currently selected paths.
+	def getSelection( self ) :
+
+		return _GafferUI._pathListingWidgetGetSelection( GafferUI._qtAddress( self._qtWidget() ) )
+
+	## \deprecated
+	def getSelectedPaths( self ) :
+
+		return _GafferUI._pathListingWidgetPathsForPathMatcher(
+			GafferUI._qtAddress( self._qtWidget() ),
+			self.getSelection()
+		)
+
+	## \deprecated
+	def setSelectedPaths( self, pathOrPaths, scrollToFirst=True, expandNonLeaf=True ) :
+
+		paths = pathOrPaths
+		if isinstance( pathOrPaths, Gaffer.Path ) :
+			paths = [ pathOrPaths ]
+
+		if self._qtWidget().selectionMode() != QtWidgets.QAbstractItemView.ExtendedSelection :
+			assert( len( paths ) <= 1 )
+
+		self.setSelection(
+			IECore.PathMatcher( [ str( path ) for path in paths ] ),
+			scrollToFirst, expandNonLeaf
+		)
 
 	## \deprecated Use getSelectedPaths() instead.
 	# \todo Remove me
@@ -470,7 +504,7 @@ class PathListingWidget( GafferUI.Widget ) :
 			return False
 
 		self.__borrowedButtonPress = None
-		if event.buttons == event.Buttons.Left and event.modifiers == event.Modifiers.None :
+		if event.buttons == event.Buttons.Left and event.modifiers == event.Modifiers.None_ :
 
 			# We want to implement drag and drop of the selected items, which means borrowing
 			# mouse press events that the QTreeView needs to perform selection and expansion.
@@ -488,7 +522,12 @@ class PathListingWidget( GafferUI.Widget ) :
 			# This is further complicated by the fact that the button presses we simulate for Qt
 			# will end up back in this function, so we have to be careful to ignore those.
 
-			index = self._qtWidget().indexAt( QtCore.QPoint( event.line.p0.x, event.line.p0.y ) )
+			point = self._qtWidget().viewport().mapFrom(
+				self._qtWidget(),
+				QtCore.QPoint( event.line.p0.x, event.line.p0.y )
+			)
+			index = self._qtWidget().indexAt( point )
+
 			if self._qtWidget().selectionModel().isSelected( index ) :
 				# case 1 : existing selection.
 				self.__borrowedButtonPress = event
@@ -523,12 +562,20 @@ class PathListingWidget( GafferUI.Widget ) :
 	def __dragBegin( self, widget, event ) :
 
 		self.__borrowedButtonPress = None
-		selectedPaths = self.getSelectedPaths()
-		if len( selectedPaths ) :
+
+		# nothing to drag if there's no valid list entry under the pointer
+		point = self._qtWidget().viewport().mapFrom(
+			self._qtWidget(),
+			QtCore.QPoint( event.line.p0.x, event.line.p0.y )
+		)
+		index = self._qtWidget().indexAt( point )
+		if not index.isValid() :
+			return None
+
+		selection = self.getSelection()
+		if not( selection.isEmpty() ) :
 			GafferUI.Pointer.setCurrent( self.__dragPointer )
-			return IECore.StringVectorData(
-				[ str( p ) for p in selectedPaths ],
-			)
+			return IECore.StringVectorData( selection.paths() )
 
 		return None
 
@@ -538,9 +585,14 @@ class PathListingWidget( GafferUI.Widget ) :
 
 	def __emitButtonPress( self, event ) :
 
+		point = self._qtWidget().viewport().mapFrom(
+			self._qtWidget(),
+			QtCore.QPoint( event.line.p0.x, event.line.p0.y )
+		)
+
 		qEvent = QtGui.QMouseEvent(
 			QtCore.QEvent.MouseButtonPress,
-			QtCore.QPoint( event.line.p0.x, event.line.p0.y ),
+			point,
 			QtCore.Qt.LeftButton,
 			QtCore.Qt.LeftButton,
 			QtCore.Qt.NoModifier
@@ -558,7 +610,7 @@ class PathListingWidget( GafferUI.Widget ) :
 
 # Private implementation - a QTreeView with some specific size behaviour, and shift
 # clicking for recursive expand/collapse.
-class _TreeView( QtGui.QTreeView ) :
+class _TreeView( QtWidgets.QTreeView ) :
 
 	# This signal is called when some items are either collapsed or
 	# expanded. It can be preferable to use this over the expanded or
@@ -568,9 +620,7 @@ class _TreeView( QtGui.QTreeView ) :
 
 	def __init__( self ) :
 
-		QtGui.QTreeView.__init__( self )
-
-		self.setHorizontalScrollBarPolicy( QtCore.Qt.ScrollBarAlwaysOff )
+		QtWidgets.QTreeView.__init__( self )
 
 		self.header().geometriesChanged.connect( self.updateGeometry )
 		self.header().sectionResized.connect( self.__sectionResized )
@@ -588,13 +638,13 @@ class _TreeView( QtGui.QTreeView ) :
 
 	def setModel( self, model ) :
 
-		QtGui.QTreeView.setModel( self, model )
+		QtWidgets.QTreeView.setModel( self, model )
 
 		model.modelReset.connect( self.__recalculateColumnSizes )
 
 		self.__recalculateColumnSizes()
 
-	def setExpandedIndices( self, indices ) :
+	def setExpansion( self, paths ) :
 
 		self.collapsed.disconnect( self.__collapsed )
 		self.expanded.disconnect( self.__expanded )
@@ -604,8 +654,8 @@ class _TreeView( QtGui.QTreeView ) :
 		# it an update is triggered for every call to
 		# setExpanded().
 		self.scheduleDelayedItemsLayout()
-		for index in indices :
-			self.setExpanded( index, True )
+
+		_GafferUI._pathListingWidgetSetExpansion( GafferUI._qtAddress( self ), paths )
 
 		self.collapsed.connect( self.__collapsed )
 		self.expanded.connect( self.__expanded )
@@ -616,7 +666,7 @@ class _TreeView( QtGui.QTreeView ) :
 
 	def sizeHint( self ) :
 
-		result = QtGui.QTreeView.sizeHint( self )
+		result = QtWidgets.QTreeView.sizeHint( self )
 
 		margins = self.contentsMargins()
 		result.setWidth( self.header().length() + margins.left() + margins.right() )
@@ -632,14 +682,14 @@ class _TreeView( QtGui.QTreeView ) :
 				event.accept()
 				return True
 
-		return QtGui.QTreeView.event( self, event )
+		return QtWidgets.QTreeView.event( self, event )
 
 	def mousePressEvent( self, event ) :
 
 		# we store the modifiers so that we can turn single
 		# expands/collapses into recursive ones in __propagateExpanded.
 		self.__currentEventModifiers = event.modifiers()
-		QtGui.QTreeView.mousePressEvent( self, event )
+		QtWidgets.QTreeView.mousePressEvent( self, event )
 		self.__currentEventModifiers = QtCore.Qt.NoModifier
 
 	def mouseReleaseEvent( self, event ) :
@@ -647,13 +697,13 @@ class _TreeView( QtGui.QTreeView ) :
 		# we store the modifiers so that we can turn single
 		# expands/collapses into recursive ones in __propagateExpanded.
 		self.__currentEventModifiers = event.modifiers()
-		QtGui.QTreeView.mouseReleaseEvent( self, event )
+		QtWidgets.QTreeView.mouseReleaseEvent( self, event )
 		self.__currentEventModifiers = QtCore.Qt.NoModifier
 
 	def mouseDoubleClickEvent( self, event ) :
 
 		self.__currentEventModifiers = event.modifiers()
-		QtGui.QTreeView.mouseDoubleClickEvent( self, event )
+		QtWidgets.QTreeView.mouseDoubleClickEvent( self, event )
 		self.__currentEventModifiers = QtCore.Qt.NoModifier
 
 	def __recalculateColumnSizes( self ) :

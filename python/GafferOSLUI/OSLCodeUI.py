@@ -36,12 +36,15 @@
 
 import os
 import functools
+import imath
 
 import IECore
 
 import Gaffer
 import GafferUI
 import GafferOSL
+
+from . import _CodeMenu
 
 Gaffer.Metadata.registerNode(
 
@@ -91,7 +94,7 @@ Gaffer.Metadata.registerNode(
 			- V3fPlug (`vector`)
 			- M44fPlug (`matrix`)
 			- StringPlug (`string`)
-			- Plug (`closure color`)
+			- ClosurePlug (`closure color`)
 			- SplinefColor3f ( triplet of `float [], color [], string` )
 			""",
 
@@ -103,7 +106,11 @@ Gaffer.Metadata.registerNode(
 
 		"parameters.*" : [
 
-			"labelPlugValueWidget:renameable", True,
+			"renameable", True,
+			"deletable", True,
+			# Since the names are used directly as variable names in the code,
+			# it's best to avoid any fancy label formatting for them.
+			"label", lambda plug : plug.getName(),
 
 		],
 
@@ -127,7 +134,9 @@ Gaffer.Metadata.registerNode(
 
 		"out.*" : [
 
-			"labelPlugValueWidget:renameable", True,
+			"renameable", True,
+			"deletable", True,
+			"label", lambda plug : plug.getName(),
 
 		],
 
@@ -165,7 +174,7 @@ class _ParametersFooter( GafferUI.PlugValueWidget ) :
 
 		with row :
 
-				GafferUI.Spacer( IECore.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) )
+				GafferUI.Spacer( imath.V2i( GafferUI.PlugWidget.labelWidth(), 1 ) )
 
 				menuButton = GafferUI.MenuButton(
 					image = "plus.png",
@@ -178,7 +187,7 @@ class _ParametersFooter( GafferUI.PlugValueWidget ) :
 				)
 				menuButton.setEnabled( not Gaffer.MetadataAlgo.readOnly( plug ) )
 
-				GafferUI.Spacer( IECore.V2i( 1 ), IECore.V2i( 999999, 1 ), parenting = { "expand" : True } )
+				GafferUI.Spacer( imath.V2i( 1 ), imath.V2i( 999999, 1 ), parenting = { "expand" : True } )
 
 	def _updateFromPlug( self ) :
 
@@ -197,7 +206,7 @@ class _ParametersFooter( GafferUI.PlugValueWidget ) :
 			( "Color", Gaffer.Color3fPlug ),
 			( "Matrix", Gaffer.M44fPlug ),
 			( "String", Gaffer.StringPlug ),
-			( "Closure", Gaffer.Plug )
+			( "Closure", GafferOSL.ClosurePlug )
 		]
 
 		if self.getPlug().direction() == Gaffer.Plug.Direction.In :
@@ -210,10 +219,10 @@ class _ParametersFooter( GafferUI.PlugValueWidget ) :
 						defaultValue = IECore.SplinefColor3f(
 							IECore.CubicBasisf.catmullRom(),
 							(
-								( 0, IECore.Color3f( 0 ) ),
-								( 0, IECore.Color3f( 0 ) ),
-								( 1, IECore.Color3f( 1 ) ),
-								( 1, IECore.Color3f( 1 ) ),
+								( 0, imath.Color3f( 0 ) ),
+								( 0, imath.Color3f( 0 ) ),
+								( 1, imath.Color3f( 1 ) ),
+								( 1, imath.Color3f( 1 ) ),
 							)
 						)
 					)
@@ -240,7 +249,7 @@ class _ParametersFooter( GafferUI.PlugValueWidget ) :
 			flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic
 		)
 
-		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			self.getPlug().addChild( plug )
 
 ##########################################################################
@@ -255,7 +264,7 @@ class _CodePlugValueWidget( GafferUI.MultiLineStringPlugValueWidget ) :
 
 		self.textWidget().setRole( GafferUI.MultiLineTextWidget.Role.Code )
 
-		self.__dropTextConnection = self.textWidget().dropTextSignal().connect( Gaffer.WeakMethod( self.__dropText ) )
+		self.textWidget().dropTextSignal().connect( Gaffer.WeakMethod( self.__dropText ), scoped = False )
 
 	def __dropText( self, widget, dragData ) :
 
@@ -283,8 +292,8 @@ class _ErrorWidget( GafferUI.Widget ) :
 		self.__messageWidget = GafferUI.MessageWidget()
 		GafferUI.Widget.__init__( self, self.__messageWidget, **kw )
 
-		self.__errorConnection = node.errorSignal().connect( Gaffer.WeakMethod( self.__error ) )
-		self.__shaderCompiledConnection = node.shaderCompiledSignal().connect( Gaffer.WeakMethod( self.__shaderCompiled ) )
+		node.errorSignal().connect( Gaffer.WeakMethod( self.__error ), scoped = False )
+		node.shaderCompiledSignal().connect( Gaffer.WeakMethod( self.__shaderCompiled ), scoped = False )
 
 		self.__messageWidget.setVisible( False )
 
@@ -302,19 +311,6 @@ class _ErrorWidget( GafferUI.Widget ) :
 # Plug menu
 ##########################################################################
 
-## \todo This functionality is duplicated in several places (NodeUI,
-#  BoxUI, CompoundDataPlugValueWidget). It would be better if we could
-#  just control it in one place with a "plugValueWidget:removeable"
-#  metadata value. This main reason we can't do that right now is that
-#  we'd want to register the metadata with "parameters.*", but that would
-#  match "parameters.vector.x" as well as "parameters.vector". This is
-#  a general problem we have with the metadata matching - we should make
-#  '.' unmatchable by '*'.
-def __deletePlug( plug ) :
-
-	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
-		plug.parent().removeChild( plug )
-
 def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 
 	plug = plugValueWidget.getPlug()
@@ -322,100 +318,23 @@ def __plugPopupMenu( menuDefinition, plugValueWidget ) :
 	if not isinstance( node, GafferOSL.OSLCode ) :
 		return
 
-	if plug.parent() in ( node["parameters"], node["out"] ) :
+	if plug.isSame( node["code"] ) :
 
-		menuDefinition.append( "/DeleteDivider", { "divider" : True } )
-		menuDefinition.append(
-			"/Delete",
-			{
-				"command" : IECore.curry( __deletePlug, plug ),
-				"active" : not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug )
-			}
-		)
-
-	elif plug.isSame( node["code"] ) :
-
-		for label, text in reversed( [
-
-			( "/Math/Constants/Pi", "M_PI" ),
-			( "/Math/Angles/Radians", "radians( angleInDegrees )" ),
-			( "/Math/Angles/Degrees", "degrees( angleInRadians )" ),
-			( "/Math/Trigonometry/Sin", "sin( angleInRadians )" ),
-			( "/Math/Trigonometry/Cosine", "cos( angleInRadians )" ),
-			( "/Math/Trigonometry/Tangent", "tan( angleInRadians )" ),
-			( "/Math/Trigonometry/Arc Sin", "asin( y )" ),
-			( "/Math/Trigonometry/Arc Cosine", "acos( x )" ),
-			( "/Math/Trigonometry/Arc Tangent", "atan( yOverX )" ),
-			( "/Math/Trigonometry/Arc Tangent 2", "atan2( y, x )" ),
-			( "/Math/Exponents/Pow", "pow( x, y )" ),
-			( "/Math/Exponents/Exp", "exp( x )" ),
-			( "/Math/Exponents/Log", "log( x )" ),
-			( "/Math/Exponents/Square Root", "sqrt( x )" ),
-			( "/Math/Utility/Abs", "abs( x )" ),
-			( "/Math/Utility/Sign", "sign( x )" ),
-			( "/Math/Utility/Floor", "floor( x )" ),
-			( "/Math/Utility/Ceil", "ceil( x )" ),
-			( "/Math/Utility/Round", "round( x )" ),
-			( "/Math/Utility/Trunc", "trunc( x )" ),
-			( "/Math/Utility/Mod", "mod( x )" ),
-			( "/Math/Utility/Min", "min( a, b )" ),
-			( "/Math/Utility/Max", "max( a, b )" ),
-			( "/Math/Utility/Clamp", "clamp( x, minValue, maxValue )" ),
-			( "/Math/Utility/Mix", "mix( a, b, alpha )" ),
-			( "/Math/Geometry/Dot", "dot( a, b )" ),
-
-			( "/Geometry/Cross", "cross( a, b )" ),
-			( "/Geometry/Length", "length( V )" ),
-			( "/Geometry/Length", "distance( p0, p1 )" ),
-			( "/Geometry/Normalize", "normalize( V )" ),
-			( "/Geometry/Face Forward", "faceforward( N, I )" ),
-			( "/Geometry/Reflect", "reflect( I, N )" ),
-			( "/Geometry/Refract", "refract( I, N, eta )" ),
-			( "/Geometry/Rotate", "rotate( p, angle, p0, p1 )" ),
-			( "/Geometry/Transform", "transform( toSpace, p )" ),
-			( "/Geometry/Transform", "transform( fromSpace, toSpace, p )" ),
-
-			( "/Color/Luminance", "luminance( c )" ),
-			( "/Color/BlackBody", "blackbody( degreesKelvin )" ),
-			( "/Color/Wavelength Color", "wavelength_color( wavelengthNm )" ),
-			( "/Color/Transform", "transformc( fromSpace, toSpace, c )" ),
-
-			( "/Pattern/Step", "step( edge, x )" ),
-			( "/Pattern/Linear Step", "linearstep( edge0, edge1, x )" ),
-			( "/Pattern/Smooth Step", "smoothstep( edge0, edge1, x )" ),
-			( "/Pattern/Noise", "noise( \"perlin\", p )" ),
-			( "/Pattern/Periodic Noise", "noise( \"perlin\", p, period )" ),
-			( "/Pattern/Cell Noise", "cellnoise( p )" ),
-
-			( "/String/Length", "length( str )" ),
-			( "/String/Format", "format( \"\", ... )" ),
-			( "/String/Join", "concat( str0, str1 )" ),
-			( "/String/Split", "split( str, results )" ),
-			( "/String/Starts With", "startswith( str, prefix )" ),
-			( "/String/Ends With", "endswith( str, suffix )" ),
-			( "/String/Substring", "substr( str, start, length )" ),
-			( "/String/Get Char", "getchar( str, n )" ),
-			( "/String/Hash", "hash( str )" ),
-
-			( "/Texture/Texture", "texture( filename, s, t )" ),
-			( "/Texture/Environment", "environment( filename, R )" ),
-
-			( "/Parameter/Is Connected", "isconnected( parameter )" ),
-			( "/Parameter/Is Constant", "isconstant( parameter )" ),
-
-		] ) :
-
+		if len( menuDefinition.items() ) :
 			menuDefinition.prepend( "/InsertDivider", { "divider" : True } )
 
-			menuDefinition.prepend(
-				"/Insert" + label,
-				{
-					"command" : functools.partial( plugValueWidget.textWidget().insertText, text ),
-					"active" : not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ),
-				},
-			)
+		menuDefinition.prepend(
+			"/Insert",
+			{
+				"subMenu" : functools.partial(
+					_CodeMenu.commonFunctionMenu,
+					command = plugValueWidget.textWidget().insertText,
+					activator = lambda : not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ),
+				),
+			},
+		)
 
-__plugPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __plugPopupMenu, scoped = False )
 
 ##########################################################################
 # NodeEditor tool menu
@@ -451,4 +370,4 @@ def __exportOSLShader( nodeEditor, node ) :
 			with nodeEditor.getContext() :
 				f.write( node.source( os.path.splitext( os.path.basename( path ) )[0] ) )
 
-__nodeEditorToolMenuConnection = GafferUI.NodeEditor.toolMenuSignal().connect( __toolMenu )
+GafferUI.NodeEditor.toolMenuSignal().connect( __toolMenu, scoped = False )

@@ -37,6 +37,7 @@
 
 import os
 import gc
+import functools
 
 import IECore
 
@@ -85,14 +86,23 @@ class gui( Gaffer.Application ) :
 
 		GafferUI.ScriptWindow.connect( self.root() )
 
+		# Must start the event loop before adding scripts,
+		# because `FileMenu.addScript()` may launch
+		# interactive dialogues.
+		GafferUI.EventLoop.addIdleCallback( functools.partial( self.__addScripts, args ) )
+		GafferUI.EventLoop.mainEventLoop().start()
+
+		return 0
+
+	def __addScripts( self, args ) :
+
 		if len( args["scripts"] ) :
 			for fileName in args["scripts"] :
-				scriptNode = Gaffer.ScriptNode()
-				scriptNode["fileName"].setValue( os.path.abspath( fileName ) )
-				# \todo: Display load errors in a dialog, like in python/GafferUI/FileMenu.py
-				scriptNode.load( continueOnError = True )
-				self.root()["scripts"].addChild( scriptNode )
-				GafferUI.FileMenu.addRecentFile( self, fileName )
+				GafferUI.FileMenu.addScript( self.root(), fileName )
+			if not len( self.root()["scripts"] ) :
+				# Loading was cancelled, in which case we should quit the app.
+				GafferUI.EventLoop.mainEventLoop().stop()
+				return False # Remove idle callback
 		else :
 			scriptNode = Gaffer.ScriptNode()
 			Gaffer.NodeAlgo.applyUserDefaults( scriptNode )
@@ -103,9 +113,7 @@ class gui( Gaffer.Application ) :
 			primaryWindow = GafferUI.ScriptWindow.acquire( primaryScript )
 			primaryWindow.setFullScreen( True )
 
-		GafferUI.EventLoop.mainEventLoop().start()
-
-		return 0
+		return False # Remove idle callback
 
 	def __setupClipboardSync( self ) :
 
@@ -121,11 +129,12 @@ class gui( Gaffer.Application ) :
 		# Perhaps we should abolish the ApplicationRoot clipboard and the ScriptNode cut/copy/paste routines, relegating
 		# them all to GafferUI functionality?
 
-		QtGui = GafferUI._qtImport( "QtGui" )
+		from Qt import QtWidgets
 
 		self.__clipboardContentsChangedConnection = self.root().clipboardContentsChangedSignal().connect( Gaffer.WeakMethod( self.__clipboardContentsChanged ) )
-		QtGui.QApplication.clipboard().dataChanged.connect( Gaffer.WeakMethod( self.__qtClipboardContentsChanged ) )
+		QtWidgets.QApplication.clipboard().dataChanged.connect( Gaffer.WeakMethod( self.__qtClipboardContentsChanged ) )
 		self.__ignoreQtClipboardContentsChanged = False
+		self.__qtClipboardContentsChanged() # Trigger initial sync
 
 	def __clipboardContentsChanged( self, applicationRoot ) :
 
@@ -133,8 +142,8 @@ class gui( Gaffer.Application ) :
 
 		data = applicationRoot.getClipboardContents()
 
-		QtGui = GafferUI._qtImport( "QtGui" )
-		clipboard = QtGui.QApplication.clipboard()
+		from Qt import QtWidgets
+		clipboard = QtWidgets.QApplication.clipboard()
 		try :
 			self.__ignoreQtClipboardContentsChanged = True # avoid triggering an unecessary copy back in __qtClipboardContentsChanged
 			clipboard.setText( str( data ) )
@@ -146,9 +155,9 @@ class gui( Gaffer.Application ) :
 		if self.__ignoreQtClipboardContentsChanged :
 			return
 
-		QtGui = GafferUI._qtImport( "QtGui" )
+		from Qt import QtWidgets
 
-		text = str( QtGui.QApplication.clipboard().text() )
+		text = QtWidgets.QApplication.clipboard().text().encode( "utf-8" )
 		if text :
 			with Gaffer.BlockedConnection( self.__clipboardContentsChangedConnection ) :
 				self.root().setClipboardContents( IECore.StringData( text ) )

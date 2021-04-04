@@ -1,6 +1,7 @@
 //////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2014, John Haddon. All rights reserved.
+//  Copyright (c) 2017, Image Engine Design Inc. All rights reserved.
 //
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are
@@ -38,37 +39,167 @@
 #define GAFFERUI_HANDLE_H
 
 #include "GafferUI/Gadget.h"
+#include "GafferUI/Style.h"
 
 namespace GafferUI
 {
 
-class Handle : public Gadget
+class GAFFERUI_API Handle : public Gadget
 {
 
 	public :
 
-		enum Type
-		{
-			TranslateX = 0,
-			TranslateY,
-			TranslateZ
-		};
+		~Handle() override;
 
-		Handle( Type type );
-		virtual ~Handle();
+		GAFFER_GRAPHCOMPONENT_DECLARE_TYPE( GafferUI::Handle, HandleTypeId, Gadget );
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferUI::Handle, HandleTypeId, Gadget );
+		// A non-zero raster scale causes the handles to be
+		// drawn at a constant size in raster space.
+		void setRasterScale( float rasterScale );
+		float getRasterScale() const;
 
-		void setType( Type type );
-		Type getType() const;
+		void setVisibleOnHover( bool visibleOnHover );
+		bool getVisibleOnHover() const;
 
-		float dragOffset( const DragDropEvent &event ) const;
-
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
 	protected :
 
-		virtual void doRender( const Style *style ) const;
+		Handle( const std::string &name=defaultName<Handle>() );
+
+		// Implemented to call renderHandle() after applying
+		// the raster scale.
+		void doRenderLayer( Layer layer, const Style *style ) const override;
+		bool hasLayer( Layer layer ) const override;
+
+		// Must be implemented by derived classes to draw their
+		// handle.
+		virtual void renderHandle( const Style *style, Style::State state ) const = 0;
+
+		// Called whenever a drag on the handle is initiated.
+		// Should be implemented by derived classes to initialise
+		// any state they need to track the drag.
+		virtual void dragBegin( const DragDropEvent &event ) = 0;
+
+		// Helper for performing linear drags. Should be constructed
+		// in `dragBegin()` and then `position()` should be used
+		// to measure the progress of the drag.
+		struct LinearDrag
+		{
+
+			LinearDrag( bool processModifiers = true );
+			// Line is parallel to the camera plane, centered on gadget, and
+			// with unit length axes in gadget space.
+			LinearDrag( const Gadget *gadget, const Imath::V2f &line, const DragDropEvent &dragBeginEvent, bool processModifiers = true );
+			// Line is specified in Gadget space.
+			LinearDrag( const Gadget *gadget, const IECore::LineSegment3f &line, const DragDropEvent &dragBeginEvent, bool processModifiers = true );
+
+			// Positions are measured from 0 at line.p0 to 1 at line.p1.
+			float startPosition() const;
+			float updatedPosition( const DragDropEvent &event );
+
+			private :
+
+				const Gadget *m_gadget;
+				// We store the line of the drag in world space so that
+				// `position()` returns consistent results even if
+				// the gadget transform or the camera changes during the drag.
+				IECore::LineSegment3f m_worldLine;
+				float m_dragBeginPosition;
+
+				bool m_processModifiers;
+
+				// We track the point where precision mode is enabled (hold shift)
+				// and scale movement after that point accordingly (x0.1)
+				bool m_preciseMotionEnabled;
+				float m_preciseMotionOrigin;
+		};
+
+		// Helper for performing drags in a plane.
+		struct PlanarDrag
+		{
+
+			PlanarDrag( bool processModifiers = true );
+			// Plane is parallel to the camera plane, centered on gadget, and with unit
+			// length axes in gadget space.
+			PlanarDrag( const Gadget *gadget, const DragDropEvent &dragBeginEvent, bool processModifiers = true );
+			// Origin and axes are in gadget space. Axes are assumed to be orthogonal
+			// but may have any length.
+			PlanarDrag( const Gadget *gadget, const Imath::V3f &origin, const Imath::V3f &axis0, const Imath::V3f &axis1, const DragDropEvent &dragBeginEvent, bool processModifiers = true );
+
+			// The axes of the plane in Gadget space.
+			const Imath::V3f &axis0() const;
+			const Imath::V3f &axis1() const;
+
+			// X coordinate are measured from 0 at origin to 1 at `origin + axis0`
+			// Y coordinates are measured from 0 at origin to 1 at `origin + axis1`
+			Imath::V2f startPosition() const;
+			Imath::V2f updatedPosition( const DragDropEvent &event );
+
+			private :
+
+				void init( const Gadget *gadget, const Imath::V3f &origin, const Imath::V3f &axis0, const Imath::V3f &axis1, const DragDropEvent &dragBeginEvent );
+
+				const Gadget *m_gadget;
+
+				Imath::V3f m_axis0;
+				Imath::V3f m_axis1;
+
+				Imath::V3f m_worldOrigin;
+				Imath::V3f m_worldAxis0;
+				Imath::V3f m_worldAxis1;
+				Imath::V2f m_dragBeginPosition;
+
+				bool m_processModifiers;
+
+				// We track the point where precision mode is enabled (hold shift)
+				// and scale movement after that point accordingly (x0.1)
+				bool m_preciseMotionEnabled;
+				Imath::V2f m_preciseMotionOrigin;
+
+		};
+
+		// Returns the current scale factor needed to keep the handles
+		// at the requested size in raster space.
+		Imath::V3f rasterScaleFactor() const;
+
+		// Helper for performing drags around a rotation axis.
+		struct AngularDrag
+		{
+
+			AngularDrag( bool processModifiers = true );
+			// Origin and axes are in gadget space. Rotations will be around
+			// axis0, with 0 rotation along axis1. Axes are assumed to be
+			// orthogonal, but may have any length.
+			AngularDrag( const Gadget *gadget, const Imath::V3f &origin, const Imath::V3f &axis0, const Imath::V3f axis1, const DragDropEvent &dragBeginEvent, bool processModifiers = true );
+
+			// The axis of rotation in Gadget space.
+			const Imath::V3f &axis0() const;
+			// The direction on which zero rotation lies.
+			const Imath::V3f &axis1() const;
+
+			// Rotation is in radians
+			float startRotation() const;
+			float updatedRotation( const DragDropEvent &event );
+
+			private :
+
+				float closestRotation( const Imath::V2f &p, float targetRotation );
+
+				PlanarDrag m_drag;
+				float m_rotation;
+
+				Imath::V3f m_axis0;
+				Imath::V3f m_axis1;
+				float m_dragBeginRotation;
+
+				bool m_processModifiers;
+
+				// AngularDrag re-implements precision so that it can be applied in
+				// angle space, to allow continuous 'winding'.
+				bool m_preciseMotionEnabled;
+				float m_preciseMotionOrigin;
+		};
 
 	private :
 
@@ -76,23 +207,12 @@ class Handle : public Gadget
 		void leave();
 
 		bool buttonPress( const ButtonEvent &event );
-		IECore::RunTimeTypedPtr dragBegin( const DragDropEvent &event );
+		IECore::RunTimeTypedPtr dragBeginInternal( const DragDropEvent &event );
 		bool dragEnter( const DragDropEvent &event );
 
-		float absoluteDragOffset( const DragDropEvent &event ) const;
-
-		Type m_type;
 		bool m_hovering;
-
-		// When a drag starts, we store the line of our
-		// handle here. We store it in world space so that
-		// dragOffset() returns consistent results even if
-		// our transform or the camera changes during the drag.
-		IECore::LineSegment3f m_dragHandleWorld;
-		// The initial offset at drag begin. We store this so
-		// that dragOffset() can return relative rather than
-		// absolute offsets.
-		float m_dragBeginOffset;
+		float m_rasterScale;
+		bool m_visibleOnHover;
 
 };
 

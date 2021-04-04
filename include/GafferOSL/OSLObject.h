@@ -37,42 +37,76 @@
 #ifndef GAFFEROSL_OSLOBJECT_H
 #define GAFFEROSL_OSLOBJECT_H
 
-#include "GafferScene/SceneElementProcessor.h"
+#include "GafferOSL/Export.h"
+#include "GafferOSL/OSLCode.h"
+#include "GafferOSL/TypeIds.h"
+
+#include "GafferScene/Deformer.h"
 #include "GafferScene/ShaderPlug.h"
 
-#include "GafferOSL/TypeIds.h"
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
 
 namespace GafferOSL
 {
 
-class OSLObject : public GafferScene::SceneElementProcessor
+IE_CORE_FORWARDDECLARE( ShadingEngine )
+
+class GAFFEROSL_API OSLObject : public GafferScene::Deformer
 {
 
 	public :
 
-		OSLObject( const std::string &name=defaultName<SceneElementProcessor>() );
-		virtual ~OSLObject();
+		OSLObject( const std::string &name=defaultName<OSLObject>() );
+		~OSLObject() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferOSL::OSLObject, OSLObjectTypeId, GafferScene::SceneElementProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferOSL::OSLObject, OSLObjectTypeId, GafferScene::Deformer );
+
+		Gaffer::IntPlug *interpolationPlug();
+		const Gaffer::IntPlug *interpolationPlug() const;
+
+		Gaffer::BoolPlug *useTransformPlug();
+		const Gaffer::BoolPlug *useTransformPlug() const;
+
+		Gaffer::BoolPlug *useAttributesPlug();
+		const Gaffer::BoolPlug *useAttributesPlug() const;
+
+		Gaffer::Plug *primitiveVariablesPlug();
+		const Gaffer::Plug *primitiveVariablesPlug() const;
+
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
+
+	protected :
+
+		bool affectsProcessedObject( const Gaffer::Plug *input ) const override;
+		void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, const IECore::Object *inputObject ) const override;
+		Gaffer::ValuePlug::CachePolicy processedObjectComputeCachePolicy() const override;
+		bool adjustBounds() const override;
+
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+
+	private :
 
 		GafferScene::ShaderPlug *shaderPlug();
 		const GafferScene::ShaderPlug *shaderPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		GafferScene::ScenePlug *resampledInPlug();
+		const GafferScene::ScenePlug *resampledInPlug() const;
 
-	protected :
+		Gaffer::StringPlug *resampledNamesPlug();
+		const Gaffer::StringPlug *resampledNamesPlug() const;
 
-		virtual bool acceptsInput( const Gaffer::Plug *plug, const Gaffer::Plug *inputPlug ) const;
+		ConstShadingEnginePtr shadingEngine( const Gaffer::Context *context ) const;
 
-		virtual bool processesBound() const;
-		virtual void hashProcessedBound( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual Imath::Box3f computeProcessedBound( const ScenePath &path, const Gaffer::Context *context, const Imath::Box3f &inputBound ) const;
+		GafferOSL::OSLCode *oslCode();
+		const GafferOSL::OSLCode *oslCode() const;
 
-		virtual bool processesObject() const;
-		virtual void hashProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstObjectPtr computeProcessedObject( const ScenePath &path, const Gaffer::Context *context, IECore::ConstObjectPtr inputObject ) const;
+		void primitiveVariableAdded( const Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child );
+		void primitiveVariableRemoved( const Gaffer::GraphComponent *parent, Gaffer::GraphComponent *child );
 
-	private :
+		void updatePrimitiveVariables();
 
 		static size_t g_firstPlugIndex;
 

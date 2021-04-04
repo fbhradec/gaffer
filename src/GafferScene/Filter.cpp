@@ -34,15 +34,16 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
-
 #include "GafferScene/Filter.h"
+
 #include "GafferScene/FilterPlug.h"
+
+#include "Gaffer/Context.h"
 
 using namespace GafferScene;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( Filter );
+GAFFER_NODE_DEFINE_TYPE( Filter );
 
 const IECore::InternedString Filter::inputSceneContextName( "scene:filter:inputScene" );
 size_t Filter::g_firstPlugIndex = 0;
@@ -52,7 +53,19 @@ Filter::Filter( const std::string &name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new BoolPlug( "enabled", Gaffer::Plug::In, true ) );
-	addChild( new FilterPlug( "out", Gaffer::Plug::Out, Plug::Default & ( ~Plug::Cacheable ) ) );
+	// FilteredSceneProcessor calls `Filter::affects()` via `FilterPlug::sceneAffects()`
+	// when the processor's input scene is dirtied. This allows a Filter to declare any
+	// scene dependencies of its own (see SetFilter for an example). But when the same
+	// filter is connected to multiple FilteredSceneProcessors in a row, this can lead
+	// to the declaration of circular dependencies as follows :
+	//
+	//    Processor1.in -> Filter.>out -> Processor1.out -> Processor2.in -> Filter.out
+	//
+	// This isn't actually a true dependency cycle, because the filter uses `Processor1.in`
+	// and `Processor2.in` in completely different contexts. Dirty propagation takes place
+	// independent of context though, so we use the `AcceptsDependencyCycles` flag to
+	// show that any cycle is expected and harmless.
+	addChild( new FilterPlug( "out", Gaffer::Plug::Out, Plug::Default | Plug::AcceptsDependencyCycles ) );
 }
 
 Filter::~Filter()
@@ -89,11 +102,6 @@ void Filter::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs
 	}
 }
 
-bool Filter::sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const
-{
-	return false;
-}
-
 void Filter::setInputScene( Gaffer::Context *context, const ScenePlug *scenePlug )
 {
 	context->set( inputSceneContextName, (uint64_t)scenePlug );
@@ -128,7 +136,7 @@ void Filter::compute( ValuePlug *output, const Context *context ) const
 {
 	if( output == outPlug() )
 	{
-		unsigned match = NoMatch;
+		unsigned match = IECore::PathMatcher::NoMatch;
 		if( enabledPlug()->getValue() )
 		{
 			match = computeMatch( getInputScene( context ), context );
@@ -140,6 +148,15 @@ void Filter::compute( ValuePlug *output, const Context *context ) const
 	ComputeNode::compute( output, context );
 }
 
+Gaffer::ValuePlug::CachePolicy Filter::computeCachePolicy( const Gaffer::ValuePlug *output ) const
+{
+	if( output == outPlug() )
+	{
+		return ValuePlug::CachePolicy::Uncached;
+	}
+	return ComputeNode::computeCachePolicy( output );
+}
+
 void Filter::hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	/// \todo See comments in hash() method.
@@ -147,5 +164,5 @@ void Filter::hashMatch( const ScenePlug *scene, const Gaffer::Context *context, 
 
 unsigned Filter::computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const
 {
-	return NoMatch;
+	return IECore::PathMatcher::NoMatch;
 }

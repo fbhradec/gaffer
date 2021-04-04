@@ -36,6 +36,8 @@
 
 #include "GafferScene/Private/IECoreScenePreview/Renderer.h"
 
+#include "IECore/Exception.h"
+
 using namespace std;
 using namespace IECoreScenePreview;
 
@@ -46,7 +48,7 @@ using namespace IECoreScenePreview;
 namespace
 {
 
-typedef Renderer::Ptr (*Creator)( Renderer::RenderType, const std::string & );
+typedef Renderer::Ptr (*Creator)( Renderer::RenderType, const std::string &, const IECore::MessageHandlerPtr & );
 
 vector<IECore::InternedString> &types()
 {
@@ -77,6 +79,16 @@ Renderer::~Renderer()
 
 }
 
+Renderer::ObjectInterfacePtr Renderer::camera( const std::string &name,  const std::vector<const IECoreScene::Camera *> &samples, const std::vector<float> &times, const AttributesInterface *attributes )
+{
+	return camera( name, samples[0], attributes );
+}
+
+IECore::DataPtr Renderer::command( const IECore::InternedString name, const IECore::CompoundDataMap &parameters )
+{
+	throw IECore::NotImplementedException( "Renderer::command" );
+}
+
 Renderer::AttributesInterface::~AttributesInterface()
 {
 
@@ -92,19 +104,19 @@ const std::vector<IECore::InternedString> &Renderer::types()
 	return ::types();
 }
 
-Renderer::Ptr Renderer::create( const IECore::InternedString &type, RenderType renderType, const std::string &fileName )
+Renderer::Ptr Renderer::create( const IECore::InternedString &type, RenderType renderType, const std::string &fileName, const IECore::MessageHandlerPtr &messageHandler )
 {
 	const CreatorMap &c = creators();
 	CreatorMap::const_iterator it = c.find( type );
 	if( it == c.end() )
 	{
-		return NULL;
+		return nullptr;
 	}
-	return it->second( renderType, fileName );
+	return it->second( renderType, fileName, messageHandler );
 }
 
 
-void Renderer::registerType( const IECore::InternedString &typeName, Ptr (*creator)( RenderType, const std::string & ) )
+void Renderer::registerType( const IECore::InternedString &typeName, Ptr (*creator)( RenderType, const std::string &, const IECore::MessageHandlerPtr & ) )
 {
 	CreatorMap &c = creators();
 	CreatorMap::iterator it = c.find( typeName );

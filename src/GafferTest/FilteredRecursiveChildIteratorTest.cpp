@@ -34,11 +34,12 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Node.h"
-#include "Gaffer/NumericPlug.h"
+#include "GafferTest/FilteredRecursiveChildIteratorTest.h"
 
 #include "GafferTest/Assert.h"
-#include "GafferTest/FilteredRecursiveChildIteratorTest.h"
+
+#include "Gaffer/Node.h"
+#include "Gaffer/NumericPlug.h"
 
 using namespace Gaffer;
 
@@ -70,7 +71,7 @@ void GafferTest::testFilteredRecursiveChildIterator()
 	//       - h
 
 	std::vector<NodePtr> nodes;
-	for( RecursiveNodeIterator it( a.get() ); !it.done(); it++ )
+	for( Node::RecursiveIterator it( a.get() ); !it.done(); it++ )
 	{
 		nodes.push_back( *it );
 	}

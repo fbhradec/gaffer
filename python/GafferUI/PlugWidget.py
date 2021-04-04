@@ -40,7 +40,7 @@ import warnings
 import Gaffer
 import GafferUI
 
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtWidgets
 
 ## The PlugWidget combines a LabelPlugValueWidget with a second PlugValueWidget
 ## suitable for editing the plug.
@@ -52,12 +52,12 @@ class PlugWidget( GafferUI.Widget ) :
 
 	def __init__( self, plugOrWidget, label=None, description=None, **kw ) :
 
-		GafferUI.Widget.__init__( self, QtGui.QWidget(), **kw )
+		GafferUI.Widget.__init__( self, QtWidgets.QWidget(), **kw )
 
-		layout = QtGui.QHBoxLayout()
+		layout = QtWidgets.QHBoxLayout()
 		layout.setContentsMargins( 0, 0, 0, 0 )
 		layout.setSpacing( 4 )
-		layout.setSizeConstraint( QtGui.QLayout.SetMinAndMaxSize )
+		layout.setSizeConstraint( QtWidgets.QLayout.SetMinAndMaxSize )
 		self._qtWidget().setLayout( layout )
 
 		if isinstance( plugOrWidget, Gaffer.Plug ) :
@@ -101,9 +101,9 @@ class PlugWidget( GafferUI.Widget ) :
 		# because it has specialised PlugValueWidget._convertValue(). It's also more meaningful to the
 		# user if we highlight the plugValueWidget() on dragEnter rather than the label. So we
 		# forward the dragEnter/dragLeave/drop signals from the labelPlugValueWidget() to the plugValueWidget().
-		self.__dragEnterConnection = self.__label.dragEnterSignal().connect( 0, Gaffer.WeakMethod( self.__labelDragEnter ) )
-		self.__dragLeaveConnection = self.__label.dragLeaveSignal().connect( 0, Gaffer.WeakMethod( self.__labelDragLeave ) )
-		self.__dropConnection = self.__label.dropSignal().connect( 0, Gaffer.WeakMethod( self.__labelDrop ) )
+		self.__label.dragEnterSignal().connect( 0, Gaffer.WeakMethod( self.__labelDragEnter ), scoped = False )
+		self.__label.dragLeaveSignal().connect( 0, Gaffer.WeakMethod( self.__labelDragLeave ), scoped = False )
+		self.__label.dropSignal().connect( 0, Gaffer.WeakMethod( self.__labelDrop ), scoped = False )
 
 	def plugValueWidget( self ) :
 
@@ -120,6 +120,23 @@ class PlugWidget( GafferUI.Widget ) :
 	def labelWidth() :
 
 		return 150
+
+	## Ensures that the specified plug has a visible PlugWidget,
+	# creating one if necessary.
+	@classmethod
+	def acquire( cls, plug ) :
+
+		plugValueWidget = GafferUI.PlugValueWidget.acquire( plug )
+		if not plugValueWidget :
+			return None
+
+		plugWidget = plugValueWidget.ancestor( GafferUI.PlugWidget )
+		if not plugWidget :
+			return None
+
+		plugWidget.reveal()
+
+		return plugWidget
 
 	def __labelDragEnter( self, label, event ) :
 

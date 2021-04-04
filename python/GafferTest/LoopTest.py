@@ -43,10 +43,8 @@ class LoopTest( GafferTest.TestCase ) :
 
 	def intLoop( self ) :
 
-		result = Gaffer.LoopComputeNode()
-		result["out"] = Gaffer.IntPlug( direction = Gaffer.Plug.Direction.Out, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic  )
-		result["in"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
-
+		result = Gaffer.Loop()
+		result.setup( Gaffer.IntPlug() )
 		return result
 
 	def test( self ) :
@@ -92,6 +90,13 @@ class LoopTest( GafferTest.TestCase ) :
 
 		s["n"]["iterations"].setValue( 5 )
 		self.assertEqual( s["n"]["out"].getValue(), 1 + 2 + 3 + 4 )
+
+		# Make sure the loop index is undefined when pulling the input, instead of leaking out upstream
+
+		s["e2"] = Gaffer.Expression()
+		s["e2"].setExpression( 'parent["n"]["in"] = context.get( "loop:index", -100 )' )
+
+		self.assertEqual( s["n"]["out"].getValue(), 1 + 2 + 3 + 4 - 100 )
 
 	def testChangeLoopNetwork( self ) :
 
@@ -177,6 +182,105 @@ class LoopTest( GafferTest.TestCase ) :
 		self.assertEqual( n["out"].getValue(), 0 )
 
 		self.assertTrue( n.correspondingInput( n["out"] ).isSame( n["in"] ) )
+
+	def testSetup( self ) :
+
+		n = Gaffer.Loop()
+
+		self.assertNotIn( "in", n )
+		self.assertNotIn( "out", n )
+		self.assertNotIn( "previous", n )
+		self.assertNotIn( "next", n )
+
+		n.setup( Gaffer.StringPlug() )
+
+		self.assertIsInstance( n["in"], Gaffer.StringPlug )
+		self.assertIsInstance( n["out"], Gaffer.StringPlug )
+		self.assertIsInstance( n["previous"], Gaffer.StringPlug )
+		self.assertIsInstance( n["next"], Gaffer.StringPlug )
+
+	def testSerialisationUsesSetup( self ) :
+
+		s1 = Gaffer.ScriptNode()
+		s1["c"] = Gaffer.Loop()
+		s1["c"].setup( Gaffer.IntPlug() )
+
+		ss = s1.serialise()
+		self.assertIn( "setup", ss )
+		self.assertEqual( ss.count( "addChild" ), 1 )
+		self.assertNotIn( "Dynamic", ss )
+		self.assertNotIn( "Serialisable", ss )
+		self.assertNotIn( "setInput", ss )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( ss )
+		self.assertIn( "in", s2["c"] )
+		self.assertIn( "out", s2["c"] )
+		self.assertIsInstance( s2["c"]["in"], Gaffer.IntPlug )
+		self.assertIsInstance( s2["c"]["out"], Gaffer.IntPlug )
+		self.assertIsInstance( s2["c"]["previous"], Gaffer.IntPlug )
+		self.assertIsInstance( s2["c"]["next"], Gaffer.IntPlug )
+
+	def testComputeDuringDirtyPropagation( self ) :
+
+		# Make a loop
+
+		loop = self.intLoop()
+		add = GafferTest.AddNode()
+
+		loop["in"].setValue( 0 )
+		loop["next"].setInput( add["sum"] )
+		loop["iterations"].setValue( 5 )
+
+		add["op1"].setInput( loop["previous"] )
+		add["op2"].setValue( 1 )
+
+		self.assertEqual( loop["out"].getValue(), 5 )
+
+		# Edit `loop["in"]` to trigger dirty propagation, and capture the
+		# value of each plug at the point `plugDirtiedSignal()` is emitted
+		# for it.
+
+		def plugValue( plug ) :
+
+			with Gaffer.Context() as c :
+
+				if plug in {
+					loop["next"], loop["previous"], add["op1"], add["sum"]
+				} :
+					# These plugs are sensitive to "loop:index", so we provide it
+					# manually. We are spying on the values in the last-but-one
+					# iteration of the loop.
+					c["loop:index"] = 3
+
+				return plug.getValue()
+
+		valuesWhenDirtied = {}
+		def plugDirtied( plug ) :
+
+			valuesWhenDirtied[plug] = plugValue( plug )
+
+		loop.plugDirtiedSignal().connect( plugDirtied, scoped = False )
+		add.plugDirtiedSignal().connect( plugDirtied, scoped = False )
+		loop["in"].setValue( 1 )
+
+		# Check that we saw the values we expected.
+
+		self.assertEqual( valuesWhenDirtied[loop["in"]], 1 )
+		self.assertEqual( valuesWhenDirtied[loop["out"]], 6 )
+		self.assertEqual( valuesWhenDirtied[loop["next"]], 5 )
+		self.assertEqual( valuesWhenDirtied[loop["previous"]], 4 )
+		self.assertEqual( valuesWhenDirtied[add["sum"]], 5 )
+		self.assertEqual( valuesWhenDirtied[add["op1"]], 4 )
+
+		# Double check that we see the same values after
+		# clearing the cache and doing a fresh compute.
+
+		Gaffer.ValuePlug.clearCache()
+		Gaffer.ValuePlug.clearHashCache()
+
+		for plug, value in valuesWhenDirtied.items() :
+			self.assertEqual( plugValue( plug ), value )
 
 if __name__ == "__main__":
 	unittest.main()

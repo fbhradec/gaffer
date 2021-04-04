@@ -37,14 +37,14 @@
 import IECore
 import GafferUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
+from Qt import QtCore
 
 ## \todo Move other enums here - ListContainer.Orientation for instance.
-__all__ = [ "HorizontalAlignment", "VerticalAlignment", "Edge" ]
+__all__ = [ "HorizontalAlignment", "VerticalAlignment", "Edge", "ScrollMode" ]
 
 # HorizontalAlignment
 
-HorizontalAlignment = IECore.Enum.create( "None", "Left", "Right", "Center", "Justify" )
+HorizontalAlignment = IECore.Enum.create( "None_", "Left", "Right", "Center", "Justify" )
 
 @staticmethod
 def __horizontalFromQt( a ) :
@@ -59,7 +59,7 @@ def __horizontalFromQt( a ) :
 	elif a == QtCore.Qt.AlignJustify :
 		return HorizontalAlignment.AlignJustify
 
-	return HorizontalAlignment.None
+	return HorizontalAlignment.None_
 
 @staticmethod
 def __horizontalToQt( a ) :
@@ -80,7 +80,7 @@ HorizontalAlignment._toQt = __horizontalToQt
 
 # VerticalAlignment
 
-VerticalAlignment = IECore.Enum.create( "None", "Top", "Bottom", "Center" )
+VerticalAlignment = IECore.Enum.create( "None_", "Top", "Bottom", "Center" )
 
 @staticmethod
 def __verticalFromQt( a ) :
@@ -93,7 +93,7 @@ def __verticalFromQt( a ) :
 	elif a == QtCore.Qt.AlignVCenter :
 		return VerticalAlignment.Center
 
-	return VerticalAlignment.None
+	return VerticalAlignment.None_
 
 @staticmethod
 def __verticalToQt( a ) :
@@ -113,3 +113,30 @@ VerticalAlignment._toQt = __verticalToQt
 # Edge
 
 Edge = IECore.Enum.create( "Top", "Bottom", "Left", "Right" )
+
+# Scroll Mode
+
+ScrollMode = IECore.Enum.create( "Never", "Always", "Automatic" )
+
+__modesToPolicies = {
+	ScrollMode.Never : QtCore.Qt.ScrollBarAlwaysOff,
+	ScrollMode.Always : QtCore.Qt.ScrollBarAlwaysOn,
+	ScrollMode.Automatic : QtCore.Qt.ScrollBarAsNeeded,
+}
+
+__policiesToModes = {
+	QtCore.Qt.ScrollBarAlwaysOff : ScrollMode.Never,
+	QtCore.Qt.ScrollBarAlwaysOn : ScrollMode.Always,
+	QtCore.Qt.ScrollBarAsNeeded : ScrollMode.Automatic,
+}
+
+@staticmethod
+def __scrollModeToQt ( a ):
+	return __modesToPolicies[a]
+
+@staticmethod
+def __scrollModeFromQt ( a ):
+	return __policiesToModes[a]
+
+ScrollMode._fromQt = __scrollModeFromQt
+ScrollMode._toQt = __scrollModeToQt

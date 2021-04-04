@@ -35,9 +35,11 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
 
+import Gaffer
 import GafferTest
 import GafferImage
 import GafferImageTest
@@ -70,6 +72,18 @@ class ImageAlgoTest( GafferImageTest.ImageTestCase ) :
 		] :
 			self.assertEqual( GafferImage.ImageAlgo.baseName( channelName ), baseName )
 
+	def testChannelName( self ) :
+
+		for layerName, baseName, channelName in [
+			( "", "R", "R" ),
+			( "", "G", "G" ),
+			( "", "myFunkyChannel", "myFunkyChannel" ),
+			( "left", "R", "left.R" ),
+			( "right", "myFunkyChannel", "right.myFunkyChannel" ),
+			( "diffuse.left", "R", "diffuse.left.R" ),
+		] :
+			self.assertEqual( GafferImage.ImageAlgo.channelName( layerName, baseName ), channelName )
+
 	def testColorIndex( self ) :
 
 		for channelName, index in [
@@ -100,7 +114,7 @@ class ImageAlgoTest( GafferImageTest.ImageTestCase ) :
 		d = GafferImage.DeleteChannels()
 		d["in"].setInput( c["out"] )
 		d["mode"].setValue( GafferImage.DeleteChannels.Mode.Delete )
-		d["channels"].setValue( IECore.StringVectorData( [] ) )
+		d["channels"].setValue( "" )
 
 		self.assertTrue( GafferImage.ImageAlgo.channelExists( d["out"], "R" ) )
 		self.assertTrue( GafferImage.ImageAlgo.channelExists( d["out"], "G" ) )
@@ -108,7 +122,7 @@ class ImageAlgoTest( GafferImageTest.ImageTestCase ) :
 		self.assertTrue( GafferImage.ImageAlgo.channelExists( d["out"], "A" ) )
 
 		for chan in [ "R", "G", "B", "A" ] :
-			d["channels"].setValue( IECore.StringVectorData( [ chan ] ) )
+			d["channels"].setValue( chan )
 			self.assertFalse( GafferImage.ImageAlgo.channelExists( d["out"], chan ) )
 
 	def testChannelExistsBindings( self ) :
@@ -121,7 +135,7 @@ class ImageAlgoTest( GafferImageTest.ImageTestCase ) :
 		d = GafferImage.DeleteChannels()
 		d["in"].setInput( c["out"] )
 		d["mode"].setValue( GafferImage.DeleteChannels.Mode.Delete )
-		d["channels"].setValue( IECore.StringVectorData( [ "R", "A" ] ) )
+		d["channels"].setValue( "R A" )
 
 		for chan in [ "R", "G", "B", "A" ] :
 			self.assertEqual( GafferImage.ImageAlgo.channelExists( d["out"], chan ), GafferImage.ImageAlgo.channelExists( d["out"]["channelNames"].getValue(), chan ) )
@@ -129,11 +143,135 @@ class ImageAlgoTest( GafferImageTest.ImageTestCase ) :
 	def testParallelProcessEmptyDataWindow( self ) :
 
 		d = GafferImage.Display()
-		self.assertEqual( d["out"]["dataWindow"].getValue(), IECore.Box2i() )
+		self.assertEqual( d["out"]["dataWindow"].getValue(), imath.Box2i() )
 
 		GafferImageTest.processTiles( d["out"] )
-		d["out"].image()
-		d["out"].imageHash()
+		GafferImage.ImageAlgo.image( d["out"] )
+		GafferImage.ImageAlgo.imageHash( d["out"] )
+
+	def testLayerNames( self ) :
+
+		self.assertEqual(
+			GafferImage.ImageAlgo.layerNames( [ "R", "G", "B" ] ),
+			[ "" ]
+		)
+
+		self.assertEqual(
+			GafferImage.ImageAlgo.layerNames( [ "Z", "A" ] ),
+			[ "" ]
+		)
+
+		self.assertEqual(
+			GafferImage.ImageAlgo.layerNames( [ "R", "G", "B", "diffuse.R", "diffuse.G", "diffuse.B" ] ),
+			[ "", "diffuse" ]
+		)
+
+		self.assertEqual(
+			GafferImage.ImageAlgo.layerNames( [ "R", "G", "B", "foreground.diffuse.R", "foreground.diffuse.G", "foreground.diffuse.B" ] ),
+			[ "", "foreground.diffuse" ]
+		)
+
+	def testParallelGatherTileOrder( self ) :
+
+		c = GafferImage.Constant()
+
+		tileOrigins = []
+		channelTileOrigins = []
+
+		def tileFunctor( *args ) :
+
+			pass
+
+		def gatherFunctor( image, tileOrigin, tile ) :
+
+			tileOrigins.append( tileOrigin )
+
+		def channelGatherFunctor( image, channelName, tileOrigin, tile ) :
+
+			channelTileOrigins.append( tileOrigin )
+
+		for window in [
+			# Window not aligned to tile boundaries
+			imath.Box2i( imath.V2i( 2 ), GafferImage.ImagePlug.tileSize() * imath.V2i( 20, 8 ) - imath.V2i( 2 ) ),
+			# Window aligned to tile boundaries
+			imath.Box2i( imath.V2i( 0 ), GafferImage.ImagePlug.tileSize() * imath.V2i( 6, 7 ) ),
+			# Negative origin
+			imath.Box2i( imath.V2i( -GafferImage.ImagePlug.tileSize() ), GafferImage.ImagePlug.tileSize() * imath.V2i( 4, 6 ) )
+		] :
+
+			size = GafferImage.ImagePlug.tileIndex( window.max() - imath.V2i( 1 ) ) - GafferImage.ImagePlug.tileIndex( window.min() ) + imath.V2i( 1 )
+			numTiles = size.x * size.y
+
+			for order in GafferImage.ImageAlgo.TileOrder.values.values() :
+
+				del tileOrigins[:]
+				del channelTileOrigins[:]
+
+				GafferImage.ImageAlgo.parallelGatherTiles(
+					c["out"],
+					tileFunctor,
+					gatherFunctor,
+					window = window,
+					tileOrder = order
+				)
+
+				GafferImage.ImageAlgo.parallelGatherTiles(
+					c["out"],
+					[ "R" ],
+					tileFunctor,
+					channelGatherFunctor,
+					window = window,
+					tileOrder = order
+				)
+
+				self.assertEqual( len( tileOrigins ), numTiles )
+				self.assertEqual( len( channelTileOrigins ), numTiles )
+
+				for i in range( 1, len( tileOrigins ) ) :
+
+					if order == GafferImage.ImageAlgo.TileOrder.TopToBottom :
+						self.assertGreaterEqual( tileOrigins[i-1].y, tileOrigins[i].y )
+					elif order == GafferImage.ImageAlgo.TileOrder.BottomToTop :
+						self.assertLessEqual( tileOrigins[i-1].y, tileOrigins[i].y )
+
+					if order != GafferImage.ImageAlgo.TileOrder.Unordered :
+						self.assertEqual( channelTileOrigins[i], tileOrigins[i] )
+
+	def testParallelGatherTileLifetime( self ) :
+
+		constant = GafferImage.Constant()
+		constant["color"].setValue( imath.Color4f( 1 ) )
+
+		def computeTile( image, channelName, tileOrigin ) :
+
+			return image["channelData"].getValue()
+
+		def gatherTile( image, channelName, tileOrigin, tile ) :
+
+			self.assertIsInstance( tile, IECore.FloatVectorData )
+
+		GafferImage.ImageAlgo.parallelGatherTiles( constant["out"], [ "R", "G", "B", "A" ], computeTile, gatherTile )
+
+	def testMonitorParallelProcessTiles( self ) :
+
+		numTilesX = 50
+		numTilesY = 50
+
+		c = GafferImage.Checkerboard()
+		c["format"].setValue(
+			GafferImage.Format(
+				numTilesX * GafferImage.ImagePlug.tileSize(),
+				numTilesY * GafferImage.ImagePlug.tileSize(),
+			)
+		)
+
+		with Gaffer.PerformanceMonitor() as m :
+			GafferImageTest.processTiles( c["out"] )
+
+		self.assertEqual(
+			m.plugStatistics( c["out"]["channelData"] ).computeCount,
+			numTilesX * numTilesY * 4
+		)
 
 if __name__ == "__main__":
 	unittest.main()

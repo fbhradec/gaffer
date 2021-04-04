@@ -36,15 +36,16 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/Node.h"
-#include "Gaffer/ScriptNode.h"
+
 #include "Gaffer/Metadata.h"
+#include "Gaffer/ScriptNode.h"
 
 using namespace std;
 using namespace Gaffer;
 
 size_t Node::g_firstPlugIndex;
 
-IE_CORE_DEFINERUNTIMETYPED( Node );
+GAFFER_NODE_DEFINE_TYPE( Node );
 
 Node::Node( const std::string &name )
 	:	GraphComponent( name )
@@ -55,7 +56,7 @@ Node::Node( const std::string &name )
 
 Node::~Node()
 {
-	Metadata::clearInstanceMetadata( this );
+	Metadata::instanceDestroyed( this );
 }
 
 Node::UnaryPlugSignal &Node::plugSetSignal()
@@ -66,11 +67,6 @@ Node::UnaryPlugSignal &Node::plugSetSignal()
 Node::UnaryPlugSignal &Node::plugInputChangedSignal()
 {
 	return m_plugInputChangedSignal;
-}
-
-Node::UnaryPlugSignal &Node::plugFlagsChangedSignal()
-{
-	return m_plugFlagsChangedSignal;
 }
 
 Node::UnaryPlugSignal &Node::plugDirtiedSignal()
@@ -149,7 +145,7 @@ void Node::parentChanging( Gaffer::GraphComponent *newParent )
 		vector<PlugPtr> toDisconnect;
 		for( RecursivePlugIterator it( this ); !it.done(); ++it )
 		{
-			if( Plug *input = (*it)->getInput<Plug>() )
+			if( Plug *input = (*it)->getInput() )
 			{
 				if( !this->isAncestorOf( input ) )
 				{
@@ -167,7 +163,7 @@ void Node::parentChanging( Gaffer::GraphComponent *newParent )
 
 		for( vector<PlugPtr>::const_iterator it = toDisconnect.begin(), eIt = toDisconnect.end(); it != eIt; ++it )
 		{
-			(*it)->setInput( NULL );
+			(*it)->setInput( nullptr );
 		}
 	}
 }

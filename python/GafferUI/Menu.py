@@ -40,17 +40,34 @@ import functools
 import weakref
 import types
 import re
+import six
 
 import IECore
 
 import Gaffer
 import GafferUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
 
 class Menu( GafferUI.Widget ) :
 
+	## A dynamic menu constructed from the supplied IECore.MenuDefinition.
+	#
+	# Along with the standard IECore.MenuItemDefinition fields, the Gaffer Menu
+	# implementation also supports:
+	#
+	#  - 'enter' and 'leave', to optionally provide callables to be invoked
+	#    when the mouse enters and leaves an item's on-screen representation.
+	#
+	# - 'label' in conjunction with 'divider' = True, displays a textual
+	#   divider as opposed to a simple line.
+	#
+	# - 'hasShortCuts' = False in conjunction with `subMenu`, instructs the Menu
+	#   to ignore the subMenu when building for keyboard shortcut discovery.
+	#   This can avoid long blocking waits when the user first presses a key whilst
+	#   the action map is built if your subMenu is particularly slow to build.
 	def __init__( self, definition, _qtParent=None, searchable=False, title=None, **kw ) :
 
 		GafferUI.Widget.__init__( self, _Menu( _qtParent ), **kw )
@@ -58,20 +75,27 @@ class Menu( GafferUI.Widget ) :
 		self.__searchable = searchable
 
 		self.__title = title
-		# this property is used by the stylesheet
+		# this property is used by the stylesheet to fix up menu padding bugs
 		self._qtWidget().setProperty( "gafferHasTitle", GafferUI._Variant.toVariant( title is not None ) )
 
 		self._qtWidget().__definition = definition
 		self._qtWidget().aboutToShow.connect( Gaffer.WeakMethod( self.__show ) )
+		self._qtWidget().aboutToHide.connect( Gaffer.WeakMethod( self.__hide ) )
+		self._qtWidget().hovered.connect( Gaffer.WeakMethod( self.__actionHovered ) )
+
+		self.__lastHoverAction = None
 
 		if searchable :
-			self._qtWidget().aboutToHide.connect( Gaffer.WeakMethod( self.__hide ) )
 			self.__lastAction = None
 
 		self._setStyleSheet()
 
 		self.__popupParent = None
 		self.__popupPosition = None
+
+		self.__previousSearchText = ''
+		self.__cachedSearchStructureKeys = []
+
 
 	## Displays the menu at the specified position, and attached to
 	# an optional parent. If position is not specified then it
@@ -125,7 +149,7 @@ class Menu( GafferUI.Widget ) :
 			return result
 
 		if relativeTo is not None :
-			result = result - relativeTo.bound().min
+			result = result - relativeTo.bound().min()
 
 		return result
 
@@ -136,11 +160,14 @@ class Menu( GafferUI.Widget ) :
 	def __argNames( self, function ) :
 
 		if isinstance( function, types.FunctionType ) :
-			return inspect.getargspec( function )[0]
+			if six.PY3 :
+				return inspect.getfullargspec( function ).args
+			else :
+				return inspect.getargspec( function )[0]
 		elif isinstance( function, types.MethodType ) :
-			return self.__argNames( function.im_func )[1:]
+			return self.__argNames( function.__func__ )[1:]
 		elif isinstance( function, Gaffer.WeakMethod ) :
-			return inspect.getargspec( function.method() )[0][1:]
+			return self.__argNames( function.method() )[1:]
 		elif isinstance( function, functools.partial ) :
 			return self.__argNames( function.func )
 
@@ -149,7 +176,7 @@ class Menu( GafferUI.Widget ) :
 	def __actionTriggered( self, qtActionWeakRef, toggled ) :
 
 		qtAction = qtActionWeakRef()
-		item = qtAction.__item
+		item = qtAction.item
 
 		if not self.__evaluateItemValue( item.active ) :
 			# Because an item's active status can change
@@ -195,14 +222,15 @@ class Menu( GafferUI.Widget ) :
 			self.__initSearch( self._qtWidget().__definition )
 
 			# Searchable menus require an extra submenu to display the search results.
-			searchWidget = QtGui.QWidgetAction( self._qtWidget() )
+			searchWidget = QtWidgets.QWidgetAction( self._qtWidget() )
 			searchWidget.setObjectName( "GafferUI.Menu.__searchWidget" )
 			self.__searchMenu = _Menu( self._qtWidget(), "" )
 			self.__searchMenu.aboutToShow.connect( Gaffer.WeakMethod( self.__searchMenuShow ) )
-			self.__searchLine = QtGui.QLineEdit()
+			self.__searchLine = QtWidgets.QLineEdit()
+			self.__searchLine.setAttribute( QtCore.Qt.WA_MacShowFocusRect, False )
 			self.__searchLine.textEdited.connect( Gaffer.WeakMethod( self.__updateSearchMenu ) )
 			self.__searchLine.returnPressed.connect( Gaffer.WeakMethod( self.__searchReturnPressed ) )
-			self.__searchLine.setObjectName( "search" )
+			self.__searchLine.setObjectName( "gafferSearchField" )
 			if hasattr( self.__searchLine, "setPlaceholderText" ) :
 				# setPlaceHolderText appeared in qt 4.7, nuke (6.3 at time of writing) is stuck on 4.6.
 				self.__searchLine.setPlaceholderText( "Search..." )
@@ -213,7 +241,8 @@ class Menu( GafferUI.Widget ) :
 			self.__searchLine.selectAll()
 			searchWidget.setDefaultWidget( self.__searchLine )
 
-			firstAction = self._qtWidget().actions()[0] if len( self._qtWidget().actions() ) else None
+			insertIndex = 1 if self.__title else 0
+			firstAction = self._qtWidget().actions()[insertIndex] if len( self._qtWidget().actions() ) > insertIndex else None
 			self._qtWidget().insertAction( firstAction, searchWidget )
 			self._qtWidget().insertSeparator( firstAction )
 			self._qtWidget().setActiveAction( searchWidget )
@@ -225,13 +254,19 @@ class Menu( GafferUI.Widget ) :
 			self.__searchLine.clearFocus()
 			self.__searchMenu.hide()
 
+		self.__doActionUnhover()
+		self.__lastHoverAction = None
+
 	# May be called to fully build the menu /now/, rather than only do it lazily
-	# when it's shown. This is used by the MenuBar.
-	def _buildFully( self ) :
+	# when it's shown. This is used by the MenuBar. forShortCuts should be set
+	# if the build is for short cut discovery as it will skip dynamic subMenus
+	# that declare they have no shortcuts.
+	#   See https://github.com/GafferHQ/gaffer/issues/3651)
+	def _buildFully( self, forShortCuts=False ) :
 
-		self.__build( self._qtWidget(), recurse=True )
+		self.__build( self._qtWidget(), recurse=True, forShortCuts=forShortCuts )
 
-	def __build( self, qtMenu, recurse=False ) :
+	def __build( self, qtMenu, recurse=False, forShortCuts=False ) :
 
 		if isinstance( qtMenu, weakref.ref ) :
 			qtMenu = qtMenu()
@@ -244,6 +279,8 @@ class Menu( GafferUI.Widget ) :
 				definition = definition()
 
 		qtMenu.clear()
+
+		needsBottomSpacer = False
 
 		done = set()
 		for path, item in definition.items() :
@@ -264,47 +301,61 @@ class Menu( GafferUI.Widget ) :
 					subMenu.__definition = definition.reRooted( "/" + name + "/" )
 					subMenu.aboutToShow.connect( IECore.curry( Gaffer.WeakMethod( self.__build ), weakref.ref( subMenu ) ) )
 					if recurse :
-						self.__build( subMenu, recurse )
+						self.__build( subMenu, recurse, forShortCuts=forShortCuts )
 
 				else :
 
 					if item.subMenu is not None :
 
+						# Skip any subMenus that declare they have no short cuts.
+						# _buildFully can be called blocking on the UI thread so
+						# this facilities to skip potentially expensive custom menus.
+						if forShortCuts and not getattr( item, 'hasShortCuts', True ) :
+							continue
+
 						subMenu = _Menu( qtMenu, name )
+						active = self.__evaluateItemValue( item.active )
+						subMenu.setEnabled( active )
 						qtMenu.addMenu( subMenu )
 
 						subMenu.__definition = item.subMenu
 						subMenu.aboutToShow.connect( IECore.curry( Gaffer.WeakMethod( self.__build ), weakref.ref( subMenu ) ) )
 						if recurse :
-							self.__build( subMenu, recurse )
+							self.__build( subMenu, recurse, forShortCuts=forShortCuts )
 
 					else :
 
 						# it's not a submenu
-						qtMenu.addAction( self.__buildAction( item, name, qtMenu ) )
+						action = self.__buildAction( item, name, qtMenu )
+
+						# Wrangle some divider/menu spacing issues
+						if isinstance( action, _DividerAction ) :
+							if len( qtMenu.actions() ) :
+								qtMenu.addAction( _SpacerAction( qtMenu ) )
+							elif action.hasText :
+								qtMenu.setProperty( "gafferHasLeadingLabelledDivider", GafferUI._Variant.toVariant( True ) )
+								needsBottomSpacer = True
+
+						qtMenu.addAction( action )
 
 				done.add( name )
 
 		# add a title if required.
 		if self.__title is not None and qtMenu is self._qtWidget() :
 
-			titleWidget = QtGui.QLabel( self.__title )
+			titleWidget = QtWidgets.QLabel( self.__title )
 			titleWidget.setIndent( 0 )
 			titleWidget.setObjectName( "gafferMenuTitle" )
-			titleWidgetAction = QtGui.QWidgetAction( qtMenu )
+			titleWidgetAction = QtWidgets.QWidgetAction( qtMenu )
 			titleWidgetAction.setDefaultWidget( titleWidget )
 			titleWidgetAction.setEnabled( False )
 			qtMenu.insertAction( qtMenu.actions()[0], titleWidgetAction )
+			needsBottomSpacer = True
 
-			# qt stylesheets ignore the padding-bottom for menus and
-			# use padding-top instead. we need padding-top to be 0 when
-			# we have a title, so we have to fake the bottom padding like so.
-			spacerWidget = QtGui.QWidget()
-			spacerWidget.setFixedSize( 5, 5 )
-			spacerWidgetAction = QtGui.QWidgetAction( qtMenu )
-			spacerWidgetAction.setDefaultWidget( spacerWidget )
-			spacerWidgetAction.setEnabled( False )
-			qtMenu.addAction( spacerWidgetAction )
+		if needsBottomSpacer :
+			qtMenu.addAction( _SpacerAction( qtMenu ) )
+
+		self._repolish()
 
 	def __buildAction( self, item, name, parent ) :
 
@@ -312,16 +363,15 @@ class Menu( GafferUI.Widget ) :
 		with IECore.IgnoredExceptions( AttributeError ) :
 			label = item.label
 
-		qtAction = QtGui.QAction( label, parent )
-		qtAction.__item = item
+		if item.divider :
+			qtAction = _DividerAction( item, parent )
+		else :
+			qtAction = _Action( item, label, parent )
 
 		if item.checkBox is not None :
 			qtAction.setCheckable( True )
 			checked = self.__evaluateItemValue( item.checkBox )
 			qtAction.setChecked( checked )
-
-		if item.divider :
-			qtAction.setSeparator( True )
 
 		if item.command :
 
@@ -352,7 +402,7 @@ class Menu( GafferUI.Widget ) :
 		# when an icon file path is defined in the menu definition
 		icon = getattr( item, "icon", None )
 		if icon is not None :
-			if isinstance( icon, basestring ) :
+			if isinstance( icon, six.string_types ) :
 				image = GafferUI.Image( icon )
 			else :
 				assert( isinstance( icon, GafferUI.Image ) )
@@ -402,6 +452,18 @@ class Menu( GafferUI.Widget ) :
 
 		return itemValue
 
+	def __getSearchBoxErrorState(self):
+
+		return GafferUI._Variant.fromVariant( self.__searchLine.property( "gafferError" ) ) or False
+
+	def __setSearchBoxErrorState(self, errored):
+
+		if errored is self.__getSearchBoxErrorState():
+			return
+
+		self.__searchLine.setProperty( "gafferError", GafferUI._Variant.toVariant( errored ) )
+		self._repolish()
+
 	def __updateSearchMenu( self, text ) :
 
 		if not self.__searchable :
@@ -415,40 +477,54 @@ class Menu( GafferUI.Widget ) :
 		if not text :
 			return
 
-		matched = self.__matchingActions( str(text) )
+		text = str(text)
+		errored = False
+		matched = self.__matchingActions( text )
 
-		# sorting on match position within the name
-		matchIndexMap = {}
-		for name, info in matched.items() :
-			if info["pos"] not in matchIndexMap :
-				matchIndexMap[info["pos"]] = []
-			matchIndexMap[info["pos"]].append( ( name, info["actions"] ) )
+		if not matched:
+
+			errored = True
+
+			if len( text ) > 1:
+				matched = self.__matchingActions( text[:-1] )
+
+			# cut of after first character that gives no results anymore
+			if not matched and len( text ) > 2:
+				self.__searchLine.setText( text[:-1] )
+				matched = self.__matchingActions( text[:-2] )
+
+		self.__setSearchBoxErrorState(errored)
+
+		# sort first by weight, then position of the first matching character, then alphabetically
+		matchedItems = [ ( k, v['pos'], v['weight'], v['actions']  ) for k, v in matched.items() ]
+		matchedItems = sorted(matchedItems, key = lambda x : (x[2], x[1], x[0]))
 
 		numActions = 0
 		maxActions = 30
 		overflowMenu = None
 
-		# sorting again alphabetically within each match position
-		for matchIndex in sorted( matchIndexMap ) :
+		for match in matchedItems:
 
-			for ( name, actions ) in sorted( matchIndexMap[matchIndex], key = lambda x : x[0] ) :
+			name = match[0]
+			actions = match[3]
 
-				if len(actions) > 1 :
-					for ( action, path ) in actions :
-						action.setText( self.__disambiguate( name, path ) )
-				# since all have the same name, sorting alphabetically on disambiguation text
-				for ( action, path ) in sorted( actions, key = lambda x : x[0].text() ) :
+			if len( actions ) > 1 :
+				for ( action, path ) in actions :
+					action.setText( self.__disambiguate( name, path ) )
 
-					if numActions < maxActions :
-						self.__searchMenu.addAction( action )
-					else :
-						if overflowMenu is None :
-							self.__searchMenu.addSeparator()
-							overflowMenu = _Menu( self.__searchMenu, "More Results" )
-							self.__searchMenu.addMenu( overflowMenu )
-						overflowMenu.addAction( action )
+			# since all have the same name, sorting alphabetically on disambiguation text
+			for ( action, path ) in sorted( actions, key = lambda x : x[0].text() ) :
 
-					numActions += 1
+				if numActions < maxActions :
+					self.__searchMenu.addAction( action )
+				else :
+					if overflowMenu is None :
+						self.__searchMenu.addSeparator()
+						overflowMenu = _Menu( self.__searchMenu, "More Results" )
+						self.__searchMenu.addMenu( overflowMenu )
+					overflowMenu.addAction( action )
+
+				numActions += 1
 
 		finalActions = self.__searchMenu.actions()
 		if len(finalActions) :
@@ -459,24 +535,74 @@ class Menu( GafferUI.Widget ) :
 			self.__searchLine.setFocus()
 			self.__searchMenu.setUpdatesEnabled( True )
 
-	def __matchingActions( self, searchText, path = "" ) :
+	def __matchingActions( self, searchText ) :
 
+		searchText = searchText[:99]  # re matching only supports up to 100 groups
 		results = {}
-		# find all actions matching a case-insensitive regex
-		matcher = re.compile( "".join( [ "[%s|%s]" % ( c.upper(), c.lower() ) for c in searchText ] ) )
 
-		for name in self.__searchStructure :
+		# split on spaces so we can search words in random order with a lookaround
+		# and do a non greedy search of all the characters.
+		# for example: (?=.*?(t).*?(e).*?(s).*?(t))(?=.*?(w).*?(o).*?(r).*?(d))
+		spaceSeparated = [ s for s in searchText.split(' ') if s ]
+		if not spaceSeparated:
+			return results
+
+		wordLengths = [ len(s) for s in spaceSeparated ]
+		wordSearch =  [ '.*?' + '.*?'.join( [ '(' + re.escape(s[i]) + ')' for i in range(len(s))] ) for s in spaceSeparated ]
+		regex = ''.join( [ '(?=' + s + ')' for s in wordSearch ] )
+
+		matcher = re.compile( regex, re.IGNORECASE )
+
+		# Narrow down the cachedSearchStructure with every typed character, so we only search previously matched items.
+		if searchText.startswith( self.__previousSearchText ) and len( searchText ) != 1:
+			searchStructureKeys = self.__cachedSearchStructureKeys
+		# Revert that cache to the full searchStructure otherwise
+		else:
+			searchStructureKeys = self.__searchStructure.keys()
+
+		self.__cachedSearchStructureKeys = []
+
+		for name in searchStructureKeys :
 
 			match = matcher.search( name )
+
 			if match :
+
+				weight = 0
+				wordWeight = 1
+				currentWordPos = 0
+
+				# go through match groups per word
+				# for the weight calculation per word we reward:
+				# - (d) short distances of the matching characters (penalizing gaps)
+				# - (p) small index of the matches (matches in the beginning of the word)
+				# - (wordWeight) small index of the space separated word
+				for wordLength in wordLengths:
+
+					wordGroups = range( currentWordPos+1, currentWordPos+wordLength+1 )
+					hitPositions = [ match.span( g )[0] for g in wordGroups ]
+					hitPositionDistances = [ j - i for i, j in zip( hitPositions[:-1], hitPositions[1:] ) ]
+
+					weight += wordWeight * sum( [ ( p + 1 ) * d for p, d in zip( hitPositions[:-1], hitPositionDistances ) ] )
+
+					currentWordPos += wordLength
+					wordWeight += 1
+
+				# position of the first matching character
+				pos = match.span( 1 )[0]
+
+				self.__cachedSearchStructureKeys.append( name )
 
 				for item, path in self.__searchStructure[name] :
 
 					action = self.__buildAction( item, name, self.__searchMenu )
 					if name not in results :
-						results[name] = { "pos" : match.start(), "actions" : [] }
+						results[name] = { "pos" : pos, "weight" : weight, "actions" : [], 'grp' : match.groups() }
 
 					results[name]["actions"].append( ( action, path ) )
+
+
+		self.__previousSearchText = searchText
 
 		return results
 
@@ -505,13 +631,80 @@ class Menu( GafferUI.Widget ) :
 
 		self._qtWidget().hide()
 
-class _Menu( QtGui.QMenu ) :
+	def __actionHovered( self, action ) :
+
+		# Hovered is called every time the mouse moves
+		if action == self.__lastHoverAction :
+			return
+
+		self.__doActionUnhover()
+
+		self.__lastHoverAction = action
+
+		# Sub-menus are normal QActions
+		if isinstance( action, _Action ) and hasattr( action.item, "enter" ) :
+			action.item.enter()
+
+	def __doActionUnhover( self ) :
+
+		if self.__lastHoverAction is None :
+			return
+
+		# Sub-menus are normal QActions
+		if isinstance( self.__lastHoverAction, _Action ) and hasattr( self.__lastHoverAction.item, "leave" ) :
+			self.__lastHoverAction.item.leave()
+
+		self.__lastHoverAction = None
+
+# When we stuck arbitrary attributes on QAction (eg. __item) these would get
+# lost when the action was returned by Qt via a signal (eg: menu.hovered).
+# Creating a subclass seemed to resolve this. Never got to the bottom of why,
+# as the addresses of the python objects _seemed_ to be the same.
+class _Action( QtWidgets.QAction ) :
+
+	def __init__( self, item, *args, **kwarg ) :
+		self.item = item
+		QtWidgets.QAction.__init__( self, *args, **kwarg )
+
+class _DividerAction( QtWidgets.QWidgetAction ) :
+
+	def __init__( self, item, *args, **kwarg ) :
+
+		self.item = item
+
+		QtWidgets.QWidgetAction.__init__( self, *args, **kwarg )
+
+		if hasattr( item, 'label' ) and item.label :
+			titleWidget = QtWidgets.QLabel( item.label )
+			titleWidget.setIndent( 0 )
+			titleWidget.setObjectName( "gafferMenuLabeledDivider" )
+			titleWidget.setEnabled( False )
+			self.setDefaultWidget( titleWidget )
+			self.hasText = True
+		else :
+			self.setSeparator( True )
+			self.hasText = False
+
+class _SpacerAction( QtWidgets.QWidgetAction ) :
+
+	def __init__( self, *args, **kwarg ) :
+
+		QtWidgets.QWidgetAction.__init__( self, *args, **kwarg )
+		# qt stylesheets ignore the padding-bottom for menus and
+		# use padding-top instead. we need padding-top to be 0 when
+		# we have a title, so we have to fake the bottom padding like so.
+		spacerWidget = QtWidgets.QWidget()
+		spacerWidget.setFixedSize( 5, 5 )
+		self.setDefaultWidget( spacerWidget )
+		self.setEnabled( False )
+
+class _Menu( QtWidgets.QMenu ) :
 
 	KeyboardMode = IECore.Enum.create( "Grab", "Close", "Forward" )
 
 	def __init__( self, parent, title=None ) :
 
-		QtGui.QMenu.__init__( self, parent )
+		QtWidgets.QMenu.__init__( self, parent )
 
 		if title is not None :
 			self.setTitle( title )
@@ -523,10 +716,10 @@ class _Menu( QtGui.QMenu ) :
 		if qEvent.type() == QtCore.QEvent.ToolTip :
 			action = self.actionAt( qEvent.pos() )
 			if action and action.statusTip() :
-				QtGui.QToolTip.showText( qEvent.globalPos(), action.statusTip(), self )
+				QtWidgets.QToolTip.showText( qEvent.globalPos(), action.statusTip(), self )
 				return True
 
-		return QtGui.QMenu.event( self, qEvent )
+		return QtWidgets.QMenu.event( self, qEvent )
 
 	def keyPressEvent( self, qEvent ) :
 
@@ -547,9 +740,10 @@ class _Menu( QtGui.QMenu ) :
 					self.hide()
 
 				# pass the event on to the rightful recipient
-				app = QtGui.QApplication.instance()
+				app = QtWidgets.QApplication.instance()
 				if app.focusWidget() != self :
 					app.sendEvent( app.focusWidget(), qEvent )
 					return
 
-		QtGui.QMenu.keyPressEvent( self, qEvent )
+		QtWidgets.QMenu.keyPressEvent( self, qEvent )
+

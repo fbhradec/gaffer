@@ -38,37 +38,32 @@
 #ifndef GAFFERBINDINGS_VALUEPLUGBINDING_H
 #define GAFFERBINDINGS_VALUEPLUGBINDING_H
 
-#include "Gaffer/ValuePlug.h"
 #include "GafferBindings/PlugBinding.h"
+
+#include "Gaffer/ValuePlug.h"
 
 namespace GafferBindings
 {
 
-void bindValuePlug();
-
 /// Supports the following Context variables :
 ///
-/// "valuePlugSerialiser:resetParentPlugDefaults"
+/// "valuePlugSerialiser:omitParentNodePlugValues"
 ///
-/// :	Replaces the default value with the current value for plugs
-///     of the parent node. This is used when exporting the contents
-///     of a Box node.
-class ValuePlugSerialiser : public PlugSerialiser
+/// :	Omits the `setValue()` calls for plugs of the parent
+///     node. This is used when exporting the contents of a
+///     Box node for referencing.
+class GAFFERBINDINGS_API ValuePlugSerialiser : public PlugSerialiser
 {
 
 	public :
 
-		virtual void moduleDependencies( const Gaffer::GraphComponent *graphComponent, std::set<std::string> &modules, const Serialisation &serialisation ) const;
-		virtual std::string constructor( const Gaffer::GraphComponent *graphComponent, const Serialisation &serialisation ) const;
-		virtual std::string postConstructor( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, const Serialisation &serialisation ) const;
+		std::string constructor( const Gaffer::GraphComponent *graphComponent, Serialisation &serialisation ) const override;
+		std::string postHierarchy( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, Serialisation &serialisation ) const override;
 
-		static std::string repr( const Gaffer::ValuePlug *plug, unsigned flagsMask = Gaffer::Plug::All, const std::string &extraArguments = "", const Serialisation *serialisation = NULL );
-
-	protected :
-
-		/// May be implemented by derived classes to control whether or not a setValue() call is emitted by postConstructor().
-		/// The default implementation returns true only for input plugs without an incoming connection.
-		virtual bool valueNeedsSerialisation( const Gaffer::ValuePlug *plug, const Serialisation &serialisation ) const;
+		static std::string repr( const Gaffer::ValuePlug *plug, const std::string &extraArguments = "", Serialisation *serialisation = nullptr );
+		/// Returns a serialisation suitable for use in a `setValue()` or `setDefaultValue()` call.
+		/// If `serialisation` is provided then `serialisation->addModule()` will be called appropriately.
+		static std::string valueRepr( const boost::python::object &value, Serialisation *serialisation = nullptr );
 
 };
 

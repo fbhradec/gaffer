@@ -40,7 +40,7 @@
 using namespace Imath;
 using namespace GafferUI;
 
-IE_CORE_DEFINERUNTIMETYPED( ContainerGadget );
+GAFFER_GRAPHCOMPONENT_DEFINE_TYPE( ContainerGadget );
 
 ContainerGadget::ContainerGadget( const std::string &name )
 	:	Gadget( name ), m_padding( Box3f( V3f( 0 ), V3f( 0 ) ) )
@@ -66,7 +66,7 @@ void ContainerGadget::setPadding( const Imath::Box3f &padding )
 		return;
 	}
 	m_padding = padding;
-	requestRender();
+	dirty( DirtyType::Bound );
 }
 
 const Imath::Box3f &ContainerGadget::getPadding() const

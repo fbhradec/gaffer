@@ -37,9 +37,14 @@
 #ifndef GAFFERIMAGE_IMAGEWRITER_H
 #define GAFFERIMAGE_IMAGEWRITER_H
 
+#include "GafferImage/TypeIds.h"
+#include "GafferImage/Export.h"
+
 #include "GafferDispatch/TaskNode.h"
 
-#include "GafferImage/TypeIds.h"
+#include "IECore/CompoundData.h"
+
+#include <functional>
 
 namespace Gaffer
 {
@@ -50,10 +55,10 @@ namespace Gaffer
 namespace GafferImage
 {
 
-IE_CORE_FORWARDDECLARE( ChannelMaskPlug )
+IE_CORE_FORWARDDECLARE( ColorSpace )
 IE_CORE_FORWARDDECLARE( ImagePlug )
 
-class ImageWriter : public GafferDispatch::TaskNode
+class GAFFERIMAGE_API ImageWriter : public GafferDispatch::TaskNode
 {
 
 	public :
@@ -65,9 +70,9 @@ class ImageWriter : public GafferDispatch::TaskNode
 		};
 
 		ImageWriter( const std::string &name=defaultName<ImageWriter>() );
-		virtual ~ImageWriter();
+		~ImageWriter() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageWriter, ImageWriterTypeId, TaskNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::ImageWriter, ImageWriterTypeId, TaskNode );
 
 		Gaffer::StringPlug *fileNamePlug();
 		const Gaffer::StringPlug *fileNamePlug() const;
@@ -75,26 +80,45 @@ class ImageWriter : public GafferDispatch::TaskNode
 		GafferImage::ImagePlug *inPlug();
 		const GafferImage::ImagePlug *inPlug() const;
 
-		const GafferImage::ChannelMaskPlug *channelsPlug() const;
-		GafferImage::ChannelMaskPlug *channelsPlug();
+		Gaffer::StringPlug *channelsPlug();
+		const Gaffer::StringPlug *channelsPlug() const;
 
 		GafferImage::ImagePlug *outPlug();
 		const GafferImage::ImagePlug *outPlug() const;
 
+		Gaffer::StringPlug *colorSpacePlug();
+		const Gaffer::StringPlug *colorSpacePlug() const;
+
 		Gaffer::ValuePlug *fileFormatSettingsPlug( const std::string &fileFormat );
 		const Gaffer::ValuePlug *fileFormatSettingsPlug( const std::string &fileFormat ) const;
 
-		virtual IECore::MurmurHash hash( const Gaffer::Context *context ) const;
+		IECore::MurmurHash hash( const Gaffer::Context *context ) const override;
 
-		virtual void execute() const;
+		void execute() const override;
 
 		const std::string currentFileFormat() const;
 
+		/// Note that this is intentionally identical to the ImageReader's DefaultColorSpaceFunction
+		/// definition, so that the same function can be used with both nodes.
+		typedef std::function<const std::string ( const std::string &fileName, const std::string &fileFormat, const std::string &dataType, const IECore::CompoundData *metadata )> DefaultColorSpaceFunction;
+		static void setDefaultColorSpaceFunction( DefaultColorSpaceFunction f );
+		static DefaultColorSpaceFunction getDefaultColorSpaceFunction();
+
 	private :
+
+		std::string colorSpace() const;
+
+		ColorSpace *colorSpaceUnpremultedNode();
+		const ColorSpace *colorSpaceUnpremultedNode() const;
+
+		ColorSpace *colorSpaceNode();
+		const ColorSpace *colorSpaceNode() const;
 
 		void createFileFormatOptionsPlugs();
 
 		static size_t g_firstPlugIndex;
+
+		static DefaultColorSpaceFunction &defaultColorSpaceFunction();
 };
 
 IE_CORE_DECLAREPTR( ImageWriter )

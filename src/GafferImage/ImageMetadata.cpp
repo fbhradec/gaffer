@@ -42,7 +42,7 @@ using namespace Gaffer;
 namespace GafferImage
 {
 
-IE_CORE_DEFINERUNTIMETYPED( ImageMetadata );
+GAFFER_NODE_DEFINE_TYPE( ImageMetadata );
 
 size_t ImageMetadata::g_firstPlugIndex = 0;
 
@@ -71,7 +71,7 @@ void ImageMetadata::affects( const Gaffer::Plug *input, AffectedPlugsContainer &
 {
 	MetadataProcessor::affects( input, outputs );
 
-	if ( input == inPlug()->metadataPlug() )
+	if( metadataPlug()->isAncestorOf( input ) )
 	{
 		outputs.push_back( outPlug()->metadataPlug() );
 	}
@@ -82,7 +82,7 @@ void ImageMetadata::hashProcessedMetadata( const Gaffer::Context *context, IECor
 	metadataPlug()->hash( h );
 }
 
-IECore::ConstCompoundObjectPtr ImageMetadata::computeProcessedMetadata( const Gaffer::Context *context, const IECore::CompoundObject *inputMetadata ) const
+IECore::ConstCompoundDataPtr ImageMetadata::computeProcessedMetadata( const Gaffer::Context *context, const IECore::CompoundData *inputMetadata ) const
 {
 	const CompoundDataPlug *p = metadataPlug();
 	if ( !p->children().size() )
@@ -90,20 +90,20 @@ IECore::ConstCompoundObjectPtr ImageMetadata::computeProcessedMetadata( const Ga
 		return inputMetadata;
 	}
 
-	IECore::CompoundObjectPtr result = new IECore::CompoundObject;
+	IECore::CompoundDataPtr result = new IECore::CompoundData;
 	// Since we're not going to modify any existing members (only add new ones),
 	// and our result becomes const on returning it, we can directly reference
 	// the input members in our result without copying. Be careful not to modify
 	// them though!
-	result->members() = inputMetadata->members();
+	result->writable() = inputMetadata->readable();
 
 	std::string name;
-	for ( CompoundDataPlug::MemberPlugIterator it( p ); !it.done(); ++it )
+	for ( NameValuePlugIterator it( p ); !it.done(); ++it )
 	{
 		IECore::DataPtr d = p->memberDataAndName( it->get(), name );
 		if ( d )
 		{
-			result->members()[name] = d;
+			result->writable()[name] = d;
 		}
 	}
 

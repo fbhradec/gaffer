@@ -37,6 +37,8 @@
 
 import functools
 
+import imath
+
 import IECore
 import Gaffer
 import GafferUI
@@ -51,29 +53,11 @@ Gaffer.Metadata.registerNode(
 	scripted expressions.
 	""",
 
-	"layout:customWidget:Expression:widgetType", "GafferUI.ExpressionUI._ExpressionWidget",
+	"layout:customWidget:Expression:widgetType", "GafferUI.ExpressionUI.ExpressionWidget",
+	"nodeGadget:type", "GafferUI::AuxiliaryNodeGadget",
+	"auxiliaryNodeGadget:label", "e",
 
 	plugs = {
-
-		# This plug is added by the expressionCompatibility.py
-		# config file to provide compatibility for loading old
-		# files, so we must hide it.
-		"engine" : (
-
-			"plugValueWidget:type", "",
-			"nodule:type", "",
-
-		),
-
-		# This plug is added by the expressionCompatibility.py
-		# config file to provide compatibility for loading old
-		# files, so we must hide it.
-		"expression" : (
-
-			"plugValueWidget:type", "",
-			"nodule:type", "",
-
-		),
 
 		"user" : (
 
@@ -93,7 +77,7 @@ def __createExpression( plug, language ) :
 	node = plug.node()
 	parentNode = node.ancestor( Gaffer.Node )
 
-	with Gaffer.UndoContext( node.scriptNode() ) :
+	with Gaffer.UndoScope( node.scriptNode() ) :
 
 		expressionNode = Gaffer.Expression()
 		parentNode.addChild( expressionNode )
@@ -138,12 +122,12 @@ def __popupMenu( menuDefinition, plugValueWidget ) :
 			}
 		)
 
-__popupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __popupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __popupMenu, scoped = False )
 
-# _ExpressionPlugValueWidget
+# ExpressionWidget
 ##########################################################################
 
-class _ExpressionWidget( GafferUI.Widget ) :
+class ExpressionWidget( GafferUI.Widget ) :
 
 	def __init__( self, node, **kw ) :
 
@@ -163,23 +147,109 @@ class _ExpressionWidget( GafferUI.Widget ) :
 			self.__textWidget = GafferUI.MultiLineTextWidget( role = GafferUI.MultiLineTextWidget.Role.Code )
 			self.__textWidget.setEditable( not Gaffer.MetadataAlgo.readOnly( node ) )
 
-			self.__activatedConnection = self.__textWidget.activatedSignal().connect( Gaffer.WeakMethod( self.__activated ) )
-			self.__editingFinishedConnection = self.__textWidget.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__editingFinished ) )
-			self.__dropTextConnection = self.__textWidget.dropTextSignal().connect( Gaffer.WeakMethod( self.__dropText ) )
+			self.__textWidget.activatedSignal().connect( Gaffer.WeakMethod( self.__activated ), scoped = False )
+			self.__textWidget.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__editingFinished ), scoped = False )
+			self.__textWidget.dropTextSignal().connect( Gaffer.WeakMethod( self.__dropText ), scoped = False )
+			self.__textWidget.contextMenuSignal().connect( Gaffer.WeakMethod( self.__expressionContextMenu ), scoped = False )
 
 			self.__messageWidget = GafferUI.MessageWidget()
 
-		self.__expressionChangedConnection = self.__node.expressionChangedSignal().connect( Gaffer.WeakMethod( self.__expressionChanged ) )
-		self.__errorConnection = self.__node.errorSignal().connect( Gaffer.WeakMethod( self.__error ) )
+		self.__node.expressionChangedSignal().connect( Gaffer.WeakMethod( self.__expressionChanged ), scoped = False )
+		self.__node.errorSignal().connect( Gaffer.WeakMethod( self.__error ), scoped = False )
 
 		self.__update()
 
+	def node( self ) :
+
+		return self.__node
+
+	def textWidget( self ) :
+
+		return self.__textWidget
+
+	__expressionContextMenuSignal = Gaffer.Signal2()
+	## This signal is emitted whenever a popup menu
+	# for an ExpressionWidget is about to be shown.
+	# This provides an opportunity to customise the
+	# menu from external code. The signature for
+	# slots is ( menuDefinition, widget ), and slots
+	# should just modify the menu definition in place.
+	@classmethod
+	def expressionContextMenuSignal( cls ) :
+
+		return cls.__expressionContextMenuSignal
+
+	def __expressionContextMenuDefinition( self ) :
+
+		menuDefinition = IECore.MenuDefinition()
+
+		bookmarks = Gaffer.MetadataAlgo.bookmarks( self.__node.parent() )
+
+		def __bookmarkMenu( bookmarks ) :
+
+			bookmarkMenuDefinition = IECore.MenuDefinition()
+
+			def __walk( graphComponent, result ) :
+
+				if (
+					isinstance( graphComponent, Gaffer.ValuePlug ) and
+					self.__node.identifier( graphComponent ) and
+					not graphComponent.relativeName( graphComponent.node() ).startswith( "__" )
+				) :
+					result.append( graphComponent )
+
+				for c in graphComponent.children( Gaffer.Plug ) :
+					__walk( c, result )
+
+			for bookmark in bookmarks :
+
+				compatiblePlugs = []
+				__walk( bookmark, compatiblePlugs )
+
+				if not compatiblePlugs :
+					continue
+
+				for plug in compatiblePlugs :
+					label = "/" + bookmark.getName()
+					if len( compatiblePlugs ) > 1 :
+						label += "/"  + plug.relativeName( bookmark )
+					bookmarkMenuDefinition.append(
+						label,
+						{
+							"command" : functools.partial( self.__textWidget.insertText, self.__node.identifier( plug ) ),
+							"active" : self.__textWidget.getEditable() and not Gaffer.MetadataAlgo.readOnly( self.__node['__expression'] ),
+						}
+					)
+
+			return bookmarkMenuDefinition
+
+		menuDefinition.append( "/Insert Bookmark", { "subMenu" : functools.partial( __bookmarkMenu, bookmarks ) } )
+
+		self.expressionContextMenuSignal()( menuDefinition, self )
+
+		return menuDefinition
+
+	def __expressionContextMenu( self, *unused ) :
+
+		menuDefinition = self.__expressionContextMenuDefinition()
+		if not len( menuDefinition.items() ) :
+			return False
+
+		title = self.__node.relativeName( self.__node.scriptNode() )
+		title = ".".join( [ IECore.CamelCase.join( IECore.CamelCase.split( x ) ) for x in title.split( "." ) ] )
+
+		self.____expressionContextMenu = GafferUI.Menu( menuDefinition, title = title )
+		self.____expressionContextMenu.popup()
+
+		return True
+
 	def __update( self ) :
 
-		expression = self.__node.getExpression()
+		expression, language = self.__node.getExpression()
 
-		self.__textWidget.setText( expression[0] )
-		self.__languageMenu.setText( IECore.CamelCase.toSpaced( expression[1] ) )
+		self.__textWidget.setText( expression )
+		self.__textWidget.setEnabled( bool( language ) )
+		self.__languageMenu.setText( IECore.CamelCase.toSpaced( language ) if language else "Choose..." )
 
 		self.__messageWidget.clear()
 		self.__messageWidget.setVisible( False )
@@ -209,7 +279,7 @@ class _ExpressionWidget( GafferUI.Widget ) :
 	def __setExpression( self ) :
 
 		language = self.__node.getExpression()[1]
-		with Gaffer.UndoContext( self.__node.scriptNode() ) :
+		with Gaffer.UndoScope( self.__node.scriptNode() ) :
 			try :
 				self.__node.setExpression( self.__textWidget.getText(), language )
 				self.__messageWidget.setVisible( False )
@@ -248,6 +318,17 @@ class _ExpressionWidget( GafferUI.Widget ) :
 		return None
 
 	def __error( self, plug, source, error ) :
+
+		# Error signal can be emitted on any thread, but we need to be on the UI
+		# thread to display it.
+		GafferUI.EventLoop.executeOnUIThread( functools.partial( self.__displayError, error ) )
+
+	# An error in the expression could occur during a compute triggered by a repaint.
+	# ( For example, if a user uses an expression to drive Backdrop text )
+	# If we forced a repaint right away, this would be a recursive repaint which could cause
+	# a Qt crash, so we wait for idle.
+	@GafferUI.LazyMethod()
+	def __displayError( self, error ) :
 
 		self.__messageWidget.setVisible( True )
 		self.__messageWidget.messageHandler().handle( IECore.Msg.Level.Error, "Execution error", error )

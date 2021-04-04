@@ -34,15 +34,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/ArrayPlug.h"
-
 #include "GafferScene/UnionFilter.h"
+
+#include "Gaffer/ArrayPlug.h"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( UnionFilter );
+GAFFER_NODE_DEFINE_TYPE( UnionFilter );
 
 UnionFilter::UnionFilter( const std::string &name )
 	:	FilterProcessor( name, 1 )
@@ -55,7 +55,7 @@ UnionFilter::~UnionFilter()
 
 void UnionFilter::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	Filter::affects( input, outputs );
+	FilterProcessor::affects( input, outputs );
 
 	if( input->parent<ArrayPlug>() == inPlugs() )
 	{
@@ -73,7 +73,7 @@ void UnionFilter::hashMatch( const ScenePlug *scene, const Gaffer::Context *cont
 
 unsigned UnionFilter::computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const
 {
-	unsigned result = NoMatch;
+	unsigned result = IECore::PathMatcher::NoMatch;
 	for( InputIntPlugIterator it( inPlugs() ); !it.done(); ++it )
 	{
 		result |= (*it)->getValue();

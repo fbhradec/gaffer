@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -60,12 +62,12 @@ class StandardOptionsTest( GafferSceneTest.SceneTestCase ) :
 
 		o = GafferScene.StandardOptions()
 
-		o["options"]["renderResolution"]["value"].setValue( IECore.V2i( 10 ) )
+		o["options"]["renderResolution"]["value"].setValue( imath.V2i( 10 ) )
 		o["options"]["renderResolution"]["enabled"].setValue( True )
-		self.assertEqual( o["out"]["globals"].getValue()["option:render:resolution"].value, IECore.V2i( 10 ) )
+		self.assertEqual( o["out"]["globals"].getValue()["option:render:resolution"].value, imath.V2i( 10 ) )
 
-		o["options"]["renderResolution"]["value"].setValue( IECore.V2i( 20 ) )
-		self.assertEqual( o["out"]["globals"].getValue()["option:render:resolution"].value, IECore.V2i( 20 ) )
+		o["options"]["renderResolution"]["value"].setValue( imath.V2i( 20 ) )
+		self.assertEqual( o["out"]["globals"].getValue()["option:render:resolution"].value, imath.V2i( 20 ) )
 
 	def testHashIncludesInputHash( self ) :
 
@@ -76,7 +78,7 @@ class StandardOptionsTest( GafferSceneTest.SceneTestCase ) :
 		h = o2["out"]["globals"].hash()
 
 		o1["options"]["renderResolution"]["enabled"].setValue( True )
-		o1["options"]["renderResolution"]["value"].setValue( IECore.V2i( 10 ) )
+		o1["options"]["renderResolution"]["value"].setValue( imath.V2i( 10 ) )
 
 		self.assertNotEqual( o2["out"]["globals"].hash(), h )
 
@@ -90,7 +92,7 @@ class StandardOptionsTest( GafferSceneTest.SceneTestCase ) :
 		memberDataAndName = s["n"]["options"].memberDataAndName( s["n"]["options"]["renderCamera"] )
 
 		Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n"] ] ) )
-		s["Box"].promotePlug( s["Box"]["n"]["options"]["renderCamera"] )
+		Gaffer.PlugAlgo.promote( s["Box"]["n"]["options"]["renderCamera"] )
 
 		self.assertEqual(
 			s["Box"]["n"]["options"].memberDataAndName( s["Box"]["n"]["options"]["renderCamera"] ),

@@ -35,14 +35,14 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/ArrayPlug.h"
-
 #include "GafferScene/SceneProcessor.h"
+
+#include "Gaffer/ArrayPlug.h"
 
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( SceneProcessor );
+GAFFER_NODE_DEFINE_TYPE( SceneProcessor );
 
 size_t SceneProcessor::g_firstPlugIndex = 0;
 
@@ -68,7 +68,7 @@ SceneProcessor::~SceneProcessor()
 
 ScenePlug *SceneProcessor::inPlug()
 {
-	GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	GraphComponent *p = getChild( g_firstPlugIndex );
 	if( ScenePlug *s = IECore::runTimeCast<ScenePlug>( p ) )
 	{
 		return s;
@@ -81,7 +81,7 @@ ScenePlug *SceneProcessor::inPlug()
 
 const ScenePlug *SceneProcessor::inPlug() const
 {
-	const GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	const GraphComponent *p = getChild( g_firstPlugIndex );
 	if( const ScenePlug *s = IECore::runTimeCast<const ScenePlug>( p ) )
 	{
 		return s;
@@ -125,7 +125,7 @@ const Plug *SceneProcessor::correspondingInput( const Plug *output ) const
 void SceneProcessor::hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	const ScenePlug *scenePlug = output->parent<ScenePlug>();
-	if( scenePlug && !enabledPlug()->getValue() )
+	if( scenePlug && !enabled( context ) )
 	{
 		// if we're hashing the output scene, and we're disabled, we need to
 		// pass through the hash from the inPlug().
@@ -141,7 +141,7 @@ void SceneProcessor::hash( const Gaffer::ValuePlug *output, const Gaffer::Contex
 void SceneProcessor::compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const
 {
 	const ScenePlug *scenePlug = output->parent<ScenePlug>();
-	if( scenePlug && !enabledPlug()->getValue() )
+	if( scenePlug && !enabled( context ) )
 	{
 		// if we're computing the output scene, and we're disabled, we need to
 		// pass through the scene from inPlug().

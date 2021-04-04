@@ -84,10 +84,10 @@ class NumericPlugTest( GafferTest.TestCase ) :
 		f = Gaffer.FloatPlug()
 		i = Gaffer.IntPlug()
 
-		self.assert_( f.isInstanceOf( Gaffer.FloatPlug.staticTypeId() ) )
-		self.assert_( not f.isInstanceOf( Gaffer.IntPlug.staticTypeId() ) )
-		self.assert_( not i.isInstanceOf( Gaffer.FloatPlug.staticTypeId() ) )
-		self.assert_( i.isInstanceOf( Gaffer.IntPlug.staticTypeId() ) )
+		self.assertTrue( f.isInstanceOf( Gaffer.FloatPlug.staticTypeId() ) )
+		self.assertFalse( f.isInstanceOf( Gaffer.IntPlug.staticTypeId() ) )
+		self.assertFalse( i.isInstanceOf( Gaffer.FloatPlug.staticTypeId() ) )
+		self.assertTrue( i.isInstanceOf( Gaffer.IntPlug.staticTypeId() ) )
 
 	def testAcceptsInput( self ) :
 
@@ -95,13 +95,13 @@ class NumericPlugTest( GafferTest.TestCase ) :
 		o = Gaffer.IntPlug( direction=Gaffer.Plug.Direction.Out )
 		s = Gaffer.StringPlug( direction=Gaffer.Plug.Direction.Out )
 
-		self.failUnless( i.acceptsInput( o ) )
-		self.failIf( i.acceptsInput( s ) )
+		self.assertTrue( i.acceptsInput( o ) )
+		self.assertFalse( i.acceptsInput( s ) )
 
 	def testAcceptsNoneInput( self ) :
 
 		p = Gaffer.IntPlug( "hello" )
-		self.failUnless( p.acceptsInput( None ) )
+		self.assertTrue( p.acceptsInput( None ) )
 
 	def testAppliesMinMaxInSetValue( self ) :
 
@@ -160,7 +160,7 @@ class NumericPlugTest( GafferTest.TestCase ) :
 		self.assertEqual( n2["op1"].getValue(), 1010 )
 
 		n2["op1"].setInput( n1["sum"] )
-		self.failUnless( n2["op1"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n2["op1"].getInput().isSame( n1["sum"] ) )
 		self.assertEqual( n2["op1"].getValue(), 0 )
 
 		n2["op1"].setInput( None )
@@ -179,7 +179,7 @@ class NumericPlugTest( GafferTest.TestCase ) :
 		n2["op1"].setInput( None )
 
 		self.assertEqual( len( set ), 1 )
-		self.failUnless( set[0][0].isSame( n2["op1"] ) )
+		self.assertTrue( set[0][0].isSame( n2["op1"] ) )
 
 	def testDefaultValue( self ) :
 
@@ -228,11 +228,6 @@ class NumericPlugTest( GafferTest.TestCase ) :
 
 		self.assertNotEqual( p1.hash(), p2.hash() )
 		self.assertEqual( p2.hash(), p3.hash() )
-
-	def testReadOnlySetValueRaises( self ) :
-
-		p = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.ReadOnly )
-		self.assertRaises( RuntimeError, p.setValue, 10 )
 
 	def testRepr( self ) :
 
@@ -286,12 +281,12 @@ class NumericPlugTest( GafferTest.TestCase ) :
 
 		self.assertFalse( s.undoAvailable() )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n"]["p"].setValue( 20 )
 
 		self.assertTrue( s.undoAvailable() )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n"]["p"].setValue( 30 )
 
 		self.assertTrue( s.undoAvailable() )
@@ -315,21 +310,21 @@ class NumericPlugTest( GafferTest.TestCase ) :
 
 		cs = GafferTest.CapturingSlot( s["n"].plugSetSignal() )
 
-		with Gaffer.UndoContext( s, mergeGroup="test" ) :
+		with Gaffer.UndoScope( s, mergeGroup="test" ) :
 			s["n"]["p"].setValue( 1 )
 
 		self.assertEqual( len( cs ), 1 )
 		self.assertEqual( s["n"]["p"].getValue(), 1 )
 		self.assertTrue( s.undoAvailable() )
 
-		with Gaffer.UndoContext( s, mergeGroup="test" ) :
+		with Gaffer.UndoScope( s, mergeGroup="test" ) :
 			s["n"]["p"].setValue( 2 )
 
 		self.assertEqual( len( cs ), 2 )
 		self.assertEqual( s["n"]["p"].getValue(), 2 )
 		self.assertTrue( s.undoAvailable() )
 
-		with Gaffer.UndoContext( s, mergeGroup="test2" ) :
+		with Gaffer.UndoScope( s, mergeGroup="test2" ) :
 			s["n"]["p"].setValue( 3 )
 
 		self.assertEqual( len( cs ), 3 )
@@ -382,14 +377,14 @@ class NumericPlugTest( GafferTest.TestCase ) :
 
 		self.assertFalse( s.undoAvailable() )
 
-		with Gaffer.UndoContext( s, mergeGroup="test" ) :
+		with Gaffer.UndoScope( s, mergeGroup="test" ) :
 			s["n"]["p1"].setValue( 20 )
 
 		self.assertTrue( s.undoAvailable() )
 		self.assertEqual( s["n"]["p1"].getValue(), 20 )
 		self.assertEqual( s["n"]["p2"].getValue(), 0 )
 
-		with Gaffer.UndoContext( s, mergeGroup="test" ) :
+		with Gaffer.UndoScope( s, mergeGroup="test" ) :
 			s["n"]["p2"].setValue( 30 )
 
 		self.assertTrue( s.undoAvailable() )
@@ -484,6 +479,53 @@ class NumericPlugTest( GafferTest.TestCase ) :
 
 		n["op1"].setValue( n["op1"].defaultValue() )
 		self.assertTrue( n["op1"].isSetToDefault() )
+
+	def testSerialiser( self ) :
+
+		p = Gaffer.IntPlug()
+		p.setValue( 10 )
+
+		s = Gaffer.Serialisation.acquireSerialiser( p )
+		# Behind the scenes the serialiser will actually be a
+		# ValuePlugSerialiser, but we haven't exposed that
+		# subclass to Python. Therefore we expect to get an
+		# instance of the base class here.
+		self.assertTrue( type( s ) is Gaffer.Serialisation.Serialiser )
+
+		# When we call a method of the serialiser, we should
+		# still be calling the most-derived override in C++.
+		ss = Gaffer.Serialisation( Gaffer.Node() )
+		self.assertIn( "setValue", s.postHierarchy( p, "x", ss ) )
+
+	def testRanges( self ) :
+
+		n = Gaffer.Node()
+		n["c1"] = Gaffer.Plug()
+		n["c2"] = Gaffer.Node()
+		n["c3"] = Gaffer.IntPlug()
+		n["c4"] = Gaffer.Plug()
+		n["c4"]["gc1"] = Gaffer.Plug()
+		n["c4"]["gc2"] = Gaffer.FloatPlug()
+
+		self.assertEqual(
+			list( Gaffer.IntPlug.Range( n ) ),
+			[ n["c3"] ]
+		)
+
+		self.assertEqual(
+			list( Gaffer.FloatPlug.Range( n ) ),
+			[]
+		)
+
+		self.assertEqual(
+			list( Gaffer.IntPlug.RecursiveRange( n ) ),
+			[ n["c3"] ]
+		)
+
+		self.assertEqual(
+			list( Gaffer.FloatPlug.RecursiveRange( n ) ),
+			[ n["c4"]["gc2"] ]
+		)
 
 if __name__ == "__main__":
 	unittest.main()

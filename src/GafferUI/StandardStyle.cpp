@@ -35,33 +35,487 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/tokenizer.hpp"
+#include "GafferUI/StandardStyle.h"
 
-#include "OpenEXR/ImathVecAlgo.h"
-
-#include "IECore/SearchPath.h"
-#include "IECore/Font.h"
-
-#include "IECoreGL/GL.h"
+#include "IECoreGL/Camera.h"
+#include "IECoreGL/CurvesPrimitive.h"
 #include "IECoreGL/Font.h"
 #include "IECoreGL/FontLoader.h"
-#include "IECoreGL/ShaderLoader.h"
-#include "IECoreGL/Shader.h"
-#include "IECoreGL/Camera.h"
-#include "IECoreGL/Selector.h"
+#include "IECoreGL/GL.h"
+#include "IECoreGL/Group.h"
 #include "IECoreGL/IECoreGL.h"
+#include "IECoreGL/MeshPrimitive.h"
+#include "IECoreGL/Selector.h"
+#include "IECoreGL/Shader.h"
+#include "IECoreGL/ShaderLoader.h"
+#include "IECoreGL/ShaderStateComponent.h"
+#include "IECoreGL/SpherePrimitive.h"
+#include "IECoreGL/TextureLoader.h"
+#include "IECoreGL/ToGLMeshConverter.h"
+#include "IECoreGL/TypedStateComponent.h"
 
-#include "GafferUI/StandardStyle.h"
+#include "IECoreScene/Font.h"
+#include "IECoreScene/MeshPrimitive.h"
+
+#include "OpenEXR/ImathVecAlgo.h"
+#include "OpenEXR/ImathMatrixAlgo.h"
+
+#include "boost/container/flat_map.hpp"
+#include "boost/tokenizer.hpp"
 
 using namespace GafferUI;
 using namespace IECore;
+using namespace IECoreScene;
 using namespace IECoreGL;
 using namespace Imath;
 using namespace std;
 
+//////////////////////////////////////////////////////////////////////////
+// Internal utilities
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+const float g_endPointSize = 2.0f;
+
+Imath::Color4f colorForAxes( Style::Axes axes )
+{
+	switch( axes )
+	{
+		case Style::X :
+			return Color4f( 0.73, 0.17, 0.17, 1.0f );
+		case Style::Y :
+			return Color4f( 0.2, 0.57, 0.2, 1.0f );
+		case Style::Z :
+			return Color4f( 0.2, 0.36, 0.74, 1.0f );
+		case Style::XY :
+			return ( colorForAxes( Style::X ) + colorForAxes( Style::Y ) ) * 0.5;
+		case Style::XZ :
+			return ( colorForAxes( Style::X ) + colorForAxes( Style::Z ) ) * 0.5;
+		case Style::YZ :
+			return ( colorForAxes( Style::Y ) + colorForAxes( Style::Z ) ) * 0.5;
+		default :
+			return Color4f( 0.8, 0.8, 0.8, 0.0f );
+	}
+}
+
+IECoreGL::GroupPtr line( const V3f &p0, const V3f &p1 )
+{
+	IntVectorDataPtr vertsPerCurve = new IntVectorData();
+	vertsPerCurve->writable().push_back( 2 );
+	IECoreGL::CurvesPrimitivePtr curves = new IECoreGL::CurvesPrimitive( CubicBasisf::linear(), false, vertsPerCurve );
+	V3fVectorDataPtr verts = new V3fVectorData();
+	verts->writable().push_back( p0 );
+	verts->writable().push_back( p1 );
+	curves->addPrimitiveVariable( "P", IECoreScene::PrimitiveVariable( IECoreScene::PrimitiveVariable::Vertex, verts ) );
+
+	IECoreGL::GroupPtr result = new IECoreGL::Group();
+	result->addChild( curves );
+	result->getState()->add( new IECoreGL::CurvesPrimitive::UseGLLines( true ) );
+	result->getState()->add( new IECoreGL::CurvesPrimitive::GLLineWidth( 2.0f ) );
+	result->getState()->add( new IECoreGL::LineSmoothingStateComponent( true ) );
+
+	return result;
+}
+
+IECoreGL::MeshPrimitivePtr cylinder( bool forSelection )
+{
+	static IECoreGL::MeshPrimitivePtr visualResult;
+	static IECoreGL::MeshPrimitivePtr selectionResult;
+
+	IECoreGL::MeshPrimitivePtr &result = forSelection ? selectionResult : visualResult;
+
+	if( result )
+	{
+		return result;
+	}
+
+	/// \todo Move this bit to IECore::MeshPrimitive::createCyclinder().
+	IECore::IntVectorDataPtr verticesPerFaceData = new IECore::IntVectorData;
+	vector<int> &verticesPerFace = verticesPerFaceData->writable();
+
+	IECore::IntVectorDataPtr vertexIdsData = new IECore::IntVectorData;
+	vector<int> &vertexIds = vertexIdsData->writable();
+
+	IECore::V3fVectorDataPtr pData = new IECore::V3fVectorData;
+	vector<V3f> &p = pData->writable();
+
+	const float height = 1.0f;
+	const float radius = forSelection ? 0.1f : 0.03f;
+
+	const int numDivisions = 30;
+	for( int i = 0; i < numDivisions; ++i )
+	{
+		const float angle = 2 * M_PI * (float)i/(float)(numDivisions-1);
+
+		p.push_back( V3f( radius * cos( angle ), 0, radius * sin( angle ) ) );
+		p.push_back( V3f( radius * cos( angle ), height, radius * sin( angle ) ) );
+
+		verticesPerFace.push_back( 4 );
+
+		vertexIds.push_back( i * 2 );
+		vertexIds.push_back( i * 2 + 1 );
+
+		const int ii = i == numDivisions - 1 ? 0 : i + 1;
+
+		vertexIds.push_back( ii * 2 + 1 );
+		vertexIds.push_back( ii * 2 );
+	}
+
+	IECoreScene::MeshPrimitivePtr mesh = new IECoreScene::MeshPrimitive( verticesPerFaceData, vertexIdsData, "linear", pData );
+	IECoreGL::ToGLMeshConverterPtr converter = new ToGLMeshConverter( mesh );
+	result = runTimeCast<IECoreGL::MeshPrimitive>( converter->convert() );
+
+	return result;
+}
+
+IECoreGL::MeshPrimitivePtr torus( bool forSelection )
+{
+	static IECoreGL::MeshPrimitivePtr visualResult;
+	static IECoreGL::MeshPrimitivePtr selectionResult;
+
+	IECoreGL::MeshPrimitivePtr &result = forSelection ? selectionResult : visualResult;
+
+	/// \todo Move this bit to IECore::MeshPrimitive::createTorus().
+	IECore::IntVectorDataPtr verticesPerFaceData = new IECore::IntVectorData;
+	vector<int> &verticesPerFace = verticesPerFaceData->writable();
+
+	IECore::IntVectorDataPtr vertexIdsData = new IECore::IntVectorData;
+	vector<int> &vertexIds = vertexIdsData->writable();
+
+	IECore::V3fVectorDataPtr pData = new IECore::V3fVectorData;
+	vector<V3f> &p = pData->writable();
+
+	const float radiusJ = forSelection ? 0.1 : 0.03;
+	const float radiusI = 1 + radiusJ;
+
+	const int numDivisionsI = 60;
+	const int numDivisionsJ = 15;
+	for( int i = 0; i < numDivisionsI; ++i )
+	{
+		const float iAngle = 2 * M_PI * (float)i/(float)(numDivisionsI-1);
+		const V3f v( cos( iAngle ), 0, sin( iAngle ) );
+		const V3f circleCenter = v * radiusI;
+
+		const int ii = i == numDivisionsI - 1 ? 0 : i + 1;
+
+		for( int j = 0; j < numDivisionsJ; ++j )
+		{
+			const float jAngle = 2 * M_PI * (float)j/(float)(numDivisionsJ-1);
+			p.push_back(
+				circleCenter + radiusJ * ( cos( jAngle ) * v + V3f( 0, sin( jAngle ), 0 ) )
+			);
+
+			const int jj = j == numDivisionsJ - 1 ? 0 : j + 1;
+
+			verticesPerFace.push_back( 4 );
+
+			vertexIds.push_back( i * numDivisionsJ + j );
+			vertexIds.push_back( i * numDivisionsJ + jj );
+			vertexIds.push_back( ii * numDivisionsJ + jj );
+			vertexIds.push_back( ii * numDivisionsJ + j );
+		}
+	}
+
+	IECoreScene::MeshPrimitivePtr mesh = new IECoreScene::MeshPrimitive( verticesPerFaceData, vertexIdsData, "linear", pData );
+	IECoreGL::ToGLMeshConverterPtr converter = new ToGLMeshConverter( mesh );
+	result = runTimeCast<IECoreGL::MeshPrimitive>( converter->convert() );
+
+	return result;
+}
+
+IECoreGL::MeshPrimitivePtr cone()
+{
+	static IECoreGL::MeshPrimitivePtr result;
+	if( result )
+	{
+		return result;
+	}
+
+	/// \todo Move this bit to IECore::MeshPrimitive::createCone().
+	IECore::IntVectorDataPtr verticesPerFaceData = new IECore::IntVectorData;
+	vector<int> &verticesPerFace = verticesPerFaceData->writable();
+
+	IECore::IntVectorDataPtr vertexIdsData = new IECore::IntVectorData;
+	vector<int> &vertexIds = vertexIdsData->writable();
+
+	IECore::V3fVectorDataPtr pData = new IECore::V3fVectorData;
+	vector<V3f> &p = pData->writable();
+
+	const float height = 1.5f;
+	const float radius = 0.5f;
+
+	p.push_back( V3f( 0, height, 0 ) );
+
+	const int numDivisions = 30;
+	for( int i = 0; i < numDivisions; ++i )
+	{
+		const float angle = 2 * M_PI * (float)i/(float)(numDivisions-1);
+		p.push_back( radius * V3f( cos( angle ), 0, sin( angle ) ) );
+		verticesPerFace.push_back( 3 );
+		vertexIds.push_back( 0 );
+		vertexIds.push_back( i + 1 );
+		vertexIds.push_back( i == numDivisions - 1 ? 1 : i + 2 );
+	}
+
+	IECoreScene::MeshPrimitivePtr mesh = new IECoreScene::MeshPrimitive( verticesPerFaceData, vertexIdsData, "linear", pData );
+	IECoreGL::ToGLMeshConverterPtr converter = new ToGLMeshConverter( mesh );
+	result = runTimeCast<IECoreGL::MeshPrimitive>( converter->convert() );
+
+	return result;
+}
+
+IECoreGL::MeshPrimitivePtr cube()
+{
+	static IECoreGL::MeshPrimitivePtr result;
+	if( result )
+	{
+		return result;
+	}
+
+	IECoreScene::MeshPrimitivePtr mesh = IECoreScene::MeshPrimitive::createBox(
+		Box3f( V3f( -1 ), V3f( 1 ) )
+	);
+
+	IECoreGL::ToGLMeshConverterPtr converter = new ToGLMeshConverter( mesh );
+	result = runTimeCast<IECoreGL::MeshPrimitive>( converter->convert() );
+
+	return result;
+}
+
+using HandleMap = boost::container::flat_map<Style::Axes, IECoreGL::GroupPtr>;
+
+IECoreGL::GroupPtr translateHandle( Style::Axes axes, bool forSelection )
+{
+	static HandleMap visualHandles;
+	static HandleMap selectionHandles;
+
+	HandleMap &handles = forSelection ? selectionHandles : visualHandles;
+
+	if( handles[axes] )
+	{
+		return handles[axes];
+	}
+
+	IECoreGL::GroupPtr group = new IECoreGL::Group;
+	group->getState()->add( new IECoreGL::Color( colorForAxes( axes ) ) );
+	group->getState()->add(
+		new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
+	);
+
+	if( axes == Style::X || axes == Style::Y || axes == Style::Z )
+	{
+		IECoreGL::GroupPtr coneGroup = new IECoreGL::Group;
+		coneGroup->addChild( cone() );
+		coneGroup->setTransform( M44f().scale( V3f( 0.25 ) ) * M44f().translate( V3f( 0, 1, 0 ) ) );
+
+		// Line ensures minimum width when very small on screen,
+		// like the corner gnomon in the SceneView.
+		group->addChild( line( V3f( 0 ), V3f( 0, 1, 0 ) ) );
+		// Cylinder provides a chunkier handle for picking when
+		// bigger on screen, like the TranslateHandle.
+		group->addChild( cylinder( forSelection ) );
+		group->addChild( coneGroup );
+
+		if( axes == Style::X )
+		{
+			group->setTransform( M44f().rotate( V3f( 0, 0, -M_PI / 2.0f ) ) );
+		}
+		else if( axes == Style::Z )
+		{
+			group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
+		}
+	}
+	else if( axes == Style::XY || axes == Style::XZ || axes == Style::YZ )
+	{
+		IECoreGL::GroupPtr cubeGroup = new IECoreGL::Group;
+		cubeGroup->setTransform( M44f().scale( V3f( 0.1, 0.1, 0.01 ) ) * M44f().translate( V3f( 0.5, 0.5, 0 ) ) );
+		cubeGroup->addChild( cube() );
+		group->addChild( cubeGroup );
+
+		if( axes == Style::XZ )
+		{
+			group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
+		}
+		else if( axes == Style::YZ )
+		{
+			group->setTransform( M44f().rotate( V3f( 0, -M_PI / 2.0f, 0 ) ) );
+		}
+	}
+	else if( axes == Style::XYZ )
+	{
+		IECoreGL::GroupPtr cubeGroup = new IECoreGL::Group;
+		cubeGroup->setTransform( M44f().scale( V3f( 0.1 ) ) );
+		cubeGroup->addChild( cube() );
+		group->addChild( cubeGroup );
+	}
+
+	handles[axes] = group;
+	return group;
+}
+
+IECoreGL::GroupPtr rotateHandle( Style::Axes axes, bool forSelection )
+{
+	static HandleMap visualHandles;
+	static HandleMap selectionHandles;
+
+	HandleMap &handles = forSelection ? selectionHandles : visualHandles;
+
+	if( handles[axes] )
+	{
+		return handles[axes];
+	}
+
+	IECoreGL::GroupPtr group = new IECoreGL::Group;
+	if( axes == Style::X || axes == Style::Y || axes == Style::Z )
+	{
+		group->addChild( torus( forSelection ) );
+
+		group->getState()->add( new IECoreGL::Color( colorForAxes( axes ) ) );
+		group->getState()->add(
+			new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
+		);
+
+		if( axes == Style::X )
+		{
+			group->setTransform( M44f().rotate( V3f( 0, 0, -M_PI / 2.0f ) ) );
+		}
+		else if( axes == Style::Z )
+		{
+			group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
+		}
+	}
+	else if( axes == Style::XYZ )
+	{
+		group->addChild( new IECoreGL::SpherePrimitive() );
+	}
+	else
+	{
+		throw Exception( "Unsupported axes" );
+	}
+
+	handles[axes] = group;
+	return group;
+}
+
+const IECoreGL::Group *rotateHandleXYZHighlight()
+{
+	static IECoreGL::GroupPtr group;
+	if( group )
+	{
+		return group.get();
+	}
+
+	group = new IECoreGL::Group();
+	group->addChild( new SpherePrimitive( 1.03f, 0.99 ) );
+	group->getState()->add(
+		new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
+	);
+
+	return group.get();
+}
+
+IECoreGL::GroupPtr scaleHandle( Style::Axes axes, bool forSelection )
+{
+	static HandleMap visualHandles;
+	static HandleMap selectionHandles;
+
+	HandleMap &handles = forSelection ? selectionHandles : visualHandles;
+
+	IECoreGL::GroupPtr group;
+
+	if( axes == Style::XY || axes == Style::XZ || axes == Style::YZ )
+	{
+		group = translateHandle( axes, forSelection );
+	}
+	else
+	{
+		IECoreGL::GroupPtr cubeGroup = new IECoreGL::Group;
+		cubeGroup->addChild( cube() );
+		cubeGroup->setTransform( M44f().scale( V3f( 0.1 ) ) * M44f().translate( V3f( 0, axes == Style::XYZ ? 0 : 1, 0 ) ) );
+
+		group = new IECoreGL::Group;
+
+		if( axes != Style::XYZ )
+		{
+			group->addChild( cylinder( forSelection ) );
+		}
+		group->addChild( cubeGroup );
+
+		group->getState()->add( new IECoreGL::Color( colorForAxes( axes ) ) );
+		group->getState()->add(
+			new IECoreGL::ShaderStateComponent( ShaderLoader::defaultShaderLoader(), TextureLoader::defaultTextureLoader(), "", "", IECoreGL::Shader::constantFragmentSource(), new CompoundObject )
+		);
+
+		if( axes == Style::X )
+		{
+			group->setTransform( M44f().rotate( V3f( 0, 0, -M_PI / 2.0f ) ) );
+		}
+		else if( axes == Style::Z )
+		{
+			group->setTransform( M44f().rotate( V3f( M_PI / 2.0f, 0, 0 ) ) );
+		}
+	}
+
+	handles[axes] = group;
+	return group;
+}
+
+IECoreGL::StatePtr disabledState()
+{
+	static IECoreGL::StatePtr s;
+	if( s )
+	{
+		return s;
+	}
+
+	s = new IECoreGL::State( /* complete = */ false );
+	s->add( new IECoreGL::Color( Color4f( 0.4, 0.4, 0.4, 1.0 ) ), /* override = */ true );
+
+	return s;
+}
+
+// - p is connection destination (guaranteed to be contained within the frame)
+// - v is the vector between source and destination
+V3f auxiliaryConnectionArrowPosition( const Box2f &dstNodeFrame, const V3f &p, const V3f &v )
+{
+	const float offset = 1.0;
+
+	float xT = limits<float>::max();
+	if( v.x > 0 )
+	{
+		xT = ( offset + dstNodeFrame.max.x - p.x ) / v.x;
+	}
+	else if( v.x < 0 )
+	{
+		xT = ( offset + p.x - dstNodeFrame.min.x ) / -v.x;
+	}
+
+	float yT = limits<float>::max();
+	if( v.y > 0 )
+	{
+		yT = ( offset + dstNodeFrame.max.y - p.y ) / v.y;
+	}
+	else if( v.y < 0 )
+	{
+		yT = ( offset + p.y - dstNodeFrame.min.y ) / -v.y;
+	}
+
+	const float t = min( min( xT, yT ), 1.0f );
+	return p + v * t;
+}
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// StandardStyle
+//////////////////////////////////////////////////////////////////////////
+
 IE_CORE_DEFINERUNTIMETYPED( StandardStyle );
 
 StandardStyle::StandardStyle()
+	:	m_highlightState( new IECoreGL::State( /* complete = */ false ) )
 {
 	setFont( LabelText, FontLoader::defaultFontLoader()->load( "VeraBd.ttf" ) );
 	setFontScale( LabelText, 1.0f );
@@ -78,6 +532,8 @@ StandardStyle::StandardStyle()
 	setColor( ForegroundColor, Color3f( 0.9 ) );
 	setColor( HighlightColor, Color3f( 0.466, 0.612, 0.741 ) );
 	setColor( ConnectionColor, Color3f( 0.125, 0.125, 0.125 ) );
+	setColor( AuxiliaryConnectionColor, Color3f( 0.3, 0.45, 0.3 ) );
+	setColor( AnimationCurveColor, Color3f( 1.0, 1.0, 1.0 ) );
 }
 
 StandardStyle::~StandardStyle()
@@ -125,7 +581,7 @@ Imath::Box3f StandardStyle::textBound( TextType textType, const std::string &tex
 	);
 }
 
-void StandardStyle::renderText( TextType textType, const std::string &text, State state ) const
+void StandardStyle::renderText( TextType textType, const std::string &text, State state, const Imath::Color4f *userColor ) const
 {
 	glEnable( GL_TEXTURE_2D );
 	glActiveTexture( GL_TEXTURE0 );
@@ -134,7 +590,7 @@ void StandardStyle::renderText( TextType textType, const std::string &text, Stat
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -1.25 );
 
-	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_isCurveParameter, 0 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 0 );
 	glUniform1i( g_textureParameter, 0 );
@@ -144,7 +600,14 @@ void StandardStyle::renderText( TextType textType, const std::string &text, Stat
 	/// automatically linearised before arriving in the shader.
 	glUniform1i( g_textureTypeParameter, 2 );
 
-	glColor( m_colors[ForegroundColor] );
+	if( userColor )
+	{
+		glColor( *userColor );
+	}
+	else
+	{
+		glColor( colorForState( ForegroundColor, state ) );
+	}
 
 	glPushMatrix();
 
@@ -157,7 +620,7 @@ void StandardStyle::renderText( TextType textType, const std::string &text, Stat
 void StandardStyle::renderWrappedText( TextType textType, const std::string &text, const Imath::Box2f &bound, State state ) const
 {
 	IECoreGL::Font *glFont = m_fonts[textType].get();
-	const IECore::Font *coreFont = glFont->coreFont();
+	const IECoreScene::Font *coreFont = glFont->coreFont();
 
 	const float spaceWidth = coreFont->bound().size().x * 0.25;
 	const float descent = coreFont->bound().min.y;
@@ -224,7 +687,7 @@ void StandardStyle::renderNodeFrame( const Imath::Box2f &contents, float borderW
 	b.max += bw;
 
 	V2f cornerSizes = bw / b.size();
-	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_isCurveParameter, 0 );
 	glUniform1i( g_borderParameter, 1 );
 	glUniform2f( g_borderRadiusParameter, cornerSizes.x, cornerSizes.y );
 	glUniform1f( g_borderWidthParameter, 0.15f / borderWidth );
@@ -250,7 +713,7 @@ void StandardStyle::renderNodeFrame( const Imath::Box2f &contents, float borderW
 
 void StandardStyle::renderNodule( float radius, State state, const Imath::Color3f *userColor ) const
 {
-	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_isCurveParameter, 0 );
 	glUniform1i( g_borderParameter, 1 );
 	glUniform2f( g_borderRadiusParameter, 0.5f, 0.5f );
 	glUniform1f( g_borderWidthParameter, 0.2f );
@@ -275,27 +738,114 @@ void StandardStyle::renderNodule( float radius, State state, const Imath::Color3
 
 void StandardStyle::renderConnection( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent, State state, const Imath::Color3f *userColor ) const
 {
-	glUniform1i( g_bezierParameter, 1 );
+	glUniform1f( g_lineWidthParameter, 0.5 );
+	glColor( colorForState( ConnectionColor, state, userColor ) );
+
+	renderConnectionInternal( srcPosition, srcTangent, dstPosition, dstTangent );
+}
+
+void StandardStyle::renderAuxiliaryConnection( const Imath::Box2f &srcNodeFrame, const Imath::Box2f &dstNodeFrame, State state ) const
+{
+	glUniform1i( g_isCurveParameter, 1 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 1 );
 	glUniform1i( g_textureTypeParameter, 0 );
+	glUniform1f( g_lineWidthParameter, 0.2 );
 
-	glColor( colorForState( ConnectionColor, state, userColor ) );
+	glColor( colorForState( AuxiliaryConnectionColor, state ) );
 
-	V3f d = dstPosition - srcPosition;
+	// Get basic properties of a line between the src and dst nodes
 
-	glUniform3fv( g_v0Parameter, 1, srcPosition.getValue() );
-	glUniform3fv( g_v1Parameter, 1, ( srcPosition + srcTangent * d.dot( srcTangent ) * 0.25f ).getValue() );
-	glUniform3fv( g_v2Parameter, 1, ( dstPosition - dstTangent * d.dot( dstTangent ) * 0.25f ).getValue() );
-	glUniform3fv( g_v3Parameter, 1, dstPosition.getValue() );
+	V3f p0( srcNodeFrame.center().x, srcNodeFrame.center().y, 0 );
+	V3f p1( dstNodeFrame.center().x, dstNodeFrame.center().y, 0 );
 
+	const V3f direction = ( p1 - p0 ).normalized();
+	const V3f normal( direction.y, -direction.x, 0 );
+
+	// Offset the line slightly to one side. This separates connections
+	// going in opposite directions between the same two nodes.
+
+	p0 += normal * 0.3f;
+	p1 += normal * 0.3f;
+
+	// Draw the line
+
+	glUniform3fv( g_v0Parameter, 1, ( p0 ).getValue() );
+	glUniform3fv( g_v1Parameter, 1, ( p1 ).getValue() );
+	glUniform3fv( g_t0Parameter, 1, ( direction ).getValue() );
+	glUniform3fv( g_t1Parameter, 1, ( -direction ).getValue() );
 
 	glCallList( connectionDisplayList() );
+
+	// Draw a little arrow to indicate connection direction.
+
+	const V3f tip = auxiliaryConnectionArrowPosition( dstNodeFrame, p1, p0 - p1 );
+
+	const V3f leftDir = -direction + normal * 0.5f;
+	const V3f rightDir = -direction - normal * 0.5f;
+
+	glUniform3fv( g_v0Parameter, 1, ( tip ).getValue() );
+	glUniform3fv( g_v1Parameter, 1, ( tip + leftDir * 0.75 ).getValue() );
+	glUniform3fv( g_t0Parameter, 1, ( leftDir ).getValue() );
+	glUniform3fv( g_t1Parameter, 1, ( -leftDir ).getValue() );
+
+	glCallList( connectionDisplayList() );
+
+	glUniform3fv( g_v1Parameter, 1, ( tip + rightDir * 0.75 ).getValue() );
+	glUniform3fv( g_t0Parameter, 1, ( rightDir ).getValue() );
+	glUniform3fv( g_t1Parameter, 1, ( -rightDir ).getValue() );
+
+	glCallList( connectionDisplayList() );
+
+}
+
+void StandardStyle::renderAuxiliaryConnection( const Imath::V2f &srcPosition, const Imath::V2f &srcTangent, const Imath::V2f &dstPosition, const Imath::V2f &dstTangent, State state ) const
+{
+	glUniform1f( g_lineWidthParameter, 0.2 );
+	glColor( colorForState( AuxiliaryConnectionColor, state ) );
+
+	const V3f p0( srcPosition.x, srcPosition.y, 0 );
+	const V3f p1( dstPosition.x, dstPosition.y, 0 );
+	const V3f t0( srcTangent.x, srcTangent.y, 0 );
+	const V3f t1( dstTangent.x, dstTangent.y, 0 );
+
+	renderConnectionInternal( p0, t0, p1, t1 );
+}
+
+Imath::V3f StandardStyle::closestPointOnConnection( const Imath::V3f &p, const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent ) const
+{
+	V3f dir = ( dstPosition - srcPosition ).normalized();
+
+	V3f offsetCenter0 = srcPosition + ( srcTangent != V3f( 0 ) ? srcTangent :  dir ) * g_endPointSize;
+	V3f offsetCenter1 = dstPosition + ( dstTangent != V3f( 0 ) ? dstTangent :  -dir ) * g_endPointSize;
+
+	float straightSegmentLength = ( offsetCenter0 - offsetCenter1 ).length();
+
+	if( straightSegmentLength < 2.0f * g_endPointSize )
+	{
+		// The curve is short enough that there is no straight segment, and the rendering code will
+		// have to do something a bit fancier to compute the actual curve radius, but inserting dots into
+		// exceedingly short curves isn't that common, lets just do a simple and fairly reasonable thing,
+		// and take the center point.
+		return 0.5f * ( dstPosition + srcPosition );
+	}
+	else
+	{
+		V3f straightSegmentCenter = 0.5f * ( offsetCenter0 + offsetCenter1 );
+		V3f straightSegmentDir = ( offsetCenter0 - offsetCenter1 ).normalized();
+
+		float alongSegment = ( p - straightSegmentCenter ).dot( straightSegmentDir );
+		float clampDist = straightSegmentLength * 0.5f - g_endPointSize;
+		alongSegment = std::max( -clampDist, std::min( clampDist, alongSegment ) );
+
+		return straightSegmentCenter + alongSegment * straightSegmentDir;
+	}
+
 }
 
 void StandardStyle::renderSolidRectangle( const Imath::Box2f &box ) const
 {
-	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_isCurveParameter, 0 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 0 );
 	glUniform1i( g_textureTypeParameter, 0 );
@@ -312,7 +862,7 @@ void StandardStyle::renderSolidRectangle( const Imath::Box2f &box ) const
 
 void StandardStyle::renderRectangle( const Imath::Box2f &box ) const
 {
-	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_isCurveParameter, 0 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 0 );
 	glUniform1i( g_textureTypeParameter, 0 );
@@ -325,6 +875,39 @@ void StandardStyle::renderRectangle( const Imath::Box2f &box ) const
 		glVertex2f( box.max.x, box.min.y );
 
 	glEnd();
+}
+
+void StandardStyle::renderAnimationCurve( const Imath::V2f &start, const Imath::V2f &end, const Imath::V2f &startTangent, const Imath::V2f &endTangent, State state, const Imath::Color3f *userColor ) const
+{
+	glUniform1i( g_isCurveParameter, 1 );
+	glUniform1i( g_borderParameter, 0 );
+	glUniform1f( g_edgeAntiAliasingParameter, 1 );
+	glUniform1i( g_textureTypeParameter, 0 );
+	glUniform1f( g_lineWidthParameter, 3.0 );
+
+	glColor( colorForState( AnimationCurveColor, state, userColor ) );
+
+	const Imath::V3f start3 = Imath::V3f( start.x, start.y, 0 );
+	const Imath::V3f end3 = Imath::V3f( end.x, end.y, 0 );
+	const Imath::V3f startTangent3 = Imath::V3f( startTangent.x, startTangent.y, 0 );
+	const Imath::V3f endTangent3 = Imath::V3f( endTangent.x, endTangent.y, 0 );
+
+	const V3f dir = ( end3 - start3 ).normalized();
+
+	glUniform3fv( g_v0Parameter, 1, start3.getValue() );
+	glUniform3fv( g_v1Parameter, 1, end3.getValue() );
+	glUniform3fv( g_t0Parameter, 1, ( startTangent3 != V3f( 0 ) ? startTangent3 :  dir ).getValue() );
+	glUniform3fv( g_t1Parameter, 1, ( endTangent3 != V3f( 0 ) ? endTangent3 : -dir ).getValue() );
+
+	glUniform1f( g_endPointSizeParameter, g_endPointSize );
+
+	glCallList( connectionDisplayList() );
+}
+
+void StandardStyle::renderAnimationKey( const Imath::V2f &position, State state, float size, const Imath::Color3f *userColor ) const
+{
+	glColor( colorForState( AnimationCurveColor, state, userColor ) );
+	renderSolidRectangle( Box2f( position - V2f( size ), position + V2f( size ) ) );
 }
 
 void StandardStyle::renderBackdrop( const Imath::Box2f &box, State state, const Imath::Color3f *userColor ) const
@@ -345,7 +928,7 @@ void StandardStyle::renderSelectionBox( const Imath::Box2f &box ) const
 	float cornerRadius = min( 5.0f, min( boxSize.x, boxSize.y ) / 2.0f );
 
 	V2f cornerSizes = V2f( cornerRadius ) / boxSize;
-	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_isCurveParameter, 0 );
 	glUniform1i( g_borderParameter, 1 );
 	glUniform2f( g_borderRadiusParameter, cornerSizes.x, cornerSizes.y );
 	glUniform1i( g_edgeAntiAliasingParameter, 0 );
@@ -379,7 +962,7 @@ void StandardStyle::renderHorizontalRule( const Imath::V2f &center, float length
 
 	glColor( state == HighlightedState ? m_colors[HighlightColor] : m_colors[ForegroundColor] );
 
-	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_isCurveParameter, 0 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 0 );
 	glUniform1i( g_textureTypeParameter, 0 );
@@ -393,54 +976,50 @@ void StandardStyle::renderHorizontalRule( const Imath::V2f &center, float length
 
 }
 
-void StandardStyle::renderTranslateHandle( int axis, State state ) const
+void StandardStyle::renderTranslateHandle( Axes axes, State state ) const
 {
-	if( axis < 0 || axis > 2 )
+	IECoreGL::State::bindBaseState();
+	IECoreGL::State *glState = const_cast<IECoreGL::State *>( IECoreGL::State::defaultState() );
+	IECoreGL::State::ScopedBinding highlight( *m_highlightState, *glState, state == HighlightedState );
+	IECoreGL::State::ScopedBinding disabled( *disabledState(), *glState, state == DisabledState );
+	const bool forSelection = IECoreGL::Selector::currentSelector() != nullptr;
+	translateHandle( axes, forSelection )->render( glState );
+}
+
+void StandardStyle::renderRotateHandle( Axes axes, State state, const Imath::V3f &highlightVector ) const
+{
+	IECoreGL::State::bindBaseState();
+	IECoreGL::State *glState = const_cast<IECoreGL::State *>( IECoreGL::State::defaultState() );
+	IECoreGL::State::ScopedBinding highlight( *m_highlightState, *glState, state == HighlightedState );
+	IECoreGL::State::ScopedBinding disabled( *disabledState(), *glState, state == DisabledState );
+
+	const bool forSelection = IECoreGL::Selector::currentSelector() != nullptr;
+	if( !forSelection && axes == XYZ )
 	{
-		throw Exception( "Invalid axis" );
+		// XYZ sphere holds out other handles, but does not draw.
+		glColorMask( false, false, false, false );
 	}
+	rotateHandle( axes, forSelection )->render( glState );
+	glColorMask( true, true, true, true );
 
-	V3f v( 0.0f );
-	v[axis] = 1.0f;
-
-	Color3f c( 0.0f );
-	if( state == HighlightedState )
+	if( state == HighlightedState && axes == XYZ )
 	{
-		c = getColor( HighlightColor );
+		glPushMatrix();
+		const M44f m = rotationMatrix( V3f( 0, 0, 1 ), highlightVector );
+		glMultMatrixf( m.getValue() );
+		rotateHandleXYZHighlight()->render( glState );
+		glPopMatrix();
 	}
-	else
-	{
-		switch( axis )
-		{
-			case 0 :
-				c = Color3f( 0.73, 0.17, 0.17 );
-				break;
-			case 1 :
-				c = Color3f( 0.2, 0.57, 0.2 );
-				break;
-			default :
-				c = Color3f( 0.2, 0.36, 0.74 );
-		}
-	}
+}
 
-	glUniform1i( g_bezierParameter, 0 );
-	glUniform1i( g_borderParameter, 0 );
-	glUniform1i( g_edgeAntiAliasingParameter, 0 );
-	glUniform1i( g_textureTypeParameter, 0 );
-
-	PushAttrib pushAttrib( GL_ENABLE_BIT | GL_CURRENT_BIT | GL_LINE_BIT );
-
-	glEnable( GL_LINE_SMOOTH );
-	glLineWidth( 2 );
-	glColor( c );
-
-	glBegin( GL_LINES );
-
-		glVertex( V3f( 0 ) );
-		glVertex( v );
-
-	glEnd();
-
+void StandardStyle::renderScaleHandle( Axes axes, State state ) const
+{
+	IECoreGL::State::bindBaseState();
+	IECoreGL::State *glState = const_cast<IECoreGL::State *>( IECoreGL::State::defaultState() );
+	IECoreGL::State::ScopedBinding highlight( *m_highlightState, *glState, state == HighlightedState );
+	IECoreGL::State::ScopedBinding disabled( *disabledState(), *glState, state == DisabledState );
+	const bool forSelection = IECoreGL::Selector::currentSelector() != nullptr;
+	scaleHandle( axes, forSelection )->render( glState );
 }
 
 void StandardStyle::renderImage( const Imath::Box2f &box, const IECoreGL::Texture *texture ) const
@@ -455,7 +1034,7 @@ void StandardStyle::renderImage( const Imath::Box2f &box, const IECoreGL::Textur
 	glActiveTexture( GL_TEXTURE0 );
 	texture->bind();
 
-	glUniform1i( g_bezierParameter, 0 );
+	glUniform1i( g_isCurveParameter, 0 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 0 );
 	glUniform1i( g_textureParameter, 0 );
@@ -479,21 +1058,30 @@ void StandardStyle::renderImage( const Imath::Box2f &box, const IECoreGL::Textur
 	glPopAttrib();
 }
 
-void StandardStyle::renderLine( const IECore::LineSegment3f &line ) const
+
+void StandardStyle::renderLine( const IECore::LineSegment3f &line, float width, const Imath::Color4f *userColor ) const
 {
-	glUniform1i( g_bezierParameter, 1 );
+	glUniform1i( g_isCurveParameter, 1 );
 	glUniform1i( g_borderParameter, 0 );
 	glUniform1i( g_edgeAntiAliasingParameter, 1 );
 	glUniform1i( g_textureTypeParameter, 0 );
+	glUniform1f( g_lineWidthParameter, width );
 
-	glColor( getColor( BackgroundColor ) );
+	if( userColor )
+	{
+		glColor( *userColor );
+	}
+	else
+	{
+		glColor( getColor( BackgroundColor ) );
+	}
 
-	V3f d = line.direction() / 3.0f;
+	V3f d = line.normalizedDirection();
 
 	glUniform3fv( g_v0Parameter, 1, line.p0.getValue() );
-	glUniform3fv( g_v1Parameter, 1, ( line.p0 + d ).getValue() );
-	glUniform3fv( g_v2Parameter, 1, ( line.p1 - d ).getValue() );
-	glUniform3fv( g_v3Parameter, 1, line.p1.getValue() );
+	glUniform3fv( g_v1Parameter, 1, line.p1.getValue() );
+	glUniform3fv( g_t0Parameter, 1, ( d ).getValue() );
+	glUniform3fv( g_t1Parameter, 1, ( -d ).getValue() );
 
 	glCallList( connectionDisplayList() );
 }
@@ -506,6 +1094,11 @@ void StandardStyle::setColor( Color c, Imath::Color3f v )
 	}
 
 	m_colors[c] = v;
+	if( c == HighlightColor )
+	{
+		m_highlightState->add( new IECoreGL::Color( Color4f( v[0], v[1], v[2], 1.0f ) ), /* override = */ true );
+	}
+
 	changedSignal()( this );
 }
 
@@ -542,6 +1135,40 @@ void StandardStyle::setFontScale( TextType textType, float scale )
 float StandardStyle::getFontScale( TextType textType ) const
 {
 	return m_fontScales[textType];
+}
+
+void StandardStyle::renderConnectionInternal( const Imath::V3f &srcPosition, const Imath::V3f &srcTangent, const Imath::V3f &dstPosition, const Imath::V3f &dstTangent ) const
+{
+	glUniform1i( g_isCurveParameter, 1 );
+	glUniform1i( g_borderParameter, 0 );
+	glUniform1i( g_edgeAntiAliasingParameter, 1 );
+	glUniform1i( g_textureTypeParameter, 0 );
+
+	// To guarantee straight curve sections we add an offset when computing
+	// tangents. This is done because the effective end point is slightly shifted
+	// due to how we draw curves at where they hit a node.
+	V3f adjustedSrcPosition( srcPosition );
+	if( dstTangent == V3f( 0 ) && srcTangent != V3f( 0 ) )
+	{
+		adjustedSrcPosition += srcTangent * g_endPointSize;
+	}
+
+	V3f adjustedDstPosition( dstPosition );
+	if( srcTangent == V3f( 0 ) && dstTangent != V3f( 0 ) )
+	{
+		adjustedDstPosition += dstTangent * g_endPointSize;
+	}
+
+	V3f dir = ( adjustedDstPosition - adjustedSrcPosition ).normalized();
+
+	glUniform3fv( g_v0Parameter, 1, srcPosition.getValue() );
+	glUniform3fv( g_v1Parameter, 1, dstPosition.getValue() );
+	glUniform3fv( g_t0Parameter, 1, ( srcTangent != V3f( 0 ) ? srcTangent :  dir ).getValue() );
+	glUniform3fv( g_t1Parameter, 1, ( dstTangent != V3f( 0 ) ? dstTangent : -dir ).getValue() );
+
+	glUniform1f( g_endPointSizeParameter, g_endPointSize );
+
+	glCallList( connectionDisplayList() );
 }
 
 unsigned int StandardStyle::connectionDisplayList()
@@ -592,44 +1219,56 @@ Imath::Color3f StandardStyle::colorForState( Color c, State s, const Imath::Colo
 
 static const std::string &vertexSource()
 {
+	// When isCurve is set, this renders a curve defined by start and end points, and start and end tangents.
+	// See contrib/dd/notes/noodleShapes.svg for explanation.
 	static const std::string g_vertexSource =
 
-		"uniform bool bezier;"
+		"uniform bool isCurve;"
 		"uniform vec3 v0;"
 		"uniform vec3 v1;"
-		"uniform vec3 v2;"
-		"uniform vec3 v3;"
+		"uniform vec3 t0;"
+		"uniform vec3 t1;"
+		"uniform float endPointSize;"
+		"uniform float lineWidth;"
 
 		"void main()"
 		"{"
-		"	if( bezier )"
+		"	if( isCurve )"
 		"	{"
-		"		mat4 basis = mat4("
-		"			-1,  3, -3,  1,"
-		"			 3, -6,  3,  0,"
-		"			-3,  3,  0,  0,"
-		"			 1,  0,  0,  0"
-		"		);"
+				// Compute the largest possible end point size that doesn't create overlapping endPointCircles
+		"		float a = dot( t0 - t1, t0 - t1 ) - 4.0;"
+		"		float b = 2.0 *  dot( v0 - v1, t0 - t1 );"
+		"		float c = dot( v0 - v1, v0 - v1 );"
+		"		float maxEndPointSize = abs( a ) < 0.0001 ? abs( c / b ) : ( -b - sqrt( b * b - 4.0 * a * c ) ) / ( 2.0 * a );"
+				// If the end point size would create overlapping circles, clamp it
+		"		float effectiveEndPointSize = min( endPointSize, maxEndPointSize );"
 
-		"		vec4 t = vec4("
-		"			gl_MultiTexCoord0.y * gl_MultiTexCoord0.y * gl_MultiTexCoord0.y,"
-		"			gl_MultiTexCoord0.y * gl_MultiTexCoord0.y,"
-		"			gl_MultiTexCoord0.y,"
-		"			1.0"
-		"		);"
+		"		vec3 offsetCenter0 = v0 + effectiveEndPointSize * t0;"
+		"		vec3 offsetCenter1 = v1 + effectiveEndPointSize * t1;"
+		"		vec3 straight = normalize( offsetCenter0 - offsetCenter1 );"
 
-		"		vec4 tDeriv = vec4( t[1] * 3.0, t[2] * 2.0, 1.0, 0.0 );"
-		"		vec4 w = basis * t;"
-		"		vec4 wDeriv = basis * tDeriv;"
-
-		"		vec3 p = w.x * v0 + w.y * v1 + w.z * v2 + w.w * v3;"
-		"		vec3 vTangent = wDeriv.x * v0 + wDeriv.y * v1 + wDeriv.z * v2 + wDeriv.w * v3;"
+				// The remainder of the math doesn't need to be done for both ends of the curve,
+				// only the end we're on.
+		"		vec3 endPoint = gl_MultiTexCoord0.y > 0.5 ? v1 : v0;"
+		"		vec3 endTangent = gl_MultiTexCoord0.y > 0.5 ? t1 : t0;"
+		"		vec3 straightDir = gl_MultiTexCoord0.y > 0.5 ? straight : -straight;"
+		"		float t = min( gl_MultiTexCoord0.y, 1.0 - gl_MultiTexCoord0.y ) * 2.0;"
 
 		"		vec4 camZ = gl_ModelViewMatrixInverse * vec4( 0.0, 0.0, -1.0, 0.0 );"
 
-		"		vec3 uTangent = normalize( cross( camZ.xyz, vTangent ) );"
+		"		vec3 endTangentPerp = normalize( cross( camZ.xyz, endTangent ) );"
+		"		float cosAngle = dot( endTangent, straightDir );"
+		"		float angle = acos( cosAngle );"
 
-		"		p += 0.5 * uTangent * ( gl_MultiTexCoord0.x - 0.5 );"
+				// Calculate the radius of a circle defined by the endPoint / endTangent and the location
+				// and tangent of the line between the offsetCenters
+		"		float radius = effectiveEndPointSize * ( 1.0 + cosAngle ) / sqrt( 1.0 - cosAngle * cosAngle );"
+		"		float bendDir = sign( dot( endTangentPerp, straightDir ) );"
+
+		"		vec3 p = abs(cosAngle) > 0.9999 ? endPoint + 2.0 * t * effectiveEndPointSize * endTangent : endPoint + radius * ( ( 1.0 - cos( angle * t ) ) * bendDir * endTangentPerp + sin( angle * t ) * endTangent );"
+		"		vec3 uTangent = ( gl_MultiTexCoord0.y > 0.5 ? 1.0 : -1.0 ) * ( abs(cosAngle) > 0.9999 ? -endTangentPerp : bendDir * normalize( p - ( endPoint + radius * bendDir * endTangentPerp) ) );"
+
+		"		p += lineWidth * uTangent * ( gl_MultiTexCoord0.x - 0.5 );"
 
 		"		gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * vec4( p, 1 );"
 		"	}"
@@ -698,6 +1337,11 @@ static const std::string &fragmentSource()
 		"		OUTCOLOR.a *= ieFilteredPulse( 0.2, 0.8, gl_TexCoord[0].x );"
 		"	}"
 
+		"	if( OUTCOLOR.a == 0.0 )"
+		"	{"
+		"		discard;"
+		"	}"
+
 		/// \todo Deal with all colourspace nonsense outside of the shader. Ideally the shader would accept only linear"
 		/// textures and output only linear data."
 
@@ -708,7 +1352,7 @@ static const std::string &fragmentSource()
 		"	}"
 		"	else if( textureType==2 )"
 		"	{"
-		"		OUTCOLOR = vec4( OUTCOLOR.rgb, texture2D( texture, gl_TexCoord[0].xy ).a );"
+		"		OUTCOLOR = vec4( OUTCOLOR.rgb, OUTCOLOR.a * texture2D( texture, gl_TexCoord[0].xy ).a );"
 		"	}\n"
 
 		"#if __VERSION__ >= 330\n"
@@ -733,16 +1377,18 @@ int StandardStyle::g_borderWidthParameter;
 int StandardStyle::g_edgeAntiAliasingParameter;
 int StandardStyle::g_textureParameter;
 int StandardStyle::g_textureTypeParameter;
-int StandardStyle::g_bezierParameter;
+int StandardStyle::g_isCurveParameter;
+int StandardStyle::g_endPointSizeParameter;
 int StandardStyle::g_v0Parameter;
 int StandardStyle::g_v1Parameter;
-int StandardStyle::g_v2Parameter;
-int StandardStyle::g_v3Parameter;
+int StandardStyle::g_t0Parameter;
+int StandardStyle::g_t1Parameter;
+int StandardStyle::g_lineWidthParameter;
 
 IECoreGL::Shader *StandardStyle::shader()
 {
 
-	static ShaderPtr g_shader = 0;
+	static ShaderPtr g_shader = nullptr;
 
 	if( !g_shader )
 	{
@@ -753,11 +1399,13 @@ IECoreGL::Shader *StandardStyle::shader()
 		g_edgeAntiAliasingParameter = g_shader->uniformParameter( "edgeAntiAliasing" )->location;
 		g_textureParameter = g_shader->uniformParameter( "texture" )->location;
 		g_textureTypeParameter = g_shader->uniformParameter( "textureType" )->location;
-		g_bezierParameter = g_shader->uniformParameter( "bezier" )->location;
+		g_isCurveParameter = g_shader->uniformParameter( "isCurve" )->location;
+		g_endPointSizeParameter = g_shader->uniformParameter( "endPointSize" )->location;
 		g_v0Parameter = g_shader->uniformParameter( "v0" )->location;
 		g_v1Parameter = g_shader->uniformParameter( "v1" )->location;
-		g_v2Parameter = g_shader->uniformParameter( "v2" )->location;
-		g_v3Parameter = g_shader->uniformParameter( "v3" )->location;
+		g_t0Parameter = g_shader->uniformParameter( "t0" )->location;
+		g_t1Parameter = g_shader->uniformParameter( "t1" )->location;
+		g_lineWidthParameter = g_shader->uniformParameter( "lineWidth" )->location;
 	}
 
 	return g_shader.get();

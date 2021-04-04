@@ -37,9 +37,9 @@
 #ifndef GAFFERBINDINGS_PATHBINDING_INL
 #define GAFFERBINDINGS_PATHBINDING_INL
 
-#include "Gaffer/Path.h"
-
 #include "GafferBindings/DataBinding.h"
+
+#include "Gaffer/Path.h"
 
 namespace GafferBindings
 {
@@ -50,12 +50,14 @@ namespace Detail
 template<typename T>
 bool isValid( const T &p )
 {
+	IECorePython::ScopedGILRelease gilRelease;
 	return p.T::isValid();
 }
 
 template<typename T>
 bool isLeaf( const T &p )
 {
+	IECorePython::ScopedGILRelease gilRelease;
 	return p.T::isLeaf();
 }
 
@@ -63,7 +65,11 @@ template<typename T>
 boost::python::list propertyNames( const T &p )
 {
 	std::vector<IECore::InternedString> n;
-	p.T::propertyNames( n );
+	{
+		IECorePython::ScopedGILRelease gilRelease;
+		p.T::propertyNames( n );
+	}
+
 	boost::python::list result;
 	for( std::vector<IECore::InternedString>::const_iterator it = n.begin(), eIt = n.end(); it != eIt; ++it )
 	{
@@ -72,12 +78,17 @@ boost::python::list propertyNames( const T &p )
 	return result;
 }
 
-boost::python::object propertyToPython( IECore::ConstRunTimeTypedPtr a );
+GAFFERBINDINGS_API boost::python::object propertyToPython( IECore::ConstRunTimeTypedPtr a );
 
 template<typename T>
 boost::python::object property( const T &p, const IECore::InternedString &name )
 {
-	return propertyToPython( p.T::property( name ) );
+	IECore::ConstRunTimeTypedPtr property;
+	{
+		IECorePython::ScopedGILRelease gilRelease;
+		property = p.T::property( name );
+	}
+	return propertyToPython( property );
 }
 
 template<typename T>
@@ -143,7 +154,7 @@ boost::python::object info( boost::python::object o )
 		result[it->c_str()] = propertyToPython( a );
 	}
 
-	return result;
+	return std::move( result );
 }
 
 template<typename T>

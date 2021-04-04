@@ -38,46 +38,49 @@
 #ifndef GAFFERSCENE_FILTEREDSCENEPROCESSOR_H
 #define GAFFERSCENE_FILTEREDSCENEPROCESSOR_H
 
-#include "GafferScene/SceneProcessor.h"
 #include "GafferScene/Filter.h"
 #include "GafferScene/FilterPlug.h"
+#include "GafferScene/SceneProcessor.h"
+
+#include <limits>
 
 namespace GafferScene
 {
 
 /// The FilteredSceneProcessor provides a base class for limiting the processing of scenes
 /// to certain locations using a Filter node.
-class FilteredSceneProcessor : public SceneProcessor
+class GAFFERSCENE_API FilteredSceneProcessor : public SceneProcessor
 {
 
 	public :
 
-		FilteredSceneProcessor( const std::string &name=defaultName<FilteredSceneProcessor>(), Filter::Result filterDefault = Filter::EveryMatch );
-		virtual ~FilteredSceneProcessor();
+		FilteredSceneProcessor( const std::string &name=defaultName<FilteredSceneProcessor>(), IECore::PathMatcher::Result filterDefault = IECore::PathMatcher::EveryMatch );
+		~FilteredSceneProcessor() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::FilteredSceneProcessor, FilteredSceneProcessorTypeId, SceneProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::FilteredSceneProcessor, FilteredSceneProcessorTypeId, SceneProcessor );
 
 		FilterPlug *filterPlug();
 		const FilterPlug *filterPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		/// Convenience method which creates a temporary context for use in
-		/// passing the input scene to the filter. Such a context must be current
-		/// before calling filterPlug()->hash() or filterPlug()->getValue().
-		Gaffer::ContextPtr filterContext( const Gaffer::Context *context ) const;
+		/// Constructs with an ArrayPlug called "in". Use inPlug() as a
+		/// convenience for accessing the first child in the array, and use
+		/// inPlugs() to access the array itself.
+		FilteredSceneProcessor( const std::string &name, size_t minInputs, size_t maxInputs = std::numeric_limits<size_t>::max() );
+
 		/// Convenience method for appending filterPlug() to a hash. This simply
-		/// calls filterPlug()->hash() after making filterContext() current. Note that
-		/// if you need to make multiple queries, it is more efficient to call filterContext()
-		/// yourself once and then query the filter directly multiple times.
+		/// calls filterPlug()->hash() using a FilterPlug::SceneScope. Note that
+		/// if you need to make multiple queries, it is more efficient to make your
+		/// own SceneScope and then query the filter directly multiple times.
 		void filterHash( const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		/// Convenience method for returning the result of filterPlug()->getValue()
-		/// cast to the appropriate result type, using a context created with filterContext().
-		/// Note that if you need to make multiple queries, it is more efficient to call
-		/// filterContext() yourself once and then query the filter directly multiple times.
-		Filter::Result filterValue( const Gaffer::Context *context ) const;
+		/// cast to the appropriate result type, using a using a FilterPlug::SceneScope.
+		/// Note that if you need to make multiple queries, it is more efficient to
+		/// make your own SceneScope and then query the filter directly multiple times.
+		IECore::PathMatcher::Result filterValue( const Gaffer::Context *context ) const;
 
 		static size_t g_firstPlugIndex;
 

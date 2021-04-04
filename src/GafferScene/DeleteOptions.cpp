@@ -39,7 +39,7 @@
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( DeleteOptions );
+GAFFER_NODE_DEFINE_TYPE( DeleteOptions );
 
 DeleteOptions::DeleteOptions( const std::string &name )
 	:	DeleteGlobals( name )

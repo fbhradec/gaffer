@@ -40,6 +40,7 @@ import Gaffer
 import GafferUI
 
 import GafferScene
+import GafferSceneUI
 
 Gaffer.Metadata.registerNode(
 
@@ -48,10 +49,11 @@ Gaffer.Metadata.registerNode(
 	"description",
 	"""
 	Applies arbitrary user-defined attributes to locations in the scene. Note
-	that for most common cases the StandardAttributes, OpenGLAttributes, RenderManAttributes,
-	ArnoldAttributes and AppleseedAttributes nodes should be used in preference - they provide predefined
-	sets of attributes with customised user interfaces. The CustomAttributes node is of most use when
-	needing to set a custom attribute not supported by the specialised nodes.
+	that for most common cases the StandardAttributes or renderer-specific
+	attributes nodes should be preferred, as they provide predefined sets of
+	attributes with customised user interfaces. The CustomAttributes node is
+	of most use when needing to set an attribute not supported by the
+	specialised nodes.
 	""",
 
 	plugs = {
@@ -62,9 +64,21 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"attributes.*" : [
+
+			"nameValuePlugPlugValueWidget:ignoreNamePlug", False,
+
+		],
+
 		"attributes.*.name" : [
 
 			"ui:scene:acceptsAttributeName", True,
+
+		],
+
+		"extraAttributes" : [
+
+			"plugValueWidget:type", None,
 
 		],
 
@@ -80,7 +94,7 @@ Gaffer.Metadata.registerNode(
 
 def __setValue( plug, value, *unused ) :
 
-	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+	with Gaffer.UndoScope( plug.ancestor( Gaffer.ScriptNode ) ) :
 		plug.setValue( value )
 
 def __attributePopupMenu( menuDefinition, plugValueWidget ) :
@@ -94,7 +108,7 @@ def __attributePopupMenu( menuDefinition, plugValueWidget ) :
 	if not acceptsAttributeName and not acceptsAttributeNames :
 		return
 
-	selectedPaths = plugValueWidget.getContext().get( "ui:scene:selectedPaths" )
+	selectedPaths = GafferSceneUI.ContextAlgo.getSelectedPaths( plugValueWidget.getContext() ).paths()
 	if not selectedPaths :
 		return
 
@@ -140,4 +154,4 @@ def __attributePopupMenu( menuDefinition, plugValueWidget ) :
 			}
 		)
 
-__attributesPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __attributePopupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __attributePopupMenu, scoped = False )

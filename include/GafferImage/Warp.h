@@ -37,9 +37,11 @@
 #ifndef GAFFERIMAGE_WARP_H
 #define GAFFERIMAGE_WARP_H
 
-#include "Gaffer/NumericPlug.h"
+#include "GafferImage/FlatImageProcessor.h"
 
-#include "GafferImage/ImageProcessor.h"
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/TypedObjectPlug.h"
 
 namespace GafferImage
 {
@@ -55,27 +57,33 @@ namespace GafferImage
 ///   pixel positions from output pixel positions.
 /// - Implement hashEngine() and computeEngine() to create
 ///   and return the Engine subclass.
-class Warp : public ImageProcessor
+class GAFFERIMAGE_API Warp : public FlatImageProcessor
 {
 	public :
 
 		Warp( const std::string &name=defaultName<Warp>() );
-		virtual ~Warp();
+		~Warp() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::Warp, WarpTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::Warp, WarpTypeId, FlatImageProcessor );
 
 		Gaffer::IntPlug *boundingModePlug();
 		const Gaffer::IntPlug *boundingModePlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::StringPlug *filterPlug();
+		const Gaffer::StringPlug *filterPlug() const;
+
+		Gaffer::BoolPlug *useDerivativesPlug();
+		const Gaffer::BoolPlug *useDerivativesPlug() const;
+
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
-		virtual void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
+		void hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 		/// Abstract base class for implementing the warp function.
 		struct Engine
@@ -83,9 +91,6 @@ class Warp : public ImageProcessor
 
 			virtual ~Engine();
 
-			/// Must be implemented to return a window bounding all input pixels
-			/// for the specified tile.
-			virtual Imath::Box2i inputWindow( const Imath::V2i &tileOrigin ) const = 0;
 			/// Must be implemented to return the source pixel for the specified
 			/// output pixel.
 			virtual Imath::V2f inputPixel( const Imath::V2f &outputPixel ) const = 0;
@@ -103,10 +108,10 @@ class Warp : public ImageProcessor
 		/// hash all the inputs used in creating an engine for the specified
 		/// tile. If the tileOrigin is not included in the hash, then the
 		/// same engine may be reused for all tiles.
-		virtual void hashEngine( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, IECore::MurmurHash &h ) const = 0;
+		virtual void hashEngine( const Imath::V2i &tileOrigin, const Gaffer::Context *context, IECore::MurmurHash &h ) const = 0;
 		/// Must be implemented to return an Engine instance capable
 		/// of answering all queries for the specified tile.
-		virtual const Engine *computeEngine( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context ) const = 0;
+		virtual const Engine *computeEngine( const Imath::V2i &tileOrigin, const Gaffer::Context *context ) const = 0;
 
 	private :
 
@@ -115,8 +120,12 @@ class Warp : public ImageProcessor
 		Gaffer::ObjectPlug *enginePlug();
 		const Gaffer::ObjectPlug *enginePlug() const;
 
-		static size_t g_firstPlugIndex;
+		Gaffer::CompoundObjectPlug *sampleRegionsPlug();
+		const Gaffer::CompoundObjectPlug *sampleRegionsPlug() const;
 
+		static float approximateDerivative( float upperPos, float center, float lower );
+
+		static size_t g_firstPlugIndex;
 };
 
 IE_CORE_DECLAREPTR( Warp )

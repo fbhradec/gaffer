@@ -35,6 +35,7 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
 
@@ -49,7 +50,7 @@ class ClippingPlaneTest( GafferSceneTest.SceneTestCase ) :
 		c = GafferScene.ClippingPlane()
 		self.assertSceneValid( c["out"] )
 
-		self.assertEqual( c["out"].bound( "/clippingPlane" ), IECore.Box3f( IECore.V3f( -0.5, -0.5, 0 ), IECore.V3f( 0.5 ) ) )
+		self.assertEqual( c["out"].bound( "/clippingPlane" ), imath.Box3f( imath.V3f( -0.5, -0.5, 0 ), imath.V3f( 0.5 ) ) )
 
 		s = c["out"].set( "__clippingPlanes" )
 		self.assertEqual( s.value.paths(), [ "/clippingPlane" ] )
@@ -60,12 +61,12 @@ class ClippingPlaneTest( GafferSceneTest.SceneTestCase ) :
 
 		dirtied = GafferTest.CapturingSlot( c.plugDirtiedSignal() )
 		c["transform"]["translate"]["x"].setValue( 10 )
-		self.failUnless( c["out"]["transform"] in [ p[0] for p in dirtied ] )
+		self.assertIn( c["out"]["transform"], [ p[0] for p in dirtied ] )
 
 		dirtied = GafferTest.CapturingSlot( c.plugDirtiedSignal() )
 		c["name"].setValue( "yupyup" )
-		self.failUnless( c["out"]["childNames"] in [ p[0] for p in dirtied ] )
-		self.failUnless( c["out"]["set"] in [ p[0] for p in dirtied ] )
+		self.assertIn( c["out"]["childNames"], [ p[0] for p in dirtied ] )
+		self.assertIn( c["out"]["set"], [ p[0] for p in dirtied ] )
 
 if __name__ == "__main__":
 	unittest.main()

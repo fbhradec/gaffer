@@ -34,7 +34,11 @@
 #
 ##########################################################################
 
+import os
+import imath
+
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -88,12 +92,12 @@ class AttributeVisualiserTest( GafferSceneTest.SceneTestCase ) :
 		self.assertTrue( "gl:surface" in visualiser["out"].attributes( "/group/sphere1" ) )
 		self.assertTrue( "gl:surface" in visualiser["out"].attributes( "/group/sphere2" ) )
 		self.assertEqual(
-			visualiser["out"].attributes( "/group/sphere1" )["gl:surface"].parameters["Cs"].value,
-			IECore.Color3f( 1 ),
+			visualiser["out"].attributes( "/group/sphere1" )["gl:surface"].outputShader().parameters["Cs"].value,
+			imath.Color3f( 1 ),
 		)
 		self.assertEqual(
-			visualiser["out"].attributes( "/group/sphere2" )["gl:surface"].parameters["Cs"].value,
-			IECore.Color3f( .5 ),
+			visualiser["out"].attributes( "/group/sphere2" )["gl:surface"].outputShader().parameters["Cs"].value,
+			imath.Color3f( .5 ),
 		)
 
 	def testShaderNodeColorMode( self ) :
@@ -119,7 +123,7 @@ class AttributeVisualiserTest( GafferSceneTest.SceneTestCase ) :
 		shader2 = GafferSceneTest.TestShader()
 		shader2["name"].setValue( "test" )
 		shader2["type"].setValue( "gfr:surface" )
-		Gaffer.Metadata.registerValue( shader2, "nodeGadget:color", IECore.Color3f( 1, 0, 0 ) )
+		Gaffer.Metadata.registerValue( shader2, "nodeGadget:color", imath.Color3f( 1, 0, 0 ) )
 
 		filter2 = GafferScene.PathFilter()
 		filter2["paths"].setValue( IECore.StringVectorData( [ "/group/sphere2" ] ) )
@@ -149,13 +153,54 @@ class AttributeVisualiserTest( GafferSceneTest.SceneTestCase ) :
 		self.assertTrue( "gl:surface" in visualiser["out"].attributes( "/group/sphere1" ) )
 		self.assertTrue( "gl:surface" in visualiser["out"].attributes( "/group/sphere2" ) )
 		self.assertEqual(
-			visualiser["out"].attributes( "/group/sphere1" )["gl:surface"].parameters["Cs"].value,
-			IECore.Color3f( 0 ),
+			visualiser["out"].attributes( "/group/sphere1" )["gl:surface"].outputShader().parameters["Cs"].value,
+			imath.Color3f( 0 ),
 		)
 		self.assertEqual(
-			visualiser["out"].attributes( "/group/sphere2" )["gl:surface"].parameters["Cs"].value,
-			IECore.Color3f( 1, 0, 0 ),
+			visualiser["out"].attributes( "/group/sphere2" )["gl:surface"].outputShader().parameters["Cs"].value,
+			imath.Color3f( 1, 0, 0 ),
 		)
+
+	def testVectors( self ) :
+
+		fileName = os.path.join( self.temporaryDirectory(), "attributes.scc" )
+		scene = IECoreScene.SceneInterface.create( fileName, IECore.IndexedIO.Write )
+		child = scene.createChild( "child" )
+		for name, value in [
+			( "v2f", IECore.V2fData( imath.V2f( 1, 2 ) ) ),
+			( "v3f", IECore.V3fData( imath.V3f( 3, 4, 5 ) ) ),
+			( "v2i", IECore.V2iData( imath.V2i( 6, 7 ) ) ),
+			( "v3i", IECore.V3iData( imath.V3i( 8, 9, 10 ) ) ),
+			( "v2d", IECore.V2dData( imath.V2d( 11, 12 ) ) ),
+			( "v3d", IECore.V3dData( imath.V3d( 13, 14, 15 ) ) ),
+		] :
+			child.writeAttribute( name, value, 1 )
+		del scene, child
+
+		sceneReader = GafferScene.SceneReader()
+		sceneReader["fileName"].setValue( fileName )
+
+		childFilter = GafferScene.PathFilter()
+		childFilter["paths"].setValue( IECore.StringVectorData( [ "/child" ] ) )
+
+		visualiser = GafferScene.AttributeVisualiser()
+		visualiser["in"].setInput( sceneReader["out"] )
+		visualiser["filter"].setInput( childFilter["out"] )
+
+		for name, value in [
+			( "v2f", imath.Color3f( 1, 2, 0 ) ),
+			( "v3f", imath.Color3f( 3, 4, 5 ) ),
+			( "v2i", imath.Color3f( 6, 7, 0 ) ),
+			( "v3i", imath.Color3f( 8, 9, 10 ) ),
+			( "v2d", imath.Color3f( 11, 12, 0 ) ),
+			( "v3d", imath.Color3f( 13, 14, 15 ) ),
+		] :
+
+			visualiser["attributeName"].setValue( name )
+			self.assertEqual(
+				visualiser["out"].attributes( "/child" )["gl:surface"].outputShader().parameters["Cs"].value,
+				value,
+			)
 
 if __name__ == "__main__":
 	unittest.main()

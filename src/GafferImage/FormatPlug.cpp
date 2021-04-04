@@ -34,26 +34,27 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "GafferImage/FormatPlug.h"
 
-#include "Gaffer/ScriptNode.h"
+#include "GafferImage/FormatData.h"
+
 #include "Gaffer/Context.h"
 #include "Gaffer/Process.h"
+#include "Gaffer/ScriptNode.h"
 
-#include "GafferImage/FormatPlug.h"
-#include "GafferImage/FormatData.h"
+#include "boost/bind.hpp"
 
 using namespace Gaffer;
 using namespace GafferImage;
 
-IE_CORE_DEFINERUNTIMETYPED( FormatPlug );
+GAFFER_PLUG_DEFINE_TYPE( FormatPlug );
 
 const IECore::InternedString g_defaultFormatContextName( "image:defaultFormat" );
 static const IECore::InternedString g_defaultFormatPlugName( "defaultFormat" );
 static const Format g_defaultFormatFallback( 1920, 1080 );
 
 FormatPlug::FormatPlug( const std::string &name, Direction direction, Format defaultValue, unsigned flags )
-	:	ValuePlug( name, direction, flags ), m_defaultValue( defaultValue )
+	:	ValuePlug( name, direction, flags )
 {
 	const unsigned childFlags = flags & ~Dynamic;
 	addChild( new Box2iPlug( "displayWindow", direction, defaultValue.getDisplayWindow(), childFlags ) );
@@ -94,9 +95,9 @@ const Gaffer::FloatPlug *FormatPlug::pixelAspectPlug() const
 	return getChild<FloatPlug>( 1 );
 }
 
-const Format &FormatPlug::defaultValue() const
+Format FormatPlug::defaultValue() const
 {
-	return m_defaultValue;
+	return Format( displayWindowPlug()->defaultValue(), pixelAspectPlug()->defaultValue() );
 }
 
 void FormatPlug::setValue( const Format &value )
@@ -146,6 +147,11 @@ void FormatPlug::setDefaultFormat( Gaffer::Context *context, const Format &forma
 
 FormatPlug *FormatPlug::acquireDefaultFormatPlug( Gaffer::ScriptNode *scriptNode )
 {
+	if( !scriptNode )
+	{
+		throw IECore::Exception( "Can't provide the default FormatPlug for an invalid ScriptNode" );
+	}
+
 	if( FormatPlug *p = scriptNode->getChild<FormatPlug>( g_defaultFormatPlugName ) )
 	{
 		return p;

@@ -42,7 +42,7 @@ using namespace Gaffer;
 namespace GafferImage
 {
 
-IE_CORE_DEFINERUNTIMETYPED( MetadataProcessor );
+GAFFER_NODE_DEFINE_TYPE( MetadataProcessor );
 
 MetadataProcessor::MetadataProcessor( const std::string &name )
 	:	ImageProcessor( name )
@@ -50,6 +50,8 @@ MetadataProcessor::MetadataProcessor( const std::string &name )
 	// Direct pass-through for the things we don't ever change.
 	outPlug()->formatPlug()->setInput( inPlug()->formatPlug() );
 	outPlug()->dataWindowPlug()->setInput( inPlug()->dataWindowPlug() );
+	outPlug()->deepPlug()->setInput( inPlug()->deepPlug() );
+	outPlug()->sampleOffsetsPlug()->setInput( inPlug()->sampleOffsetsPlug() );
 	outPlug()->channelNamesPlug()->setInput( inPlug()->channelNamesPlug() );
 	outPlug()->channelDataPlug()->setInput( inPlug()->channelDataPlug() );
 }
@@ -75,9 +77,9 @@ void MetadataProcessor::hashMetadata( const GafferImage::ImagePlug *parent, cons
 	hashProcessedMetadata( context, h );
 }
 
-IECore::ConstCompoundObjectPtr MetadataProcessor::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
+IECore::ConstCompoundDataPtr MetadataProcessor::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	IECore::ConstCompoundObjectPtr metadata = inPlug()->metadataPlug()->getValue();
+	IECore::ConstCompoundDataPtr metadata = inPlug()->metadataPlug()->getValue();
 	return computeProcessedMetadata( context, metadata.get() );
 }
 

@@ -36,18 +36,23 @@
 
 import os
 import unittest
+import inspect
+import sys
+import imath
 
-import tractor.api.author as author
+import IECore
 
 import Gaffer
 import GafferTest
 import GafferDispatch
 import GafferDispatchTest
-import GafferTractor
 
+@unittest.skipIf( not IECore.SearchPath( sys.path ).find( "tractor" ), "Tractor not available" )
 class TractorDispatcherTest( GafferTest.TestCase ) :
 
 	def __dispatcher( self ) :
+
+		import GafferTractor
 
 		dispatcher = GafferTractor.TractorDispatcher()
 		dispatcher["jobsDirectory"].setValue( self.temporaryDirectory() + "/testJobDirectory" )
@@ -55,6 +60,8 @@ class TractorDispatcherTest( GafferTest.TestCase ) :
 		return dispatcher
 
 	def __job( self, nodes, dispatcher = None ) :
+
+		import GafferTractor
 
 		jobs = []
 		def f( dispatcher, job ) :
@@ -71,6 +78,8 @@ class TractorDispatcherTest( GafferTest.TestCase ) :
 		return jobs[0]
 
 	def testPreSpoolSignal( self ) :
+
+		import GafferTractor
 
 		s = Gaffer.ScriptNode()
 		s["n"] = GafferDispatchTest.LoggingTaskNode()
@@ -120,22 +129,38 @@ class TractorDispatcherTest( GafferTest.TestCase ) :
 		s["n"] = GafferDispatchTest.LoggingTaskNode()
 		s["n"]["frame"] = Gaffer.StringPlug( defaultValue = "${frame}", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 		s["n"]["dispatcher"]["batchSize"].setValue( 10 )
-		s["n"]["dispatcher"]["tractor"]["service"].setValue( "myService" )
-		s["n"]["dispatcher"]["tractor"]["tags"].setValue( "myTag1 myTag2" )
+		s["n"]["dispatcher"]["tractor"]["tags"].setValue( "myTag1 ${myTagContext2}" )
+		s["expression"] = Gaffer.Expression()
+		s["expression"].setExpression( """parent["n"]["dispatcher"]["tractor"]["service"] = context.get("service", "")""" )
+
+		# add context variables: myTagContext2 and service
+		s["context"] = Gaffer.ContextVariables()
+		s["context"].setup( GafferDispatch.TaskNode.TaskPlug() )
+		s["context"]["in"].setInput( s["n"]["task"] )
+		variable = s["context"]["variables"].addMember( "tag", Gaffer.StringPlug() )
+		variable["name"].setValue("myTagContext2")
+		variable["value"].setValue("myTag2")
+		variable = s["context"]["variables"].addMember( "service", Gaffer.StringPlug() )
+		variable["name"].setValue("service")
+		variable["value"].setValue("myService")
+
+		s["job"] = GafferDispatch.TaskList()
+		s["job"]["preTasks"][0].setInput( s["context"]["out"] )
 
 		dispatcher = self.__dispatcher()
 		dispatcher["framesMode"].setValue( dispatcher.FramesMode.CustomRange )
 		dispatcher["frameRange"].setValue( "1-10" )
 
-		job = self.__job( [ s["n"] ], dispatcher )
-		self.assertEqual( len( job.subtasks ), 1 )
+		job = self.__job( [ s["job"] ], dispatcher )
 
-		task = job.subtasks[0]
+		self.assertEqual( len( job.subtasks ), 10 )
+
+		task = job.subtasks[0].subtasks[0]
 		self.assertEqual( task.title, "n 1-10" )
 
 		self.assertEqual( len( task.cmds ), 1 )
 		command = task.cmds[0]
-		self.assertEqual( command.service, "myService" )
+		self.assertEqual( command.service, "myService", "context variables were not expanded correctly" )
 		self.assertEqual( command.tags, [ "myTag1", "myTag2" ] )
 
 	def testPreTasks( self ) :
@@ -162,6 +187,8 @@ class TractorDispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( len( job.subtasks[1].subtasks ), 0 )
 
 	def testSharedPreTasks( self ) :
+
+		import tractor.api.author as author
 
 		#   n1
 		#  / \
@@ -197,13 +224,78 @@ class TractorDispatcherTest( GafferTest.TestCase ) :
 
 		self.assertTrue( isinstance( job.subtasks[0].subtasks[1].subtasks[0], author.Instance ) )
 
+	def testTaskPlugs( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferDispatchTest.LoggingTaskNode()
+		self.assertTrue( "tractor" in [ x.getName() for x in s["n"]["dispatcher"].children() ] )
+		self.assertTrue( "tractor1" not in [ x.getName() for x in s["n"]["dispatcher"].children() ] )
+		s["n"]["dispatcher"]["tractor"]["service"].setValue( "myService" )
+		s["n"]["dispatcher"]["tractor"]["tags"].setValue( "myTag1 myTag2" )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		self.assertTrue( "tractor" in [ x.getName() for x in s2["n"]["dispatcher"].children() ] )
+		self.assertTrue( "tractor1" not in [ x.getName() for x in s2["n"]["dispatcher"].children() ] )
+		self.assertEqual( s2["n"]["dispatcher"]["tractor"]["service"].getValue(), "myService" )
+		self.assertEqual( s2["n"]["dispatcher"]["tractor"]["tags"].getValue(), "myTag1 myTag2" )
+
 	def testTypeNamePrefixes( self ) :
+
+		import GafferTractor
 
 		self.assertTypeNamesArePrefixed( GafferTractor )
 
 	def testDefaultNames( self ) :
 
+		import GafferTractor
+
 		self.assertDefaultNamesAreCorrect( GafferTractor )
+
+	def testTasksWithoutCommands( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["systemCommand"] = GafferDispatch.SystemCommand()
+		s["systemCommand"]["command"].setValue( "ls" )
+
+		s["taskList"] = GafferDispatch.TaskList()
+		s["taskList"]["preTasks"][0].setInput( s["systemCommand"]["task"] )
+
+		job = self.__job( [ s["taskList" ] ] )
+
+		taskListTask = job.subtasks[0]
+		self.assertEqual( taskListTask.title, "taskList" )
+		self.assertEqual( len( taskListTask.cmds ), 0 )
+
+		systemCommandTask = taskListTask.subtasks[0]
+		self.assertEqual( systemCommandTask.title, "systemCommand 1" )
+		self.assertEqual( len( systemCommandTask.cmds ), 1 )
+
+	def testImathContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["t"] = GafferDispatchTest.TextWriter()
+		s["t"]["fileName"].setValue( self.temporaryDirectory() + "/test.txt" )
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( inspect.cleandoc(
+			"""
+			c = context["c"]
+			parent["t"]["text"] = "{0} {1} {2}".format( *c )
+			"""
+		) )
+
+		s["v"] = GafferDispatch.TaskContextVariables()
+		s["v"]["variables"].addChild( Gaffer.NameValuePlug( "c", imath.Color3f( 0, 1, 2 ) ) )
+		s["v"]["preTasks"][0].setInput( s["t"]["task"] )
+
+		job = self.__job( [ s["v" ] ] )
+		task = job.subtasks[0].subtasks[0]
+		self.assertIn(
+			"imath.Color3f( 0, 1, 2 )",
+			task.cmds[0].argv
+		)
 
 if __name__ == "__main__":
 	unittest.main()

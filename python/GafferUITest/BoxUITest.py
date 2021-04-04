@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -72,8 +74,8 @@ class BoxUITest( GafferUITest.TestCase ) :
 
 		boxGadget = g.nodeGadget( box )
 
-		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( box["op1"] ) ), IECore.V3f( -1, 0, 0 ) )
-		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( box["sum"] ) ), IECore.V3f( 1, 0, 0 ) )
+		self.assertEqual( boxGadget.connectionTangent( boxGadget.nodule( box["op1"] ) ), imath.V3f( -1, 0, 0 ) )
+		self.assertEqual( boxGadget.connectionTangent( boxGadget.nodule( box["sum"] ) ), imath.V3f( 1, 0, 0 ) )
 
 		# Now test that a copy/paste of the box maintains the tangents in the copy.
 
@@ -85,8 +87,8 @@ class BoxUITest( GafferUITest.TestCase ) :
 		box2 = s2[box.getName()]
 		boxGadget2 = g2.nodeGadget( box2 )
 
-		self.assertEqual( boxGadget2.noduleTangent( boxGadget2.nodule( box2["op1"] ) ), IECore.V3f( -1, 0, 0 ) )
-		self.assertEqual( boxGadget2.noduleTangent( boxGadget2.nodule( box2["sum"] ) ), IECore.V3f( 1, 0, 0 ) )
+		self.assertEqual( boxGadget2.connectionTangent( boxGadget2.nodule( box2["op1"] ) ), imath.V3f( -1, 0, 0 ) )
+		self.assertEqual( boxGadget2.connectionTangent( boxGadget2.nodule( box2["sum"] ) ), imath.V3f( 1, 0, 0 ) )
 
 	def testNodulePositionsForPromotedPlugs( self ) :
 
@@ -98,11 +100,11 @@ class BoxUITest( GafferUITest.TestCase ) :
 
 		boxGadget = g.nodeGadget( s["b"] )
 
-		p1 = s["b"].promotePlug( s["b"]["n"]["op1"] )
-		p2 = s["b"].promotePlug( s["b"]["n"]["sum"] )
+		p1 = Gaffer.PlugAlgo.promote( s["b"]["n"]["op1"] )
+		p2 = Gaffer.PlugAlgo.promote( s["b"]["n"]["sum"] )
 
-		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( p1 ) ), IECore.V3f( -1, 0, 0 ) )
-		self.assertEqual( boxGadget.noduleTangent( boxGadget.nodule( p2 ) ), IECore.V3f( 1, 0, 0 ) )
+		self.assertEqual( boxGadget.connectionTangent( boxGadget.nodule( p1 ) ), imath.V3f( -1, 0, 0 ) )
+		self.assertEqual( boxGadget.connectionTangent( boxGadget.nodule( p2 ) ), imath.V3f( 1, 0, 0 ) )
 
 	def testDisabledNodulesForPromotedPlugs( self ) :
 
@@ -114,7 +116,7 @@ class BoxUITest( GafferUITest.TestCase ) :
 
 		boxGadget = g.nodeGadget( s["b"] )
 
-		p = s["b"].promotePlug( s["b"]["n"]["op2"] )
+		p = Gaffer.PlugAlgo.promote( s["b"]["n"]["op2"] )
 		self.assertEqual( boxGadget.nodule( p ), None )
 
 	def testRenamingPlugs( self ) :
@@ -124,12 +126,12 @@ class BoxUITest( GafferUITest.TestCase ) :
 
 		ui = GafferUI.NodeUI.create( box )
 
-		w = ui.plugValueWidget( box["user"]["a"], lazy=False )
+		w = ui.plugValueWidget( box["user"]["a"] )
 		self.assertTrue( w is not None )
 
 		box["user"]["a"].setName( "b" )
 
-		w2 = ui.plugValueWidget( box["user"]["b"], lazy=False )
+		w2 = ui.plugValueWidget( box["user"]["b"] )
 		self.assertTrue( w2 is not None )
 		self.assertTrue( w2 is w )
 
@@ -142,7 +144,7 @@ class BoxUITest( GafferUITest.TestCase ) :
 		box["node"]["i"].setInput( box["user"]["b"] )
 
 		ui = GafferUI.NodeUI.create( box )
-		w = ui.plugValueWidget( box["user"]["b"], lazy=False )
+		w = ui.plugValueWidget( box["user"]["b"] )
 
 		self.assertTrue( isinstance( w, GafferUI.BoolPlugValueWidget ) )
 
@@ -150,13 +152,13 @@ class BoxUITest( GafferUITest.TestCase ) :
 
 		box = Gaffer.Box()
 		box["node"] = Gaffer.Random()
-		p = box.promotePlug( box["node"]["outColor"] )
+		p = Gaffer.PlugAlgo.promote( box["node"]["outColor"] )
 
 		nodeUI = GafferUI.NodeUI.create( box["node"] )
 		boxUI = GafferUI.NodeUI.create( box )
 
-		nodeWidget = nodeUI.plugValueWidget( box["node"]["outColor"], lazy = False )
-		boxWidget = boxUI.plugValueWidget( p, lazy = False )
+		nodeWidget = nodeUI.plugValueWidget( box["node"]["outColor"] )
+		boxWidget = boxUI.plugValueWidget( p )
 
 		self.assertTrue( type( boxWidget ) is type( nodeWidget ) )
 
@@ -170,8 +172,8 @@ class BoxUITest( GafferUITest.TestCase ) :
 
 		g = GafferUI.GraphGadget( s )
 
-		s["b"].promotePlug( s["b"]["n"]["op1"] )
-		p = s["b"].promotePlug( s["b"]["n"]["op2"] )
+		Gaffer.PlugAlgo.promote( s["b"]["n"]["op1"] )
+		p = Gaffer.PlugAlgo.promote( s["b"]["n"]["op2"] )
 		p.setName( "p" )
 
 		self.assertEqual( g.nodeGadget( s["b"] ).nodule( s["b"]["p"] ), None )
@@ -190,7 +192,7 @@ class BoxUITest( GafferUITest.TestCase ) :
 		s["b"]["n"]["user"]["p"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 		Gaffer.Metadata.registerValue( s["b"]["n"]["user"]["p"], "layout:section", "SomeWeirdSection" )
 
-		p = s["b"].promotePlug( s["b"]["n"]["user"]["p"] )
+		p = Gaffer.PlugAlgo.promote( s["b"]["n"]["user"]["p"] )
 		self.assertNotEqual( Gaffer.Metadata.value( p, "layout:section" ), "SomeWeirdSection" )
 
 if __name__ == "__main__":

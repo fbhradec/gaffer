@@ -35,6 +35,8 @@
 ##########################################################################
 
 import unittest
+import imath
+import six
 
 import IECore
 
@@ -47,15 +49,15 @@ class PointConstraintTest( GafferSceneTest.SceneTestCase ) :
 
 	def test( self ) :
 
-		targetTranslate = IECore.V3f( 1, 2, 3 )
-		constrainedTranslate = IECore.V3f( 10, 11, 12 )
-		constrainedScale = IECore.V3f( 1, 2, 3 )
-		constrainedRotate = IECore.V3f( 15, 45, 19 )
+		targetTranslate = imath.V3f( 1, 2, 3 )
+		constrainedTranslate = imath.V3f( 10, 11, 12 )
+		constrainedScale = imath.V3f( 1, 2, 3 )
+		constrainedRotate = imath.V3f( 15, 45, 19 )
 
 		plane1 = GafferScene.Plane()
 		plane1["transform"]["translate"].setValue( targetTranslate )
-		plane1["transform"]["scale"].setValue( IECore.V3f( 1, 2, 3 ) )
-		plane1["transform"]["rotate"].setValue( IECore.V3f( 1000, 20, 39 ) ) # shouldn't affect the result
+		plane1["transform"]["scale"].setValue( imath.V3f( 1, 2, 3 ) )
+		plane1["transform"]["rotate"].setValue( imath.V3f( 1000, 20, 39 ) ) # shouldn't affect the result
 		plane1["name"].setValue( "target" )
 
 		plane2 = GafferScene.Plane()
@@ -86,10 +88,15 @@ class PointConstraintTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( constraint["out"].fullTransform( "/group/target" ).translation(), targetTranslate )
 		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ).translation(), targetTranslate )
 
-		beforeSHRT = group["out"].fullTransform( "/group/constrained" ).extractSHRT()
-		afterSHRT = constraint["out"].fullTransform( "/group/constrained" ).extractSHRT()
+		beforeS, beforeH, beforeR, beforeT = imath.V3f(), imath.V3f(), imath.V3f(), imath.V3f()
+		group["out"].fullTransform( "/group/constrained" ).extractSHRT( beforeS, beforeH, beforeR, beforeT )
 
-		self.assertEqual( beforeSHRT[:-1], afterSHRT[:-1] )
+		afterS, afterH, afterR, afterT = imath.V3f(), imath.V3f(), imath.V3f(), imath.V3f()
+		constraint["out"].fullTransform( "/group/constrained" ).extractSHRT( afterS, afterH, afterR, afterT )
+
+		self.assertEqual( beforeS, afterS )
+		self.assertEqual( beforeH, afterH )
+		self.assertEqual( beforeR, afterR )
 
 		constraint["xEnabled"].setValue( False )
 
@@ -108,6 +115,25 @@ class PointConstraintTest( GafferSceneTest.SceneTestCase ) :
 		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ).translation().x, constrainedTranslate.x )
 		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ).translation().y, constrainedTranslate.y )
 		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ).translation().z, constrainedTranslate.z )
+
+		# Test behaviour for missing target
+		plane1["name"].setValue( "targetX" )
+		constraint["xEnabled"].setValue( True )
+		constraint["yEnabled"].setValue( True )
+		constraint["zEnabled"].setValue( True )
+		with six.assertRaisesRegex( self, RuntimeError, 'PointConstraint.out.transform : Constraint target does not exist: "/group/target"' ):
+			constraint["out"].fullTransform( "/group/constrained" )
+
+		constraint["ignoreMissingTarget"].setValue( True )
+		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ), constraint["in"].fullTransform( "/group/constrained" ) )
+
+		# Constrain to root
+		constraint["target"].setValue( "/" )
+		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ).translation(), imath.V3f(0) )
+
+		# No op
+		constraint["target"].setValue( "" )
+		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ), constraint["in"].fullTransform( "/group/constrained" ) )
 
 if __name__ == "__main__":
 	unittest.main()

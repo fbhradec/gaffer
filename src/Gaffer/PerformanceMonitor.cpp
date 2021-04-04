@@ -35,8 +35,9 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/PerformanceMonitor.h"
-#include "Gaffer/Process.h"
+
 #include "Gaffer/Plug.h"
+#include "Gaffer/Process.h"
 
 using namespace Gaffer;
 
@@ -108,6 +109,13 @@ const PerformanceMonitor::Statistics &PerformanceMonitor::plugStatistics( const 
 	return it->second;
 }
 
+const PerformanceMonitor::Statistics &PerformanceMonitor::combinedStatistics() const
+{
+	collate();
+	return m_combinedStatistics;
+}
+
+
 void PerformanceMonitor::processStarted( const Process *process )
 {
 	const IECore::InternedString type = process->type();
@@ -162,6 +170,7 @@ void PerformanceMonitor::collate() const
 		for( StatisticsMap::const_iterator mIt = m.begin(), meIt = m.end(); mIt != meIt; ++mIt )
 		{
 			m_statistics[mIt->first] += mIt->second;
+			m_combinedStatistics += mIt->second;
 		}
 		m.clear();
 	}

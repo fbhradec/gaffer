@@ -35,17 +35,20 @@
 #
 ##########################################################################
 
+import six
+
 import IECore
 
 import Gaffer
 import GafferUI
 
-QtGui = GafferUI._qtImport( "QtGui" )
-QtCore = GafferUI._qtImport( "QtCore" )
+from Qt import QtGui
+from Qt import QtWidgets
+from Qt import QtCore
 
 class MultiLineTextWidget( GafferUI.Widget ) :
 
-	WrapMode = IECore.Enum.create( "None", "Word", "Character", "WordOrCharacter" )
+	WrapMode = IECore.Enum.create( "None_", "Word", "Character", "WordOrCharacter" )
 	Role = IECore.Enum.create( "Text", "Code" )
 
 	def __init__( self, text="", editable=True, wrapMode=WrapMode.WordOrCharacter, fixedLineHeight=None, role=Role.Text, **kw ) :
@@ -62,7 +65,7 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 			h1[class="INFO"] { color : #80b3ff }
 			h1[class="DEBUG"] { color : #aaffcc }
 			body { color : red }
-			span[class="message"] { color : #999999 }
+			pre[class="message"] { color : #999999 }
 			"""
 		)
 
@@ -72,16 +75,23 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 		self.setFixedLineHeight( fixedLineHeight )
 		self.setRole( role )
 
-		self.__dragEnterConnection = self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ) )
-		self.__dragMoveConnection = self.dragMoveSignal().connect( Gaffer.WeakMethod( self.__dragMove ) )
-		self.__dragLeaveConnection = self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ) )
-		self.__dropConnection = self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ) )
+		self.dragEnterSignal().connect( Gaffer.WeakMethod( self.__dragEnter ), scoped = False )
+		self.dragMoveSignal().connect( Gaffer.WeakMethod( self.__dragMove ), scoped = False )
+		self.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__dragLeave ), scoped = False )
+		self.dropSignal().connect( Gaffer.WeakMethod( self.__drop ), scoped = False )
 
 		self._qtWidget().setTabStopWidth( 20 ) # pixels
 
 	def getText( self ) :
 
-		return str( self._qtWidget().toPlainText() )
+		if six.PY3 :
+			return self._qtWidget().toPlainText()
+		else :
+			# \todo We didn't return `unicode` here because
+			# we didn't want to break any client code. But perhaps
+			# now is the time, since everyone is transitioning to
+			# Python 3?
+			return self._qtWidget().toPlainText().encode( "utf-8" )
 
 	def setText( self, text ) :
 
@@ -119,7 +129,7 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 
 		self._qtWidget().setWordWrapMode(
 			{
-				self.WrapMode.None : QtGui.QTextOption.NoWrap,
+				self.WrapMode.None_ : QtGui.QTextOption.NoWrap,
 				self.WrapMode.Word : QtGui.QTextOption.WordWrap,
 				self.WrapMode.Character : QtGui.QTextOption.WrapAnywhere,
 				self.WrapMode.WordOrCharacter : QtGui.QTextOption.WrapAtWordBoundaryOrAnywhere,
@@ -129,7 +139,7 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 	def getWrapMode( self ) :
 
 		return {
-			QtGui.QTextOption.NoWrap : self.WrapMode.None,
+			QtGui.QTextOption.NoWrap : self.WrapMode.None_,
 			QtGui.QTextOption.WordWrap : self.WrapMode.Word,
 			QtGui.QTextOption.WrapAnywhere : self.WrapMode.Character,
 			QtGui.QTextOption.WrapAtWordBoundaryOrAnywhere : self.WrapMode.WordOrCharacter,
@@ -174,9 +184,11 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 	def selectedText( self ) :
 
 		cursor = self._qtWidget().textCursor()
-		text = cursor.selectedText()
-		text = text.replace( u"\u2029", "\n" )
-		return str( text )
+		text = cursor.selection().toPlainText()
+		if six.PY3 :
+			return text
+		else :
+			return text.encode( "utf-8" )
 
 	def linkAt( self, position ) :
 
@@ -251,7 +263,7 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 			return self.__activatedSignal
 		except :
 			self.__activatedSignal = GafferUI.WidgetSignal()
-			self.__keyPressConnection = self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
+			self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ), scoped = False )
 
 		return self.__activatedSignal
 
@@ -261,8 +273,8 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 			return self.__linkActivatedSignal
 		except :
 			self.__linkActivatedSignal = GafferUI.WidgetEventSignal()
-			self.__mouseMoveConnection = self.mouseMoveSignal().connect( Gaffer.WeakMethod( self.__mouseMove ) )
-			self.__buttonPressConnection = self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ) )
+			self.mouseMoveSignal().connect( Gaffer.WeakMethod( self.__mouseMove ), scoped = False )
+			self.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
 
 		return self.__linkActivatedSignal
 
@@ -355,10 +367,10 @@ class MultiLineTextWidget( GafferUI.Widget ) :
 
 		self.insertText( self.__dropText( event.data ) )
 
-class _PlainTextEdit( QtGui.QPlainTextEdit ) :
+class _PlainTextEdit( QtWidgets.QPlainTextEdit ) :
 
 	def __init__( self, parent = None ) :
-		QtGui.QPlainTextEdit.__init__( self, parent )
+		QtWidgets.QPlainTextEdit.__init__( self, parent )
 		self.__fixedLineHeight = None
 		self.__widgetFullyBuilt = False
 
@@ -368,7 +380,7 @@ class _PlainTextEdit( QtGui.QPlainTextEdit ) :
 
 		self.setSizePolicy(
 			self.sizePolicy().horizontalPolicy(),
-			QtGui.QSizePolicy.Expanding if self.__fixedLineHeight is None else QtGui.QSizePolicy.Fixed
+			QtWidgets.QSizePolicy.Expanding if self.__fixedLineHeight is None else QtWidgets.QSizePolicy.Fixed
 		)
 
 		self.updateGeometry()
@@ -398,13 +410,13 @@ class _PlainTextEdit( QtGui.QPlainTextEdit ) :
 
 	def sizeHint( self ) :
 
-		size = QtGui.QPlainTextEdit.sizeHint( self )
+		size = QtWidgets.QPlainTextEdit.sizeHint( self )
 
 		return self.__computeHeight( size )
 
 	def minimumSizeHint( self ) :
 
-		size = QtGui.QPlainTextEdit.minimumSizeHint( self )
+		size = QtWidgets.QPlainTextEdit.minimumSizeHint( self )
 
 		return self.__computeHeight( size )
 
@@ -418,7 +430,7 @@ class _PlainTextEdit( QtGui.QPlainTextEdit ) :
 			event.accept()
 			return True
 
-		return QtGui.QPlainTextEdit.event( self, event )
+		return QtWidgets.QPlainTextEdit.event( self, event )
 
 class _FocusOutEventFilter( QtCore.QObject ) :
 

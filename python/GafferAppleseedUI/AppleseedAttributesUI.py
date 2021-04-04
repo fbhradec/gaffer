@@ -65,7 +65,12 @@ def __shadingSummary( plug ) :
 	info = []
 	if plug["shadingSamples"]["enabled"].getValue() :
 		info.append( "Shading Samples %d" % plug["shadingSamples"]["value"].getValue() )
-		info.append( "Medium Priority %d" % plug["mediumPriority"]["value"].getValue() )
+
+	if plug["mediumPriority"]["enabled"].getValue() :
+ 		info.append( "Medium Priority %d" % plug["mediumPriority"]["value"].getValue() )
+
+	if plug["doubleSided"]["enabled"].getValue() :
+		info.append( "Double Sided %d" % plug["doubleSided"]["value"].getValue() )
 
 	return ", ".join( info )
 
@@ -221,6 +226,20 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"attributes.doubleSided" : [
+
+			"description",
+			"""
+			Assign materials to the back side of objects.
+			It is important to disable double sided assignments if the material
+			has emision closures and emision is not wanted on the inside of objects,
+			for example for closed objects, to reduce the amount of noise in the render.
+			""",
+
+			"layout:section", "Shading",
+
+		],
+
 		# Alpha Map
 
 		"attributes.alphaMap" : [
@@ -238,8 +257,8 @@ Gaffer.Metadata.registerNode(
 		"attributes.alphaMap.value" : [
 
 			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
-			"pathPlugValueWidget:leaf", True,
-			"pathPlugValueWidget:bookmarks", "texture",
+			"path:leaf", True,
+			"path:bookmarks", "texture",
 
 		],
 

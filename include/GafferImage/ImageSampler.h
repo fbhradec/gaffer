@@ -37,10 +37,13 @@
 #ifndef GAFFERIMAGE_IMAGESAMPLER_H
 #define GAFFERIMAGE_IMAGESAMPLER_H
 
-#include "Gaffer/ComputeNode.h"
-#include "Gaffer/CompoundNumericPlug.h"
-
+#include "GafferImage/DeepState.h"
+#include "GafferImage/Export.h"
 #include "GafferImage/TypeIds.h"
+
+#include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/ComputeNode.h"
+#include "Gaffer/TypedObjectPlug.h"
 
 namespace GafferImage
 {
@@ -48,21 +51,21 @@ namespace GafferImage
 IE_CORE_FORWARDDECLARE( ImagePlug )
 IE_CORE_FORWARDDECLARE( FilterPlug )
 
-/// Samples colours at image locations.
-/// \todo Support for choosing which channels to sample - ideally
-/// we need ChannelMaskPlug to properly support layers to do that.
-class ImageSampler : public Gaffer::ComputeNode
+class GAFFERIMAGE_API ImageSampler : public Gaffer::ComputeNode
 {
 
 	public :
 
 		ImageSampler( const std::string &name=defaultName<ImageSampler>() );
-		virtual ~ImageSampler();
+		~ImageSampler() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageSampler, ImageSamplerTypeId, ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::ImageSampler, ImageSamplerTypeId, ComputeNode );
 
 		ImagePlug *imagePlug();
 		const ImagePlug *imagePlug() const;
+
+		Gaffer::StringVectorDataPlug *channelsPlug();
+		const Gaffer::StringVectorDataPlug *channelsPlug() const;
 
 		Gaffer::V2fPlug *pixelPlug();
 		const Gaffer::V2fPlug *pixelPlug() const;
@@ -70,18 +73,27 @@ class ImageSampler : public Gaffer::ComputeNode
 		Gaffer::Color4fPlug *colorPlug();
 		const Gaffer::Color4fPlug *colorPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
 
 	private :
 
 		// Returns the channel to be read for the specified child of colorPlug(),
 		// returning the empty string if the channel doesn't exist.
 		std::string channelName( const Gaffer::ValuePlug *output ) const;
+
+		// Input plug to receive the flattened image from the internal
+		// deepState plug.
+		ImagePlug *flattenedInPlug();
+		const ImagePlug *flattenedInPlug() const;
+
+		// The internal DeepState node.
+		GafferImage::DeepState *deepState();
+		const GafferImage::DeepState *deepState() const;
 
 		static size_t g_firstPlugIndex;
 

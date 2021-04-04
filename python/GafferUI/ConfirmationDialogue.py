@@ -38,22 +38,35 @@ import GafferUI
 
 class ConfirmationDialogue( GafferUI.Dialogue ) :
 
-	def __init__( self, title, message, cancelLabel="Cancel", confirmLabel="OK", sizeMode=GafferUI.Window.SizeMode.Automatic, **kw ) :
+	def __init__( self, title, message, cancelLabel="Cancel", confirmLabel="OK", sizeMode=GafferUI.Window.SizeMode.Automatic, details = None, **kw ) :
 
 		GafferUI.Dialogue.__init__( self, title, sizeMode=sizeMode, **kw )
 
-		self._setWidget( GafferUI.Label( message ) )
+		with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing = 8 ) as column :
+
+			GafferUI.Label( message )
+
+			if details is not None :
+				with GafferUI.Collapsible( label = "Details", collapsed = True ) :
+					GafferUI.MultiLineTextWidget(
+						text = details,
+						editable = False,
+					)
+
+		self._setWidget( column )
 
 		self._addButton( cancelLabel )
 		self.__confirmButton = self._addButton( confirmLabel )
 
 	## Causes the dialogue to enter a modal state, returning True if the confirm
-	# button was pressed, and False otherwise.
+	# button was pressed, False if the cancel button was pressed, and None if
+	# the user closed the dialogue.
 	def waitForConfirmation( self, **kw ) :
 
 		self.__confirmButton._qtWidget().setFocus()
 		button = self.waitForButton( **kw )
-		if button is self.__confirmButton :
-			return True
 
-		return False
+		if button is None :
+			return None
+		else :
+			return button is self.__confirmButton

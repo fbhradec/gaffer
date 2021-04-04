@@ -34,15 +34,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "GafferImage/Shape.h"
+
+#include "GafferImage/Blur.h"
+#include "GafferImage/ImageAlgo.h"
+#include "GafferImage/ImageTransform.h"
+#include "GafferImage/Merge.h"
+
 #include "Gaffer/ArrayPlug.h"
 #include "Gaffer/Context.h"
+#include "Gaffer/Switch.h"
 #include "Gaffer/Transform2DPlug.h"
-
-#include "GafferImage/Merge.h"
-#include "GafferImage/Shape.h"
-#include "GafferImage/ImageAlgo.h"
-#include "GafferImage/Blur.h"
-#include "GafferImage/ImageTransform.h"
 
 using namespace std;
 using namespace Imath;
@@ -50,13 +52,13 @@ using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-IE_CORE_DEFINERUNTIMETYPED( Shape );
+GAFFER_NODE_DEFINE_TYPE( Shape );
 
 size_t Shape::g_firstPlugIndex = 0;
 static std::string g_shapeChannelName( "__shape" );
 
 Shape::Shape( const std::string &name )
-	:	ImageProcessor( name )
+	:	FlatImageProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 
@@ -71,6 +73,9 @@ Shape::Shape( const std::string &name )
 
 	addChild( new ImagePlug( "__shape", Gaffer::Plug::Out, Plug::Default & ~Plug::Serialisable ) );
 	addChild( new ImagePlug( "__shadowShape", Gaffer::Plug::Out, Plug::Default & ~Plug::Serialisable ) );
+
+	shadowShapePlug()->setInput( shapePlug() );
+	shadowShapePlug()->channelDataPlug()->setInput( nullptr );
 
 	BlurPtr shadowBlur = new Blur( "__shadowBlur" );
 	addChild( shadowBlur );
@@ -90,17 +95,20 @@ Shape::Shape( const std::string &name )
 	shadowMerge->inPlugs()->getChild<ImagePlug>( 1 )->setInput( shadowTransform->outPlug() );
 	shadowMerge->operationPlug()->setValue( Merge::Over );
 
-	ImageSwitchPtr shadowSwitch = new ImageSwitch( "__shadowSwitch" );
+	SwitchPtr shadowSwitch = new Switch( "__shadowSwitch" );
+	shadowSwitch->setup( outPlug() );
 	addChild( shadowSwitch );
 	shadowSwitch->inPlugs()->getChild<ImagePlug>( 0 )->setInput( inPlug() );
 	shadowSwitch->inPlugs()->getChild<ImagePlug>( 1 )->setInput( shadowMerge->outPlug() );
 	shadowSwitch->indexPlug()->setInput( shadowPlug() );
+	shadowSwitch->enabledPlug()->setInput( enabledPlug() );
 
 	MergePtr merge = new Merge( "__merge" );
 	addChild( merge );
 
 	merge->inPlugs()->getChild<ImagePlug>( 0 )->setInput( shadowSwitch->outPlug() );
 	merge->inPlugs()->getChild<ImagePlug>( 1 )->setInput( shapePlug() );
+	merge->enabledPlug()->setInput( enabledPlug() );
 	merge->operationPlug()->setValue( Merge::Over );
 
 	outPlug()->setInput( merge->outPlug() );
@@ -182,13 +190,18 @@ const ImagePlug *Shape::shadowShapePlug() const
 
 void Shape::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	ImageProcessor::affects( input, outputs );
+	FlatImageProcessor::affects( input, outputs );
 
 	// TypeId comparison is necessary to avoid calling pure virtual
 	// methods below if we're called before being fully constructed.
 	if( typeId() == staticTypeId() )
 	{
 		return;
+	}
+
+	if( input == inPlug()->deepPlug() )
+	{
+		outputs.push_back( shapePlug()->deepPlug() );
 	}
 
 	if( affectsShapeDataWindow( input ) )
@@ -229,7 +242,7 @@ Imath::Box2i Shape::computeDataWindow( const Gaffer::Context *context, const Ima
 void Shape::hashChannelNames( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
 	assert( parent == shapePlug() );
-	ImageProcessor::hashChannelNames( parent, context, h );
+	FlatImageProcessor::hashChannelNames( parent, context, h );
 	// Because our channel names are constant, we don't need to add
 	// anything else to the hash.
 }
@@ -247,7 +260,7 @@ IECore::ConstStringVectorDataPtr Shape::computeChannelNames( const Gaffer::Conte
 
 void Shape::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	assert( parent == shapePlug() );
+	assert( parent == shapePlug() || parent == shadowShapePlug()  );
 	const std::string &channelName = context->get<std::string>( ImagePlug::channelNameContextName );
 	if( channelName == g_shapeChannelName )
 	{
@@ -264,7 +277,7 @@ void Shape::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer:
 		}
 		else
 		{
-			ImageProcessor::hashChannelData( parent, context, h );
+			FlatImageProcessor::hashChannelData( parent, context, h );
 			h.append( shapeHash );
 			h.append( c );
 		}
@@ -273,7 +286,7 @@ void Shape::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer:
 
 IECore::ConstFloatVectorDataPtr Shape::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	assert( parent == shapePlug() );
+	assert( parent == shapePlug() || parent == shadowShapePlug()  );
 	if( channelName == g_shapeChannelName )
 	{
 		// Private channel we use for caching the shape but don't advertise via channelNames.
@@ -321,7 +334,7 @@ bool Shape::affectsShapeDataWindow( const Gaffer::Plug *input ) const
 
 void Shape::hashShapeDataWindow( const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashDataWindow( shapePlug(), context, h );
+	FlatImageProcessor::hashDataWindow( shapePlug(), context, h );
 }
 
 bool Shape::affectsShapeChannelData( const Gaffer::Plug *input ) const
@@ -331,5 +344,5 @@ bool Shape::affectsShapeChannelData( const Gaffer::Plug *input ) const
 
 void Shape::hashShapeChannelData( const Imath::V2i &tileOrigin, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashChannelData( shapePlug(), context, h );
+	FlatImageProcessor::hashChannelData( shapePlug(), context, h );
 }

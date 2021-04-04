@@ -44,15 +44,15 @@ namespace Gaffer
 
 IE_CORE_FORWARDDECLARE( StringPlug )
 
-class Reference : public SubGraph
+class GAFFER_API Reference : public SubGraph
 {
 
 	public :
 
 		Reference( const std::string &name=defaultName<Reference>() );
-		virtual ~Reference();
+		~Reference() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Reference, ReferenceTypeId, SubGraph );
+		GAFFER_NODE_DECLARE_TYPE( Gaffer::Reference, ReferenceTypeId, SubGraph );
 
 		/// Loads the specified script, which should have been exported
 		/// using Box::exportForReference().
@@ -65,21 +65,34 @@ class Reference : public SubGraph
 		/// Emitted when a reference is loaded (or unloaded following an undo).
 		ReferenceLoadedSignal &referenceLoadedSignal();
 
+		/// Edits
+		/// =====
+		///
+		/// Edits are changes to referenced plugs that are made by the user
+		/// after the reference has been loaded via `load()`. The Reference
+		/// node provides some limited tracking of edits, exposing them
+		/// via the following methods.
+
+		bool hasMetadataEdit( const Plug *plug, const IECore::InternedString key ) const;
+		/// Returns true if `plug` has been added as a child of a referenced plug.
+		bool isChildEdit( const Plug *plug ) const;
+
 	private :
 
 		void loadInternal( const std::string &fileName );
 		bool isReferencePlug( const Plug *plug ) const;
 
-		void convertPersistentMetadata( Plug *plug ) const;
-		void transferPersistentMetadata( const Plug *srcPlug, Plug *dstPlug ) const;
-
 		std::string m_fileName;
 		ReferenceLoadedSignal m_referenceLoadedSignal;
+
+		class PlugEdits;
+		std::unique_ptr<PlugEdits> m_plugEdits;
 
 };
 
 IE_CORE_DECLAREPTR( Reference )
 
+/// \deprecated Use Reference::Iterator etc instead.
 typedef FilteredChildIterator<TypePredicate<Reference> > ReferenceIterator;
 typedef FilteredRecursiveChildIterator<TypePredicate<Reference> > RecursiveReferenceIterator;
 

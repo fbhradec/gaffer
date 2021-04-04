@@ -41,8 +41,11 @@ import weakref
 import gc
 import os
 import shutil
+import stat
 import inspect
 import functools
+import six
+import imath
 
 import IECore
 
@@ -69,23 +72,13 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 	def testExecution( self ) :
 
 		s = Gaffer.ScriptNode()
-
-		def f( n, s ) :
-			ScriptNodeTest.lastNode = n
-			ScriptNodeTest.lastScript = s
-
-		c = s.scriptExecutedSignal().connect( f )
-
 		s.execute( "script.addChild( Gaffer.Node( 'child' ) )" )
-		self.assertEqual( ScriptNodeTest.lastNode, s )
-		self.assertEqual( ScriptNodeTest.lastScript, "script.addChild( Gaffer.Node( 'child' ) )" )
-
-		self.assert_( s["child"].typeName(), "Node" )
+		self.assertEqual( s["child"].typeName(), "Gaffer::Node" )
 
 	def testSelection( self ) :
 
 		s = Gaffer.ScriptNode()
-		self.assert_( isinstance( s.selection(), Gaffer.Set ) )
+		self.assertIsInstance( s.selection(), Gaffer.Set )
 
 		n = Gaffer.Node()
 
@@ -95,11 +88,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		s.selection().add( n )
 
-		self.failUnless( n in s.selection() )
+		self.assertIn( n, s.selection() )
 
 		s.removeChild( n )
 
-		self.failIf( n in s.selection() )
+		self.assertNotIn( n, s.selection() )
 
 	def testSerialisation( self ) :
 
@@ -118,7 +111,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		s2.execute( se )
 
-		self.assert_( s2["a2"]["op1"].getInput().isSame( s2["a1"]["sum"] ) )
+		self.assertTrue( s2["a2"]["op1"].getInput().isSame( s2["a1"]["sum"] ) )
 
 	def testDynamicPlugSerialisation( self ) :
 
@@ -138,11 +131,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s2 = Gaffer.ScriptNode()
 		s2.execute( s1.serialise() )
 
-		self.assert_( s2["n1"]["dynamicPlug"].getInput().isSame( s2["n2"]["sum"] ) )
+		self.assertTrue( s2["n1"]["dynamicPlug"].getInput().isSame( s2["n2"]["sum"] ) )
 		self.assertEqual( s2["n1"]["dynamicPlug2"].getValue(), 100 )
 		self.assertEqual( s2["n1"]["dynamicStringPlug"].getValue(), "hiThere" )
-		self.failUnless( isinstance( s2["n1"]["dynamicOutPlug"], Gaffer.IntPlug ) )
-		self.failUnless( isinstance( s2["n1"]["dynamicColorOutPlug"], Gaffer.Color3fPlug ) )
+		self.assertIsInstance( s2["n1"]["dynamicOutPlug"], Gaffer.IntPlug )
+		self.assertIsInstance( s2["n1"]["dynamicColorOutPlug"], Gaffer.Color3fPlug )
 
 	def testLifetime( self ) :
 
@@ -174,7 +167,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s2["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s2.load()
 
-		self.assert_( s2["a2"]["op1"].getInput().isSame( s2["a1"]["sum"] ) )
+		self.assertTrue( s2["a2"]["op1"].getInput().isSame( s2["a1"]["sum"] ) )
 
 	def testLoadClearsFirst( self ) :
 
@@ -185,7 +178,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s.save()
 
 		s.load()
-		self.failIf( "a2" in s )
+		self.assertNotIn( "a2", s )
 
 	def testSaveFailureHandling( self ) :
 
@@ -219,8 +212,8 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		s2.paste()
 
-		self.assert_( s1["n1"].isInstanceOf( GafferTest.AddNode.staticTypeId() ) )
-		self.assert_( s2["n1"].isInstanceOf( GafferTest.AddNode.staticTypeId() ) )
+		self.assertTrue( s1["n1"].isInstanceOf( GafferTest.AddNode.staticTypeId() ) )
+		self.assertTrue( s2["n1"].isInstanceOf( GafferTest.AddNode.staticTypeId() ) )
 
 	def testSerialisationWithKeywords( self ) :
 
@@ -263,11 +256,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		c2 = Gaffer.Node()
 
 		n.addChild( c1 )
-		self.failUnless( c1.parent() is n )
-		self.failUnless( c1.scriptNode() is n )
+		self.assertTrue( c1.parent() is n )
+		self.assertTrue( c1.scriptNode() is n )
 
 		self.assertRaises( RuntimeError, n.addChild, c2 )
-		self.failUnless( c2.parent() is None )
+		self.assertIsNone( c2.parent() )
 
 	def testExecutionExceptions( self ) :
 
@@ -282,7 +275,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		n = Gaffer.ScriptNode()
 
 		n.execute( "a = 10" )
-		self.assertRaisesRegexp( Exception, "NameError: name 'a' is not defined", n.execute, "a * 10" )
+		six.assertRaisesRegex( self, Exception, "NameError: name 'a' is not defined", n.execute, "a * 10" )
 
 	def testClassScope( self ) :
 
@@ -295,7 +288,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 				def __init__( self ) :
 
-					print A
+					print( A )
 
 			a = A()
 			"""
@@ -315,11 +308,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s["n2"] = n2
 
 		s.selection().add( n1 )
-		self.failUnless( n1 in s.selection() )
+		self.assertIn( n1, s.selection() )
 
 		del s["n1"]
 
-		self.failUnless( n1 not in s.selection() )
+		self.assertNotIn( n1, s.selection() )
 
 	def testContext( self ) :
 
@@ -329,14 +322,14 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		c.setFrame( 10.0 )
 
 		self.assertEqual( s.context().getFrame(), 10.0 )
-		self.failUnless( s.context().isSame( c ) )
+		self.assertTrue( s.context().isSame( c ) )
 
 	def testFrameRange( self ) :
 
 		s = Gaffer.ScriptNode()
 
-		self.failUnless( isinstance( s["frameRange"]["start"], Gaffer.IntPlug ) )
-		self.failUnless( isinstance( s["frameRange"]["end"], Gaffer.IntPlug ) )
+		self.assertIsInstance( s["frameRange"]["start"], Gaffer.IntPlug )
+		self.assertIsInstance( s["frameRange"]["end"], Gaffer.IntPlug )
 
 		self.assertEqual( s["frameRange"]["start"].getValue(), 1 )
 		self.assertEqual( s["frameRange"]["end"].getValue(), 100 )
@@ -375,12 +368,12 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 	def testApplicationRoot( self ) :
 
 		s = Gaffer.ScriptNode()
-		self.failUnless( s.applicationRoot() is None )
+		self.assertIsNone( s.applicationRoot() )
 
 		a = Gaffer.ApplicationRoot()
 		a["scripts"]["one"] = s
 
-		self.failUnless( s.applicationRoot().isSame( a ) )
+		self.assertTrue( s.applicationRoot().isSame( a ) )
 
 	def testLifeTimeAfterExecution( self ) :
 
@@ -429,7 +422,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s.deleteNodes()
 
-		self.failUnless( "fileName" in s )
+		self.assertIn( "fileName", s )
 
 	def testDeleteNodesWithFilter( self ) :
 
@@ -441,9 +434,9 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		s.deleteNodes( filter = Gaffer.StandardSet( [ s["n1"] ] ) )
 		self.assertEqual( len( s.children( Gaffer.Node ) ), 2 )
-		self.failUnless( "n" in s )
-		self.failUnless( "n1" not in s )
-		self.failUnless( "n2" in s )
+		self.assertIn( "n", s )
+		self.assertNotIn( "n1", s )
+		self.assertIn( "n2", s )
 
 	def testDeleteNodesMaintainsConnections( self ) :
 
@@ -464,12 +457,12 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		n3["op2"].setInput( n1["sum"] )
 		n4["op1"].setInput( n2["product"] )
 		n4["op2"].setInput( n3["sum"] )
-		self.assert_( n2["op1"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n2["op2"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n3["op1"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n3["op2"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n4["op1"].getInput().isSame( n2["product"] ) )
-		self.assert_( n4["op2"].getInput().isSame( n3["sum"] ) )
+		self.assertTrue( n2["op1"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n2["op2"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n3["op1"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n3["op2"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n4["op1"].getInput().isSame( n2["product"] ) )
+		self.assertTrue( n4["op2"].getInput().isSame( n3["sum"] ) )
 
 		s.deleteNodes( filter = Gaffer.StandardSet( [ n2, n3 ] ) )
 
@@ -479,7 +472,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( n3["op2"].getInput(), None )
 		# None because MultiplyOp does not define enabledPlug()
 		self.assertEqual( n4["op1"].getInput(), None )
-		self.assert_( n4["op2"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n4["op2"].getInput().isSame( n1["sum"] ) )
 
 		n2["op1"].setInput( n1["sum"] )
 		n2["op2"].setInput( n1["sum"] )
@@ -520,10 +513,10 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		n2["op2"].setInput( n1["sum"] )
 		n3["op1"].setInput( n2["sum"] )
 		n3["op2"].setInput( n2["sum"] )
-		self.assert_( n2["op1"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n2["op2"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n3["op1"].getInput().isSame( n2["sum"] ) )
-		self.assert_( n3["op2"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n2["op1"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n2["op2"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n3["op1"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n3["op2"].getInput().isSame( n2["sum"] ) )
 
 		s.deleteNodes( filter = Gaffer.StandardSet( [ n2 ] ) )
 
@@ -548,11 +541,11 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		n3["op1"].setInput( n2["sum"] )
 		n3["op2"].setInput( n2["sum"] )
 
-		self.assert_( n2["op1"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n2["op2"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n2["op1"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n2["op2"].getInput().isSame( n1["sum"] ) )
 
-		self.assert_( n3["op1"].getInput().isSame( n2["sum"] ) )
-		self.assert_( n3["op2"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n3["op1"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n3["op2"].getInput().isSame( n2["sum"] ) )
 
 		s.deleteNodes( filter = Gaffer.StandardSet( [ n2 ] ) )
 
@@ -738,12 +731,12 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		cs = GafferTest.CapturingSlot( s.actionSignal() )
 
-		# shouldn't trigger anything, because it's not in an undo context
+		# shouldn't trigger anything, because it's not in an undo scope
 		s.addChild( Gaffer.Node() )
 		self.assertEqual( len( cs ), 0 )
 
-		# should trigger something, because it's in an undo context
-		with Gaffer.UndoContext( s ) :
+		# should trigger something, because it's in an undo scope
+		with Gaffer.UndoScope( s ) :
 			s.addChild( Gaffer.Node( "a" ) )
 
 		self.assertEqual( len( cs ), 1 )
@@ -795,7 +788,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 
 		# but this should.
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["node"] = GafferTest.AddNode()
 		self.assertEqual( s["unsavedChanges"].getValue(), True )
 
@@ -803,14 +796,14 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s.save()
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["node"]["op1"].setValue( 10 )
 		self.assertEqual( s["unsavedChanges"].getValue(), True )
 
 		s.save()
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["node"]["op1"].setValue( 20 )
 		self.assertEqual( s["unsavedChanges"].getValue(), True )
 
@@ -829,14 +822,14 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s.save()
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["node2"] = GafferTest.AddNode()
 		self.assertEqual( s["unsavedChanges"].getValue(), True )
 
 		s.save()
 		self.assertEqual( s["unsavedChanges"].getValue(), False )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["node2"]["op1"].setInput( s["node"]["sum"] )
 		self.assertEqual( s["unsavedChanges"].getValue(), True )
 
@@ -903,7 +896,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		c = s["n"].plugSetSignal().connect( f )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n"]["p"].setValue( 10 )
 			s["n"]["p"].setValue( 20 )
 
@@ -924,20 +917,20 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s["n"] = Gaffer.Node()
 		self.assertEqual( cs, [] )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n"]["p"] = Gaffer.IntPlug( flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
 			s["n"]["p"].setValue( 100 )
 
 		self.assertEqual( len( cs ), 1 )
 		self.assertTrue( cs[0][0].isSame( s ) )
 
-		with Gaffer.UndoContext( s, mergeGroup = "test" ) :
+		with Gaffer.UndoScope( s, mergeGroup = "test" ) :
 			s["n"]["p"].setValue( 200 )
 
 		self.assertEqual( len( cs ), 2 )
 		self.assertTrue( cs[1][0].isSame( s ) )
 
-		with Gaffer.UndoContext( s, mergeGroup = "test" ) :
+		with Gaffer.UndoScope( s, mergeGroup = "test" ) :
 			s["n"]["p"].setValue( 300 )
 
 		# undo was merged, so a new one wasn't added
@@ -948,7 +941,8 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 
-		p = s["variables"].addMember( "test", IECore.IntData( 10 ) )
+		p = Gaffer.NameValuePlug( "test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
 		self.assertEqual( s.context().get( "test" ), 10 )
 		p["value"].setValue( 20 )
 		self.assertEqual( s.context().get( "test" ), 20 )
@@ -974,7 +968,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 	def testReloadWithCustomVariables( self ) :
 
 		s = Gaffer.ScriptNode()
-		s["variables"].addMember( "test", IECore.IntData( 10 ) )
+		s["variables"].addChild( Gaffer.NameValuePlug( "test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic ) )
 
 		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
 		s.save()
@@ -989,7 +983,8 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 
-		p = s["variables"].addMember( "test", IECore.IntData( 10 ) )
+		p = Gaffer.NameValuePlug( "test", IECore.IntData( 10 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
 		self.assertEqual( s.context().get( "test" ), 10 )
 
 		s["fileName"].setValue( self.temporaryDirectory() + "/test.gfr" )
@@ -1026,7 +1021,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( len( actionStages ), 1 )
 		self.assertEqual( actionStages[-1], Gaffer.Action.Stage.Invalid )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n"]["op1"].setValue( 11 )
 
 		self.assertEqual( len( actionStages ), 2 )
@@ -1057,41 +1052,41 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		s["n"] = Gaffer.Node()
 		s["n"]["p"] = Gaffer.IntPlug()
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s.setName( "somethingElse" )
 			self.assertEqual( s.getName(), "somethingElse" )
 		self.assertEqual( s.refCount(), c )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n"].setName( "n2" )
 			self.assertEqual( s["n2"].getName(), "n2" )
 		self.assertEqual( s.refCount(), c )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			Gaffer.Metadata.registerValue( s, "test", 10 )
 			Gaffer.Metadata.registerValue( s["n2"], "test", 10 )
 			Gaffer.Metadata.registerValue( s["n2"]["p"], "test", 10 )
 		self.assertEqual( s.refCount(), c )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n3"] = Gaffer.Node()
 			n4 = Gaffer.Node( "n4" )
 			s.addChild( n4 )
 		self.assertEqual( s.refCount(), c )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n3"].addChild( s["n2"]["p"] )
 		self.assertEqual( s.refCount(), c )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s.addChild( s["n3"]["p"] )
 		self.assertEqual( s.refCount(), c )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n3"].addChild( s["p"] )
 		self.assertEqual( s.refCount(), c )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s.removeChild( s["n2"] )
 		self.assertEqual( s.refCount(), c )
 
@@ -1124,7 +1119,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 	def testExecuteExceptionsIncludeLineNumber( self ) :
 
 		s = Gaffer.ScriptNode()
-		self.assertRaisesRegexp( RuntimeError, "Line 2 .* name 'iDontExist' is not defined", s.execute, "a = 10\na=iDontExist" )
+		six.assertRaisesRegex( self, RuntimeError, "Line 2 .* name 'iDontExist' is not defined", s.execute, "a = 10\na=iDontExist" )
 
 	def testFileVersioning( self ) :
 
@@ -1198,12 +1193,57 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 		self.assertEqual( s2["framesPerSecond"].getValue(), 48.0 )
 		self.assertEqual( s2.context().getFramesPerSecond(), 48.0 )
 
+	def testFrame( self ) :
+
+		s = Gaffer.ScriptNode()
+		self.assertEqual( s["frame"].getValue(), 1 )
+		self.assertEqual( s.context().getFrame(), 1.0 )
+
+		s["frame"].setValue( 2.0 )
+		self.assertEqual( s.context().getFrame(), 2.0 )
+
+		s.context().setFrame( 4.0 )
+		self.assertEqual( s["frame"].getValue(), 4.0 )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		self.assertEqual( s2["frame"].getValue(), 4.0 )
+		self.assertEqual( s2.context().getFrame(), 4.0 )
+
+	def testFrameRange( self ) :
+
+		s = Gaffer.ScriptNode()
+		self.assertEqual( s["frameRange"]["start"].getValue(), 1 )
+		self.assertEqual( s["frameRange"]["end"].getValue(), 100 )
+		self.assertEqual( s.context().get( "frameRange:start" ), 1 )
+		self.assertEqual( s.context().get( "frameRange:end" ), 100 )
+
+		s["frameRange"]["start"].setValue( 20 )
+		s["frameRange"]["end"].setValue( 50 )
+		self.assertEqual( s.context().get( "frameRange:start" ), 20 )
+		self.assertEqual( s.context().get( "frameRange:end" ), 50 )
+
+		# frame range remains valid
+		s["frameRange"]["end"].setValue( 15 )
+		self.assertEqual( s["frameRange"]["start"].getValue(), 15 )
+		self.assertEqual( s["frameRange"]["end"].getValue(), 15 )
+		self.assertEqual( s.context().get( "frameRange:start" ), 15 )
+		self.assertEqual( s.context().get( "frameRange:end" ), 15 )
+
+		s["frameRange"]["end"].setValue( 150 )
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		self.assertEqual( s2["frameRange"]["start"].getValue(), 15 )
+		self.assertEqual( s2["frameRange"]["end"].getValue(), 150 )
+		self.assertEqual( s2.context().get( "frameRange:start" ), 15 )
+		self.assertEqual( s2.context().get( "frameRange:end" ), 150 )
+
 	def testLineNumberForExecutionSyntaxError( self ) :
 
 		s = Gaffer.ScriptNode()
-		self.assertRaisesRegexp(
-			Exception,
-			"^Exception : Line 2",
+		six.assertRaisesRegex( self,
+			IECore.Exception,
+			"^Line 2",
 			s.execute,
 			inspect.cleandoc(
 				"""
@@ -1226,7 +1266,7 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		for method in ( s.load, functools.partial( s.executeFile, fileName ) ) :
 
-			self.assertRaisesRegexp(
+			six.assertRaisesRegex( self,
 				RuntimeError,
 				"Line 2 of " + fileName + " : NameError: name 'iDontExist' is not defined",
 				method
@@ -1245,20 +1285,41 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		self.assertFalse( s.isExecuting() )
 
-		self.__wasExecuting = None
+		self.__wasExecuting = []
 		def f( script, child ) :
-			self.__wasExecuting = script.isExecuting()
+			self.__wasExecuting.append( script.isExecuting() )
 
 		c = s.childAddedSignal().connect( f )
 
 		s["n"] = GafferTest.AddNode()
-		self.assertEqual( self.__wasExecuting, False )
 
-		ss = s.serialise( filter = Gaffer.StandardSet( [ s["n"] ] ) )
+		# add a reference so we guarantee it works with nested loads
+		s["n1"] = GafferTest.AddNode()
+		s["n2"] = GafferTest.AddNode()
+		s["n2"]["op1"].setInput( s["n1"]["sum"] )
+		b = Gaffer.Box.create( s, Gaffer.StandardSet( [ s["n1"] ] ) )
+		Gaffer.PlugAlgo.promote( b["n1"]["op1"] )
+
+		b.exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"]["op1"].setInput( s["n"]["sum"] )
+
+		s["x"] = GafferTest.AddNode()
+		self.assertFalse( any( self.__wasExecuting ) )
+
+		self.__wasExecuting = []
+
+		# connecting n to r and then to x guarantees the order of serialisation
+		s["x"]["op1"].setInput( s["r"]["sum"] )
+
+		ss = s.serialise( filter = Gaffer.StandardSet( [ s["n"], s["r"], s["x"] ] ) )
 		s.execute( ss )
-		self.assertEqual( self.__wasExecuting, True )
+		self.assertTrue( all( self.__wasExecuting ) )
 
-		self.__wasExecuting = None
+		self.__wasExecuting = []
 		self.assertRaises( RuntimeError, s.execute, ss + "\nsyntaxError" )
 		self.assertFalse( s.isExecuting() )
 
@@ -1312,6 +1373,250 @@ class ScriptNodeTest( GafferTest.TestCase ) :
 
 		s.deleteNodes( filter = Gaffer.StandardSet( [ s["n3"] ] ) )
 		self.assertTrue( s["n4"]["in"]["a"].getInput().isSame( s["n1"]["out"]["a"] ) )
+
+	def testPasteWithContinueOnError( self ) :
+
+		app = Gaffer.ApplicationRoot()
+		script = Gaffer.ScriptNode()
+
+		app["scripts"]["s"] = script
+
+		app.setClipboardContents( IECore.StringData(
+			inspect.cleandoc(
+				"""
+				iAmAnError
+				parent.addChild( Gaffer.Node() )
+				"""
+			)
+		) )
+
+		six.assertRaisesRegex( self, RuntimeError, "iAmAnError", script.paste )
+		self.assertEqual( len( script.children( Gaffer.Node ) ), 0 )
+
+		with IECore.CapturingMessageHandler() as mh :
+			script.paste( continueOnError = True )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertEqual( mh.messages[0].level, IECore.Msg.Level.Error )
+		self.assertTrue( "iAmAnError" in mh.messages[0].message )
+		self.assertEqual( len( script.children( Gaffer.Node ) ), 1 )
+
+	def testErrorTolerantExecutionWithSyntaxError( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		with IECore.CapturingMessageHandler() as mh :
+			script.execute( "import", continueOnError = True )
+
+		self.assertEqual( len( mh.messages ), 1 )
+		self.assertIn( "SyntaxError: invalid syntax", mh.messages[0].message )
+
+	def testImport( self ) :
+
+		s1 = Gaffer.ScriptNode()
+
+		s1["n1"] = GafferTest.AddNode()
+		s1["n2"] = GafferTest.AddNode()
+		s1["n2"]["op1"].setInput( s1["n1"]["sum"] )
+
+		s1["p"] = Gaffer.Plug()
+		s1["frameRange"]["start"].setValue( -10 )
+		s1["frameRange"]["end"].setValue( 101 )
+		s1["variables"].addChild( Gaffer.NameValuePlug( "test", "test" ) )
+
+		fileName = self.temporaryDirectory() + "/toImport.gfr"
+		s1.serialiseToFile( fileName )
+
+		s2 = Gaffer.ScriptNode()
+		s2.importFile( fileName )
+
+		self.assertIn( "n1", s2 )
+		self.assertIn( "n2", s2 )
+		self.assertTrue( s2["n2"]["op1"].getInput().isSame( s2["n1"]["sum"] ) )
+
+		self.assertNotIn( "p", s2 )
+		self.assertEqual( len( s2["variables"] ), 0 )
+
+	def testReadOnlyMetadata( self ) :
+
+		fileName = self.temporaryDirectory() + "/test.gfr"
+
+		s = Gaffer.ScriptNode()
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+		s["fileName"].setValue( fileName )
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+		s.save()
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( fileName )
+		s.load()
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+		os.chmod( s["fileName"].getValue(), stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH )
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( fileName )
+		s.load()
+		self.assertTrue( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+		s["fileName"].setValue( self.temporaryDirectory() + "/test2.gfr" )
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( s ) )
+
+	def testDisableContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		p = Gaffer.NameValuePlug( "test", 10, defaultEnabled = True, name = "test", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertEqual( s.context()["test"], 10 )
+
+		p["enabled"].setValue( False )
+		self.assertNotIn( "test", s.context() )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+		self.assertNotIn( "test", s2.context() )
+		s2["variables"]["test"]["enabled"].setValue( True )
+		self.assertEqual( s2.context()["test"], 10 )
+
+	def testDeleteContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		p = Gaffer.NameValuePlug( "test", 10, defaultEnabled = True, name = "test", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertEqual( s.context()["test"], 10 )
+
+		s["variables"].removeChild( p )
+		self.assertNotIn( "test", s.context() )
+
+	def testCompoundNumericContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		p = Gaffer.NameValuePlug( "test", imath.V3i( 1, 2, 3 ), flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertEqual( s.context()["test"], imath.V3i( 1, 2, 3 ) )
+
+		p["value"]["y"].setValue( 10 )
+		self.assertEqual( s.context()["test"], imath.V3i( 1, 10, 3 ) )
+
+	def testDuplicateContextVariables( self ) :
+
+		# We don't want people to specify the same context variable twice,
+		# but if they do, we want to implement a simple rule : last enabled
+		# one in the list wins. This is the same rule used for CompoundDataPlugs
+		# everywhere.
+
+		s = Gaffer.ScriptNode()
+
+		p1 = Gaffer.NameValuePlug( "test", 1, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		p2 = Gaffer.NameValuePlug( "test", 2, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p1 )
+		s["variables"].addChild( p2 )
+		self.assertEqual( s.context()["test"], 2 )
+
+		p1["value"].setValue( 10 )
+		self.assertEqual( s.context()["test"], 2 )
+
+		p2["enabled"].setValue( False )
+		self.assertEqual( s.context()["test"], 10 )
+
+		p2["enabled"].setValue( True )
+		self.assertEqual( s.context()["test"], 2 )
+
+		s["variables"].removeChild( p2 )
+		self.assertEqual( s.context()["test"], 10 )
+
+		s["variables"].removeChild( p1 )
+		self.assertNotIn( "test", s.context() )
+
+	def testExternalContextVariable( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		# We don't really want people to manipulate the context directly like
+		# this; we want them to use `ScriptNode::variablesPlug()` instead. But
+		# it seems plausible that people would do this to implement a sort of
+		# non-persistent "context pinning" for interactive use. Until we support
+		# such a feature natively, make sure that we don't remove variables we
+		# know nothing about.
+		s.context()["externalTest"] = 10
+
+		p = Gaffer.NameValuePlug( "test", 1, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertEqual( s.context()["externalTest"], 10 )
+		self.assertEqual( s.context()["test"], 1 )
+
+		p["enabled"].setValue( False )
+		self.assertEqual( s.context()["externalTest"], 10 )
+		self.assertNotIn( "test", s.context() )
+
+		p["enabled"].setValue( True )
+		self.assertEqual( s.context()["externalTest"], 10 )
+		self.assertEqual( s.context()["test"], 1 )
+
+		s["variables"].removeChild( p )
+		self.assertEqual( s.context()["externalTest"], 10 )
+		self.assertNotIn( "test", s.context() )
+
+	def testChangeContextVariableName( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		p = Gaffer.NameValuePlug( "", 1, defaultEnabled = True, flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		s["variables"].addChild( p )
+		self.assertNotIn( "", s.context() )
+
+		p["name"].setValue( "test" )
+		self.assertEqual( s.context()["test"], 1 )
+
+		p["name"].setValue( "testTwo" )
+		self.assertEqual( s.context()["testTwo"], 1 )
+		self.assertNotIn( "test", s.context() )
+
+		p["name"].setValue( "" )
+		self.assertNotIn( "testTwo", s.context() )
+
+	def testCancellationDuringLoad( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["fileName"].setValue( os.path.join( os.path.dirname( __file__ ), "scripts", "previousSerialisationVersion.gfr" ) )
+
+		context = Gaffer.Context()
+		canceller = IECore.Canceller()
+		with Gaffer.Context( context, canceller ) :
+			canceller.cancel()
+			with self.assertRaises( IECore.Cancelled ) :
+				s.load()
+
+	def testCancellationDuringExecute( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		context = Gaffer.Context()
+		canceller = IECore.Canceller()
+		with Gaffer.Context( context, canceller ) :
+			canceller.cancel()
+			# Execution is done all in one go, and there's no point cancelling
+			# at the end when we've done all of the work anyway.
+			s.execute( "script.addChild( Gaffer.Node() )", continueOnError = False )
+			with self.assertRaises( IECore.Cancelled ) :
+				# Execution is done line-by-line, so making regular cancellation
+				# checks makes sense.
+				s.execute( "script.addChild( Gaffer.Node() )", continueOnError = True )
+
+	def testCancellationDuringSerialise( self ) :
+
+		s = Gaffer.ScriptNode()
+		context = Gaffer.Context()
+		canceller = IECore.Canceller()
+		with Gaffer.Context( context, canceller ) :
+			canceller.cancel()
+			with self.assertRaises( IECore.Cancelled ) :
+				s.serialise()
 
 if __name__ == "__main__":
 	unittest.main()

@@ -35,6 +35,7 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "GafferArnold/ArnoldDisplacement.h"
+
 #include "GafferArnold/ArnoldShader.h"
 
 using namespace IECore;
@@ -42,7 +43,7 @@ using namespace Gaffer;
 using namespace GafferScene;
 using namespace GafferArnold;
 
-IE_CORE_DEFINERUNTIMETYPED( ArnoldDisplacement );
+GAFFER_NODE_DEFINE_TYPE( ArnoldDisplacement );
 
 size_t ArnoldDisplacement::g_firstPlugIndex = 0;
 static IECore::InternedString g_mapAttributeName = "ai:disp_map";
@@ -128,23 +129,19 @@ const Gaffer::Plug *ArnoldDisplacement::outPlug() const
 	return getChild<Plug>( g_firstPlugIndex + 5 );
 }
 
-void ArnoldDisplacement::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
+bool ArnoldDisplacement::affectsAttributes( const Gaffer::Plug *input ) const
 {
-	Shader::affects( input, outputs );
-
-	if(
+	return
+		Shader::affectsAttributes( input ) ||
 		input == mapPlug() ||
 		input == heightPlug() ||
 		input == paddingPlug() ||
 		input == zeroValuePlug() ||
 		input == autoBumpPlug()
-	)
-	{
-		outputs.push_back( outPlug() );
-	}
+	;
 }
 
-void ArnoldDisplacement::attributesHash( IECore::MurmurHash &h ) const
+void ArnoldDisplacement::attributesHash( const Gaffer::Plug *output, IECore::MurmurHash &h ) const
 {
 	h.append( typeId() );
 	if( !enabledPlug()->getValue() )
@@ -159,7 +156,7 @@ void ArnoldDisplacement::attributesHash( IECore::MurmurHash &h ) const
 	autoBumpPlug()->hash( h );
 }
 
-IECore::ConstCompoundObjectPtr ArnoldDisplacement::attributes() const
+IECore::ConstCompoundObjectPtr ArnoldDisplacement::attributes( const Gaffer::Plug *output ) const
 {
 	CompoundObjectPtr result = new CompoundObject;
 	if( !enabledPlug()->getValue() )
@@ -203,7 +200,7 @@ bool ArnoldDisplacement::acceptsInput( const Gaffer::Plug *plug, const Gaffer::P
 
 	if( plug == mapPlug() )
 	{
-		if( const GafferScene::Shader *shader = runTimeCast<const GafferScene::Shader>( inputPlug->source<Plug>()->node() ) )
+		if( const GafferScene::Shader *shader = runTimeCast<const GafferScene::Shader>( inputPlug->source()->node() ) )
 		{
 			return runTimeCast<const ArnoldShader>( shader ) || shader->isInstanceOf( "GafferOSL::OSLShader" );
 		}

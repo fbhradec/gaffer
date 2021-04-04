@@ -39,6 +39,7 @@ import stat
 import unittest
 import functools
 import itertools
+import six
 import time
 
 import IECore
@@ -83,9 +84,11 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 			GafferDispatch.Dispatcher.__init__( self )
 
+			self.lastDispatch = None
+
 		def _doDispatch( self, batch ) :
 
-			pass
+			self.lastDispatch = batch
 
 	IECore.registerRunTimeTyped( NullDispatcher )
 
@@ -100,6 +103,13 @@ class DispatcherTest( GafferTest.TestCase ) :
 			return dispatcher
 
 		GafferDispatch.Dispatcher.registerDispatcher( "testDispatcher", functools.partial( create, self.temporaryDirectory() ) )
+
+	def tearDown( self ) :
+
+		GafferTest.TestCase.tearDown( self )
+
+		GafferDispatch.Dispatcher.deregisterDispatcher( "testDispatcher" )
+		GafferDispatch.Dispatcher.deregisterDispatcher( "testDispatcherWithCustomPlugs" )
 
 	def testBadJobDirectory( self ) :
 
@@ -163,24 +173,21 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 	def testDispatcherRegistration( self ) :
 
-		self.failUnless( "testDispatcher" in GafferDispatch.Dispatcher.registeredDispatchers() )
-		self.failUnless( GafferDispatch.Dispatcher.create( 'testDispatcher' ).isInstanceOf( DispatcherTest.TestDispatcher.staticTypeId() ) )
+		self.assertIn( "testDispatcher", GafferDispatch.Dispatcher.registeredDispatchers() )
+		self.assertIsInstance( GafferDispatch.Dispatcher.create( 'testDispatcher' ), DispatcherTest.TestDispatcher )
+
+		GafferDispatch.Dispatcher.deregisterDispatcher( "testDispatcher" )
+		self.assertNotIn( "testDispatcher", GafferDispatch.Dispatcher.registeredDispatchers() )
+
+		# testing that deregistering a non-existent dispatcher is safe
+		GafferDispatch.Dispatcher.deregisterDispatcher( "fake" )
 
 	def testDispatcherSignals( self ) :
 
-		class CapturingSlot2( list ) :
-
-			def __init__( self, *signals ) :
-
-				self.__connections = []
-				for s in signals :
-					self.__connections.append( s.connect( Gaffer.WeakMethod( self.__slot ) ) )
-
-			def __slot( self, d, nodes ) :
-				self.append( (d,nodes) )
-
-		preCs = CapturingSlot2( GafferDispatch.Dispatcher.preDispatchSignal() )
+		preCs = GafferTest.CapturingSlot( GafferDispatch.Dispatcher.preDispatchSignal() )
 		self.assertEqual( len( preCs ), 0 )
+		dispatchCs = GafferTest.CapturingSlot( GafferDispatch.Dispatcher.dispatchSignal() )
+		self.assertEqual( len( dispatchCs ), 0 )
 		postCs = GafferTest.CapturingSlot( GafferDispatch.Dispatcher.postDispatchSignal() )
 		self.assertEqual( len( postCs ), 0 )
 
@@ -191,11 +198,15 @@ class DispatcherTest( GafferTest.TestCase ) :
 		dispatcher.dispatch( [ s["n1"] ] )
 
 		self.assertEqual( len( preCs ), 1 )
-		self.failUnless( preCs[0][0].isSame( dispatcher ) )
+		self.assertTrue( preCs[0][0].isSame( dispatcher ) )
 		self.assertEqual( preCs[0][1], [ s["n1"] ] )
 
+		self.assertEqual( len( dispatchCs ), 1 )
+		self.assertTrue( dispatchCs[0][0].isSame( dispatcher ) )
+		self.assertEqual( dispatchCs[0][1], [ s["n1"] ] )
+
 		self.assertEqual( len( postCs ), 1 )
-		self.failUnless( postCs[0][0].isSame( dispatcher ) )
+		self.assertTrue( postCs[0][0].isSame( dispatcher ) )
 		self.assertEqual( postCs[0][1], [ s["n1"] ] )
 
 	def testCancelDispatch( self ) :
@@ -207,7 +218,8 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 			return False
 
-		connection = GafferDispatch.Dispatcher.preDispatchSignal().connect( onlyRunOnce )
+		preConnection = GafferDispatch.Dispatcher.preDispatchSignal().connect( onlyRunOnce )
+		connection = GafferTest.CapturingSlot( GafferDispatch.Dispatcher.dispatchSignal() )
 
 		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
 
@@ -216,14 +228,68 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 		# never run
 		self.assertEqual( len( s["n1"].log ), 0 )
+		self.assertEqual( len( connection ), 0 )
 
 		# runs the first time
 		dispatcher.dispatch( [ s["n1"] ] )
 		self.assertEqual( len( s["n1"].log ), 1 )
+		self.assertEqual( len( connection ), 1 )
 
 		# never runs again
 		dispatcher.dispatch( [ s["n1"] ] )
 		self.assertEqual( len( s["n1"].log ), 1 )
+		self.assertEqual( len( connection ), 1 )
+
+	def testCatchThrowingSlots( self ) :
+
+		class BadSlot( list ) :
+
+			def __init__( self, signal ) :
+
+				self.__connection = signal.connect( Gaffer.WeakMethod( self.__slot ) )
+
+			def __slot( self, *args ) :
+
+				self.append( args )
+				raise RuntimeError( "bad slot!" )
+
+		badConnection = BadSlot( GafferDispatch.Dispatcher.dispatchSignal() )
+		cs = GafferTest.CapturingSlot( GafferDispatch.Dispatcher.dispatchSignal() )
+		postCs = GafferTest.CapturingSlot( GafferDispatch.Dispatcher.postDispatchSignal() )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+
+		s = Gaffer.ScriptNode()
+		s["n1"] = GafferDispatchTest.LoggingTaskNode()
+
+		# never run
+		self.assertEqual( len( s["n1"].log ), 0 )
+		self.assertEqual( len( badConnection ), 0 )
+		self.assertEqual( len( cs ), 0 )
+		self.assertEqual( len( postCs ), 0 )
+
+		# runs even though the bad slot throws
+		with IECore.CapturingMessageHandler() as mh :
+			dispatcher.dispatch( [ s["n1"] ] )
+		self.assertEqual( len( mh.messages ), 1 )
+		six.assertRegex( self, mh.messages[0].message, "bad slot!" )
+		self.assertEqual( len( badConnection ), 1 )
+		self.assertEqual( len( s["n1"].log ), 1 )
+		self.assertEqual( len( cs ), 1 )
+		self.assertEqual( len( postCs ), 1 )
+
+		# replace the bad slot with a connection to postDispatch
+		badConnection = BadSlot( GafferDispatch.Dispatcher.postDispatchSignal() )
+
+		# runs even though bad slot throws
+		with IECore.CapturingMessageHandler() as mh :
+			dispatcher.dispatch( [ s["n1"] ] )
+		self.assertEqual( len( mh.messages ), 1 )
+		six.assertRegex( self, mh.messages[0].message, "bad slot!" )
+		self.assertEqual( len( badConnection ), 1 )
+		self.assertEqual( len( s["n1"].log ), 2 )
+		self.assertEqual( len( cs ), 2 )
+		self.assertEqual( len( postCs ), 2 )
 
 	def testPlugs( self ) :
 
@@ -347,7 +413,11 @@ class DispatcherTest( GafferTest.TestCase ) :
 		s["n4"]["preTasks"][0].setInput( s["n3"]["task"] )
 		s["n3"]["preTasks"][0].setInput( s["n2"]["task"] )
 		s["n2"]["preTasks"][0].setInput( s["n1"]["task"] )
-		s["n1"]["preTasks"][0].setInput( s["n4"]["task"] )
+
+		with IECore.CapturingMessageHandler() as mh :
+			s["n1"]["preTasks"][0].setInput( s["n4"]["task"] )
+		self.assertEqual( len( mh.messages ), 1 )
+		six.assertRegex( self, mh.messages[0].message, "Cycle detected between ScriptNode.n1.preTasks.preTask0 and ScriptNode.n1.task" )
 
 		self.assertNotEqual( s["n1"]["task"].hash(), s["n2"]["task"].hash() )
 		self.assertNotEqual( s["n2"]["task"].hash(), s["n3"]["task"].hash() )
@@ -388,7 +458,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		dispatcher.dispatch( [ s["n3"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
 
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		self.assertEqual( text, "a1;b1;c1;" )
@@ -500,7 +570,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 		self.assertEqual( os.path.isfile( fileName ), True )
 
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# all nodes on frame 1, followed by all nodes on frame 2, followed by all nodes on frame 3
@@ -533,7 +603,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["n3"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# n1 on all frames, followed by the n2 sequence, followed by n3 on all frames
@@ -546,7 +616,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["n3"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# n1 in requested order, followed by the n2 sequence in sorted order, followed by n3 in the requested order
@@ -584,7 +654,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["n4"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# all frames of n1 and n2 interleaved, followed by the n3 sequence, followed by n4 on all frames
@@ -598,7 +668,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["n4"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# first 2 frames of n1, followed by all frames of n2, followed by last frame of n1, followed by the n3 sequence, followed by n4 on all frames
@@ -630,10 +700,10 @@ class DispatcherTest( GafferTest.TestCase ) :
 		s["n4"]["mode"].setValue( "a" )
 		s["n4"]["fileName"].setValue( fileName )
 		s["n4"]["text"].setValue( "n4 on ${frame};" )
-		promotedPreTaskPlug = s["b"].promotePlug( s["b"]["n3"]["preTasks"][0] )
+		promotedPreTaskPlug = Gaffer.PlugAlgo.promote( s["b"]["n3"]["preTasks"][0] )
 		promotedPreTaskPlug.setInput( s["n1"]["task"] )
 		s["b"]["n3"]["preTasks"][1].setInput( s["b"]["n2"]["task"] )
-		promotedTaskPlug = s["b"].promotePlug( s["b"]["n3"]["task"] )
+		promotedTaskPlug = Gaffer.PlugAlgo.promote( s["b"]["n3"]["task"] )
 		s["n4"]["preTasks"][0].setInput( promotedTaskPlug )
 		# export a reference too
 		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
@@ -646,7 +716,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["n4"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# all frames of n1 and n2 interleaved, followed by the n3 sequence, followed by n4 on all frames
@@ -659,7 +729,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["b"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# all frames of n1 and n2 interleaved, followed by the n3 sequence
@@ -674,7 +744,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["b"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# all frames of n1, followed by the n3 sequence
@@ -689,7 +759,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["b"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# all frames of n1, followed by the n3 sequence
@@ -705,7 +775,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["b"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# all frames of n1, followed by the n3 sequence, followed by all frames of n2
@@ -719,7 +789,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["n4"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# all frames of n1, n2, n3, and n4 interleaved
@@ -734,7 +804,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		self.assertEqual( os.path.isfile( fileName ), False )
 		dispatcher.dispatch( [ s["r"] ] )
 		self.assertEqual( os.path.isfile( fileName ), True )
-		with file( fileName, "r" ) as f :
+		with open( fileName, "r" ) as f :
 			text = f.read()
 
 		# all frames of n1, n2, and n3 interleaved
@@ -818,12 +888,12 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 				else :
 
-					# We need to evaluate our external requirements as well,
-					# and they need to be requirements of our preExecute task
+					# We need to evaluate our external preTasks as well,
+					# and they need to be preTasks of our preExecute task
 					# only, since that is the topmost branch of our internal
-					# requirement graph. We also need to use a Context which
+					# task graph. We also need to use a Context which
 					# does not contain our internal preExecute entry, incase
-					# that has meaning for any of our external requirements.
+					# that has meaning for any of our external preTasks.
 					customContext = Gaffer.Context( context )
 					del customContext["selfExecutingNode:preExecute"]
 					preTasks = GafferDispatch.TaskNode.preTasks( self, customContext )
@@ -857,16 +927,16 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 		# e2 requires itself with a different context
 		with c1 :
-			self.assertEqual( s["e2"]["task"].preTasks(), [ GafferDispatch.TaskNode.Task( s["e2"], c2 ) ] )
-		# e2 in the other context requires e1 with the original context
+			self.assertEqual( s["e2"]["task"].preTasks(), [ GafferDispatch.TaskNode.Task( s["e2"]["task"], c2 ) ] )
+		# e2 in the other context requires its standard preTasks with the original context
 		with c2 :
-			self.assertEqual( s["e2"]["task"].preTasks(), [ GafferDispatch.TaskNode.Task( s["e1"], c1 ) ] )
+			self.assertEqual( s["e2"]["task"].preTasks(), [ GafferDispatch.TaskNode.Task( s["e2"]["preTasks"][0], c1 ), GafferDispatch.TaskNode.Task( s["e2"]["preTasks"][1], c1 ) ] )
 		# e1 requires itself with a different context
 		with c1 :
-			self.assertEqual( s["e1"]["task"].preTasks(), [ GafferDispatch.TaskNode.Task( s["e1"], c2 ) ] )
-		# e1 in the other context has no requirements
+			self.assertEqual( s["e1"]["task"].preTasks(), [ GafferDispatch.TaskNode.Task( s["e1"]["task"], c2 ) ] )
+		# e1 in the other context has the standard preTasks
 		with c2 :
-			self.assertEqual( s["e1"]["task"].preTasks(), [] )
+			self.assertEqual( s["e1"]["task"].preTasks(), [ GafferDispatch.TaskNode.Task( s["e1"]["preTasks"][0], c1 ) ] )
 
 		self.assertEqual( s["e1"].preExecutionCount, 0 )
 		self.assertEqual( s["e1"].mainExecutionCount, 0 )
@@ -905,11 +975,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 				result = []
 				for plug in self["preTasks"] :
-					node = plug.source().node()
-					if node.isSame( self ) or not isinstance( node, GafferDispatch.TaskNode ):
-						continue
-
-					result.append( self.Task( node, upstreamContext ) )
+					result.append( self.Task( plug, upstreamContext ) )
 
 				return result
 
@@ -1013,12 +1079,15 @@ class DispatcherTest( GafferTest.TestCase ) :
 	def testDirectCyles( self ) :
 
 		s = Gaffer.ScriptNode()
-
 		s["t"] = GafferDispatchTest.LoggingTaskNode()
-		s["t"]["preTasks"][0].setInput( s["t"]["task"] )
+
+		with IECore.CapturingMessageHandler() as mh :
+			s["t"]["preTasks"][0].setInput( s["t"]["task"] )
+		self.assertEqual( len( mh.messages ), 1 )
+		six.assertRegex( self, mh.messages[0].message, "Cycle detected between ScriptNode.t.preTasks.preTask0 and ScriptNode.t.task" )
 
 		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
-		self.assertRaisesRegexp( RuntimeError, "cannot have cyclic dependencies", dispatcher.dispatch, [ s["t"] ] )
+		six.assertRaisesRegex( self, RuntimeError, "cannot have cyclic dependencies", dispatcher.dispatch, [ s["t"] ] )
 
 	def testPostTasks( self ) :
 
@@ -1142,7 +1211,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		s["t2"]["postTasks"][0].setInput( s["t1"]["task"] )
 
 		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
-		self.assertRaisesRegexp( RuntimeError, "cannot have cyclic dependencies", dispatcher.dispatch, [ s["t2"] ] )
+		six.assertRaisesRegex( self, RuntimeError, "cannot have cyclic dependencies", dispatcher.dispatch, [ s["t2"] ] )
 
 	def testImmediateDispatch( self ) :
 
@@ -1163,6 +1232,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		s["nonImmediate2"]["preTasks"][0].setInput( s["immediate"]["task"] )
 
 		dispatcher = self.NullDispatcher()
+		dispatcher["jobsDirectory"].setValue( self.temporaryDirectory() )
 		dispatcher.dispatch( [ s["nonImmediate2"] ] )
 
 		self.assertEqual( [ l.node for l in log ], [ s["nonImmediate1"], s["immediate" ] ] )
@@ -1191,6 +1261,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 		# NullDispatcher dispatch should only execute the immediate nodes.
 		dispatcher = self.NullDispatcher()
+		dispatcher["jobsDirectory"].setValue( self.temporaryDirectory() )
 		dispatcher.dispatch( [ s["n2"] ] )
 		self.assertEqual( [ l.node for l in log ], [ s["n1"], s["i1" ], s["i2"] ] )
 
@@ -1223,6 +1294,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 
 		# NullDispatcher dispatch should only execute the immediate nodes.
 		dispatcher = self.NullDispatcher()
+		dispatcher["jobsDirectory"].setValue( self.temporaryDirectory() )
 		dispatcher.dispatch( [ s["n3"] ] )
 		self.assertEqual( [ l.node for l in log ], [ s["n1"], s["i1" ] ] )
 
@@ -1311,7 +1383,7 @@ class DispatcherTest( GafferTest.TestCase ) :
 		dispatcher.dispatch( [ s["t"] ] )
 
 		self.assertEqual( [ l.node for l in log ], [ s["t"], s["t"], s["t"], s["t"], s["p"], ] )
-		self.assertEqual( [ l.context.getFrame() for l in log ], [ 1, 2, 3, 4, 1 ] )
+		self.assertEqual( [ l.context.get( "frame", None ) for l in log ], [ 1, 2, 3, 4, None ] )
 		self.assertEqual( [ l.frames for l in log ], [ None, None, None, None, [ 1, 2, 3, 4 ] ] )
 
 	def testScaling( self ) :
@@ -1373,13 +1445,390 @@ class DispatcherTest( GafferTest.TestCase ) :
 			lastTask = perSequence
 
 		d = self.TestDispatcher()
-
+		d["jobsDirectory"].setValue( self.temporaryDirectory() )
 		d["framesMode"].setValue( d.FramesMode.CustomRange )
 		d["frameRange"].setValue( "1-1000" )
 
-		t = time.clock()
+		clock = time.process_time if six.PY3 else time.clock
+
+		t = clock()
 		d.dispatch( [ lastTask ] )
-		self.assertLess( time.clock() - t, 4 )
+
+		timeLimit = 4
+		if Gaffer.isDebug():
+			timeLimit *= 2
+
+		self.assertLess( clock() - t, timeLimit )
+
+	def testTaskListWaitForSequence( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		log = []
+		s["a"] = GafferDispatchTest.LoggingTaskNode( log = log )
+		s["a"]["f"] = Gaffer.StringPlug( defaultValue = "####" )
+
+		s["t"] = GafferDispatch.TaskList()
+		s["t"]["preTasks"][0].setInput( s["a"]["task"] )
+
+		s["b"] = GafferDispatchTest.LoggingTaskNode( log = log )
+		s["b"]["preTasks"][0].setInput( s["t"]["task"] )
+		s["b"]["f"] = Gaffer.StringPlug( defaultValue = "####" )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+		dispatcher["framesMode"].setValue( GafferDispatch.Dispatcher.FramesMode.CustomRange )
+		dispatcher["frameRange"].setValue( "1-4" )
+
+		dispatcher.dispatch( [ s["b"] ] )
+
+		self.assertEqual( [ l.node.getName() for l in log ], [ "a", "b" ] * 4 )
+		self.assertEqual( [ l.context.getFrame() for l in log ], [ 1, 1, 2, 2, 3, 3, 4, 4 ] )
+
+		del log[:]
+		s["t"]["sequence"].setValue( True )
+		dispatcher.dispatch( [ s["b"] ] )
+
+		self.assertEqual( [ l.node.getName() for l in log ], [ "a" ] * 4 + [ "b" ] * 4 )
+		self.assertEqual( [ l.context.getFrame() for l in log ], [ 1, 2, 3, 4 ] * 2 )
+
+	def testTaskListBatchSize( self ) :
+
+		# a  per-frame task
+		# |
+		# t  no-op (we'll modify the batch size on this)
+		# |
+		# b  per-frame task
+
+		s = Gaffer.ScriptNode()
+
+		log = []
+		s["a"] = GafferDispatchTest.LoggingTaskNode( log = log )
+		s["a"]["f"] = Gaffer.StringPlug( defaultValue = "####" )
+
+		s["t"] = GafferDispatch.TaskList()
+		s["t"]["preTasks"][0].setInput( s["a"]["task"] )
+
+		s["b"] = GafferDispatchTest.LoggingTaskNode( log = log )
+		s["b"]["preTasks"][0].setInput( s["t"]["task"] )
+		s["b"]["f"] = Gaffer.StringPlug( defaultValue = "####" )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+		dispatcher["framesMode"].setValue( GafferDispatch.Dispatcher.FramesMode.CustomRange )
+		dispatcher["frameRange"].setValue( "1-4" )
+
+		dispatcher.dispatch( [ s["b"] ] )
+
+		self.assertEqual( [ l.node.getName() for l in log ], [ "a", "b" ] * 4 )
+		self.assertEqual( [ l.context.getFrame() for l in log ], [ 1, 1, 2, 2, 3, 3, 4, 4 ] )
+
+		del log[:]
+		s["t"]["dispatcher"]["batchSize"].setValue( 2 )
+		dispatcher.dispatch( [ s["b"] ] )
+
+		self.assertEqual( [ l.node.getName() for l in log ], [ "a", "a", "b", "b" ] * 2 )
+		self.assertEqual( [ l.context.getFrame() for l in log ], [ 1, 2, 1, 2, 3, 4, 3, 4 ] )
+
+	def testTaskListWedging( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		# a  per-wedge-per-frame task
+		# |
+		# t  no-op
+		# |
+		# b  per-wedge task (not dependent on frame)
+		# |
+		# w  wedge over ( "X", "Y" )
+
+		log = []
+		s["a"] = GafferDispatchTest.LoggingTaskNode( log = log )
+		s["a"]["f"] = Gaffer.StringPlug( defaultValue = "${wedge:value}.####" )
+
+		s["t"] = GafferDispatch.TaskList()
+		s["t"]["preTasks"][0].setInput( s["a"]["task"] )
+
+		s["b"] = GafferDispatchTest.LoggingTaskNode( log = log )
+		s["b"]["preTasks"][0].setInput( s["t"]["task"] )
+		s["b"]["w"] = Gaffer.StringPlug( defaultValue = "${wedge:value}" )
+
+		s["w"] = GafferDispatch.Wedge()
+		s["w"]["preTasks"][0].setInput( s["b"]["task"] )
+		s["w"]["mode"].setValue( int( GafferDispatch.Wedge.Mode.StringList ) )
+		s["w"]["strings"].setValue( IECore.StringVectorData( [ "X", "Y" ] ) )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+		dispatcher["framesMode"].setValue( GafferDispatch.Dispatcher.FramesMode.CustomRange )
+		dispatcher["frameRange"].setValue( "1-3" )
+
+		dispatcher.dispatch( [ s["w"] ] )
+		self.assertEqual( [ l.node.getName() for l in log ], [ "a", "a", "a", "b" ] * 2 )
+		self.assertEqual( [ l.context.getFrame() for l in log ], [ 1, 2, 3, 1 ] * 2 )
+		self.assertEqual( [ l.context["wedge:value"] for l in log ], [ "X", "X", "X", "X", "Y", "Y", "Y", "Y" ] )
+
+	def testCreateMatching( self ) :
+
+		self.assertEqual( GafferDispatch.Dispatcher.registeredDispatchers(), tuple([ "Debug", "Local", "testDispatcher" ]) )
+
+		# match all
+		dispatchers = GafferDispatch.Dispatcher.createMatching( "*" )
+		self.assertEqual( len(dispatchers), 3 )
+		self.assertTrue( isinstance( dispatchers[0], GafferDispatchTest.DebugDispatcher ) )
+		self.assertTrue( isinstance( dispatchers[1], GafferDispatch.LocalDispatcher ) )
+		self.assertTrue( isinstance( dispatchers[2], DispatcherTest.TestDispatcher ) )
+
+		# match specific
+		dispatchers = GafferDispatch.Dispatcher.createMatching( "Local" )
+		self.assertEqual( len(dispatchers), 1 )
+		self.assertTrue( isinstance( dispatchers[0], GafferDispatch.LocalDispatcher ) )
+
+		# match specific with wildcards
+		dispatchers = GafferDispatch.Dispatcher.createMatching( "test*" )
+		self.assertEqual( len(dispatchers), 1 )
+		self.assertTrue( isinstance( dispatchers[0], DispatcherTest.TestDispatcher ) )
+
+		# match several by wildcard
+		dispatchers = GafferDispatch.Dispatcher.createMatching( "*e*" )
+		self.assertEqual( len(dispatchers), 2 )
+		self.assertTrue( isinstance( dispatchers[0], GafferDispatchTest.DebugDispatcher ) )
+		self.assertTrue( isinstance( dispatchers[1], DispatcherTest.TestDispatcher ) )
+
+		# match seveal exactly
+		dispatchers = GafferDispatch.Dispatcher.createMatching( "Debug Local" )
+		self.assertEqual( len(dispatchers), 2 )
+		self.assertTrue( isinstance( dispatchers[0], GafferDispatchTest.DebugDispatcher ) )
+		self.assertTrue( isinstance( dispatchers[1], GafferDispatch.LocalDispatcher ) )
+
+	def testBatchContextsAreIdentical( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferDispatch.SystemCommand()
+		s["n"]["command"].setValue( "echo #" )
+
+		dispatcher = self.NullDispatcher()
+		dispatcher["jobsDirectory"].setValue( self.temporaryDirectory() )
+		dispatcher["framesMode"].setValue( dispatcher.FramesMode.CustomRange )
+		dispatcher["frameRange"].setValue( "1-10" )
+		dispatcher.dispatch( [ s["n"] ] )
+
+		batches = dispatcher.lastDispatch.preTasks()
+		self.assertEqual( len( batches ), 10 )
+
+		for i, batch in enumerate( batches ) :
+			self.assertEqual( batch.plug(), s["n"]["task"] )
+			self.assertEqual( batch.frames(), [ i + 1 ] )
+			self.assertNotIn( "frame", batch.context() )
+			self.assertEqual( batch.context(), batches[0].context() )
+
+	def testNullScriptInFrameRangeCall( self ) :
+
+		d = self.NullDispatcher()
+		d["framesMode"].setValue( d.FramesMode.FullRange )
+		with six.assertRaisesRegex( self, Exception, "Python argument types in" ) :
+			d.frameRange( None, Gaffer.Context() )
+
+	def testNullContextInFrameRangeCall( self ) :
+
+		d = self.NullDispatcher()
+		d["framesMode"].setValue( d.FramesMode.CurrentFrame )
+		with six.assertRaisesRegex( self, Exception, "Python argument types in" ) :
+			d.frameRange( Gaffer.ScriptNode(), None )
+
+	def testSwitch( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n1"] = GafferDispatchTest.LoggingTaskNode()
+		s["n2"] = GafferDispatchTest.LoggingTaskNode()
+
+		s["switch"] = Gaffer.Switch()
+		s["switch"].setup( s["n1"]["task"] )
+		s["switch"]["in"][0].setInput( s["n1"]["task"] )
+		s["switch"]["in"][1].setInput( s["n2"]["task"] )
+
+		s["n3"] = GafferDispatchTest.LoggingTaskNode()
+		s["n3"]["preTasks"][0].setInput( s["switch"]["out"] )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+
+		s["switch"]["index"].setValue( 1 )
+		dispatcher.dispatch( [ s["n3"] ] )
+
+		self.assertEqual( len( s["n1"].log ), 0 )
+		self.assertEqual( len( s["n2"].log ), 1 )
+		self.assertEqual( len( s["n3"].log ), 1 )
+
+		s["switch"]["index"].setValue( 0 )
+		dispatcher.dispatch( [ s["n3"] ] )
+
+		self.assertEqual( len( s["n1"].log ), 1 )
+		self.assertEqual( len( s["n2"].log ), 1 )
+		self.assertEqual( len( s["n3"].log ), 2 )
+
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( "parent['switch']['index'] = context.getFrame()" )
+
+		with Gaffer.Context() as c :
+
+			c.setFrame( 0 )
+			dispatcher.dispatch( [ s["n3"] ] )
+
+			self.assertEqual( len( s["n1"].log ), 2 )
+			self.assertEqual( len( s["n2"].log ), 1 )
+			self.assertEqual( len( s["n3"].log ), 3 )
+
+			c.setFrame( 1 )
+			dispatcher.dispatch( [ s["n3"] ] )
+
+			self.assertEqual( len( s["n1"].log ), 2 )
+			self.assertEqual( len( s["n2"].log ), 2 )
+			self.assertEqual( len( s["n3"].log ), 4 )
+
+			c.setFrame( 0 )
+			s["switch"]["in"][0].setInput( None )
+			dispatcher.dispatch( [ s["n3"] ] )
+
+			self.assertEqual( len( s["n1"].log ), 2 )
+			self.assertEqual( len( s["n2"].log ), 2 )
+			self.assertEqual( len( s["n3"].log ), 5 )
+
+	def testNameSwitch( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n1"] = GafferDispatchTest.LoggingTaskNode()
+		s["n2"] = GafferDispatchTest.LoggingTaskNode()
+
+		s["switch"] = Gaffer.NameSwitch()
+		s["switch"].setup( s["n1"]["task"] )
+		s["switch"]["in"][0]["value"].setInput( s["n1"]["task"] )
+		s["switch"]["in"][1]["value"].setInput( s["n2"]["task"] )
+		s["switch"]["in"][1]["name"].setValue( "n2" )
+
+		s["n3"] = GafferDispatchTest.LoggingTaskNode()
+		s["n3"]["preTasks"][0].setInput( s["switch"]["out"]["value"] )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+
+		s["switch"]["selector"].setValue( "n2" )
+		dispatcher.dispatch( [ s["n3"] ] )
+
+		self.assertEqual( len( s["n1"].log ), 0 )
+		self.assertEqual( len( s["n2"].log ), 1 )
+		self.assertEqual( len( s["n3"].log ), 1 )
+
+		s["switch"]["selector"].setValue( "n1" )
+		dispatcher.dispatch( [ s["n3"] ] )
+
+		self.assertEqual( len( s["n1"].log ), 1 )
+		self.assertEqual( len( s["n2"].log ), 1 )
+		self.assertEqual( len( s["n3"].log ), 2 )
+
+	def testTwoNameSwitches( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n1"] = GafferDispatchTest.LoggingTaskNode()
+		s["n2"] = GafferDispatchTest.LoggingTaskNode()
+		s["n3"] = GafferDispatchTest.LoggingTaskNode()
+
+		s["switch1"] = Gaffer.NameSwitch()
+		s["switch1"].setup( s["n1"]["task"] )
+		s["switch1"]["in"][0]["value"].setInput( s["n1"]["task"] )
+		s["switch1"]["in"][1]["value"].setInput( s["n2"]["task"] )
+		s["switch1"]["in"][1]["name"].setValue( "n2" )
+
+		s["switch2"] = Gaffer.NameSwitch()
+		s["switch2"].setup( s["n1"]["task"] )
+		s["switch2"]["in"][0]["value"].setInput( s["switch1"]["out"]["value"] )
+		s["switch2"]["in"][1]["value"].setInput( s["n3"]["task"] )
+		s["switch2"]["in"][1]["name"].setValue( "n3" )
+
+		s["n4"] = GafferDispatchTest.LoggingTaskNode()
+		s["n4"]["preTasks"][0].setInput( s["switch2"]["out"]["value"] )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+
+		s["switch1"]["selector"].setValue( "n2" )
+
+		dispatcher.dispatch( [ s["n4"] ] )
+
+		self.assertEqual( len( s["n1"].log ), 0 )
+		self.assertEqual( len( s["n2"].log ), 1 )
+		self.assertEqual( len( s["n3"].log ), 0 )
+		self.assertEqual( len( s["n4"].log ), 1 )
+
+	def testContextProcessor( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n1"] = GafferDispatchTest.LoggingTaskNode()
+
+		s["cv"] = Gaffer.ContextVariables()
+		s["cv"].setup( s["n1"]["task"] )
+		s["cv"]["in"].setInput( s["n1"]["task"] )
+		s["cv"]["variables"].addChild( Gaffer.NameValuePlug( "test", 10 ) )
+
+		s["n2"] = GafferDispatchTest.LoggingTaskNode()
+		s["n2"]["preTasks"][0].setInput( s["cv"]["out"] )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+		dispatcher.dispatch( [ s["n2"] ] )
+
+		self.assertEqual( len( s["n1"].log ), 1 )
+		self.assertEqual( len( s["n2"].log ), 1 )
+
+		self.assertNotIn( "test", s["n2"].log[0].context )
+		self.assertIn( "test", s["n1"].log[0].context )
+		self.assertEqual( s["n1"].log[0].context["test"], 10 )
+
+	def testTwoContextProcessors( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["n1"] = GafferDispatchTest.LoggingTaskNode()
+
+		s["cv1"] = Gaffer.ContextVariables()
+		s["cv1"].setup( s["n1"]["task"] )
+		s["cv1"]["in"].setInput( s["n1"]["task"] )
+		s["cv1"]["variables"].addChild( Gaffer.NameValuePlug( "test1", 10 ) )
+
+		s["cv2"] = Gaffer.ContextVariables()
+		s["cv2"].setup( s["n1"]["task"] )
+		s["cv2"]["in"].setInput( s["cv1"]["out"] )
+		s["cv2"]["variables"].addChild( Gaffer.NameValuePlug( "test2", 20 ) )
+
+		s["n2"] = GafferDispatchTest.LoggingTaskNode()
+		s["n2"]["preTasks"][0].setInput( s["cv2"]["out"] )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+		dispatcher.dispatch( [ s["n2"] ] )
+
+		self.assertEqual( len( s["n1"].log ), 1 )
+		self.assertEqual( len( s["n2"].log ), 1 )
+
+		self.assertNotIn( "test1", s["n2"].log[0].context )
+		self.assertNotIn( "test2", s["n2"].log[0].context )
+		self.assertIn( "test1", s["n1"].log[0].context )
+		self.assertIn( "test2", s["n1"].log[0].context )
+		self.assertEqual( s["n1"].log[0].context["test1"], 10 )
+		self.assertEqual( s["n1"].log[0].context["test2"], 20 )
+
+	def testTaskPlugsWithoutTaskNodes( self ) :
+
+		s = Gaffer.ScriptNode()
+
+		s["badNode"] = Gaffer.Node()
+		s["badNode"]["task"] = GafferDispatch.TaskNode.TaskPlug(
+			direction = Gaffer.Plug.Direction.Out,
+			flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic
+		)
+
+		s["taskList"] = GafferDispatch.TaskList()
+		s["taskList"]["preTasks"][0].setInput( s["badNode"]["task"] )
+
+		dispatcher = GafferDispatch.Dispatcher.create( "testDispatcher" )
+		with six.assertRaisesRegex( self, RuntimeError, "TaskPlug \"ScriptNode.badNode.task\" has no TaskNode" ) :
+			dispatcher.dispatch( [ s["taskList"] ] )
 
 if __name__ == "__main__":
 	unittest.main()

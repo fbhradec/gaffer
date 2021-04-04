@@ -37,32 +37,33 @@
 #ifndef GAFFER_CONTEXTVARIABLES_H
 #define GAFFER_CONTEXTVARIABLES_H
 
-#include "Gaffer/ContextProcessor.h"
 #include "Gaffer/CompoundDataPlug.h"
+#include "Gaffer/ContextProcessor.h"
+#include "Gaffer/TypedObjectPlug.h"
 
 namespace Gaffer
 {
 
-template<typename BaseType>
-class ContextVariables : public ContextProcessor<BaseType>
+class IECORE_EXPORT ContextVariables : public ContextProcessor
 {
 
 	public :
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( ContextVariables<BaseType>, ContextProcessor<BaseType> );
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( ContextVariables<BaseType> );
+		GAFFER_NODE_DECLARE_TYPE( Gaffer::ContextVariables, ContextVariablesTypeId, ContextProcessor );
 
 		ContextVariables( const std::string &name=GraphComponent::defaultName<ContextVariables>() );
-		virtual ~ContextVariables();
+		~ContextVariables() override;
 
 		CompoundDataPlug *variablesPlug();
 		const CompoundDataPlug *variablesPlug() const;
 
-		void affects( const Plug *input, DependencyNode::AffectedPlugsContainer &outputs ) const;
+		AtomicCompoundDataPlug *extraVariablesPlug();
+		const AtomicCompoundDataPlug *extraVariablesPlug() const;
 
 	protected :
 
-		virtual void processContext( Context *context ) const;
+		bool affectsContext( const Plug *input ) const override;
+		void processContext( Context::EditableScope &context ) const override;
 
 	private :
 
@@ -70,8 +71,7 @@ class ContextVariables : public ContextProcessor<BaseType>
 
 };
 
-typedef ContextVariables<ComputeNode> ContextVariablesComputeNode;
-IE_CORE_DECLAREPTR( ContextVariablesComputeNode );
+IE_CORE_DECLAREPTR( ContextVariables );
 
 } // namespace Gaffer
 

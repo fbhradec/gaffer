@@ -50,6 +50,12 @@ if [[ $1 == -psn_0_* ]] ; then
 	shift
 fi
 
+# Work around OCIO bug that causes parsing to fail for certain locales.
+# See https://github.com/imageworks/OpenColorIO/issues/297
+##########################################################################
+
+export LC_NUMERIC=C
+
 # Find where this script is located, resolving any symlinks that were used
 # to invoke it. Set GAFFER_ROOT based on the script location.
 ##########################################################################
@@ -129,12 +135,16 @@ prependToPath "$HOME/gaffer/apps:$GAFFER_ROOT/apps" GAFFER_APP_PATHS
 prependToPath "$HOME/gaffer/startup" GAFFER_STARTUP_PATHS
 appendToPath "$GAFFER_ROOT/startup" GAFFER_STARTUP_PATHS
 
+prependToPath "$HOME/gaffer/startup" CORTEX_STARTUP_PATHS
+appendToPath "$GAFFER_ROOT/startup" CORTEX_STARTUP_PATHS
+
 prependToPath "$GAFFER_ROOT/graphics" GAFFERUI_IMAGE_PATHS
 
 if [[ -e $GAFFER_ROOT/bin/oslc ]] ; then
 	export OSLHOME=$GAFFER_ROOT
 fi
 
+## \todo: should we rename this to "osl" to match our "glsl" folder?
 prependToPath "$HOME/gaffer/shaders:$GAFFER_ROOT/shaders" OSL_SHADER_PATHS
 
 if [[ -z $GAFFEROSL_CODE_DIRECTORY ]] ; then
@@ -145,19 +155,12 @@ fi
 # Get python set up properly
 ##########################################################################
 
-# Make sure PYTHONHOME is pointing to our internal python build.
-# We only do this if Gaffer has been built with an internal version
-# of python - otherwise we assume the existing environment is providing
-# the right value.
-
+# Unset PYTHONHOME to make sure our internal Python build is used in preference
+# to anything in the external environment. We only do this if Gaffer has been
+# built with an internal version of Python - otherwise we assume the existing
+# environment is providing the right value.
 if [[ -e $GAFFER_ROOT/bin/python ]] ; then
-
-	if [[ `uname` = "Linux" ]] ; then
-		export PYTHONHOME="$GAFFER_ROOT"
-	else
-		export PYTHONHOME="$GAFFER_ROOT/lib/Python.framework/Versions/Current"
-	fi
-
+	unset PYTHONHOME
 fi
 
 # Get python module path set up
@@ -172,11 +175,25 @@ if [[ `uname` = "Linux" ]] ; then
 else
 	prependToPath "$GAFFER_ROOT/lib" DYLD_FRAMEWORK_PATH
 	prependToPath "$GAFFER_ROOT/lib" DYLD_LIBRARY_PATH
+	# PySide2 installs its libraries next to its python modules,
+	# and messes up the rpaths such that they can't be relocated.
+	# Work around this by putting them on the DYLD_LIBRARY_PATH.
+	prependToPath "$PYTHONHOME/lib/python2.7/site-packages/PySide2" DYLD_LIBRARY_PATH
 	prependToPath /System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/ImageIO.framework/Resources/ DYLD_LIBRARY_PATH
-	if [[ -n $DELIGHT ]] ; then
-		appendToPath "$DELIGHT/lib" DYLD_LIBRARY_PATH
-	fi
 fi
+
+# Set up Qt
+##########################################################################
+
+if [[ -e $GAFFER_ROOT/qt/plugins ]] ; then
+	export QT_QPA_PLATFORM_PLUGIN_PATH="$GAFFER_ROOT/qt/plugins"
+fi
+
+# Work around issue with Qt 5.12+ when using a wacom tablet on linux.
+#   See https://bugreports.qt.io/browse/QTBUG-77826
+# This can hopefully be removed once this patch is in:
+#   https://codereview.qt-project.org/c/qt/qtbase/+/284141
+export QT_XCB_TABLET_LEGACY_COORDINATES=1
 
 # Get the executable path set up, for running child processes from Gaffer
 ##########################################################################
@@ -205,7 +222,7 @@ if [[ $APPLESEED ]] ; then
 		prependToPath "$appleseedPython" PYTHONPATH
 	done
 
-	prependToPath "$APPLESEED/shaders/gaffer" OSL_SHADER_PATHS
+	prependToPath "$APPLESEED/shaders/appleseed" OSL_SHADER_PATHS
 	prependToPath "$GAFFER_ROOT/appleseedDisplays" APPLESEED_SEARCHPATH
 	prependToPath "$OSL_SHADER_PATHS" APPLESEED_SEARCHPATH
 
@@ -218,15 +235,87 @@ fi
 
 prependToPath "$GAFFER_ROOT/arnold/plugins" ARNOLD_PLUGIN_PATH
 
+if [[ $ARNOLD_ROOT ]] ; then
+
+	if [[ `uname` = "Linux" ]] ; then
+		appendToPath "$ARNOLD_ROOT/bin" LD_LIBRARY_PATH
+	else
+		appendToPath "$ARNOLD_ROOT/bin" DYLD_LIBRARY_PATH
+	fi
+
+	appendToPath "$ARNOLD_ROOT/bin" PATH
+	appendToPath "$ARNOLD_ROOT/python" PYTHONPATH
+
+fi
+
+# Set up 3Delight
+##########################################################################
+
+if [[ -n $DELIGHT ]] ; then
+
+	if [[ `uname` = "Linux" ]] ; then
+		appendToPath "$DELIGHT/lib" LD_LIBRARY_PATH
+	else
+		appendToPath "$DELIGHT/lib" DYLD_LIBRARY_PATH
+	fi
+
+	appendToPath "$DELIGHT/bin" PATH
+	appendToPath "$DELIGHT/python" PYTHONPATH
+	appendToPath "$DELIGHT/shaders" DL_SHADERS_PATH
+	appendToPath "$DELIGHT/displays" DL_DISPLAYS_PATH
+
+	appendToPath "$DELIGHT" OSL_SHADER_PATHS
+
+	appendToPath "$GAFFER_ROOT/renderMan/displayDrivers" DL_RESOURCES_PATH
+
+fi
+
+# Set up 3rd Party extensions
+##########################################################################
+
+IFS=:
+for extension in $GAFFER_EXTENSION_PATHS; do
+
+	if [[ `uname` = "Linux" ]] ; then
+		appendToPath "$extension/lib" LD_LIBRARY_PATH
+	else
+		appendToPath "$extension/lib" DYLD_LIBRARY_PATH
+	fi
+
+	appendToPath "$extension/bin" PATH
+	appendToPath "$extension/python" PYTHONPATH
+	appendToPath "$extension/apps" GAFFER_APP_PATHS
+	appendToPath "$extension/graphics" GAFFERUI_IMAGE_PATHS
+	appendToPath "$extension/glsl" IECOREGL_SHADER_PATHS
+	appendToPath "$extension/glsl" IECOREGL_SHADER_INCLUDE_PATHS
+	appendToPath "$extension/shaders" OSL_SHADER_PATHS
+	prependToPath "$extension/startup" GAFFER_STARTUP_PATHS
+
+done
+unset IFS
+
+# Set up jemalloc
+##########################################################################
+
+if [[ $GAFFER_JEMALLOC != "0" ]] ; then
+	if [[ `uname` = "Linux" ]] ; then
+		appendToPath "$GAFFER_ROOT/lib/libjemalloc.so" LD_PRELOAD
+	fi
+fi
+
 # Run gaffer itself
 ##########################################################################
 
 if [[ -n $GAFFER_DEBUG ]] ; then
 	if [[ -z $GAFFER_DEBUGGER ]] ; then
-		export GAFFER_DEBUGGER="gdb --args"
+		if [[ `uname` = "Linux" ]] ; then
+			export GAFFER_DEBUGGER="gdb --args"
+		else
+			export GAFFER_DEBUGGER="lldb -- "
+		fi
 	fi
-
-	exec $GAFFER_DEBUGGER python "$GAFFER_ROOT/bin/gaffer.py" "$@"
+	# Using `which` because lldb doesn't seem to respect $PATH
+	exec $GAFFER_DEBUGGER `which python` "$GAFFER_ROOT/bin/__gaffer.py" "$@"
 else
-	exec python "$GAFFER_ROOT/bin/gaffer.py" "$@"
+	exec python "$GAFFER_ROOT/bin/__gaffer.py" "$@"
 fi

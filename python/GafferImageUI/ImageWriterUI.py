@@ -40,6 +40,7 @@ import Gaffer
 import GafferUI
 import GafferImageUI
 import GafferImage
+from . import OpenColorIOTransformUI
 
 Gaffer.Metadata.registerNode(
 
@@ -76,11 +77,11 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
-			"pathPlugValueWidget:leaf", True,
-			"pathPlugValueWidget:bookmarks", "image",
-			"fileSystemPathPlugValueWidget:extensions", IECore.StringVectorData( GafferImage.ImageReader.supportedExtensions() ),
-			"fileSystemPathPlugValueWidget:extensionsLabel", "Show only image files",
-			"fileSystemPathPlugValueWidget:includeSequences", True,
+			"path:leaf", True,
+			"path:bookmarks", "image",
+			"fileSystemPath:extensions", " ".join( GafferImage.ImageReader.supportedExtensions() ),
+			"fileSystemPath:extensionsLabel", "Show only image files",
+			"fileSystemPath:includeSequences", True,
 
 		],
 
@@ -88,9 +89,29 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			"""
-			The channels to be written to the file.
+			The names of the channels to be written to the file.
+			Names should be separated by spaces and may contain any
+			of Gaffer's standard wildcards.
 			""",
 
+			"plugValueWidget:type", "GafferImageUI.ChannelMaskPlugValueWidget",
+
+		],
+
+		"colorSpace" : [
+
+			"description",
+			"""
+			The colour space of the output image, used to convert the input image
+			from the scene linear colorspace defined by the OpenColorIO config.
+			The default behaviour is to automatically determine the colorspace by
+			calling the function registered with `ImageWriter::setDefaultColorSpaceFunction()`.
+			""",
+
+			"presetNames", OpenColorIOTransformUI.colorSpacePresetNames,
+			"presetValues", OpenColorIOTransformUI.colorSpacePresetValues,
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 		],
 
 		"out" : [
@@ -245,6 +266,22 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"jpeg.chromaSubSampling" : [
+
+			"description",
+			"""
+			The chroma sub sampling used to write the jpeg file.
+			Note that the file will be stored as YCbCr instead of RGB.
+			""",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+			"preset:Default (4:2:0)", "",
+			"preset:4:4:4", "4:4:4",
+			"preset:4:2:2", "4:2:2",
+			"preset:4:2:0", "4:2:0",
+			"preset:4:1:1", "4:1:1",
+		],
+
 		"jpeg2000" : [
 
 			"description",
@@ -280,6 +317,8 @@ Gaffer.Metadata.registerNode(
 			"plugValueWidget:type", "GafferUI.LayoutPlugValueWidget",
 			"layout:section", "Settings.OpenEXR",
 
+			"layout:activator:compressionIsDWA", lambda plug : plug["compression"].getValue() in ( "dwaa", "dwab" ),
+
 		],
 
 		"openexr.mode" : [
@@ -311,6 +350,20 @@ Gaffer.Metadata.registerNode(
 			"preset:PXR24", "pxr24",
 			"preset:B44", "b44",
 			"preset:B44A", "b44a",
+			"preset:DWAA", "dwaa",
+			"preset:DWAB", "dwab",
+
+		],
+
+		"openexr.dwaCompressionLevel" : [
+
+			"description",
+			"""
+			The compression level used when writing files with DWAA or DWAB compression.
+			Higher values decrease file size at the expense of image quality.
+			""",
+
+			"layout:activator", "compressionIsDWA",
 
 		],
 
@@ -324,6 +377,20 @@ Gaffer.Metadata.registerNode(
 			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 			"preset:Float", "float",
 			"preset:Half Float", "half",
+
+		],
+
+		"openexr.depthDataType" : [
+
+			"description",
+			"""
+			Overriding the data type for depth channels is useful because many of the things depth is used
+			for require greater precision.
+			""",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+			"preset:Override to Float", "float",
+			"preset:Use Default", "",
 
 		],
 

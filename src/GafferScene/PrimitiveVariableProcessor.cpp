@@ -35,21 +35,23 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringAlgo.h"
-#include "Gaffer/StringPlug.h"
-
 #include "GafferScene/PrimitiveVariableProcessor.h"
 
+#include "Gaffer/StringPlug.h"
+
+#include "IECore/StringAlgo.h"
+
 using namespace IECore;
+using namespace IECoreScene;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( PrimitiveVariableProcessor );
+GAFFER_NODE_DEFINE_TYPE( PrimitiveVariableProcessor );
 
 size_t PrimitiveVariableProcessor::g_firstPlugIndex = 0;
 
-PrimitiveVariableProcessor::PrimitiveVariableProcessor( const std::string &name )
-	:	SceneElementProcessor( name )
+PrimitiveVariableProcessor::PrimitiveVariableProcessor( const std::string &name, IECore::PathMatcher::Result filterDefault )
+	:	SceneElementProcessor( name, filterDefault )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "names" ) );
@@ -129,16 +131,16 @@ IECore::ConstObjectPtr PrimitiveVariableProcessor::computeProcessedObject( const
 	const std::string names = namesPlug()->getValue();
 
 	bool invert = invertNamesPlug()->getValue();
-	IECore::PrimitivePtr result = inputGeometry->copy();
-	IECore::PrimitiveVariableMap::iterator next;
-	for( IECore::PrimitiveVariableMap::iterator it = result->variables.begin(); it != result->variables.end(); it = next )
+	IECoreScene::PrimitivePtr result = inputGeometry->copy();
+	IECoreScene::PrimitiveVariableMap::iterator next;
+	for( IECoreScene::PrimitiveVariableMap::iterator it = result->variables.begin(); it != result->variables.end(); it = next )
 	{
 		next = it;
 		next++;
 		if( StringAlgo::matchMultiple( it->first, names ) != invert )
 		{
 			processPrimitiveVariable( path, context, inputGeometry, it->second );
-			if( it->second.interpolation == IECore::PrimitiveVariable::Invalid || !it->second.data )
+			if( it->second.interpolation == IECoreScene::PrimitiveVariable::Invalid || !it->second.data )
 			{
 				result->variables.erase( it );
 			}

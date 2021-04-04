@@ -38,6 +38,7 @@
 import unittest
 import weakref
 import sys
+import imath
 
 import IECore
 
@@ -47,14 +48,15 @@ import GafferTest
 import GafferUI
 import GafferUITest
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
 
 class TestWidget( GafferUI.Widget ) :
 
 	def __init__( self, **kw ) :
 
-		GafferUI.Widget.__init__( self, QtGui.QLabel( "hello" ), **kw )
+		GafferUI.Widget.__init__( self, QtWidgets.QLabel( "hello" ), **kw )
 
 class TestWidget2( GafferUI.Widget ) :
 
@@ -69,12 +71,12 @@ class WidgetTest( GafferUITest.TestCase ) :
 	def testOwner( self ) :
 
 		w = TestWidget()
-		self.assert_( GafferUI.Widget._owner( w._qtWidget() ) is w )
+		self.assertTrue( GafferUI.Widget._owner( w._qtWidget() ) is w )
 
 	def testParent( self ) :
 
 		w = TestWidget()
-		self.assert_( w.parent() is None )
+		self.assertIsNone( w.parent() )
 
 	def testCanDie( self ) :
 
@@ -84,8 +86,8 @@ class WidgetTest( GafferUITest.TestCase ) :
 		wr2 = weakref.ref( w._qtWidget() )
 
 		del w
-		self.assert_( wr1() is None )
-		self.assert_( wr2() is None )
+		self.assertIsNone( wr1() )
+		self.assertIsNone( wr2() )
 
 	def testAncestor( self ) :
 
@@ -96,9 +98,9 @@ class WidgetTest( GafferUITest.TestCase ) :
 
 		w.setChild( l )
 
-		self.assert_( p.ancestor( GafferUI.ListContainer ) is l )
-		self.assert_( p.ancestor( GafferUI.Window ) is w )
-		self.assert_( p.ancestor( GafferUI.Menu ) is None )
+		self.assertTrue( p.ancestor( GafferUI.ListContainer ) is l )
+		self.assertTrue( p.ancestor( GafferUI.Window ) is w )
+		self.assertIsNone( p.ancestor( GafferUI.Menu ) )
 
 	def testIsAncestorOf( self ) :
 
@@ -129,9 +131,9 @@ class WidgetTest( GafferUITest.TestCase ) :
 
 		w = TestWidget2()
 
-		self.assert_( GafferUI.Widget._owner( w._qtWidget() ) is w )
-		self.assert_( w.topLevelGafferWidget.parent() is w )
-		self.assert_( GafferUI.Widget._owner( w.topLevelGafferWidget._qtWidget() ) is not w )
+		self.assertTrue( GafferUI.Widget._owner( w._qtWidget() ) is w )
+		self.assertTrue( w.topLevelGafferWidget.parent() is w )
+		self.assertTrue( GafferUI.Widget._owner( w.topLevelGafferWidget._qtWidget() ) is not w )
 
 	def testToolTip( self ) :
 
@@ -143,6 +145,16 @@ class WidgetTest( GafferUITest.TestCase ) :
 
 		w.setToolTip( "a" )
 		self.assertEqual( w.getToolTip(), "a" )
+
+	def testMarkdownToolTips( self ) :
+
+		markdownToolTip = "# header\n\n- list 1\nlist 2"
+
+		w = TestWidget()
+		w.setToolTip( markdownToolTip )
+		# We don't want any conversion to HTML to be "baked in" - we expect
+		# to get back exactly the same thing as we saved.
+		self.assertEqual( w.getToolTip(), markdownToolTip )
 
 	def testEnabledState( self ) :
 
@@ -172,16 +184,16 @@ class WidgetTest( GafferUITest.TestCase ) :
 
 		event = QtGui.QMouseEvent( QtCore.QEvent.MouseButtonPress, QtCore.QPoint( 0, 0 ), QtCore.Qt.LeftButton, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier )
 
-		QtGui.QApplication.instance().sendEvent( w._qtWidget(), event )
+		QtWidgets.QApplication.instance().sendEvent( w._qtWidget(), event )
 		self.assertEqual( WidgetTest.signalsEmitted, 1 )
 
 		w.setEnabled( False )
-		QtGui.QApplication.instance().sendEvent( w._qtWidget(), event )
+		QtWidgets.QApplication.instance().sendEvent( w._qtWidget(), event )
 		self.assertEqual( WidgetTest.signalsEmitted, 1 )
 
 		w.setEnabled( True )
-		QtGui.QApplication.instance().sendEvent( w._qtWidget(), event )
- 		self.assertEqual( WidgetTest.signalsEmitted, 2 )
+		QtWidgets.QApplication.instance().sendEvent( w._qtWidget(), event )
+		self.assertEqual( WidgetTest.signalsEmitted, 2 )
 
 	def testCanDieAfterUsingSignals( self ) :
 
@@ -196,8 +208,8 @@ class WidgetTest( GafferUITest.TestCase ) :
 		w.wheelSignal()
 
 		del w
-		self.assert_( wr1() is None )
-		self.assert_( wr2() is None )
+		self.assertIsNone( wr1() )
+		self.assertIsNone( wr2() )
 
 	def testVisibility( self ) :
 
@@ -336,8 +348,8 @@ class WidgetTest( GafferUITest.TestCase ) :
 			( "parentChangedSignal", GafferUI.WidgetSignal ),
 		] :
 
-			self.failUnless( isinstance( getattr( w, s[0] )(), s[1] ) )
-			self.failUnless( getattr( w, s[0] )() is getattr( w, s[0] )() )
+			self.assertIsInstance( getattr( w, s[0] )(), s[1] )
+			self.assertTrue( getattr( w, s[0] )() is getattr( w, s[0] )() )
 
 	def testBound( self ) :
 
@@ -346,7 +358,7 @@ class WidgetTest( GafferUITest.TestCase ) :
 		w.setChild( b )
 		w.setVisible( True )
 
-		w.setPosition( IECore.V2i( 100 ) )
+		w.setPosition( imath.V2i( 100 ) )
 
 		self.waitForIdle( 1000 )
 
@@ -354,12 +366,12 @@ class WidgetTest( GafferUITest.TestCase ) :
 		bb = b.bound()
 		bbw = b.bound( relativeTo = w )
 
-		self.failUnless( isinstance( wb, IECore.Box2i ) )
-		self.failUnless( isinstance( bb, IECore.Box2i ) )
-		self.failUnless( isinstance( bbw, IECore.Box2i ) )
+		self.assertIsInstance( wb, imath.Box2i )
+		self.assertIsInstance( bb, imath.Box2i )
+		self.assertIsInstance( bbw, imath.Box2i )
 
 		self.assertEqual( bb.size(), bbw.size() )
-		self.assertEqual( bbw.min, bb.min - wb.min )
+		self.assertEqual( bbw.min(), bb.min() - wb.min() )
 		self.assertEqual( b.size(), bb.size() )
 
 	def testParentChangedSignal( self ) :
@@ -400,10 +412,10 @@ class WidgetTest( GafferUITest.TestCase ) :
 		w1.setVisible( True )
 		w2.setVisible( True )
 
-		w1.setPosition( IECore.V2i( 100 ) )
-		w2.setPosition( IECore.V2i( 300 ) )
+		w1.setPosition( imath.V2i( 100 ) )
+		w2.setPosition( imath.V2i( 300 ) )
 
-		self.waitForIdle( 1000 )
+		self.waitForIdle( 10000 )
 
 		self.assertTrue( GafferUI.Widget.widgetAt( w1.bound().center() ) is t1 )
 		self.assertTrue( GafferUI.Widget.widgetAt( w2.bound().center() ) is t2 )
@@ -417,22 +429,22 @@ class WidgetTest( GafferUITest.TestCase ) :
 		w.setChild( b )
 		w.setVisible( True )
 
-		w.setPosition( IECore.V2i( 100 ) )
+		w.setPosition( imath.V2i( 100 ) )
 
 		self.waitForIdle( 1000 )
 
 		mouseGlobal = GafferUI.Widget.mousePosition()
 		mouseLocal = GafferUI.Widget.mousePosition( relativeTo = b )
 
-		self.assertEqual( mouseGlobal, mouseLocal + b.bound().min )
+		self.assertEqual( mouseGlobal, mouseLocal + b.bound().min() )
 
 	def testAddressAndObject( self ) :
 
 		button = GafferUI.Button()
 		address = GafferUI._qtAddress( button._qtWidget() )
 		self.assertTrue( isinstance( address, int ) )
-		widget = GafferUI._qtObject( address, QtGui.QPushButton )
-		self.assertTrue( isinstance( widget, QtGui.QPushButton ) )
+		widget = GafferUI._qtObject( address, QtWidgets.QPushButton )
+		self.assertTrue( isinstance( widget, QtWidgets.QPushButton ) )
 
 	def testSetVisibleWithNonBool( self ) :
 
@@ -444,6 +456,24 @@ class WidgetTest( GafferUITest.TestCase ) :
 
 		w.setVisible( 1 )
 		self.assertTrue( w.getVisible() is True )
+
+	def testStyleProperties( self ) :
+
+		w = GafferUI.Widget( QtWidgets.QLabel( "base" ))
+		self.assertEqual( w._qtWidget().property( 'gafferClass' ), 'GafferUI.Widget' )
+
+		w = TestWidget()
+		self.assertEqual( w._qtWidget().property( 'gafferClass' ), 'GafferUITest.WidgetTest.TestWidget' )
+
+		class TestWidgetChild( TestWidget ) :
+			pass
+
+		w = TestWidgetChild()
+		self.assertEqual( w._qtWidget().property( 'gafferClasses' ), [
+			'GafferUITest.WidgetTest.TestWidgetChild',
+			'GafferUITest.WidgetTest.TestWidget',
+			'GafferUI.Widget'
+		] )
 
 if __name__ == "__main__":
 	unittest.main()

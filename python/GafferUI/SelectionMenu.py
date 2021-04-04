@@ -34,12 +34,15 @@
 #
 ##########################################################################
 
+import six
 import warnings
+
 import Gaffer
 import GafferUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
 
 ## \todo Support cascading menus using "/" in labels. Rework API to
 # better match the rest of GafferUI - ditch index based methods, and
@@ -54,7 +57,7 @@ class SelectionMenu( GafferUI.Widget ) :
 
 		warnings.warn( "GafferUI.SelectionMenu is deprecated, use MultiSelectionMenu instead.", DeprecationWarning, 2 )
 
-		GafferUI.Widget.__init__( self, QtGui.QComboBox(), **kw )
+		GafferUI.Widget.__init__( self, QtWidgets.QComboBox(), **kw )
 
 		self._qtWidget().currentIndexChanged.connect( Gaffer.WeakMethod( self.__changed ) )
 		self._qtWidget().activated.connect( Gaffer.WeakMethod( self.__selected ) )
@@ -67,12 +70,12 @@ class SelectionMenu( GafferUI.Widget ) :
 		## \todo When we extend the Style classes to deal with Widgets, this should be
 		# done there. The same code exists in the Button class too.
 		if SelectionMenu.__palette is None :
-			SelectionMenu.__palette = QtGui.QPalette( QtGui.QApplication.instance().palette() )
+			SelectionMenu.__palette = QtGui.QPalette( QtWidgets.QApplication.instance().palette( self._qtWidget() ) )
 			SelectionMenu.__palette.setColor( QtGui.QPalette.Disabled, QtGui.QPalette.Light, QtGui.QColor( 0, 0, 0, 0 ) )
 
 		self._qtWidget().setPalette( SelectionMenu.__palette )
 
-		self._qtWidget().setView( QtGui.QListView() )
+		self._qtWidget().setView( QtWidgets.QListView() )
 
 	def selectedSignal( self ):
 		return self.__selectedSignal
@@ -101,9 +104,9 @@ class SelectionMenu( GafferUI.Widget ) :
 	def setIcon( self, index, imageOrImageFileName ):
 		icon = None
 
-		assert( isinstance( imageOrImageFileName, ( basestring, GafferUI.Image, type( None ) ) ) )
+		assert( isinstance( imageOrImageFileName, ( six.string_types, GafferUI.Image, type( None ) ) ) )
 
-		if isinstance( imageOrImageFileName, basestring ) :
+		if isinstance( imageOrImageFileName, six.string_types ) :
 			icon = GafferUI.Image( imageOrImageFileName )
 		else :
 			icon = imageOrImageFileName

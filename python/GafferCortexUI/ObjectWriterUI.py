@@ -74,10 +74,10 @@ Gaffer.Metadata.registerNode(
 
 			"nodule:type", "",
 			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
-			"pathPlugValueWidget:leaf", True,
-			"pathPlugValueWidget:bookmarks", "cortex",
-			"fileSystemPathPlugValueWidget:extensions", IECore.StringVectorData( IECore.Reader.supportedExtensions() ),
-			"fileSystemPathPlugValueWidget:extensionsLabel", "Show only supported files",
+			"path:leaf", True,
+			"path:bookmarks", "cortex",
+			"fileSystemPath:extensions", " ".join( IECore.Reader.supportedExtensions() ),
+			"fileSystemPath:extensionsLabel", "Show only supported files",
 
 		],
 
@@ -91,6 +91,7 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"nodule:type", "",
+			"plugValueWidget:type", "GafferCortexUI.ObjectWriterUI.__createParameterWidget",
 
 		],
 
@@ -98,12 +99,6 @@ Gaffer.Metadata.registerNode(
 
 )
 
-##########################################################################
-# PlugValueWidgets
-##########################################################################
-
 def __createParameterWidget( plug ) :
 
 	return GafferCortexUI.CompoundParameterValueWidget( plug.node().parameterHandler(), collapsible=False )
-
-GafferUI.PlugValueWidget.registerCreator( GafferCortex.ObjectWriter, "parameters", __createParameterWidget )

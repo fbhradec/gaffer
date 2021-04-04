@@ -36,6 +36,7 @@
 
 import os
 import unittest
+import imath
 
 import IECore
 
@@ -56,7 +57,7 @@ class ButtonTest( GafferUITest.TestCase ) :
 
 		b = GafferUI.Button( "", "arrowRight10.png" )
 		self.assertEqual( b.getText(), "" )
-		self.failUnless( isinstance( b.getImage(), GafferUI.Image ) )
+		self.assertIsInstance( b.getImage(), GafferUI.Image )
 
 	def testAccessors( self ) :
 
@@ -67,10 +68,10 @@ class ButtonTest( GafferUITest.TestCase ) :
 
 		i = GafferUI.Image( "arrowRight10.png" )
 		b.setImage( i )
-		self.failUnless( b.getImage() is i )
+		self.assertTrue( b.getImage() is i )
 
 		b.setImage( "arrowRight10.png" )
-		self.failUnless( isinstance( b.getImage(), GafferUI.Image ) )
+		self.assertIsInstance( b.getImage(), GafferUI.Image )
 
 		b.setImage( None )
 		self.assertEqual( b.getImage(), None )
@@ -95,10 +96,10 @@ class ButtonTest( GafferUITest.TestCase ) :
 		w.setVisible( True )
 		self.waitForIdle()
 
-		self.assertEqual( b.bound().size(), IECore.V2i( 10 ) )
+		self.assertEqual( b.bound().size(), imath.V2i( 10 ) )
 
 		b.setHasFrame( True )
-		self.waitForIdle( 20 )
+		self.waitForIdle( 1000 )
 
 		self.assertGreater( b.bound().size().x, 10 )
 		self.assertGreater( b.bound().size().y, 10 )

@@ -36,16 +36,74 @@
 
 #include "GafferArnold/InteractiveArnoldRender.h"
 
+#include "boost/unordered_set.hpp"
+
+#include "ai_universe.h"
+
+using namespace Gaffer;
 using namespace GafferScene;
 using namespace GafferArnold;
 
-IE_CORE_DEFINERUNTIMETYPED( InteractiveArnoldRender );
+//////////////////////////////////////////////////////////////////////////
+// Internal utilities
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+typedef boost::unordered_set<InteractiveArnoldRender *> InstanceSet;
+InstanceSet &instances()
+{
+	static InstanceSet i;
+	return i;
+}
+
+typedef std::pair<IntPlug *, InteractiveRender::State> Interrupted;
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
+// InteractiveArnoldRender
+//////////////////////////////////////////////////////////////////////////
+
+GAFFER_NODE_DEFINE_TYPE( InteractiveArnoldRender );
 
 InteractiveArnoldRender::InteractiveArnoldRender( const std::string &name )
-	:	InteractiveRender( "IECoreArnold::Renderer", name )
+	:	InteractiveRender( "Arnold", name )
 {
+	instances().insert( this );
 }
 
 InteractiveArnoldRender::~InteractiveArnoldRender()
 {
+	instances().erase( this );
+}
+
+void InteractiveArnoldRender::flushCaches( int flags )
+{
+	std::vector<Interrupted> interrupted;
+
+	const InstanceSet &i = instances();
+	for( InstanceSet::const_iterator it = i.begin(), eIt = i.end(); it != eIt; ++it )
+	{
+		IntPlug *statePlug = (*it)->statePlug()->source<IntPlug>();
+		if( !statePlug->settable() )
+		{
+			continue;
+		}
+
+		const State state = (InteractiveRender::State)statePlug->getValue();
+		if( state != Stopped )
+		{
+			statePlug->setValue( Stopped );
+			interrupted.push_back( Interrupted( statePlug, state ) );
+		}
+	}
+
+	AiUniverseCacheFlush( flags );
+
+	for( std::vector<Interrupted>::const_iterator it = interrupted.begin(), eIt = interrupted.end(); it != eIt; ++it )
+	{
+		it->first->setValue( it->second );
+	}
 }

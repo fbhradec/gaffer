@@ -36,6 +36,7 @@
 ##########################################################################
 
 import unittest
+import six
 
 import IECore
 
@@ -49,6 +50,13 @@ class PathTest( GafferTest.TestCase ) :
 		def __init__( self, path=None, root="/", filter=None ) :
 
 			Gaffer.Path.__init__( self, path, root, filter )
+
+			self.pathChangedSignalCreatedCalled = False
+
+		def _pathChangedSignalCreated( self ) :
+
+			Gaffer.Path._pathChangedSignalCreated( self )
+			self.pathChangedSignalCreatedCalled = True
 
 	def test( self ) :
 
@@ -104,19 +112,19 @@ class PathTest( GafferTest.TestCase ) :
 		filter = Gaffer.FileNamePathFilter( [ "*.gfr" ] )
 
 		p.setFilter( filter )
-		self.failUnless( p.getFilter().isSame( filter ) )
+		self.assertTrue( p.getFilter().isSame( filter ) )
 		self.assertEqual( len( changedPaths ), 1 )
 
 		p.setFilter( filter )
-		self.failUnless( p.getFilter().isSame( filter ) )
+		self.assertTrue( p.getFilter().isSame( filter ) )
 		self.assertEqual( len( changedPaths ), 1 )
 
 		p.setFilter( None )
-		self.failUnless( p.getFilter() is None )
+		self.assertIsNone( p.getFilter() )
 		self.assertEqual( len( changedPaths ), 2 )
 
 		p.setFilter( filter )
-		self.failUnless( p.getFilter().isSame( filter ) )
+		self.assertTrue( p.getFilter().isSame( filter ) )
 		self.assertEqual( len( changedPaths ), 3 )
 
 		filter.setEnabled( False )
@@ -128,11 +136,11 @@ class PathTest( GafferTest.TestCase ) :
 	def testConstructWithFilter( self ) :
 
 		p = Gaffer.Path( "/test/path" )
-		self.failUnless( p.getFilter() is None )
+		self.assertIsNone( p.getFilter() )
 
 		f = Gaffer.FileNamePathFilter( [ "*.exr" ] )
 		p = Gaffer.Path( "/test/path", filter = f )
-		self.failUnless( p.getFilter().isSame( f ) )
+		self.assertTrue( p.getFilter().isSame( f ) )
 
 	def testInfo( self ) :
 
@@ -153,9 +161,9 @@ class PathTest( GafferTest.TestCase ) :
 
 		p = self.TestPath( "/test/path" )
 
-		self.failUnless( p.setFromString( "/test" ) is p )
-		self.failUnless( p.append( "a" ) is p )
-		self.failUnless( p.truncateUntilValid() is p )
+		self.assertTrue( p.setFromString( "/test" ) is p )
+		self.assertTrue( p.append( "a" ) is p )
+		self.assertTrue( p.truncateUntilValid() is p )
 
 	def testEmptyPath( self ) :
 
@@ -272,7 +280,7 @@ class PathTest( GafferTest.TestCase ) :
 				Gaffer.Path.__init__( self, path, root, filter )
 
 		p = PathWithoutCopy( "/a" )
-		self.assertRaisesRegexp( Exception, ".*Path.copy\(\) not implemented.*", p.parent )
+		six.assertRaisesRegex( self, Exception, r".*Path.copy\(\) not implemented.*", p.parent )
 
 	def testProperties( self ) :
 
@@ -304,6 +312,16 @@ class PathTest( GafferTest.TestCase ) :
 		f.setEnabled( False )
 
 		# we should not crash
+
+	def testChangedSignalCreation( self ) :
+
+		p = self.TestPath( "/" )
+		self.assertFalse( p.pathChangedSignalCreatedCalled )
+		self.assertFalse( p._havePathChangedSignal() )
+
+		p.pathChangedSignal()
+		self.assertTrue( p.pathChangedSignalCreatedCalled )
+		self.assertTrue( p._havePathChangedSignal() )
 
 if __name__ == "__main__":
 	unittest.main()

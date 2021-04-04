@@ -35,6 +35,7 @@
 ##########################################################################
 
 import os
+import gc
 import time
 import unittest
 
@@ -45,20 +46,22 @@ import GafferTest
 
 class PerformanceMonitorTest( GafferTest.TestCase ) :
 
-	def testActiveStatus( self ) :
+	def setUp( self ) :
 
-		m = Gaffer.PerformanceMonitor()
+		GafferTest.TestCase.setUp( self )
 
-		self.assertEqual( m.getActive(), False )
-		m.setActive( True )
-		self.assertEqual( m.getActive(), True )
-		m.setActive( False )
-		self.assertEqual( m.getActive(), False )
-
-		with m :
-			self.assertEqual( m.getActive(), True )
-
-		self.assertEqual( m.getActive(), False )
+		# Clean up any garbage from previous tests.
+		# If python were to trigger the garbage collection
+		# of an old plug during a test here, it could
+		# clear the hash cache and give us unexpected
+		# results.
+		## \todo If we clear or invalidate the hash cache
+		# selectively for only dirtied/deleted plugs,
+		# this won't be an issue and we could remove this
+		# workaround.
+		IECore.RefCounted.collectGarbage()
+		while gc.collect() :
+			pass
 
 	def testStatistics( self ) :
 
@@ -205,7 +208,11 @@ class PerformanceMonitorTest( GafferTest.TestCase ) :
 
 		self.assertEqual( len( m.allStatistics() ), 2 )
 
-		delta = 0.01 if "TRAVIS" not in os.environ else 0.12
+		# 1.0 is an excessively wide tolerance but we've seen huge variations
+		# in CI due to machine contention. We're leaving the test in as it
+		# would potentially still catch some catastrophic orders-of-magnitude
+		# timing increase bug...
+		delta = 1.0 if GafferTest.inCI() else 0.01
 
 		self.assertEqual( m.plugStatistics( n1["out"] ).hashCount, 1 )
 		self.assertEqual( m.plugStatistics( n1["out"] ).computeCount, 1 )
@@ -231,6 +238,33 @@ class PerformanceMonitorTest( GafferTest.TestCase ) :
 		self.assertEqual( m.plugStatistics( n2["out"] ).computeCount, 1 )
 		self.assertAlmostEqual( seconds( m.plugStatistics( n2["out"] ).hashDuration ), 0.2, delta = delta )
 		self.assertAlmostEqual( seconds( m.plugStatistics( n2["out"] ).computeDuration ), 0.2, delta = delta )
+
+	def testDontMonitorPreExistingBackgroundTasks( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = GafferTest.MultiplyNode()
+		s["n"]["op2"].setValue( 1 )
+		s["e"] = Gaffer.Expression()
+		s["e"].setExpression( """parent["n"]["op1"] = context["op1"]""" )
+
+		def backgroundFunction() :
+
+			with Gaffer.Context() as c :
+				for i in range( 0, 10000 ) :
+					c["op1"] = i
+					self.assertEqual( s["n"]["product"].getValue(), i )
+
+		t = Gaffer.ParallelAlgo.callOnBackgroundThread(
+			s["n"]["product"], backgroundFunction
+		)
+
+		with Gaffer.PerformanceMonitor() as m :
+			t.wait()
+
+		# We don't launch any computes from the thread
+		# where the monitor is active, so we don't expect
+		# to capture any.
+		self.assertEqual( len( m.allStatistics() ), 0 )
 
 if __name__ == "__main__":
 	unittest.main()

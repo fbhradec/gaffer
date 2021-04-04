@@ -34,16 +34,18 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <iostream>
+#include "GafferImage/Resample.h"
 
-#include "OpenImageIO/fmath.h"
-#include "OpenImageIO/filter.h"
+#include "GafferImage/FilterAlgo.h"
+#include "GafferImage/Sampler.h"
 
 #include "Gaffer/Context.h"
 #include "Gaffer/StringPlug.h"
 
-#include "GafferImage/Resample.h"
-#include "GafferImage/Sampler.h"
+#include "OpenImageIO/filter.h"
+#include "OpenImageIO/fmath.h"
+
+#include <iostream>
 
 using namespace Imath;
 using namespace IECore;
@@ -56,65 +58,6 @@ using namespace GafferImage;
 
 namespace
 {
-
-// OIIO's built in gaussian filter is clipped quite aggressively, so there
-// is a significant step to zero at the edge of the filter. This makes it
-// unsuitable for use in a gaussian blur - as the filter radius expands to
-// include another pixel, it switches on suddenly rather than fades up from
-// black. This variant approaches very close to zero at the edge of its
-// support, making it more suitable for use in a blur.
-class SmoothGaussian2D : public OIIO::Filter2D
-{
-
-	public :
-
-		SmoothGaussian2D( float width, float height )
-			: Filter2D( width, height ), m_radiusInverse( 2.0f / width, 2.0f / height )
-		{
-		}
-
-		~SmoothGaussian2D()
-		{
-		}
-
-		virtual float operator()( float x, float y ) const
-		{
-			return gauss1d( x * m_radiusInverse.x ) *
-			       gauss1d( y * m_radiusInverse.y );
-		}
-
-		virtual bool separable() const
-		{
-			return true;
-		}
-
-		virtual float xfilt( float x ) const
-		{
-			return gauss1d( x * m_radiusInverse.x );
-		}
-
-		virtual float yfilt( float y ) const
-		{
-			return gauss1d( y * m_radiusInverse.y );
-		}
-
-		OIIO::string_view name() const
-		{
-			return "smoothGaussian";
-		}
-
-	private :
-
-		static float gauss1d( float x )
-		{
-			x = fabsf( x );
-			return ( x < 1.0f ) ? OIIO::fast_exp( -5.0f * ( x * x ) ) : 0.0f;
-		}
-
-		V2f m_radiusInverse;
-
-};
-
 
 // Used as a bitmask to say which filter pass(es) we're computing.
 enum Passes
@@ -162,20 +105,20 @@ void ratioAndOffset( const M33f &matrix, V2f &ratio, V2f &offset )
 
 // The radius for the filter is specified in the output space. This
 // method returns it as a number of pixels in the input space.
-V2i inputFilterRadius( const OIIO::Filter2D *filter, const V2f &ratio )
+V2i inputFilterRadius( const OIIO::Filter2D *filter, const V2f &inputFilterScale )
 {
 	return V2i(
-		(int)ceilf( filter->width() / ( 2.0f * fabs( ratio.x ) ) ),
-		(int)ceilf( filter->height() / ( 2.0f * fabs( ratio.y ) ) )
+		(int)ceilf( filter->width() * inputFilterScale.x * 0.5f ),
+		(int)ceilf( filter->height() * inputFilterScale.y * 0.5f )
 	);
 }
 
 // Returns the input region that will need to be sampled when
 // generating a given output tile.
-Box2i inputRegion( const V2i &tileOrigin, unsigned passes, const V2f &ratio, const V2f &offset, const OIIO::Filter2D *filter )
+Box2i inputRegion( const V2i &tileOrigin, unsigned passes, const V2f &ratio, const V2f &offset, const OIIO::Filter2D *filter, const V2f &inputFilterScale )
 {
 	Box2f outputRegion( V2f( tileOrigin ), tileOrigin + V2f( ImagePlug::tileSize() ) );
-	V2i filterRadius = inputFilterRadius( filter, ratio );
+	V2i filterRadius = inputFilterRadius( filter, inputFilterScale );
 
 	Box2f result = outputRegion;
 	if( passes & Horizontal )
@@ -206,59 +149,39 @@ Box2i inputRegion( const V2i &tileOrigin, unsigned passes, const V2f &ratio, con
 	return box2fToBox2i( result );
 }
 
-typedef boost::shared_ptr<OIIO::Filter2D> Filter2DPtr;
-Filter2DPtr createFilter( const std::string &name, const V2f &filterWidth, V2f ratio )
+// Given a filter name, the current scaling ratio of input size / output size, and the desired filter scale in
+// output space, return a filter and the correct filter scale in input space
+const OIIO::Filter2D *filterAndScale( const std::string &name, V2f ratio, V2f &inputFilterScale )
 {
 	ratio.x = fabs( ratio.x );
 	ratio.y = fabs( ratio.y );
 
-	const char *filterName = name.c_str();
+	const OIIO::Filter2D *result;
 	if( name == "" )
 	{
 		if( ratio.x > 1.0f || ratio.y > 1.0f )
 		{
 			// Upsizing
-			filterName = "blackman-harris";
+			result = FilterAlgo::acquireFilter( "blackman-harris" );
 		}
 		else
 		{
 			// Downsizing
-			filterName = "lanczos3";
+			result = FilterAlgo::acquireFilter( "lanczos3" );
 		}
 	}
-
-	// We want to use the recommended width for the filter in question,
-	// and we can only do that by looping over the table of registered
-	// filters.
-	for( int i = 0, e = OIIO::Filter2D::num_filters();  i < e;  ++i )
+	else
 	{
-		OIIO::FilterDesc fd;
-		OIIO::Filter2D::get_filterdesc( i, &fd );
-		if( !strcmp( fd.name, filterName ) )
-		{
-			// Filter width is specified in number of pixels in the output image.
-			// When a specific width is requested, it is assumed to already be in
-			// that space, but when we're using a default filter width we must apply
-			// the appropriate scaling.
-			return Filter2DPtr(
-				OIIO::Filter2D::create(
-					filterName,
-					filterWidth.x > 0 ? filterWidth.x : ( fd.width * std::max( 1.0f, ratio.x ) ),
-					filterWidth.y > 0 ? filterWidth.y : ( fd.width * std::max( 1.0f, ratio.y ) )
-				),
-				OIIO::Filter2D::destroy
-			);
-		}
+		result = FilterAlgo::acquireFilter( name );
 	}
 
-	if( name == "smoothGaussian" )
-	{
-		/// \todo Perhaps we could add a registration mechanism to OIIO so we could register
-		/// our filter and look it up using the mechanism above?
-		return Filter2DPtr( new SmoothGaussian2D( filterWidth.x > 0 ? filterWidth.x : 3, filterWidth.y > 0 ? filterWidth.y : 3 ) );
-	}
+	// Convert the filter scale into input space
+	inputFilterScale = V2f( 1.0f ) / ratio;
 
-	throw Exception( boost::str( boost::format( "Unknown filter \"%s\"" ) % filterName ) );
+	// Don't allow the filter scale to cover less than 1 pixel in input space
+	inputFilterScale = V2f( std::max( 1.0f, inputFilterScale.x ), std::max( 1.0f, inputFilterScale.y ) );
+
+	return result;
 }
 
 // Precomputes all the filter weights for a whole row or column of a tile. For separable
@@ -269,9 +192,11 @@ Filter2DPtr createFilter( const std::string &name, const V2f &filterWidth, V2f r
 /// only computed once and then reused. At the time of writing, profiles indicate that
 /// accessing pixels via the Sampler is the main bottleneck, but once that is optimised
 /// perhaps cached filter weights could have a benefit.
-void filterWeights( const OIIO::Filter2D *filter, const int filterRadius, const int x, const float ratio, const float offset, Passes pass, std::vector<float> &weights )
+void filterWeights( const OIIO::Filter2D *filter, const float inputFilterScale, const int filterRadius, const int x, const float ratio, const float offset, Passes pass, std::vector<float> &weights )
 {
 	weights.reserve( ( 2 * filterRadius + 1 ) * ImagePlug::tileSize() );
+
+	const float filterCoordinateMult = 1.0f / inputFilterScale;
 
 	float iX; // input pixel position (floating point)
 	int iXI; // input pixel position (floored to int)
@@ -284,7 +209,7 @@ void filterWeights( const OIIO::Filter2D *filter, const int filterRadius, const 
 		int fX; // relative filter position
 		for( fX = -filterRadius; fX<= filterRadius; ++fX )
 		{
-			const float f = ratio * (fX - ( iXF - 0.5f ) );
+			const float f = filterCoordinateMult * (fX - ( iXF - 0.5f ) );
 			const float w = pass == Horizontal ? filter->xfilt( f ) : filter->yfilt( f );
 			weights.push_back( w );
 		}
@@ -312,17 +237,17 @@ Box2f transform( const Box2f &b, const M33f &m )
 // Resample
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Resample );
+GAFFER_NODE_DEFINE_TYPE( Resample );
 
 size_t Resample::g_firstPlugIndex = 0;
 
 Resample::Resample( const std::string &name )
-	:   ImageProcessor( name )
+	:   FlatImageProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new M33fPlug( "matrix" ) );
 	addChild( new StringPlug( "filter" ) );
-	addChild( new V2fPlug( "filterWidth", Plug::In, V2f( 0 ), V2f( 0 ) ) );
+	addChild( new V2fPlug( "filterScale", Plug::In, V2f( 1 ), V2f( 0 ) ) );
 	addChild( new IntPlug( "boundingMode", Plug::In, Sampler::Black, Sampler::Black, Sampler::Clamp ) );
 	addChild( new BoolPlug( "expandDataWindow" ) );
 	addChild( new IntPlug( "debug", Plug::In, Off, Off, SinglePass ) );
@@ -338,6 +263,10 @@ Resample::Resample( const std::string &name )
 	horizontalPassPlug()->metadataPlug()->setInput( inPlug()->metadataPlug() );
 	horizontalPassPlug()->channelNamesPlug()->setInput( inPlug()->channelNamesPlug() );
 
+	// Sampler checks the deep plug, and FlatImageProcessor doesn't handle the deep
+	// plug for outputs other than outPlug(), so up a passthrough for deep to avoid
+	// needing to implement hash/compute for it
+	horizontalPassPlug()->deepPlug()->setInput( inPlug()->deepPlug() );
 }
 
 Resample::~Resample()
@@ -364,12 +293,12 @@ const Gaffer::StringPlug *Resample::filterPlug() const
 	return getChild<StringPlug>( g_firstPlugIndex + 1 );
 }
 
-Gaffer::V2fPlug *Resample::filterWidthPlug()
+Gaffer::V2fPlug *Resample::filterScalePlug()
 {
 	return getChild<V2fPlug>( g_firstPlugIndex + 2 );
 }
 
-const Gaffer::V2fPlug *Resample::filterWidthPlug() const
+const Gaffer::V2fPlug *Resample::filterScalePlug() const
 {
 	return getChild<V2fPlug>( g_firstPlugIndex + 2 );
 }
@@ -416,14 +345,14 @@ const ImagePlug *Resample::horizontalPassPlug() const
 
 void Resample::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	ImageProcessor::affects( input, outputs );
+	FlatImageProcessor::affects( input, outputs );
 
 	if(
 		input == inPlug()->dataWindowPlug() ||
 		input == matrixPlug() ||
 		input == expandDataWindowPlug() ||
 		input == filterPlug() ||
-		input->parent<V2fPlug>() == filterWidthPlug() ||
+		input->parent<V2fPlug>() == filterScalePlug() ||
 		input == debugPlug()
 	)
 	{
@@ -435,7 +364,7 @@ void Resample::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outpu
 		input == inPlug()->dataWindowPlug() ||
 		input == matrixPlug() ||
 		input == filterPlug() ||
-		input->parent<V2fPlug>() == filterWidthPlug() ||
+		input->parent<V2fPlug>() == filterScalePlug() ||
 		input == inPlug()->channelDataPlug() ||
 		input == boundingModePlug() ||
 		input == debugPlug()
@@ -446,30 +375,15 @@ void Resample::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outpu
 	}
 }
 
-const std::vector<std::string> &Resample::filters()
-{
-	static std::vector<std::string> f;
-	if( !f.size() )
-	{
-		for( int i = 0, e = OIIO::Filter2D::num_filters();  i < e;  ++i )
-		{
-			OIIO::FilterDesc fd;
-			OIIO::Filter2D::get_filterdesc( i, &fd );
-			f.push_back( fd.name );
-		}
-	}
-	return f;
-}
-
 void Resample::hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashDataWindow( parent, context, h );
+	FlatImageProcessor::hashDataWindow( parent, context, h );
 
 	inPlug()->dataWindowPlug()->hash( h );
 	matrixPlug()->hash( h );
 	expandDataWindowPlug()->hash( h );
 	filterPlug()->hash( h );
-	filterWidthPlug()->hash( h );
+	filterScalePlug()->hash( h );
 	debugPlug()->hash( h );
 }
 
@@ -492,11 +406,14 @@ Imath::Box2i Resample::computeDataWindow( const Gaffer::Context *context, const 
 		V2f ratio, offset;
 		ratioAndOffset( matrix, ratio, offset );
 
-		const Filter2DPtr filter = createFilter( filterPlug()->getValue(), filterWidthPlug()->getValue(), ratio );
-		const V2f filterRadius = V2f( filter->width(), filter->height() ) / 2.0f;
+		V2f inputFilterScale;
+		const OIIO::Filter2D *filter = filterAndScale( filterPlug()->getValue(), ratio, inputFilterScale );
+		inputFilterScale *= filterScalePlug()->getValue();
 
-		dstDataWindow.min -= filterRadius;
-		dstDataWindow.max += filterRadius;
+		const V2f filterRadius = V2f( filter->width(), filter->height() ) * inputFilterScale * 0.5f;
+
+		dstDataWindow.min -= filterRadius * ratio;
+		dstDataWindow.max += filterRadius * ratio;
 	}
 
 	// Convert that Box2f to a Box2i that fully encloses it.
@@ -539,24 +456,30 @@ Imath::Box2i Resample::computeDataWindow( const Gaffer::Context *context, const 
 
 void Resample::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ImageProcessor::hashChannelData( parent, context, h );
+	FlatImageProcessor::hashChannelData( parent, context, h );
 
 	V2f ratio, offset;
-	ratioAndOffset( matrixPlug()->getValue(), ratio, offset );
+	{
+		ImagePlug::GlobalScope c( context );
+		ratioAndOffset( matrixPlug()->getValue(), ratio, offset );
+	}
 
-	const Filter2DPtr filter = createFilter( filterPlug()->getValue(), filterWidthPlug()->getValue(), ratio );
-	h.append( filter->name().c_str() );
+	V2f inputFilterScale;
+	const OIIO::Filter2D *filter = filterAndScale( filterPlug()->getValue(), ratio, inputFilterScale );
+	inputFilterScale *= filterScalePlug()->getValue();
 
-	const unsigned passes = requiredPasses( this, parent, filter.get() );
+	filterPlug()->hash( h );
+
+	const unsigned passes = requiredPasses( this, parent, filter );
 	if( passes & Horizontal )
 	{
-		h.append( filter->width() );
+		h.append( inputFilterScale.x );
 		h.append( ratio.x );
 		h.append( offset.x );
 	}
 	if( passes & Vertical )
 	{
-		h.append( filter->height() );
+		h.append( inputFilterScale.y );
 		h.append( ratio.y );
 		h.append( offset.y );
 	}
@@ -565,7 +488,7 @@ void Resample::hashChannelData( const GafferImage::ImagePlug *parent, const Gaff
 	Sampler sampler(
 		passes == Vertical ? horizontalPassPlug() : inPlug(),
 		context->get<std::string>( ImagePlug::channelNameContextName ),
-		inputRegion( tileOrigin, passes, ratio, offset, filter.get() ),
+		inputRegion( tileOrigin, passes, ratio, offset, filter, inputFilterScale ),
 		(Sampler::BoundingMode)boundingModePlug()->getValue()
 	);
 	sampler.hash( h );
@@ -579,19 +502,25 @@ void Resample::hashChannelData( const GafferImage::ImagePlug *parent, const Gaff
 IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
 {
 	V2f ratio, offset;
-	ratioAndOffset( matrixPlug()->getValue(), ratio, offset );
+	{
+		ImagePlug::GlobalScope c( context );
+		ratioAndOffset( matrixPlug()->getValue(), ratio, offset );
+	}
 
-	Filter2DPtr filter = createFilter( filterPlug()->getValue(), filterWidthPlug()->getValue(), ratio );
-	const unsigned passes = requiredPasses( this, parent, filter.get() );
+	V2f inputFilterScale;
+	const OIIO::Filter2D *filter = filterAndScale( filterPlug()->getValue(), ratio, inputFilterScale );
+	inputFilterScale *= filterScalePlug()->getValue();
+
+	const unsigned passes = requiredPasses( this, parent, filter );
 
 	Sampler sampler(
 		passes == Vertical ? horizontalPassPlug() : inPlug(),
 		channelName,
-		inputRegion( tileOrigin, passes, ratio, offset, filter.get() ),
+		inputRegion( tileOrigin, passes, ratio, offset, filter, inputFilterScale ),
 		(Sampler::BoundingMode)boundingModePlug()->getValue()
 	);
 
-	const V2i filterRadius = inputFilterRadius( filter.get(), ratio );
+	const V2i filterRadius = inputFilterRadius( filter, inputFilterScale );
 	const Box2i tileBound( tileOrigin, tileOrigin + V2i( ImagePlug::tileSize() ) );
 
 	FloatVectorDataPtr resultData = new FloatVectorData;
@@ -611,6 +540,8 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 		V2i iPI; // input pixel position (floored to int)
 		V2f iPF; // fractional part of input pixel position after flooring
 
+		V2f	filterCoordinateMult = V2f(1.0f) / inputFilterScale;
+
 		for( oP.y = tileBound.min.y; oP.y < tileBound.max.y; ++oP.y )
 		{
 			iP.y = ( oP.y + 0.5 ) / ratio.y + offset.y;
@@ -618,8 +549,34 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 
 			for( oP.x = tileBound.min.x; oP.x < tileBound.max.x; ++oP.x )
 			{
+				Canceller::check( context->canceller() );
+
 				iP.x = ( oP.x + 0.5 ) / ratio.x + offset.x;
 				iPF.x = OIIO::floorfrac( iP.x, &iPI.x );
+
+				// \todo : When refactoring the filter code, I seem to have introduced a performance
+				// regression here: in a worst case test of a 20x20 box filter using the debug parameter
+				// to force non-separable, the time was 22 seconds originally, went down to 12 seconds
+				// after the Sampler optimization, but is now back up to 14.
+				//
+				// It seems this may just be due to the extra divide by inputFilterScale above, which is
+				// somewhat surprising, but I can reduce this time to 13 seconds by hoisting some
+				// multiplies out of this loop, so this code does seem quite sensitive ( assuming my
+				// test checks out - I'm not spending much time verifying now that I've realized this
+				// code is probably going to need an overhaul anyway ).
+				//
+				// There seems to be a more important issue here that will need revisiting for performance
+				// - this currently has the potential to hit a lot of extra pixels.  Consider a filter
+				// with a width of 2.1 in X in input space. Depending on how it lines up, usually 2 or
+				// occasionally 3 columns of pixel centers will lie inside this window.  However, currently,
+				// we will take 2.1, compute an integer filterRadius of ceil( 2.1 / 2.0 ) == 2, and then
+				// access 5 columns from (fP.x - 2) to (fP.x + 2 ).  Once both axes are taken into account,
+				// this means that a filter that usually only needs to access 4 input pixels will instead
+				// always access 25.  This is a worst case example, but it seems like it would definitely
+				// be worth the couple of extra floor/ceils per output pixel to only access pixels where the
+				// center is actually within the filter support.  This fix should also be done to the
+				// seperable case.  Once that is done, we should probably also hoist the multiply by
+				// filterCoordinateMult out of the loop.
 
 				V2i fP; // relative filter position
 				float v = 0.0f;
@@ -628,10 +585,9 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 				{
 					for( fP.x = -filterRadius.x; fP.x<= filterRadius.x; ++fP.x )
 					{
-						/// \todo version of sample taking V2i.
 						const float w = (*filter)(
-							ratio.x * (fP.x - ( iPF.x - 0.5f )),
-							ratio.y * (fP.y - ( iPF.y - 0.5f ))
+							filterCoordinateMult.x * (fP.x - ( iPF.x - 0.5f )),
+							filterCoordinateMult.y * (fP.y - ( iPF.y - 0.5f ))
 						);
 
 						if( w == 0.0f )
@@ -664,7 +620,7 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 		// Pixels in the same column share the same filter weights, so
 		// we precompute the weights now to avoid repeating work later.
 		std::vector<float> weights;
-		filterWeights( filter.get(), filterRadius.x, tileBound.min.x, ratio.x, offset.x, Horizontal, weights );
+		filterWeights( filter, inputFilterScale.x, filterRadius.x, tileBound.min.x, ratio.x, offset.x, Horizontal, weights );
 
 		V2i oP; // output pixel position
 		float iX; // input pixel x coordinate (floating point)
@@ -672,6 +628,8 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 
 		for( oP.y = tileBound.min.y; oP.y < tileBound.max.y; ++oP.y )
 		{
+			Canceller::check( context->canceller() );
+
 			std::vector<float>::const_iterator wIt = weights.begin();
 			for( oP.x = tileBound.min.x; oP.x < tileBound.max.x; ++oP.x )
 			{
@@ -712,10 +670,12 @@ IECore::ConstFloatVectorDataPtr Resample::computeChannelData( const std::string 
 		// Pixels in the same row share the same filter weights, so
 		// we precompute the weights now to avoid repeating work later.
 		std::vector<float> weights;
-		filterWeights( filter.get(), filterRadius.y, tileBound.min.y, ratio.y, offset.y, Vertical, weights );
+		filterWeights( filter, inputFilterScale.y, filterRadius.y, tileBound.min.y, ratio.y, offset.y, Vertical, weights );
 
 		for( oP.y = tileBound.min.y; oP.y < tileBound.max.y; ++oP.y )
 		{
+			Canceller::check( context->canceller() );
+
 			iY = ( oP.y + 0.5 ) / ratio.y + offset.y;
 			OIIO::floorfrac( iY, &iYI );
 

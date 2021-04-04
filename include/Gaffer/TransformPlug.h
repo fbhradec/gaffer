@@ -43,18 +43,26 @@
 namespace Gaffer
 {
 
-class TransformPlug : public ValuePlug
+class GAFFER_API TransformPlug : public ValuePlug
 {
 
 	public :
 
-		TransformPlug( const std::string &name = defaultName<TransformPlug>(), Direction direction=In, unsigned flags = Default );
-		virtual ~TransformPlug();
+		TransformPlug(
+			const std::string &name = defaultName<TransformPlug>(),
+			Direction direction=In,
+			const Imath::V3f &defaultTranslate = Imath::V3f( 0 ),
+			const Imath::V3f &defaultRotate = Imath::V3f( 0 ),
+			const Imath::V3f &defaultScale = Imath::V3f( 1 ),
+			const Imath::V3f &defaultPivot = Imath::V3f( 0 ),
+			unsigned flags = Default
+		);
+		~TransformPlug() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::TransformPlug, TransformPlugTypeId, ValuePlug );
+		GAFFER_PLUG_DECLARE_TYPE( Gaffer::TransformPlug, TransformPlugTypeId, ValuePlug );
 
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		V3fPlug *translatePlug();
 		const V3fPlug *translatePlug() const;
@@ -75,10 +83,10 @@ class TransformPlug : public ValuePlug
 
 IE_CORE_DECLAREPTR( TransformPlug );
 
+/// \deprecated Use TransformPlug::Iterator etc instead
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, TransformPlug> > TransformPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, TransformPlug> > InputTransformPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, TransformPlug> > OutputTransformPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, TransformPlug>, PlugPredicate<> > RecursiveTransformPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, TransformPlug>, PlugPredicate<> > RecursiveInputTransformPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, TransformPlug>, PlugPredicate<> > RecursiveOutputTransformPlugIterator;

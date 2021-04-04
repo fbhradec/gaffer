@@ -35,16 +35,20 @@
 #
 ##########################################################################
 
+import six
 import sys
 import warnings
+import imath
 
 import IECore
 
 import GafferUI
 import Gaffer
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
+import Qt
 
 class Window( GafferUI.ContainerWidget ) :
 
@@ -54,14 +58,14 @@ class Window( GafferUI.ContainerWidget ) :
 	def __init__( self, title="GafferUI.Window", borderWidth=0, resizeable=None, child=None, sizeMode=SizeMode.Manual, icon="GafferLogoMini.png", **kw ) :
 
 		GafferUI.ContainerWidget.__init__(
-			self, QtGui.QWidget( None, QtCore.Qt.WindowFlags( QtCore.Qt.Window ), **kw )
+			self, QtWidgets.QWidget( None, QtCore.Qt.WindowFlags( QtCore.Qt.Window ), **kw )
 		)
 
 		self.__child = None
 		self.__childWindows = set()
-		self.__qtLayout = QtGui.QGridLayout()
+		self.__qtLayout = QtWidgets.QGridLayout()
 		self.__qtLayout.setContentsMargins( borderWidth, borderWidth, borderWidth, borderWidth )
-		self.__qtLayout.setSizeConstraint( QtGui.QLayout.SetMinAndMaxSize )
+		self.__qtLayout.setSizeConstraint( QtWidgets.QLayout.SetMinAndMaxSize )
 
 		# The initial size of a widget in qt "depends on the user's platform and screen geometry".
 		# In other words, it is useless. We use this flag to determine whether or not our size is
@@ -72,7 +76,7 @@ class Window( GafferUI.ContainerWidget ) :
 		if len( self.__caughtKeys() ):
 			# set up a key press handler, so we can catch various key presses and stop them being handled by the
 			# host application
-			self.__keyPressConnection = self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ) )
+			self.keyPressSignal().connect( Gaffer.WeakMethod( self.__keyPress ), scoped = False )
 
 
 		# \todo Does this hurt performance? Maybe keyPressSignal() should set this up when it's called?
@@ -81,8 +85,6 @@ class Window( GafferUI.ContainerWidget ) :
 		self._qtWidget().setLayout( self.__qtLayout )
 
 		self._qtWidget().installEventFilter( _windowEventFilter )
-
-		self._qtWidget().setObjectName("gafferWindow")
 
 		self._setStyleSheet()
 
@@ -169,6 +171,9 @@ class Window( GafferUI.ContainerWidget ) :
 		assert( isinstance( childWindow, Window ) )
 
 		oldParent = childWindow.parent()
+		if oldParent is self :
+			return
+
 		if oldParent is not None :
 			oldParent.removeChild( childWindow )
 
@@ -194,11 +199,26 @@ class Window( GafferUI.ContainerWidget ) :
 		# things, but on the whole the Dialog type seems best for X11.
 		childWindowType = QtCore.Qt.Tool if sys.platform == "darwin" else QtCore.Qt.Dialog
 		childWindowFlags = ( childWindow._qtWidget().windowFlags() & ~QtCore.Qt.WindowType_Mask ) | childWindowType
-		childWindow._qtWidget().setParent( self._qtWidget(), childWindowFlags )
-		childWindow._applyVisibility()
+
+		if sys.platform == "darwin" and Qt.__binding__ in ( "PySide2", "PyQt5" ) :
+			# Alternative order of operations to work around crashes
+			# on OSX with Qt5.
+			childWindow._qtWidget().setParent( self._qtWidget() )
+			childWindow._applyVisibility()
+			childWindow._qtWidget().setWindowFlags( childWindowFlags )
+		else :
+			childWindow._qtWidget().setParent( self._qtWidget(), childWindowFlags )
+			childWindow._applyVisibility()
 
 		if removeOnClose :
-			childWindow.__removeOnCloseConnection = childWindow.closedSignal().connect( lambda w : w.parent().removeChild( w ) )
+
+			def remove( childWindow ) :
+
+				childWindow.parent().removeChild( childWindow )
+				assert( not childWindow.visible() )
+				GafferUI.WidgetAlgo.keepUntilIdle( childWindow )
+
+			childWindow.closedSignal().connect( remove, scoped = False )
 
 	## Returns a list of all the windows parented to this one.
 	def childWindows( self ) :
@@ -224,9 +244,9 @@ class Window( GafferUI.ContainerWidget ) :
 
 		self.__sizeMode = sizeMode
 		if sizeMode == self.SizeMode.Manual :
-			self.__qtLayout.setSizeConstraint( QtGui.QLayout.SetDefaultConstraint )
+			self.__qtLayout.setSizeConstraint( QtWidgets.QLayout.SetDefaultConstraint )
 		else :
-			self.__qtLayout.setSizeConstraint( QtGui.QLayout.SetFixedSize )
+			self.__qtLayout.setSizeConstraint( QtWidgets.QLayout.SetFixedSize )
 
 	def getSizeMode( self ) :
 
@@ -248,13 +268,61 @@ class Window( GafferUI.ContainerWidget ) :
 
 		self._qtWidget().resize( s )
 
-	def setPosition( self, position ) :
+	## Repositions the window, attempting to keep the whole frame on screen.
+	# If the window is larger than the available screen area, its position will
+	# be clamped to the top left. If forcePosition is True, the window will be
+	# moved to the specified position even if clipping will occur.
+	def setPosition( self, position, forcePosition = False ) :
 
-		self._qtWidget().move( position.x, position.y )
+		p = QtCore.QPoint( position.x, position.y )
+		if not forcePosition :
+			p = self.__constrainToScreen( p )
+
+		self._qtWidget().move( p )
 
 	def getPosition( self ) :
 
-		return IECore.V2i( self._qtWidget().x(), self._qtWidget().y() )
+		return imath.V2i( self._qtWidget().x(), self._qtWidget().y() )
+
+	def __constrainToScreen( self, position ) :
+
+		# Constrain position such that the whole window remains on screen where
+		# possible. Sadly Qt keeps their implementation of this private.
+		# Qt documents that for a window, move() is really pos and includes frame geometry
+
+		desktop = QtWidgets.QApplication.desktop()
+		screenNumber = desktop.screenNumber( position )
+		screenRect = desktop.availableGeometry( screenNumber )
+
+		# Find what our window's rect would be on that screen
+		windowRect = self._qtWidget().frameGeometry()
+		windowRect.moveTo( position )
+
+		# Determine the offset and which direction to move to stay on screen,
+		# based on this size difference and which co-ordinate changed in the
+		# intersected frame
+
+		intersection = windowRect.intersected( screenRect )
+		difference = windowRect.size() - intersection.size()
+
+		signX = -1 if intersection.left() == windowRect.left() else 1
+		signY = -1 if intersection.top() == windowRect.top() else 1
+
+		offset = QtCore.QPoint(
+			signX * difference.width(),
+			signY * difference.height()
+		)
+
+		newPosition = position + offset
+
+		# Bottom-right corrections may have moved us off to the top-left,
+		# constrain to the screen origin.
+		finalPos = QtCore.QPoint(
+			max( newPosition.x(), screenRect.topLeft().x() ),
+			max( newPosition.y(), screenRect.topLeft().y() )
+		)
+
+		return finalPos
 
 	def setFullScreen( self, fullScreen ) :
 
@@ -269,7 +337,7 @@ class Window( GafferUI.ContainerWidget ) :
 
 	def setIcon( self, imageOrImageFileName ) :
 
-		if isinstance( imageOrImageFileName, basestring ) :
+		if isinstance( imageOrImageFileName, six.string_types ) :
 			self.__image = GafferUI.Image( imageOrImageFileName )
 		else :
 			self.__image = imageOrImageFileName

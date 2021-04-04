@@ -35,24 +35,27 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/Exception.h"
-
 #include "GafferScene/SceneElementProcessor.h"
+
 #include "GafferScene/Filter.h"
 #include "GafferScene/SceneAlgo.h"
+
+#include "IECore/Exception.h"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( SceneElementProcessor );
+GAFFER_NODE_DEFINE_TYPE( SceneElementProcessor );
 
 size_t SceneElementProcessor::g_firstPlugIndex = 0;
 
-SceneElementProcessor::SceneElementProcessor( const std::string &name, Filter::Result filterDefault )
+SceneElementProcessor::SceneElementProcessor( const std::string &name, IECore::PathMatcher::Result filterDefault )
 	:	FilteredSceneProcessor( name, filterDefault )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
+
+	outPlug()->childBoundsPlug()->setFlags( Plug::AcceptsDependencyCycles, true );
 
 	// We don't ever want to change the scene hierarchy, globals, or sets,
 	// so we make pass-through connections for them. This is quicker than
@@ -70,21 +73,41 @@ SceneElementProcessor::~SceneElementProcessor()
 
 void SceneElementProcessor::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	/// \todo Our base classes will say that enabledPlug() affects all children of outPlug() - perhaps
-	/// we can do better by affecting only the plugs we know we're going to process?
 	FilteredSceneProcessor::affects( input, outputs );
 
-	const ScenePlug *in = inPlug();
-	if( input->parent<ScenePlug>() == in )
+	if(
+		input == filterPlug() ||
+		input == inPlug()->boundPlug() ||
+		input == inPlug()->childNamesPlug() ||
+		input == outPlug()->childBoundsPlug() ||
+		input == inPlug()->objectPlug()
+	)
 	{
-		outputs.push_back( outPlug()->getChild<ValuePlug>( input->getName() ) );
+		outputs.push_back( outPlug()->boundPlug() );
 	}
-	else if( input == filterPlug() )
+
+	if(
+		input == filterPlug() ||
+		input == inPlug()->transformPlug()
+	)
 	{
-		for( ValuePlugIterator it( outPlug() ); !it.done(); ++it )
-		{
-			outputs.push_back( it->get() );
-		}
+		outputs.push_back( outPlug()->transformPlug() );
+	}
+
+	if(
+		input == filterPlug() ||
+		input == inPlug()->attributesPlug()
+	)
+	{
+		outputs.push_back( outPlug()->attributesPlug() );
+	}
+
+	if(
+		input == filterPlug() ||
+		input == inPlug()->objectPlug()
+	)
+	{
+		outputs.push_back( outPlug()->objectPlug() );
 	}
 }
 
@@ -103,7 +126,7 @@ void SceneElementProcessor::hashBound( const ScenePath &path, const Gaffer::Cont
 			if( childNames->readable().size() )
 			{
 				FilteredSceneProcessor::hashBound( path, context, parent, h );
-				h.append( hashOfTransformedChildBounds( path, outPlug(), childNames.get() ) );
+				outPlug()->childBoundsPlug()->hash( h );
 				inPlug()->objectPlug()->hash( h );
 			}
 			else
@@ -134,7 +157,7 @@ Imath::Box3f SceneElementProcessor::computeBound( const ScenePath &path, const G
 			ConstInternedStringVectorDataPtr childNames = inPlug()->childNamesPlug()->getValue();
 			if( childNames->readable().size() )
 			{
-				result = unionOfTransformedChildBounds( path, outPlug(), childNames.get() );
+				result = outPlug()->childBoundsPlug()->getValue();
 				// We do have to resort to computing the object here, but its exceedingly
 				// rare to have an object at a location which also has children, so typically
 				// we should be receiving a NullObject cheaply.
@@ -156,13 +179,13 @@ Imath::Box3f SceneElementProcessor::computeBound( const ScenePath &path, const G
 
 void SceneElementProcessor::hashTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Filter::Result match = Filter::NoMatch;
+	IECore::PathMatcher::Result match = IECore::PathMatcher::NoMatch;
 	if( processesTransform() )
 	{
 		match = filterValue( context );
 	}
 
-	if( match & Filter::ExactMatch )
+	if( match & IECore::PathMatcher::ExactMatch )
 	{
 		FilteredSceneProcessor::hashTransform( path, context, parent, h );
 		inPlug()->transformPlug()->hash( h );
@@ -177,7 +200,7 @@ void SceneElementProcessor::hashTransform( const ScenePath &path, const Gaffer::
 
 Imath::M44f SceneElementProcessor::computeTransform( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( filterValue( context ) & Filter::ExactMatch )
+	if( filterValue( context ) & IECore::PathMatcher::ExactMatch )
 	{
 		return computeProcessedTransform( path, context, inPlug()->transformPlug()->getValue() );
 	}
@@ -189,13 +212,13 @@ Imath::M44f SceneElementProcessor::computeTransform( const ScenePath &path, cons
 
 void SceneElementProcessor::hashAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Filter::Result match = Filter::NoMatch;
+	IECore::PathMatcher::Result match = IECore::PathMatcher::NoMatch;
 	if( processesAttributes() )
 	{
 		match = filterValue( context );
 	}
 
-	if( match & Filter::ExactMatch )
+	if( match & IECore::PathMatcher::ExactMatch )
 	{
 		FilteredSceneProcessor::hashAttributes( path, context, parent, h );
 		inPlug()->attributesPlug()->hash( h );
@@ -210,7 +233,7 @@ void SceneElementProcessor::hashAttributes( const ScenePath &path, const Gaffer:
 
 IECore::ConstCompoundObjectPtr SceneElementProcessor::computeAttributes( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( filterValue( context ) & Filter::ExactMatch )
+	if( filterValue( context ) & IECore::PathMatcher::ExactMatch )
 	{
 		return computeProcessedAttributes( path, context, inPlug()->attributesPlug()->getValue() );
 	}
@@ -222,13 +245,13 @@ IECore::ConstCompoundObjectPtr SceneElementProcessor::computeAttributes( const S
 
 void SceneElementProcessor::hashObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent, IECore::MurmurHash &h ) const
 {
-	Filter::Result match = Filter::NoMatch;
+	IECore::PathMatcher::Result match = IECore::PathMatcher::NoMatch;
 	if( processesObject() )
 	{
 		match = filterValue( context );
 	}
 
-	if( match & Filter::ExactMatch )
+	if( match & IECore::PathMatcher::ExactMatch )
 	{
 		FilteredSceneProcessor::hashObject( path, context, parent, h );
 		inPlug()->objectPlug()->hash( h );
@@ -243,7 +266,7 @@ void SceneElementProcessor::hashObject( const ScenePath &path, const Gaffer::Con
 
 IECore::ConstObjectPtr SceneElementProcessor::computeObject( const ScenePath &path, const Gaffer::Context *context, const ScenePlug *parent ) const
 {
-	if( filterValue( context ) & Filter::ExactMatch )
+	if( filterValue( context ) & IECore::PathMatcher::ExactMatch )
 	{
 		return computeProcessedObject( path, context, inPlug()->objectPlug()->getValue() );
 	}
@@ -316,13 +339,13 @@ SceneElementProcessor::BoundMethod SceneElementProcessor::boundMethod( const Gaf
 
 	if( pBound || pTransform )
 	{
-		const Filter::Result f = filterValue( context );
-		if( pBound && (f & Filter::ExactMatch) )
+		const IECore::PathMatcher::Result f = filterValue( context );
+		if( pBound && (f & IECore::PathMatcher::ExactMatch) )
 		{
 			return Processed;
 		}
 
-		if( f & Filter::DescendantMatch )
+		if( f & IECore::PathMatcher::DescendantMatch )
 		{
 			return Union;
 		}

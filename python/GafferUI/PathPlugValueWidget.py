@@ -35,19 +35,19 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import IECore
 
 import Gaffer
 import GafferUI
 
+import os
+
 ## Supported plug metadata - used to provide arguments to a
 # PathChooserDialogue :
 #
-# - "pathPlugValueWidget:leaf"
-# - "pathPlugValueWidget:valid"
-# - "pathPlugValueWidget:bookmarks"
+# - "path:leaf"
+# - "path:valid"
+# - "path:bookmarks"
 class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	## path should be an instance of Gaffer.Path, optionally with
@@ -70,10 +70,10 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 		self.__row.append( pathWidget )
 
 		button = GafferUI.Button( image = "pathChooser.png", hasFrame=False )
-		self.__buttonClickedConnection = button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ) )
+		button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClicked ), scoped = False )
 		self.__row.append( button )
 
-		self.__editingFinishedConnection = pathWidget.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__setPlugValue ) )
+		pathWidget.editingFinishedSignal().connect( Gaffer.WeakMethod( self.__setPlugValue ), scoped = False )
 
 		self._updateFromPlug()
 
@@ -95,10 +95,13 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		result = GafferUI.PlugValueWidget.getToolTip( self )
 
-		result += "\n\n<ul>"
-		result += "<li>Tab to auto-complete</li>"
-		result += "<li>Cursor down to list</li>"
-		result += "</ul>"
+		if result :
+			result += "\n\n"
+
+		result += "## Actions\n\n"
+		result += "- <kbd>Tab</kbd> to autocomplete path component\n"
+		result += "- Select path component (or hit <kbd>&darr;</kbd>) to show path-level contents menu\n"
+		result += "- Select all to show path hierarchy menu\n"
 
 		return result
 
@@ -114,10 +117,10 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 		# get the keywords for the dialogue constructor
 		# from the plug metadata.
 		pathChooserDialogueKeywords = {}
-		pathChooserDialogueKeywords["leaf"] = Gaffer.Metadata.value( self.getPlug(), "pathPlugValueWidget:leaf" )
-		pathChooserDialogueKeywords["valid"] = Gaffer.Metadata.value( self.getPlug(), "pathPlugValueWidget:valid" )
+		pathChooserDialogueKeywords["leaf"] = self.__metadataValue( "leaf" )
+		pathChooserDialogueKeywords["valid"] = self.__metadataValue( "valid" )
 
-		bookmarks = Gaffer.Metadata.value( self.getPlug(), "pathPlugValueWidget:bookmarks" )
+		bookmarks = self.__metadataValue( "bookmarks" )
 		if bookmarks is not None :
 			pathChooserDialogueKeywords["bookmarks"] = GafferUI.Bookmarks.acquire( self.getPlug(), type( pathCopy ), bookmarks )
 
@@ -133,8 +136,8 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 			bookmarks = pathChooserDialogueKeywords.get( "bookmarks", None )
 			if bookmarks is not None :
 				pathCopy.setFromString( bookmarks.getDefault() )
-			else :
-				pathCopy.setFromString( "/" )
+			elif isinstance( pathCopy, Gaffer.FileSystemPath ) :
+				pathCopy.setFromString( os.path.expanduser( "~" ) )
 
 		return GafferUI.PathChooserDialogue( pathCopy, **pathChooserDialogueKeywords )
 
@@ -156,7 +159,7 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 		if not self._editable() :
 			return
 
-		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			self._setPlugFromPath( self.__path )
 
 		# now we've transferred the text changes to the global undo queue, we remove them
@@ -172,3 +175,12 @@ class PathPlugValueWidget( GafferUI.PlugValueWidget ) :
 		if chosenPath is not None :
 			self.__path.setFromString( str( chosenPath ) )
 			self.__setPlugValue()
+
+	def __metadataValue( self, name ) :
+
+		v = Gaffer.Metadata.value( self.getPlug(), "path:" + name )
+		if v is None :
+			# Fall back to old metadata names
+			v = Gaffer.Metadata.value( self.getPlug(), "pathPlugValueWidget:" + name )
+
+		return v

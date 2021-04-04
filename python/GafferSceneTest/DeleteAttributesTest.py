@@ -58,16 +58,16 @@ class DeleteAttributesTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertScenesEqual( a["out"], d["out"] )
 		self.assertSceneHashesEqual( a["out"], d["out"] )
-		self.failUnless( "scene:visible" in d["out"].attributes( "/plane" ) )
-		self.failUnless( "doubleSided" in d["out"].attributes( "/plane" ) )
+		self.assertIn( "scene:visible", d["out"].attributes( "/plane" ) )
+		self.assertIn( "doubleSided", d["out"].attributes( "/plane" ) )
 
 		d["names"].setValue( "doubleSided" )
 
-		self.assertSceneHashesNotEqual( a["out"], d["out"], childPlugNames = ( "attributes", ) )
-		self.assertSceneHashesEqual( a["out"], d["out"], childPlugNames = ( "object", "bound", "transform", "globals", "childNames" ) )
+		self.assertSceneHashesNotEqual( a["out"], d["out"], checks = { "attributes" } )
+		self.assertSceneHashesEqual( a["out"], d["out"], checks = self.allSceneChecks - { "attributes" } )
 
-		self.failUnless( "scene:visible" in d["out"].attributes( "/plane" ) )
-		self.failIf( "doubleSided" in d["out"].attributes( "/plane" ) )
+		self.assertIn( "scene:visible", d["out"].attributes( "/plane" ) )
+		self.assertNotIn( "doubleSided", d["out"].attributes( "/plane" ) )
 
 	def testWildcards( self ) :
 
@@ -75,10 +75,10 @@ class DeleteAttributesTest( GafferSceneTest.SceneTestCase ) :
 		a = GafferScene.CustomAttributes()
 		a["in"].setInput( p["out"] )
 
-		a["attributes"].addMember( "a1", 1 )
-		a["attributes"].addMember( "a2", 2 )
-		a["attributes"].addMember( "b1", 1 )
-		a["attributes"].addMember( "b2", 1 )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "a1", 1 ) )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "a2", 2 ) )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "b1", 1 ) )
+		a["attributes"].addChild( Gaffer.NameValuePlug( "b2", 1 ) )
 
 		d = GafferScene.DeleteAttributes()
 		d["in"].setInput( a["out"] )

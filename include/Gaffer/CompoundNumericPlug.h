@@ -38,18 +38,21 @@
 #ifndef GAFFER_COMPOUNDNUMERICPLUG_H
 #define GAFFER_COMPOUNDNUMERICPLUG_H
 
-#include "OpenEXR/ImathVec.h"
-#include "OpenEXR/ImathColor.h"
+#include "Gaffer/NumericPlug.h"
 
+#include "IECore/Export.h"
 #include "IECore/GeometricTypedData.h"
 
-#include "Gaffer/NumericPlug.h"
+IECORE_PUSH_DEFAULT_VISIBILITY
+#include "OpenEXR/ImathColor.h"
+#include "OpenEXR/ImathVec.h"
+IECORE_POP_DEFAULT_VISIBILITY
 
 namespace Gaffer
 {
 
 template<typename T>
-class CompoundNumericPlug : public ValuePlug
+class GAFFER_API CompoundNumericPlug : public ValuePlug
 {
 
 	public :
@@ -57,7 +60,7 @@ class CompoundNumericPlug : public ValuePlug
 		typedef T ValueType;
 		typedef NumericPlug<typename T::BaseType> ChildType;
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( CompoundNumericPlug<T>, ValuePlug );
+		GAFFER_PLUG_DECLARE_TEMPLATE_TYPE( CompoundNumericPlug<T>, ValuePlug );
 
 		CompoundNumericPlug(
 			const std::string &name = defaultName<CompoundNumericPlug>(),
@@ -68,10 +71,10 @@ class CompoundNumericPlug : public ValuePlug
 			unsigned flags = Default,
 			IECore::GeometricData::Interpretation interpretation = IECore::GeometricData::None
 		);
-		virtual ~CompoundNumericPlug();
+		~CompoundNumericPlug() override;
 		/// Accepts no children following construction.
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		using GraphComponent::getChild;
 		ChildType *getChild( size_t index );
@@ -95,7 +98,7 @@ class CompoundNumericPlug : public ValuePlug
 
 		/// Returns a hash to represent the value of this plug
 		/// in the current context.
-		virtual IECore::MurmurHash hash() const;
+		IECore::MurmurHash hash() const override;
 		/// Convenience function to append the hash to h.
 		void hash( IECore::MurmurHash &h ) const;
 
@@ -119,8 +122,6 @@ class CompoundNumericPlug : public ValuePlug
 
 	private :
 
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( CompoundNumericPlug<T> );
-
 		static const char **childNames();
 		const IECore::GeometricData::Interpretation m_interpretation;
 
@@ -142,50 +143,40 @@ IE_CORE_DECLAREPTR( V3iPlug );
 IE_CORE_DECLAREPTR( Color3fPlug );
 IE_CORE_DECLAREPTR( Color4fPlug );
 
+/// \deprecated Use  V2fPlug::Iterator etc instead
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, V2fPlug> > V2fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, V2fPlug> > InputV2fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, V2fPlug> > OutputV2fPlugIterator;
-
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, V3fPlug> > V3fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, V3fPlug> > InputV3fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, V3fPlug> > OutputV3fPlugIterator;
-
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, V2iPlug> > V2iPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, V2iPlug> > InputV2iPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, V2iPlug> > OutputV2iPlugIterator;
-
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, V3iPlug> > V3iPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, V3iPlug> > InputV3iPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, V3iPlug> > OutputV3iPlugIterator;
-
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, Color3fPlug> > Color3fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, Color3fPlug> > InputColor3fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, Color3fPlug> > OutputColor3fPlugIterator;
-
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, Color4fPlug> > Color4fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, Color4fPlug> > InputColor4fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, Color4fPlug> > OutputColor4fPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, V2fPlug>, PlugPredicate<> > RecursiveV2fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, V2fPlug>, PlugPredicate<> > RecursiveInputV2fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, V2fPlug>, PlugPredicate<> > RecursiveOutputV2fPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, V3fPlug>, PlugPredicate<> > RecursiveV3fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, V3fPlug>, PlugPredicate<> > RecursiveInputV3fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, V3fPlug>, PlugPredicate<> > RecursiveOutputV3fPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, V2iPlug>, PlugPredicate<> > RecursiveV2iPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, V2iPlug>, PlugPredicate<> > RecursiveInputV2iPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, V2iPlug>, PlugPredicate<> > RecursiveOutputV2iPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, V3iPlug>, PlugPredicate<> > RecursiveV3iPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, V3iPlug>, PlugPredicate<> > RecursiveInputV3iPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, V3iPlug>, PlugPredicate<> > RecursiveOutputV3iPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, Color3fPlug>, PlugPredicate<> > RecursiveColor3fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, Color3fPlug>, PlugPredicate<> > RecursiveInputColor3fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, Color3fPlug>, PlugPredicate<> > RecursiveOutputColor3fPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, Color4fPlug>, PlugPredicate<> > RecursiveColor4fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, Color4fPlug>, PlugPredicate<> > RecursiveInputColor4fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, Color4fPlug>, PlugPredicate<> > RecursiveOutputColor4fPlugIterator;

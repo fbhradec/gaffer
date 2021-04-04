@@ -34,9 +34,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "IECore/CachedReader.h"
-
 #include "GafferUI/Pointer.h"
+
+#include "IECore/CachedReader.h"
 
 using namespace GafferUI;
 
@@ -49,38 +49,43 @@ static Registry &registry()
 	if( !r.size() )
 	{
 		// register standard pointers
-		r["moveDiagonallyUp"] = new Pointer( "moveDiagonallyUp.png", Imath::V2i( 7 ) );
-		r["moveDiagonallyDown"] = new Pointer( "moveDiagonallyDown.png", Imath::V2i( 7 ) );
-		r["moveHorizontally"] = new Pointer( "moveHorizontally.png", Imath::V2i( 9, 5 ) );
-		r["moveVertically"] = new Pointer( "moveVertically.png", Imath::V2i( 5, 9 ) );
-		r["nodes"] = new Pointer( "nodes.png", Imath::V2i( 11, 8 ) );
-		r["objects"] = new Pointer( "objects.png", Imath::V2i( 18 ) );
-		r["plug"] = new Pointer( "plug.png", Imath::V2i( 9 ) );
-		r["rgba"] = new Pointer( "rgba.png", Imath::V2i( 12, 7 ) );
-		r["values"] = new Pointer( "values.png", Imath::V2i( 19, 14 ) );
-		r["paths"] = new Pointer( "paths.png", Imath::V2i( 8 ) );
+		r["move"] = new Pointer( "move.png", Imath::V2i( 10 ) );
+		r["moveDiagonallyUp"] = new Pointer( "moveDiagonallyUp.png", Imath::V2i( 10 ) );
+		r["moveDiagonallyDown"] = new Pointer( "moveDiagonallyDown.png", Imath::V2i( 10 ) );
+		r["moveHorizontally"] = new Pointer( "moveHorizontally.png", Imath::V2i( 10 ) );
+		r["moveVertically"] = new Pointer( "moveVertically.png", Imath::V2i( 10 ) );
+		r["nodes"] = new Pointer( "nodes.png", Imath::V2i( 10, 5 ) );
+		r["objects"] = new Pointer( "objects.png", Imath::V2i( 53, 14 ) );
+		r["plug"] = new Pointer( "plug.png", Imath::V2i( 8, 7 ) );
+		r["rgba"] = new Pointer( "rgba.png", Imath::V2i( 11, 5 ) );
+		r["values"] = new Pointer( "values.png", Imath::V2i( 18, 11 ) );
+		r["paths"] = new Pointer( "paths.png", Imath::V2i( 7, 6 ) );
 		r["contextMenu"] = new Pointer( "pointerContextMenu.png", Imath::V2i( 1 ) );
+		r["tab"] = new Pointer( "pointerTab.png", Imath::V2i( 12, 13 ) );
+		r["detachedPanel"] = new Pointer( "pointerDetachedPanel.png", Imath::V2i( 12, 13 ) );
+		r["target"] = new Pointer( "pointerTarget.png", Imath::V2i( 14 ) );
+		r["crossHair"] = new Pointer( "pointerCrossHair.png", Imath::V2i( 14 ) );
 	}
 	return r;
 }
 
-Pointer::Pointer( const IECore::ImagePrimitive *image, const Imath::V2i &hotspot )
+Pointer::Pointer( const IECoreImage::ImagePrimitive *image, const Imath::V2i &hotspot )
 	:	m_image( image->copy() ), m_hotspot( hotspot )
 {
 }
 
 Pointer::Pointer( const std::string &fileName, const Imath::V2i &hotspot )
-	:	m_image( NULL ), m_hotspot( hotspot )
+	:	m_image( nullptr ), m_hotspot( hotspot )
 {
 	static IECore::CachedReaderPtr g_reader;
 	if( !g_reader )
 	{
 		const char *sp = getenv( "GAFFERUI_IMAGE_PATHS" );
 		sp = sp ? sp : "";
-		g_reader = new IECore::CachedReader( IECore::SearchPath( sp, ":" ) );
+		g_reader = new IECore::CachedReader( IECore::SearchPath( sp ) );
 	}
 
-	m_image = IECore::runTimeCast<const IECore::ImagePrimitive>( g_reader->read( fileName ) );
+	m_image = IECore::runTimeCast<const IECoreImage::ImagePrimitive>( g_reader->read( fileName ) );
 	if( !m_image )
 	{
 		throw IECore::Exception(
@@ -89,7 +94,7 @@ Pointer::Pointer( const std::string &fileName, const Imath::V2i &hotspot )
 	}
 }
 
-const IECore::ImagePrimitive *Pointer::image() const
+const IECoreImage::ImagePrimitive *Pointer::image() const
 {
 	return m_image.get();
 }
@@ -121,7 +126,7 @@ void Pointer::setCurrent( const std::string &name )
 {
 	if( !name.size() )
 	{
-		Pointer::setCurrent( (Pointer *)NULL );
+		Pointer::setCurrent( (Pointer *)nullptr );
 		return;
 	}
 

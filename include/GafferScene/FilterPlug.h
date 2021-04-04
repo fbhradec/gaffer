@@ -37,19 +37,24 @@
 #ifndef GAFFERSCENE_FILTERPLUG_H
 #define GAFFERSCENE_FILTERPLUG_H
 
-#include "Gaffer/NumericPlug.h"
-
+#include "GafferScene/Export.h"
 #include "GafferScene/TypeIds.h"
+
+#include "Gaffer/Context.h"
+#include "Gaffer/DependencyNode.h"
+#include "Gaffer/NumericPlug.h"
 
 namespace GafferScene
 {
+
+class ScenePlug;
 
 /// Plug type to provide the output from Filter nodes, and
 /// an input for nodes which wish to use Filters.
 /// \todo This derives from IntPlug for backwards compatibility
 /// reasons, but it may be preferable to derive straight from
 /// ValuePlug for version 1.0.0.0.
-class FilterPlug : public Gaffer::IntPlug
+class GAFFERSCENE_API FilterPlug : public Gaffer::IntPlug
 {
 
 	public :
@@ -70,12 +75,32 @@ class FilterPlug : public Gaffer::IntPlug
 			unsigned flags
 		);
 
-		virtual ~FilterPlug();
+		~FilterPlug() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::FilterPlug, FilterPlugTypeId, Gaffer::IntPlug );
+		GAFFER_PLUG_DECLARE_TYPE( GafferScene::FilterPlug, FilterPlugTypeId, Gaffer::IntPlug );
 
-		virtual bool acceptsInput( const Gaffer::Plug *input ) const;
-		virtual Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsInput( const Gaffer::Plug *input ) const override;
+		Gaffer::PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
+
+		/// Must be called when a child of a ScenePlug is dirtied, and that ScenePlug will later
+		/// be passed to the filter via SceneScope. This allows the filter to participate fully in
+		/// dirty propagation, despite not having ScenePlug inputs of its own. For an example of
+		/// usage, see `FilteredSceneProcessor::affects()`.
+		void sceneAffects( const Gaffer::Plug *scenePlugChild, Gaffer::DependencyNode::AffectedPlugsContainer &outputs ) const;
+
+		/// Evaluates the filter for the specified scene plug. Should be used in preference to
+		/// singular calls to getValue(), as it ensures a suitable SceneScope before evaluating the filter.
+		unsigned match( const ScenePlug *scene ) const;
+
+		/// Name of a context variable used to provide the input
+		/// scene to the filter
+		static const IECore::InternedString inputSceneContextName;
+
+		/// Provides the input scene for a filter evaluation
+		struct SceneScope : public Gaffer::Context::EditableScope
+		{
+			SceneScope( const Gaffer::Context *context, const ScenePlug *scenePlug );
+		};
 
 };
 

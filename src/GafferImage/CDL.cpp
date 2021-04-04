@@ -34,16 +34,16 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringPlug.h"
-
 #include "GafferImage/CDL.h"
+
+#include "Gaffer/StringPlug.h"
 
 using namespace std;
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-IE_CORE_DEFINERUNTIMETYPED( CDL );
+GAFFER_NODE_DEFINE_TYPE( CDL );
 
 size_t CDL::g_firstPlugIndex = 0;
 
@@ -120,10 +120,10 @@ const Gaffer::IntPlug *CDL::directionPlug() const
 
 bool CDL::affectsTransform( const Gaffer::Plug *input ) const
 {
-	return (
-		input == slopePlug() ||
-		input == offsetPlug() ||
-		input == powerPlug() ||
+	return(
+		slopePlug()->isAncestorOf( input ) ||
+		offsetPlug()->isAncestorOf( input ) ||
+		powerPlug()->isAncestorOf( input ) ||
 		input == saturationPlug() ||
 		input == directionPlug()
 	);

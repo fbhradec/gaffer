@@ -35,8 +35,10 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferScene
@@ -46,7 +48,7 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 
 	def testPassThrough( self ) :
 
-		sphere = IECore.SpherePrimitive()
+		sphere = IECoreScene.SpherePrimitive()
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -106,9 +108,32 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 		self.assertSceneHashesEqual( input["out"], prune["out"] )
 		self.assertTrue( input["out"].object( "/groupA/sphereAA", _copy = False ).isSame( prune["out"].object( "/groupA/sphereAA", _copy = False ) ) )
 
+		# The pass through should also apply to the `childBounds` plug, which is automatically
+		# computed by SceneNode/SceneProcessor.
+
+		for path in [
+			"/",
+			"/groupA",
+			"/groupB",
+			"/groupA/sphereAA",
+			"/groupA/sphereAB",
+			"/groupB/sphereBA",
+			"/groupB/sphereBB",
+		] :
+
+			self.assertEqual(
+				prune["out"].childBoundsHash( path ),
+				prune["in"].childBoundsHash( path ),
+			)
+
+			self.assertEqual(
+				prune["out"].childBounds( path ),
+				prune["in"].childBounds( path ),
+			)
+
 	def testPruning( self ) :
 
-		sphere = IECore.SpherePrimitive()
+		sphere = IECoreScene.SpherePrimitive()
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -159,8 +184,8 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 
 	def testAdjustBounds( self ) :
 
-		sphere1 = IECore.SpherePrimitive()
-		sphere2 = IECore.SpherePrimitive( 2 )
+		sphere1 = IECoreScene.SpherePrimitive()
+		sphere2 = IECoreScene.SpherePrimitive( 2 )
 		input = GafferSceneTest.CompoundObjectSource()
 		input["in"].setValue(
 			IECore.CompoundObject( {
@@ -281,31 +306,9 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 		b = Gaffer.Box()
 		b["n"] = GafferScene.Prune()
 
-		self.assertTrue( b.canPromotePlug( b["n"]["filter"] ) )
-		b.promotePlug( b["n"]["filter"] )
-		self.assertTrue( b.plugIsPromoted( b["n"]["filter"] ) )
-
-	def testGlobalsDoNotDependOnScenePath( self ) :
-
-		pathFilter = GafferScene.PathFilter()
-		pathFilter["paths"].setValue( IECore.StringVectorData( [ "/grid/borderLines" ] ) )
-
-		grid = GafferScene.Grid()
-
-		prune = GafferScene.Prune()
-		prune["in"].setInput( grid["out"] )
-		prune["filter"].setInput( pathFilter["out"] )
-
-		c = Gaffer.Context()
-		with c :
-			h1 = prune["out"]["globals"].hash()
-			c["scene:path"] = IECore.InternedStringVectorData( [ "grid" ] )
-			h2 = prune["out"]["globals"].hash()
-			c["scene:path"] = IECore.InternedStringVectorData( [ "grid", "centerLines" ] )
-			h3 = prune["out"]["globals"].hash()
-
-		self.assertEqual( h1, h2 )
-		self.assertEqual( h2, h3 )
+		self.assertTrue( Gaffer.PlugAlgo.canPromote( b["n"]["filter"] ) )
+		Gaffer.PlugAlgo.promote( b["n"]["filter"] )
+		self.assertTrue( Gaffer.PlugAlgo.isPromoted( b["n"]["filter"] ) )
 
 	def testSets( self ) :
 
@@ -351,12 +354,54 @@ class PruneTest( GafferSceneTest.SceneTestCase ) :
 				prune["filter"].setInput( pathFilter["out"] )
 
 				outputSet = set( prune["out"].set( "set" ).value.paths() )
-				filterMatcher = GafferScene.PathMatcher( p )
+				filterMatcher = IECore.PathMatcher( p )
 				for inputSetPath in s :
-					if filterMatcher.match( inputSetPath ) & ( pathFilter.Result.ExactMatch | pathFilter.Result.AncestorMatch ) :
+					if filterMatcher.match( inputSetPath ) & ( IECore.PathMatcher.Result.ExactMatch | IECore.PathMatcher.Result.AncestorMatch ) :
 						self.assertTrue( inputSetPath not in outputSet )
 					else :
 						self.assertTrue( inputSetPath in outputSet )
+
+	def testNameChangeUpdatesBounds( self ) :
+
+		plane = GafferScene.Plane()
+		group = GafferScene.Group()
+		group["in"][0].setInput( plane["out"] )
+
+		planeFilter = GafferScene.PathFilter()
+		planeFilter["paths"].setValue( IECore.StringVectorData( [ "/plane" ] ) )
+
+		prune = GafferScene.Prune()
+		prune["in"].setInput( plane["out"] )
+		prune["filter"].setInput( planeFilter["out"] )
+		prune["adjustBounds"].setValue( True )
+
+		self.assertEqual( prune["out"].bound( "/" ), imath.Box3f() )
+
+		plane["name"].setValue( "youCantPruneMe" )
+		self.assertEqual( prune["out"].bound( "/" ), plane["out"].bound( "/" ) )
+
+	def testFalseDescendantMatches( self ) :
+
+		plane = GafferScene.Plane()
+		plane["transform"]["translate"]["x"].setValue( 10 )
+
+		sphere = GafferScene.Sphere()
+		sphere["transform"]["translate"]["x"].setValue( -10 )
+
+		group = GafferScene.Group()
+		group["in"][0].setInput( plane["out"] )
+		group["in"][1].setInput( sphere["out"] )
+
+		pathFilter = GafferScene.PathFilter()
+		pathFilter["paths"].setValue( IECore.StringVectorData( [ "/group/.../plane" ] ) )
+
+		prune = GafferScene.Prune()
+		prune["in"].setInput( group["out"] )
+		prune["filter"].setInput( pathFilter["out"] )
+		prune["adjustBounds"].setValue( True )
+
+		self.assertEqual( prune["out"].childNames( "/group"), IECore.InternedStringVectorData( [ "sphere" ] ) )
+		self.assertEqual( prune["out"].bound( "/" ), sphere["out"].bound( "/" ) )
 
 if __name__ == "__main__":
 	unittest.main()

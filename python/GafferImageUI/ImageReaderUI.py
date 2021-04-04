@@ -39,6 +39,7 @@ import IECore
 import Gaffer
 import GafferUI
 import GafferImage
+from . import OpenColorIOTransformUI
 
 Gaffer.Metadata.registerNode(
 
@@ -64,11 +65,11 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
-			"pathPlugValueWidget:leaf", True,
-			"pathPlugValueWidget:bookmarks", "image",
-			"fileSystemPathPlugValueWidget:extensions", IECore.StringVectorData( GafferImage.ImageReader.supportedExtensions() ),
-			"fileSystemPathPlugValueWidget:extensionsLabel", "Show only image files",
-			"fileSystemPathPlugValueWidget:includeSequences", True,
+			"path:leaf", True,
+			"path:bookmarks", "image",
+			"fileSystemPath:extensions", " ".join( GafferImage.ImageReader.supportedExtensions() ),
+			"fileSystemPath:extensionsLabel", "Show only image files",
+			"fileSystemPath:includeSequences", True,
 
 		],
 
@@ -118,7 +119,10 @@ Gaffer.Metadata.registerNode(
 			and display window of the start frame.
 			""",
 
-			"plugValueWidget:type", "GafferImageUI.ImageReaderUI._FrameMaskPlugValueWidget",
+			"plugValueWidget:type", "GafferUI.LayoutPlugValueWidget",
+			"layoutPlugValueWidget:orientation", "horizontal",
+
+			"layout:activator:modeIsNotNone", lambda plug : plug["mode"].getValue() != GafferImage.ImageReader.FrameMaskMode.None_,
 
 		],
 
@@ -129,11 +133,12 @@ Gaffer.Metadata.registerNode(
 			The mode used detemine the mask behaviour for the start frame.
 			""",
 
-			"preset:None", GafferImage.ImageReader.FrameMaskMode.None,
+			"preset:None", GafferImage.ImageReader.FrameMaskMode.None_,
 			"preset:Black Outside", GafferImage.ImageReader.FrameMaskMode.BlackOutside,
 			"preset:Clamp to Range", GafferImage.ImageReader.FrameMaskMode.ClampToFrame,
 
 			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+			"layout:label", "",
 
 		],
 
@@ -146,6 +151,9 @@ Gaffer.Metadata.registerNode(
 
 			"presetNames", lambda plug : IECore.StringVectorData( [ str(x) for x in plug.node()["__oiioReader"]["availableFrames"].getValue() ] ),
 			"presetValues", lambda plug : plug.node()["__oiioReader"]["availableFrames"].getValue(),
+
+			"layout:label", "",
+			"layout:activator", "modeIsNotNone",
 
 		],
 
@@ -160,7 +168,10 @@ Gaffer.Metadata.registerNode(
 			and display window of the end frame.
 			""",
 
-			"plugValueWidget:type", "GafferImageUI.ImageReaderUI._FrameMaskPlugValueWidget",
+			"plugValueWidget:type", "GafferUI.LayoutPlugValueWidget",
+			"layoutPlugValueWidget:orientation", "horizontal",
+
+			"layout:activator:modeIsNotNone", lambda plug : plug["mode"].getValue() != GafferImage.ImageReader.FrameMaskMode.None_,
 
 		],
 
@@ -171,11 +182,12 @@ Gaffer.Metadata.registerNode(
 			The mode used detemine the mask behaviour for the end frame.
 			""",
 
-			"preset:None", GafferImage.ImageReader.FrameMaskMode.None,
+			"preset:None", GafferImage.ImageReader.FrameMaskMode.None_,
 			"preset:Black Outside", GafferImage.ImageReader.FrameMaskMode.BlackOutside,
 			"preset:Clamp to Range", GafferImage.ImageReader.FrameMaskMode.ClampToFrame,
 
 			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+			"layout:label", "",
 
 		],
 
@@ -189,61 +201,28 @@ Gaffer.Metadata.registerNode(
 			"presetNames", lambda plug : IECore.StringVectorData( [ str(x) for x in plug.node()["__oiioReader"]["availableFrames"].getValue() ] ),
 			"presetValues", lambda plug : plug.node()["__oiioReader"]["availableFrames"].getValue(),
 
+			"layout:label", "",
+			"layout:activator", "modeIsNotNone",
+
+		],
+
+		"colorSpace" : [
+
+			"description",
+			"""
+			The colour space of the input image, used to convert the input image to
+			the scene linear colorspace defined by the OpenColorIO config. The default
+			behaviour is to automatically determine the colorspace by calling the function
+			registered with `ImageReader::setDefaultColorSpaceFunction()`.
+			""",
+
+			"presetNames", OpenColorIOTransformUI.colorSpacePresetNames,
+			"presetValues", OpenColorIOTransformUI.colorSpacePresetValues,
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
+
 		],
 
 	}
 
 )
-
-class _FrameMaskPlugValueWidget( GafferUI.PlugValueWidget ) :
-
-	def __init__( self, plug, **kw ) :
-
-		with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing=4 ) as self.__row :
-
-			GafferUI.PlugValueWidget.create( plug["mode"] )
-			GafferUI.PlugValueWidget.create( plug["frame"] )
-
-		GafferUI.PlugValueWidget.__init__( self, self.__row, plug, **kw )
-
-	def setPlug( self, plug ) :
-
-		assert( len( plug ) == len( self.getPlug() ) )
-
-		GafferUI.PlugValueWidget.setPlug( self, plug )
-
-		for index, plug in enumerate( plug.children() ) :
-			self.__row[index].setPlug( plug )
-
-	def setHighlighted( self, highlighted ) :
-
-		GafferUI.PlugValueWidget.setHighlighted( self, highlighted )
-
-		for i in range( 0, len( self.getPlug() ) ) :
-			self.__row[i].setHighlighted( highlighted )
-
-	def setReadOnly( self, readOnly ) :
-
-		if readOnly == self.getReadOnly() :
-			return
-
-		GafferUI.PlugValueWidget.setReadOnly( self, readOnly )
-
-		for w in self.__row :
-			if isinstance( w, GafferUI.PlugValueWidget ) :
-				w.setReadOnly( readOnly )
-
-	def childPlugValueWidget( self, childPlug, lazy=True ) :
-
-		for i, p in enumerate( self.getPlug().children() ) :
-			if p.isSame( childPlug ) :
-				return self.__row[i]
-
-		return None
-
-	def _updateFromPlug( self ) :
-
-		with self.getContext() :
-			mode = self.getPlug()["mode"].getValue()
-
-		self.childPlugValueWidget( self.getPlug()["frame"] ).setEnabled( mode != GafferImage.ImageReader.FrameMaskMode.None )

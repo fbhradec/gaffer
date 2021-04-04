@@ -35,8 +35,6 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import unittest
 
 import IECore
@@ -63,7 +61,7 @@ class UndoTest( GafferTest.TestCase ) :
 		self.assertEqual( s.redoAvailable(), False )
 		self.assertRaises( Exception, s.undo )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			n.setName( "c" )
 
 		self.assertEqual( s.undoAvailable(), True )
@@ -89,16 +87,16 @@ class UndoTest( GafferTest.TestCase ) :
 		s["n1"] = n1
 		s["n2"] = n2
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			n1["op1"].setInput( n2["sum"] )
 
-		self.assert_( n1["op1"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n1["op1"].getInput().isSame( n2["sum"] ) )
 
 		s.undo()
 		self.assertEqual( n1["op1"].getInput(), None )
 
 		s.redo()
-		self.assert_( n1["op1"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n1["op1"].getInput().isSame( n2["sum"] ) )
 
 	def testChildren( self ) :
 
@@ -107,13 +105,13 @@ class UndoTest( GafferTest.TestCase ) :
 
 		self.assertEqual( n.parent(), None )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s["n"] = n
-		self.assert_( n.parent().isSame( s ) )
+		self.assertTrue( n.parent().isSame( s ) )
 		s.undo()
 		self.assertEqual( n.parent(), None )
 		s.redo()
-		self.assert_( n.parent().isSame( s ) )
+		self.assertTrue( n.parent().isSame( s ) )
 
 	def testDelete( self ) :
 
@@ -130,27 +128,27 @@ class UndoTest( GafferTest.TestCase ) :
 		n2["op2"].setInput( n1["sum"] )
 		n3["op1"].setInput( n2["sum"] )
 		n3["op2"].setInput( n2["sum"] )
-		self.assert_( n2["op1"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n2["op2"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n3["op1"].getInput().isSame( n2["sum"] ) )
-		self.assert_( n3["op2"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n2["op1"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n2["op2"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n3["op1"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n3["op2"].getInput().isSame( n2["sum"] ) )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s.deleteNodes( filter = Gaffer.StandardSet( [ n2 ] ) )
 
 		self.assertEqual( n2["op1"].getInput(), None )
 		self.assertEqual( n2["op2"].getInput(), None )
-		self.assert_( n3["op1"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n3["op2"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n3["op1"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n3["op2"].getInput().isSame( n1["sum"] ) )
 
 		s.undo()
 
-		self.assert_( n2["op1"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n2["op2"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n3["op1"].getInput().isSame( n2["sum"] ) )
-		self.assert_( n3["op2"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n2["op1"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n2["op2"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n3["op1"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n3["op2"].getInput().isSame( n2["sum"] ) )
 
-		with Gaffer.UndoContext( s ) :
+		with Gaffer.UndoScope( s ) :
 			s.deleteNodes( filter = Gaffer.StandardSet( [ n2 ] ), reconnect = False )
 
 		self.assertEqual( n2["op1"].getInput(), None )
@@ -160,23 +158,23 @@ class UndoTest( GafferTest.TestCase ) :
 
 		s.undo()
 
-		self.assert_( n2["op1"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n2["op2"].getInput().isSame( n1["sum"] ) )
-		self.assert_( n3["op1"].getInput().isSame( n2["sum"] ) )
-		self.assert_( n3["op2"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n2["op1"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n2["op2"].getInput().isSame( n1["sum"] ) )
+		self.assertTrue( n3["op1"].getInput().isSame( n2["sum"] ) )
+		self.assertTrue( n3["op2"].getInput().isSame( n2["sum"] ) )
 
 	def testDisable( self ) :
 
 		s = Gaffer.ScriptNode()
 		s["n"] = GafferTest.AddNode()
 
-		with Gaffer.UndoContext( s, Gaffer.UndoContext.State.Disabled ) :
+		with Gaffer.UndoScope( s, Gaffer.UndoScope.State.Disabled ) :
 			s["n"]["op1"].setValue( 10 )
 
 		self.assertFalse( s.undoAvailable() )
 
-		with Gaffer.UndoContext( s, Gaffer.UndoContext.State.Enabled ) :
-			with Gaffer.UndoContext( s, Gaffer.UndoContext.State.Disabled ) :
+		with Gaffer.UndoScope( s, Gaffer.UndoScope.State.Enabled ) :
+			with Gaffer.UndoScope( s, Gaffer.UndoScope.State.Disabled ) :
 				s["n"]["op1"].setValue( 20 )
 
 		self.assertFalse( s.undoAvailable() )

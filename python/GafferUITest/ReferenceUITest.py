@@ -34,7 +34,6 @@
 #
 ##########################################################################
 
-import os
 import unittest
 
 import Gaffer
@@ -53,7 +52,7 @@ class ReferenceUITest( GafferUITest.TestCase ) :
 
 		Gaffer.Metadata.registerValue( s["b"]["n"]["p"], "nodule:type", "" )
 
-		p = s["b"].promotePlug( s["b"]["n"]["p"] )
+		p = Gaffer.PlugAlgo.promote( s["b"]["n"]["p"] )
 		p.setName( "p" )
 
 		g = GafferUI.GraphGadget( s )
@@ -64,6 +63,33 @@ class ReferenceUITest( GafferUITest.TestCase ) :
 		s["r"].load( self.temporaryDirectory() + "/test.grf" )
 
 		self.assertTrue( g.nodeGadget( s["r"] ).nodule( s["r"]["p"] ) is None )
+
+	def testReadOnly( self ):
+
+		s = Gaffer.ScriptNode()
+
+		s["b"] = Gaffer.Box()
+		s["b"]["a1"] = Gaffer.Box()
+		s["b"]["a1"]["p1"] = Gaffer.IntPlug( "boxPlug", flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic )
+		Gaffer.PlugAlgo.promote( s["b"]["a1"]["p1"] )
+		s["b"].exportForReference( self.temporaryDirectory() + "/test.grf" )
+
+		s["r"] = Gaffer.Reference()
+		s["r"].load( self.temporaryDirectory() + "/test.grf" )
+
+		self.assertTrue( Gaffer.MetadataAlgo.getChildNodesAreReadOnly( s["r"] ) )
+		self.assertFalse( Gaffer.MetadataAlgo.readOnly( s["r"] ) )
+		self.assertFalse( Gaffer.MetadataAlgo.readOnly( s["r"]["p1"] ) )
+		self.assertTrue( Gaffer.MetadataAlgo.readOnly( s["r"]["a1"] ) )
+		self.assertTrue( Gaffer.MetadataAlgo.readOnly( s["r"]["a1"]["p1"] ) )
+
+		s.execute( s.serialise( parent = s["r"], filter = Gaffer.StandardSet( [ s["r"]["a1"] ] ) ) )
+
+		self.assertTrue( "a1" in s )
+
+		self.assertFalse( Gaffer.MetadataAlgo.readOnly( s["a1"] ) )
+		self.assertFalse( Gaffer.MetadataAlgo.readOnly( s["a1"]["p1"] ) )
+
 
 if __name__ == "__main__":
 	unittest.main()

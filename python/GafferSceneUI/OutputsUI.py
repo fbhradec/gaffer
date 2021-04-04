@@ -34,11 +34,11 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
-import re
+import functools
+import imath
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferUI
@@ -76,6 +76,12 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"outputs.*" : [
+
+			"plugValueWidget:type", "GafferSceneUI.OutputsUI.ChildPlugValueWidget",
+
+		],
+
 		"outputs.*.parameters.quantize.value" : [
 
 			"description",
@@ -94,8 +100,8 @@ Gaffer.Metadata.registerNode(
 		"outputs.*.fileName" : [
 
 			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
-			"pathPlugValueWidget:bookmarks", "image",
-			"pathPlugValueWidget:leaf", True,
+			"path:bookmarks", "image",
+			"path:leaf", True,
 
 		],
 
@@ -133,7 +139,7 @@ class OutputsPlugValueWidget( GafferUI.PlugValueWidget ) :
 					image="plus.png", hasFrame=False, menu = GafferUI.Menu( Gaffer.WeakMethod( self.__addMenuDefinition ) )
 				)
 
-				GafferUI.Spacer( IECore.V2i( 1 ), maximumSize = IECore.V2i( 100000, 1 ), parenting = { "expand" : True } )
+				GafferUI.Spacer( imath.V2i( 1 ), maximumSize = imath.V2i( 100000, 1 ), parenting = { "expand" : True } )
 
 	def hasLabel( self ) :
 
@@ -158,7 +164,7 @@ class OutputsPlugValueWidget( GafferUI.PlugValueWidget ) :
 			m.append(
 				menuPath,
 				{
-					"command" : IECore.curry( node.addOutput, name ),
+					"command" : functools.partial( node.addOutput, name ),
 					"active" : name not in currentNames
 				}
 			)
@@ -166,12 +172,12 @@ class OutputsPlugValueWidget( GafferUI.PlugValueWidget ) :
 		if len( registeredOutputs ) :
 			m.append( "/BlankDivider", { "divider" : True } )
 
-		m.append( "/Blank", { "command" : IECore.curry( node.addOutput, "", IECore.Display( "", "", "" ) ) } )
+		m.append( "/Blank", { "command" : functools.partial( node.addOutput, "", IECoreScene.Output( "", "", "" ) ) } )
 
 		return m
 
 # A widget for representing an individual output.
-class _ChildPlugWidget( GafferUI.PlugValueWidget ) :
+class ChildPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, childPlug ) :
 
@@ -183,31 +189,22 @@ class _ChildPlugWidget( GafferUI.PlugValueWidget ) :
 			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing=4 ) as header :
 
 				collapseButton = GafferUI.Button( image = "collapsibleArrowRight.png", hasFrame=False )
-				collapseButton.__clickedConnection = collapseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__collapseButtonClicked ) )
+				collapseButton.clickedSignal().connect( Gaffer.WeakMethod( self.__collapseButtonClicked ), scoped = False )
 
 				GafferUI.PlugValueWidget.create( childPlug["active"] )
 				self.__label = GafferUI.Label( self.__namePlug().getValue() )
 
-				GafferUI.Spacer( IECore.V2i( 1 ), maximumSize = IECore.V2i( 100000, 1 ), parenting = { "expand" : True } )
+				GafferUI.Spacer( imath.V2i( 1 ), maximumSize = imath.V2i( 100000, 1 ), parenting = { "expand" : True } )
 
 				self.__deleteButton = GafferUI.Button( image = "delete.png", hasFrame=False )
-				self.__deleteButton.__clickedConnection = self.__deleteButton.clickedSignal().connect( Gaffer.WeakMethod( self.__deleteButtonClicked ) )
+				self.__deleteButton.clickedSignal().connect( Gaffer.WeakMethod( self.__deleteButtonClicked ), scoped = False )
 				self.__deleteButton.setVisible( False )
 
-			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing= 4 ) as self.__detailsColumn :
-
-				GafferUI.PlugWidget( self.__namePlug() )
-				GafferUI.PlugWidget( self.__fileNamePlug() )
-				GafferUI.PlugWidget( childPlug["type"] )
-				GafferUI.PlugWidget( childPlug["data"] )
-				GafferUI.CompoundDataPlugValueWidget( childPlug["parameters"] )
-
-				GafferUI.Divider( GafferUI.Divider.Orientation.Horizontal )
-
+			self.__detailsColumn = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing = 4 )
 			self.__detailsColumn.setVisible( False )
 
-			self.__enterConnection = header.enterSignal().connect( Gaffer.WeakMethod( self.__enter ) )
-			self.__leaveConnection = header.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ) )
+			header.enterSignal().connect( Gaffer.WeakMethod( self.__enter ), scoped = False )
+			header.leaveSignal().connect( Gaffer.WeakMethod( self.__leave ), scoped = False )
 
 	def hasLabel( self ) :
 
@@ -246,16 +243,22 @@ class _ChildPlugWidget( GafferUI.PlugValueWidget ) :
 	def __collapseButtonClicked( self, button ) :
 
 		visible = not self.__detailsColumn.getVisible()
+
+		if visible and not len( self.__detailsColumn ) :
+			# Build details section the first time it is shown,
+			# to avoid excessive overhead in the initial UI build.
+			with self.__detailsColumn :
+				GafferUI.PlugWidget( self.__namePlug() )
+				GafferUI.PlugWidget( self.__fileNamePlug() )
+				GafferUI.PlugWidget( self.getPlug()["type"] )
+				GafferUI.PlugWidget( self.getPlug()["data"] )
+				GafferUI.CompoundDataPlugValueWidget( self.getPlug()["parameters"] )
+				GafferUI.Divider( GafferUI.Divider.Orientation.Horizontal )
+
 		self.__detailsColumn.setVisible( visible )
 		button.setImage( "collapsibleArrowDown.png" if visible else "collapsibleArrowRight.png" )
 
 	def __deleteButtonClicked( self, button ) :
 
-		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			self.getPlug().parent().removeChild( self.getPlug() )
-
-## \todo This regex is an interesting case to be considered during the string matching unification for #707. Once that
-# is done, intuitively we want to use an "outputs.*" glob expression, but because the "*" will match anything
-# at all, including ".", it will match the children of what we want too. We might want to prevent wildcards from
-# matching "." when we come to use them in this context.
-GafferUI.PlugValueWidget.registerCreator( GafferScene.Outputs, re.compile( "outputs\.[^\.]+$" ), _ChildPlugWidget )

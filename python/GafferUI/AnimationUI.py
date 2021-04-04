@@ -37,6 +37,8 @@
 import math
 import functools
 
+import imath
+
 import Gaffer
 import GafferUI
 
@@ -49,6 +51,9 @@ Gaffer.Metadata.registerNode(
 	Generates keyframed animation to be applied to plugs
 	on other nodes.
 	""",
+
+	"nodeGadget:type", "GafferUI::AuxiliaryNodeGadget",
+	"auxiliaryNodeGadget:label", "a",
 
 	plugs = {
 
@@ -67,8 +72,6 @@ Gaffer.Metadata.registerNode(
 
 )
 
-GafferUI.NodeGadget.registerNodeGadget( Gaffer.Animation, lambda node : None )
-
 # PlugValueWidget popup menu for setting keys
 ##########################################################################
 
@@ -77,15 +80,15 @@ def __setKey( plug, context ) :
 	with context :
 		value = plug.getValue()
 
-	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+	with Gaffer.UndoScope( plug.ancestor( Gaffer.ScriptNode ) ) :
 		curve = Gaffer.Animation.acquire( plug )
 		curve.addKey( Gaffer.Animation.Key( context.getTime(), value ) )
 
-def __removeKey( plug, time ) :
+def __removeKey( plug, key ) :
 
-	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+	with Gaffer.UndoScope( plug.ancestor( Gaffer.ScriptNode ) ) :
 		curve = Gaffer.Animation.acquire( plug )
-		curve.removeKey( time )
+		curve.removeKey( key )
 
 def __popupMenu( menuDefinition, plugValueWidget ) :
 
@@ -105,8 +108,8 @@ def __popupMenu( menuDefinition, plugValueWidget ) :
 		menuDefinition.prepend(
 			"/Jump To/Next Key",
 			{
-				"command" : functools.partial( context.setTime, nextKey.time ),
-				"active" : bool( nextKey ),
+				"command" : functools.partial( context.setTime, nextKey.getTime() if nextKey is not None else 0 ),
+				"active" : nextKey is not None,
 			}
 		)
 
@@ -114,20 +117,20 @@ def __popupMenu( menuDefinition, plugValueWidget ) :
 		menuDefinition.prepend(
 			"/Jump To/Previous Key",
 			{
-				"command" : functools.partial( context.setTime, previousKey.time ),
-				"active" : bool( previousKey ),
+				"command" : functools.partial( context.setTime, previousKey.getTime() if previousKey is not None else 0 ),
+				"active" : previousKey is not None,
 			}
 		)
 
 		closestKey = curve.closestKey( context.getTime() )
-		closestKeyOnThisFrame = closestKey and math.fabs( context.getTime() - closestKey.time ) * context.getFramesPerSecond() < 0.5
+		closestKeyOnThisFrame = closestKey is not None and math.fabs( context.getTime() - closestKey.getTime() ) * context.getFramesPerSecond() < 0.5
 		menuDefinition.prepend(
 			"/Remove Key",
 			{
 				"command" : functools.partial(
 					__removeKey,
 					plug,
-					context.getTime()
+					closestKey
 				),
 				"active" : bool( closestKeyOnThisFrame ) and plugValueWidget._editable( canEditAnimation = True ),
 			}
@@ -145,4 +148,4 @@ def __popupMenu( menuDefinition, plugValueWidget ) :
 		}
 	)
 
-__popupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __popupMenu )
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __popupMenu, scoped = False )

@@ -36,6 +36,9 @@
 
 import glob
 import unittest
+import six
+
+import IECore
 
 import Gaffer
 import GafferTest
@@ -60,7 +63,7 @@ class TaskContextVariablesTest( GafferTest.TestCase ) :
 
 		script["variables"] = GafferDispatch.TaskContextVariables()
 		script["variables"]["preTasks"][0].setInput( script["writer"]["task"] )
-		script["variables"]["variables"].addMember( "name", "jimbob" )
+		script["variables"]["variables"].addChild( Gaffer.NameValuePlug( "name", "jimbob" ) )
 
 		self.__dispatcher().dispatch( [ script["variables"] ] )
 
@@ -81,8 +84,8 @@ class TaskContextVariablesTest( GafferTest.TestCase ) :
 
 		script["variables"] = GafferDispatch.TaskContextVariables()
 		script["variables"]["preTasks"][0].setInput( script["writer"]["task"] )
-		jim = script["variables"]["variables"].addOptionalMember( "name1", "jim", enabled = False )
-		bob = script["variables"]["variables"].addOptionalMember( "name2", "bob", enabled = True )
+		jim = script["variables"]["variables"].addChild( Gaffer.NameValuePlug( "name1", "jim", False ) )
+		bob = script["variables"]["variables"].addChild( Gaffer.NameValuePlug( "name2", "bob", True ) )
 
 		self.__dispatcher().dispatch( [ script["variables"] ] )
 
@@ -103,7 +106,7 @@ class TaskContextVariablesTest( GafferTest.TestCase ) :
 
 		script["variables"] = GafferDispatch.TaskContextVariables()
 		script["variables"]["preTasks"][0].setInput( script["writer"]["task"] )
-		script["variables"]["variables"].addMember( "name", "jimbob" )
+		script["variables"]["variables"].addChild( Gaffer.NameValuePlug( "name", "jimbob" ) )
 
 		dispatcher = self.__dispatcher()
 		dispatcher["executeInBackground"].setValue( True )
@@ -123,10 +126,14 @@ class TaskContextVariablesTest( GafferTest.TestCase ) :
 
 		s = Gaffer.ScriptNode()
 		s["variables"] = GafferDispatch.TaskContextVariables()
-		s["variables"]["preTasks"][0].setInput( s["variables"]["task"] )
+
+		with IECore.CapturingMessageHandler() as mh :
+			s["variables"]["preTasks"][0].setInput( s["variables"]["task"] )
+		self.assertEqual( len( mh.messages ), 1 )
+		six.assertRegex( self, mh.messages[0].message, "Cycle detected between ScriptNode.variables.preTasks.preTask0 and ScriptNode.variables.task" )
 
 		d = self.__dispatcher()
-		self.assertRaisesRegexp( RuntimeError, "cannot have cyclic dependencies", d.dispatch, [ s["variables"] ] )
+		six.assertRaisesRegex( self, RuntimeError, "cannot have cyclic dependencies", d.dispatch, [ s["variables"] ] )
 
 	def testStringSubstitutions( self ) :
 
@@ -134,7 +141,7 @@ class TaskContextVariablesTest( GafferTest.TestCase ) :
 		s["l"] = GafferDispatchTest.LoggingTaskNode()
 		s["v"] = GafferDispatch.TaskContextVariables()
 		s["v"]["preTasks"][0].setInput( s["l"]["task"] )
-		s["v"]["variables"].addMember( "test", "test.####.cob" )
+		s["v"]["variables"].addChild( Gaffer.NameValuePlug( "test", "test.####.cob" ) )
 
 		with Gaffer.Context() as c :
 			c.setFrame( 100 )

@@ -36,14 +36,13 @@
 ##########################################################################
 
 import weakref
-
-import IECore
+import functools
 
 import Gaffer
 import GafferUI
 import GafferDispatch
 
-QtCore = GafferUI._qtImport( "QtCore" )
+from Qt import QtCore
 
 Gaffer.Metadata.registerNode(
 
@@ -54,6 +53,8 @@ Gaffer.Metadata.registerNode(
 	Used to schedule the execution of a network
 	of TaskNodes.
 	""",
+
+	"layout:activator:framesModeIsCustomRange", lambda node : node["framesMode"].getValue() == GafferDispatch.Dispatcher.FramesMode.CustomRange,
 
 	plugs = {
 
@@ -77,7 +78,11 @@ Gaffer.Metadata.registerNode(
 			    the frameRange plug.
 			""",
 
-			"plugValueWidget:type", "GafferUI.DispatcherUI._FramesModePlugValueWidget",
+			"preset:Current Frame", GafferDispatch.Dispatcher.FramesMode.CurrentFrame,
+			"preset:Full Range", GafferDispatch.Dispatcher.FramesMode.FullRange,
+			"preset:Custom Range", GafferDispatch.Dispatcher.FramesMode.CustomRange,
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 
 		),
 
@@ -85,11 +90,10 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			"""
-			The frame range to be used when framedMode is "CustomRange".
+			The frame range to be used when framesMode is "CustomRange".
 			""",
 
-			"layout:activator", "customRange",
-			"plugValueWidget:type", "GafferUI.DispatcherUI._FrameRangePlugValueWidget",
+			"layout:visibilityActivator", "framesModeIsCustomRange",
 
 		),
 
@@ -110,7 +114,7 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
-			"pathPlugValueWidget:leaf", False,
+			"path:leaf", False,
 
 		),
 
@@ -126,7 +130,7 @@ Gaffer.Metadata.registerNode(
 
 	GafferDispatch.TaskNode,
 
-	"layout:customWidget:dispatchButton:widgetType", "GafferUI.DispatcherUI._DispatchButton",
+	"layout:customWidget:dispatchButton:widgetType", "GafferDispatchUI.DispatcherUI._DispatchButton",
 
 	plugs = {
 
@@ -168,13 +172,13 @@ def appendMenuDefinitions( menuDefinition, prefix="" ) :
 	menuDefinition.append( prefix + "/Execute Selected", { "command" : executeSelected, "shortCut" : "Ctrl+E", "active" : selectionAvailable } )
 	menuDefinition.append( prefix + "/Repeat Previous", { "command" : repeatPrevious, "shortCut" : "Ctrl+R", "active" : previousAvailable } )
 
-def appendNodeContextMenuDefinitions( nodeGraph, node, menuDefinition ) :
+def appendNodeContextMenuDefinitions( graphEditor, node, menuDefinition ) :
 
 	if not hasattr( node, "execute" ) :
 		return
 
 	menuDefinition.append( "/ExecuteDivider", { "divider" : True } )
-	menuDefinition.append( "/Execute", { "command" : IECore.curry( _showDispatcherWindow, [ node ] ) } )
+	menuDefinition.append( "/Execute", { "command" : functools.partial( _showDispatcherWindow, [ node ] ) } )
 
 def executeSelected( menu ) :
 	scriptWindow = menu.ancestor( GafferUI.ScriptWindow )
@@ -209,18 +213,18 @@ class DispatcherWindow( GafferUI.Window ) :
 
 		with self :
 
-			with GafferUI.ListContainer( orientation = GafferUI.ListContainer.Orientation.Vertical, spacing = 2, borderWidth = 4 ) :
+			with GafferUI.ListContainer( orientation = GafferUI.ListContainer.Orientation.Vertical, spacing = 2, borderWidth = 6 ) :
 
 				with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 ) :
 					GafferUI.Label( "Dispatcher" )
 					self.__dispatchersMenu = GafferUI.MultiSelectionMenu( allowMultipleSelection = False, allowEmptySelection = False )
-					self.__dispatchersMenu.append( self.__dispatchers.keys() )
+					self.__dispatchersMenu.append( list( self.__dispatchers.keys() ) )
 					self.__dispatchersMenu.setSelection( [ defaultType ] )
-					self.__dispatchersMenuSelectionChangedConnection = self.__dispatchersMenu.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__dispatcherChanged ) )
+					self.__dispatchersMenu.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__dispatcherChanged ), scoped = False )
 
-				self.__frame = GafferUI.Frame( borderStyle=GafferUI.Frame.BorderStyle.None, borderWidth=0 )
+				self.__frame = GafferUI.Frame( borderStyle=GafferUI.Frame.BorderStyle.None_, borderWidth=0 )
 				self.__dispatchButton = GafferUI.Button( "Dispatch" )
-				self.__dispatchClickedConnection = self.__dispatchButton.clickedSignal().connect( Gaffer.WeakMethod( self.__dispatchClicked ) )
+				self.__dispatchButton.clickedSignal().connect( Gaffer.WeakMethod( self.__dispatchClicked ), scoped = False )
 
 		self.__update( resizeToFit = True )
 
@@ -244,7 +248,7 @@ class DispatcherWindow( GafferUI.Window ) :
 			toRemove = self.__dispatchers.get( label, None )
 			if toRemove and self.__currentDispatcher.isSame( toRemove ) :
 				if len(self.__dispatchers.items()) < 2 :
-					raise RuntimeError, "DispatcherWindow: " + label + " is the only dispatcher, so it cannot be removed."
+					raise RuntimeError( "DispatcherWindow: " + label + " is the only dispatcher, so it cannot be removed." )
 				self.setCurrentDispatcher( self.__dispatchers.values()[0] )
 
 			del self.__dispatchers[label]
@@ -267,7 +271,7 @@ class DispatcherWindow( GafferUI.Window ) :
 				break
 
 		if not dispatcherLabel :
-			raise RuntimeError, "DispatcherWindow: The current dispatcher must be added first. Use DispatcherWindow.addDispatcher( label, dispatcher )"
+			raise RuntimeError( "DispatcherWindow: The current dispatcher must be added first. Use DispatcherWindow.addDispatcher( label, dispatcher )" )
 
 		self.__currentDispatcher = dispatcher
 		self.__dispatchersMenu.setSelection( [ dispatcherLabel ] )
@@ -305,8 +309,6 @@ class DispatcherWindow( GafferUI.Window ) :
 		self.__updateTitle()
 
 		if resizeToFit :
-			# Force the node UI to build so we fit to the right contents
-			nodeUI.plugValueWidget( self.__currentDispatcher["framesMode"], lazy = False )
 			self.resizeToFitChild()
 
 	def __updateTitle( self ) :
@@ -338,162 +340,11 @@ class _DispatchButton( GafferUI.Button ) :
 		GafferUI.Button.__init__( self, "Execute", **kw )
 
 		self.__node = node
-		self.__clickedConnection = self.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ) )
+		self.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ), scoped = False )
 
 	def __clicked( self, button ) :
 
 		_showDispatcherWindow( [ self.__node ] )
-
-########################################
-# PlugValueWidgets for frame range plugs
-########################################
-
-# Much of this is copied from EnumPlugValueWidget, but we're not deriving because we
-# want the ability to add in menu items that don't correspond to plug values directly.
-class _FramesModePlugValueWidget( GafferUI.PlugValueWidget ) :
-
-	def __init__( self, plug, **kw ) :
-
-		self.__selectionMenu = GafferUI.MultiSelectionMenu( allowMultipleSelection = False, allowEmptySelection = False )
-		GafferUI.PlugValueWidget.__init__( self, self.__selectionMenu, plug, **kw )
-
-		self.__labelsAndValues = (
-			( "CurrentFrame", GafferDispatch.Dispatcher.FramesMode.CurrentFrame ),
-			( "FullRange", GafferDispatch.Dispatcher.FramesMode.FullRange ),
-			( "PlaybackRange", GafferDispatch.Dispatcher.FramesMode.CustomRange ),
-			( "CustomRange", GafferDispatch.Dispatcher.FramesMode.CustomRange ),
-		)
-
-		for label, value in self.__labelsAndValues :
-			self.__selectionMenu.append( label )
-
-		self.__updateFrameRangeConnection = None
-		self.__visibilityChangedConnection = self.visibilityChangedSignal().connect( Gaffer.WeakMethod( self.__visibilityChanged ) )
-		self.__selectionChangedConnection = self.__selectionMenu.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__selectionChanged ) )
-
-		self._addPopupMenu( self.__selectionMenu )
-
-		# save the metadata in case the frameRange plug is set prior to enabling CustomRange mode
-		self.__customFrameRangeChanged( self.getPlug().node()["frameRange"] )
-
-		self._updateFromPlug()
-
-	def selectionMenu( self ) :
-
-		return self.__selectionMenu
-
-	def _updateFromPlug( self ) :
-
-		self.__selectionMenu.setEnabled( self._editable() )
-
-		if self.getPlug() is None :
-			return
-
-		with self.getContext() :
-			plugValue = self.getPlug().getValue()
-
-		for labelAndValue in self.__labelsAndValues :
-			if labelAndValue[1] == plugValue :
-				with Gaffer.BlockedConnection( self.__selectionChangedConnection ) :
-					self.__selectionMenu.setSelection( labelAndValue[0] )
-				break
-
-	def __frameRangeWidget( self ) :
-
-		nodeUI = self.ancestor( GafferUI.NodeUI )
-		if nodeUI :
-			return nodeUI.plugValueWidget( self.getPlug().node()["frameRange"], lazy = False )
-
-		return None
-
-	def __selectionChanged( self, selectionMenu ) :
-
-		label = selectionMenu.getSelection()[0]
-		value = self.__labelsAndValues[ selectionMenu.index( label ) ][1]
-
-		Gaffer.Metadata.registerValue(
-			self.getPlug().node(),
-			"layout:activator:customRange",
-			label == "CustomRange",
-		)
-
-		with Gaffer.BlockedConnection( self._plugConnections() ) :
-			self.getPlug().setValue( value )
-
-		self.__updateFrameRangeConnection = None
-
-		window = self.ancestor( GafferUI.ScriptWindow )
-		if not window :
-			return
-
-		script = window.scriptNode()
-		context = script.context()
-
-		if label == "CurrentFrame" :
-			self.__updateFrameRangeConnection = context.changedSignal().connect( Gaffer.WeakMethod( self.__contextChanged ) )
-			self.__contextChanged( context, "frame" )
-		elif label == "FullRange" :
-			self.__updateFrameRangeConnection = script.plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__scriptPlugDirtied ) )
-			self.__scriptPlugDirtied( script["frameRange"] )
-		elif label == "PlaybackRange" :
-			playback = GafferUI.Playback.acquire( context )
-			self.__updateFrameRangeConnection = playback.frameRangeChangedSignal().connect( Gaffer.WeakMethod( self.__playbackFrameRangeChanged ) )
-			self.__playbackFrameRangeChanged( playback )
-		else :
-			frameRange = Gaffer.Metadata.value( self.getPlug(), "dispatcherWindow:frameRange" )
-			if frameRange is not None :
-				self.getPlug().node()["frameRange"].setValue( frameRange )
-			self.__updateFrameRangeConnection = self.getPlug().node().plugDirtiedSignal().connect( Gaffer.WeakMethod( self.__customFrameRangeChanged ) )
-
-	def __visibilityChanged( self, widget ) :
-
-		if self.visible() :
-			self.__selectionChanged( self.__selectionMenu )
-		else :
-			self.__updateFrameRangeConnection = None
-
-	def __contextChanged( self, context, key ) :
-
-		if key == "frame" :
-			frameRangeWidget = self.__frameRangeWidget()
-			if frameRangeWidget :
-				frameRangeWidget.textWidget().setText( str(int(context.getFrame())) )
-
-	def __playbackFrameRangeChanged( self, playback ) :
-
-		frameRange = playback.getFrameRange()
-		frameRange = str(IECore.frameListFromList( range(frameRange[0], frameRange[1]+1) ))
-		self.getPlug().node()["frameRange"].setValue( frameRange )
-		frameRangeWidget = self.__frameRangeWidget()
-		if frameRangeWidget :
-			frameRangeWidget.textWidget().setText( str(frameRange) )
-
-	def __scriptPlugDirtied( self, plug ) :
-
-		script = plug.ancestor( Gaffer.ScriptNode )
-		if script and plug.isSame( script["frameRange"] ) or plug.parent().isSame( script["frameRange"] ) :
-			frameRangeWidget = self.__frameRangeWidget()
-			if frameRangeWidget :
-				frameRangeWidget.textWidget().setText( str(IECore.FrameRange( script["frameRange"]["start"].getValue(), script["frameRange"]["end"].getValue() )) )
-
-	def __customFrameRangeChanged( self, plug ) :
-
-		if plug.isSame( self.getPlug().node()["frameRange"] ) :
-			with self.getContext() :
-				Gaffer.Metadata.registerValue( self.getPlug(), "dispatcherWindow:frameRange", plug.getValue() )
-
-class _FrameRangePlugValueWidget( GafferUI.StringPlugValueWidget ) :
-
-	def _updateFromPlug( self ) :
-
-		with self.getContext() :
-			framesMode = self.getPlug().node()["framesMode"].getValue()
-
-		# we need to disable the normal update in CurrentFrame and FullRange modes
-		if framesMode == GafferDispatch.Dispatcher.FramesMode.CustomRange :
-			GafferUI.StringPlugValueWidget._updateFromPlug( self )
-
-		self.textWidget().setEditable( self._editable() )
 
 ##########################################################################
 # Implementation Details
@@ -534,9 +385,10 @@ def selectedNodes( script ) :
 		if isinstance( n, GafferDispatch.TaskNode ) :
 			result.append( n )
 		elif isinstance( n, Gaffer.SubGraph ) :
-			for p in n.children( GafferDispatch.TaskNode.TaskPlug ) :
-				if p.direction() == Gaffer.Plug.Direction.Out and p.source() :
+			for p in GafferDispatch.TaskNode.TaskPlug.RecursiveOutputRange( n ) :
+				if isinstance( p.source().node(), GafferDispatch.TaskNode ) :
 					result.append( n )
+					break
 
 	return result
 

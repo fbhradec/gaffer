@@ -34,10 +34,11 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
-
 #include "GafferImage/Mirror.h"
+
 #include "GafferImage/Sampler.h"
+
+#include "Gaffer/Context.h"
 
 using namespace std;
 using namespace Imath;
@@ -89,12 +90,12 @@ V2i mirror( const V2i &point, bool horizontal, bool vertical, const Box2i &displ
 // Mirror
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( Mirror );
+GAFFER_NODE_DEFINE_TYPE( Mirror );
 
 size_t Mirror::g_firstPlugIndex = 0;
 
 Mirror::Mirror( const std::string &name )
-	:	ImageProcessor( name )
+	:	FlatImageProcessor( name )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new BoolPlug( "horizontal" ) );
@@ -131,7 +132,7 @@ const Gaffer::BoolPlug *Mirror::verticalPlug() const
 
 void Mirror::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	ImageProcessor::affects( input, outputs );
+	FlatImageProcessor::affects( input, outputs );
 
 	const bool affectsTransform =
 		input == inPlug()->formatPlug() ||
@@ -167,7 +168,7 @@ void Mirror::hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer:
 		return;
 	}
 
-	ImageProcessor::hashDataWindow( parent, context, h );
+	FlatImageProcessor::hashDataWindow( parent, context, h );
 	inPlug()->dataWindowPlug()->hash( h );
 	inPlug()->formatPlug()->hash( h );
 	h.append( horizontal );
@@ -208,17 +209,22 @@ void Mirror::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer
 		return;
 	}
 
-	ImageProcessor::hashChannelData( parent, context, h );
+	FlatImageProcessor::hashChannelData( parent, context, h );
 
 	const std::string &channelName = context->get<string>( ImagePlug::channelNameContextName );
 	const V2i tileOrigin = context->get<V2i>( ImagePlug::tileOriginContextName );
 	const Box2i tileBound( tileOrigin, tileOrigin + V2i( ImagePlug::tileSize() ) );
+	Box2i displayWindow;
+	{
+		ImagePlug::GlobalScope c( context );
+		displayWindow = inPlug()->formatPlug()->getValue().getDisplayWindow();
+	}
 
 	const Box2i sampleWindow = mirror(
 		tileBound,
 		horizontal,
 		vertical,
-		inPlug()->formatPlug()->getValue().getDisplayWindow()
+		displayWindow
 	);
 
 	Sampler sampler( inPlug(), channelName, sampleWindow );
@@ -238,7 +244,11 @@ IECore::ConstFloatVectorDataPtr Mirror::computeChannelData( const std::string &c
 		return inPlug()->channelDataPlug()->getValue();
 	}
 
-	const Box2i displayWindow = inPlug()->formatPlug()->getValue().getDisplayWindow();
+	Box2i displayWindow;
+	{
+		ImagePlug::GlobalScope c( context );
+		displayWindow = inPlug()->formatPlug()->getValue().getDisplayWindow();
+	}
 	const Box2i tileBound( tileOrigin, tileOrigin + V2i( ImagePlug::tileSize() ) );
 	const Box2i sampleWindow = mirror(
 		tileBound,

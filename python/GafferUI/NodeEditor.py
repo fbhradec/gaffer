@@ -37,10 +37,14 @@
 
 import functools
 
+import imath
+
 import IECore
 
 import Gaffer
 import GafferUI
+
+from Qt import QtWidgets
 
 class NodeEditor( GafferUI.NodeSetEditor ) :
 
@@ -50,8 +54,38 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 
 		GafferUI.NodeSetEditor.__init__( self, self.__column, scriptNode, **kw )
 
+		with self.__column :
+
+			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, borderWidth=8, spacing=4 ) as self.__header :
+
+				# NameLabel with a fixed formatter, to be used as a drag source.
+				self.__nameLabel = GafferUI.NameLabel( None, formatter = lambda graphComponents : "<h4>Node Name</h4>" )
+				# NameWidget to allow editing of the name.
+				self.__nameWidget = GafferUI.NameWidget( None )
+
+				with GafferUI.ListContainer(
+					GafferUI.ListContainer.Orientation.Horizontal,
+					spacing=4,
+					parenting = { "horizontalAlignment" : GafferUI.HorizontalAlignment.Right },
+				) as self.__infoSection :
+
+					self.__typeLabel = GafferUI.Label()
+
+					infoButton = GafferUI.Button( image = "info.png", hasFrame = False )
+					infoButton.clickedSignal().connect( Gaffer.WeakMethod( self.__infoButtonClicked ), scoped = False )
+
+				GafferUI.MenuButton(
+					image = "gear.png",
+					hasFrame = False,
+					menu = GafferUI.Menu( Gaffer.WeakMethod( self.__menuDefinition ) )
+				)
+
+			self.__nodeUIFrame = GafferUI.Frame(
+				borderStyle = GafferUI.Frame.BorderStyle.None_, borderWidth = 0,
+				parenting = { "expand" : True }
+			)
+
 		self.__nodeUI = None
-		self.__nameWidget = None
 		self.__readOnly = False
 
 		self._updateFromSet()
@@ -63,6 +97,7 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 		self._doPendingUpdate()
 		return self.__nodeUI
 
+	## \deprecated
 	def setReadOnly( self, readOnly ) :
 
 		if readOnly == self.__readOnly :
@@ -73,6 +108,7 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 			self.__nodeUI.setReadOnly( readOnly )
 			self.__nameWidget.setEditable( not readOnly )
 
+	## \deprecated
 	def getReadOnly( self ) :
 
 		return self.__readOnly
@@ -96,66 +132,60 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 
 		GafferUI.NodeSetEditor._updateFromSet( self )
 
-		del self.__column[:]
-		self.__nodeUI = None
-		self.__nameWidget = None
+		focusWidget = GafferUI.Widget._owner( QtWidgets.QApplication.focusWidget() )
+		if self.__column.isAncestorOf( focusWidget ) :
+			# The focus is in our editor, but it belongs to a widget we're about
+			# to delete. Transfer the focus up so that we don't lose the focus
+			# when we delete the widget.
+			## \todo Is there an argument for moving this fix to the ListContainer
+			# itself?
+			self.__column._qtWidget().setFocus()
 
 		node = self._lastAddedNode()
-		if not node :
+		if node is None :
+			self.__nameLabel.setGraphComponent( None )
+			self.__nameWidget.setGraphComponent( None )
+			self.__nodeUI = None
+			# Spacer is necessary to allow bookmark shortcuts to work in an
+			# empty NodeEditor.
+			self.__nodeUIFrame.setChild( GafferUI.Spacer( imath.V2i( 0 ) ) )
+			self.__header.setVisible( False )
 			return
 
-		with self.__column :
-			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, borderWidth=8, spacing=4 ) :
+		self.__nameLabel.setGraphComponent( node )
+		self.__nameWidget.setGraphComponent( node )
+		self.__typeLabel.setText( "<h4>" + node.typeName().rpartition( ":" )[-1] + "</h4>" )
 
-				GafferUI.Label( "<h4>Node Name</h4>" )
-				self.__nameWidget = GafferUI.NameWidget( node )
-				## \todo Make NameWidget support the readOnly metadata internally itself.
-				# We can't do that easily right now, because it would need to be managing
-				# the exact same `setEditable()` call that we're using here to propagate
-				# our Widget readonlyness. Really our Widget readonlyness mechanism is a
-				# bit lacking, and it should really be inherited automatically so we don't
-				# have to propagate it like this.
-				self.__nameWidget.setEditable( not self.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( node ) )
+		toolTip = "# " + node.typeName().rpartition( ":" )[2]
+		description = Gaffer.Metadata.value( node, "description" )
+		if description :
+			toolTip += "\n\n" + description
+		self.__infoSection.setToolTip( toolTip )
 
-				with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing=4 ) as infoSection :
+		self.__header.setVisible( True )
 
-					GafferUI.Label( "<h4>" + node.typeName().rpartition( ":" )[-1] + "</h4>" )
-
-					button = GafferUI.Button( image = "info.png", hasFrame = False )
-					url = Gaffer.Metadata.value( node, "documentation:url" )
-					if url :
-						button.clickedSignal().connect(
-							lambda button : GafferUI.showURL( url ),
-							scoped = False
-						)
-
-				toolTip = "<h3>" + node.typeName().rpartition( ":" )[2] + "</h3>"
-				description = Gaffer.Metadata.nodeDescription( node )
-				if description :
-					toolTip += "\n\n" + description
-				infoSection.setToolTip( toolTip )
-
-				GafferUI.MenuButton(
-					image = "gear.png",
-					hasFrame = False,
-					menu = GafferUI.Menu( Gaffer.WeakMethod( self.__menuDefinition ) )
-				)
-
-		frame = GafferUI.Frame( borderStyle=GafferUI.Frame.BorderStyle.None, borderWidth=0 )
-		self.__column.append( frame, expand=True )
 		self.__nodeUI = GafferUI.NodeUI.create( node )
 		self.__nodeUI.setReadOnly( self.getReadOnly() )
-		frame.setChild( self.__nodeUI )
+		self.__nodeUIFrame.setChild( self.__nodeUI )
 
 	def _titleFormat( self ) :
 
 		return GafferUI.NodeSetEditor._titleFormat( self, _maxNodes = 1, _reverseNodes = True, _ellipsis = False )
 
-	def __menuDefinition( self ) :
-
-		result = IECore.MenuDefinition()
+	def __infoButtonClicked( self, *unused ) :
 
 		url = Gaffer.Metadata.value( self.nodeUI().node(), "documentation:url" )
+		if url :
+			GafferUI.showURL( url )
+
+		return True
+
+	def __menuDefinition( self ) :
+
+		node = self.nodeUI().node()
+		result = IECore.MenuDefinition()
+
+		url = Gaffer.Metadata.value( node, "documentation:url" )
 		result.append(
 			"/Documentation...",
 			{
@@ -164,6 +194,9 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 			}
 		)
 
+		nodeCls = type( node )
+		GafferUI.Examples.appendExamplesSubmenuDefinition( result, "/Examples", forNode = nodeCls )
+
 		result.append( "/DocumentationDivider", { "divider" : True } )
 
 		result.append(
@@ -171,6 +204,15 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 			{
 				"command" : Gaffer.WeakMethod( self.__revertToDefaults ),
 				"active" : not Gaffer.MetadataAlgo.readOnly( self.nodeUI().node() ),
+			}
+		)
+
+		readOnly = Gaffer.MetadataAlgo.getReadOnly( self.nodeUI().node() )
+		result.append(
+			"/Unlock" if readOnly else "/Lock",
+			{
+				"command" : functools.partial( Gaffer.WeakMethod( self.__applyReadOnly ), not readOnly ),
+				"active" : not Gaffer.MetadataAlgo.readOnly( self.nodeUI().node().parent() ),
 			}
 		)
 
@@ -207,8 +249,14 @@ class NodeEditor( GafferUI.NodeSetEditor ) :
 				applyDefaults( c )
 
 		node = self.nodeUI().node()
-		with Gaffer.UndoContext( node.ancestor( Gaffer.ScriptNode ) ) :
+		with Gaffer.UndoScope( node.ancestor( Gaffer.ScriptNode ) ) :
 			applyDefaults( node )
 			Gaffer.NodeAlgo.applyUserDefaults( node )
 
-GafferUI.EditorWidget.registerType( "NodeEditor", NodeEditor )
+	def __applyReadOnly( self, readOnly ) :
+
+		node = self.nodeUI().node()
+		with Gaffer.UndoScope( node.scriptNode() ) :
+			Gaffer.MetadataAlgo.setReadOnly( node, readOnly )
+
+GafferUI.Editor.registerType( "NodeEditor", NodeEditor )

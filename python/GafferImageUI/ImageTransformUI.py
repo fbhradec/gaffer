@@ -83,9 +83,34 @@ Gaffer.Metadata.registerNode(
 
 			# Disk doesn't make much sense as a resizing filter, and also causes artifacts because
 			# its default width is small enough to fall into the gaps between pixels.
-			*[ ( "preset:" + x.title(), x ) for x in GafferImage.Resample.filters() if x != "disk" ]
+			*[ ( "preset:" + x.title(), x ) for x in GafferImage.FilterAlgo.filterNames() if x != "disk" ]
 
 		) ),
+
+		"invert" : [
+			"description",
+			"""
+			Apply the inverse transformation to the image.
+			"""
+		],
+
+		"concatenate" : [
+
+			"description",
+
+			"""
+			Combines the processing for a series of ImageTransforms so that
+			transformation and filtering is only applied once. This gives better
+			image quality and performance.
+
+			> Note : When concatenation is in effect, the filter settings on upstream
+			> ImageTransforms are ignored.
+			""",
+
+			"layout:section", "Node",
+			"layout:index", -1,
+
+		],
 
 	}
 

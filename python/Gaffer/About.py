@@ -35,6 +35,7 @@
 ##########################################################################
 
 import os
+import json
 
 class About :
 
@@ -76,7 +77,7 @@ class About :
 	@staticmethod
 	def copyright() :
 
-		return "Copyright (c) 2011-2016 John Haddon, Copyright (c) 2011-2016 Image Engine Design Inc."
+		return "Copyright (c) 2011-2019 John Haddon, Copyright (c) 2011-2019 Image Engine Design Inc."
 
 	@staticmethod
 	def license() :
@@ -86,7 +87,7 @@ class About :
 	@staticmethod
 	def url() :
 
-		return "http://imageengine.github.io/gaffer/"
+		return "http://www.gafferhq.org"
 
 	@staticmethod
 	def dependenciesPreamble() :
@@ -99,139 +100,16 @@ class About :
 	@staticmethod
 	def dependencies() :
 
-		result = [
+		licenseDir = os.path.expandvars( "$GAFFER_ROOT/doc/licenses" )
+		if not os.path.exists( licenseDir ) :
+			# Internal build, not based on GafferHQ/dependencies.
+			return []
 
-			{
-				"name" : "boost",
-				"url" : "http://www.boost.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/boost",
-			},
+		with open( os.path.join( licenseDir, "manifest.json" ) ) as f :
+			result = json.load( f )
 
-			{
-				"name" : "cortex",
-				"url" : "https://github.com/ImageEngine/cortex/",
-				"license" : "$GAFFER_ROOT/doc/licenses/cortex",
-			},
-
-			{
-				"name" : "freetype",
-				"url" : "http://www.freetype.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/freetype",
-				"credit" : "Portions of this software are copyright (c) 2009 The FreeType Project (www.freetype.org). All rights reserved."
-			},
-
-			{
-				"name" : "glew",
-				"url" : "http://glew.sourceforge.net/",
-				"license" : "$GAFFER_ROOT/doc/licenses/glew",
-			},
-
-			{
-				"name" : "ilmbase",
-				"url" : "http://www.openexr.com/",
-				"license" : "$GAFFER_ROOT/doc/licenses/ilmbase",
-			},
-
-			{
-				"name" : "libjpeg",
-				"url" : "http://www.ijg.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/libjpeg",
-				"credit" : "This software is based in part on the work of the Independent JPEG Group.",
-			},
-
-			{
-				"name" : "libpng",
-				"url" : "http://www.libpng.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/libpng",
-			},
-
-			{
-				"name" : "openexr",
-				"url" : "http://www.openexr.com/",
-				"license" : "$GAFFER_ROOT/doc/licenses/openexr",
-			},
-
-			{
-				"name" : "python",
-				"url" : "http://python.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/python",
-			},
-
-			{
-				"name" : "pyopengl",
-				"url" : "http://pyopengl.sourceforge.net/",
-			},
-
-			{
-				"name" : "libtiff",
-				"url" : "http://www.libtiff.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/libtiff",
-			},
-
-			{
-				"name" : "tbb",
-				"url" : "http://threadingbuildingblocks.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/tbb",
-			},
-
-			{
-				"name" : "OpenColorIO",
-				"url" : "http://opencolorio.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/openColorIO",
-			},
-
-			{
-				"name" : "OpenImageIO",
-				"url" : "http://www.openimageio.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/openImageIO",
-			},
-
-			{
-				"name" : "HDF5",
-				"url" : "http://www.hdfgroup.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/hdf5",
-			},
-
-			{
-				"name" : "Alembic",
-				"url" : "http://www.alembic.io/",
-				"license" : "$GAFFER_ROOT/doc/licenses/alembic",
-			},
-
-			{
-				"name" : "OpenShadingLanguage",
-				"url" : "https://github.com/imageworks/OpenShadingLanguage/",
-				"license" : "$GAFFER_ROOT/doc/licenses/osl",
-			},
-
-			{
-				"name" : "OpenVDB",
-				"url" : "http://www.openvdb.org//",
-				"license" : "$GAFFER_ROOT/doc/licenses/openvdb",
-			},
-
-			{
-				"name" : "Qt",
-				"url" : "http://qt.nokia.com/",
-				"license" : "$GAFFER_ROOT/doc/licenses/qt",
-			},
-
-		]
-
-		if os.path.exists( os.environ["GAFFER_ROOT"] + "/python/PyQt4" ) :
-
-			result.append( {
-				"name" : "PyQt",
-				"url" : "http://www.riverbankcomputing.co.uk/",
-				"license" : "$GAFFER_ROOT/doc/licenses/pyQt",
-			} )
-
-		if os.path.exists( os.environ["GAFFER_ROOT"] + "/python/PySide" ) :
-
-			result.append( {
-				"name" : "PySide",
-				"url" : "http://www.pyside.org/",
-				"license" : "$GAFFER_ROOT/doc/licenses/pySide",
-			} )
+		for project in result :
+			if "license" in project :
+				project["license"] = os.path.normpath( os.path.join( licenseDir, project["license"] ) )
 
 		return result

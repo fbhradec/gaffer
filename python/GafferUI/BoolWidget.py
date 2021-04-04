@@ -34,24 +34,34 @@
 #
 ##########################################################################
 
+import six
+import types
+
 import IECore
 
 import Gaffer
 import GafferUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
 
 class BoolWidget( GafferUI.Widget ) :
 
-	DisplayMode = IECore.Enum.create( "CheckBox", "Switch" )
+	DisplayMode = IECore.Enum.create( "CheckBox", "Switch", "Tool" )
+	# True/False states are deliberately omitted from this enum;
+	# For backwards compatibility we use `bool` values instead.
+	State = IECore.Enum.create( "Indeterminate" )
 
-	def __init__( self, text="", checked=False, displayMode=DisplayMode.CheckBox, **kw ) :
+	def __init__( self, text="", checked=False, displayMode=DisplayMode.CheckBox, image = None, **kw ) :
 
-		GafferUI.Widget.__init__( self, QtGui.QCheckBox( text ), **kw )
+		GafferUI.Widget.__init__( self, _CheckBox( text ), **kw )
+
+		self.__defaultFocusPolicy = self._qtWidget().focusPolicy()
 
 		self.setState( checked )
 		self.setDisplayMode( displayMode )
+		self.setImage( image )
 
 		self.__stateChangedSignal = GafferUI.WidgetSignal()
 
@@ -65,21 +75,76 @@ class BoolWidget( GafferUI.Widget ) :
 
 		return str( self._qtWidget().text() )
 
-	def setState( self, checked ) :
+	def setImage( self, image ) :
 
-		self._qtWidget().setCheckState( QtCore.Qt.Checked if checked else QtCore.Qt.Unchecked )
+		if isinstance( image, six.string_types ) :
+			self.__image = GafferUI.Image( image )
+		else :
+			assert( isinstance( image, ( GafferUI.Image, type( None ) ) ) )
+			self.__image = image
+
+		if self.__image is None :
+			self._qtWidget().setIcon( QtGui.QIcon() )
+		else :
+			self._qtWidget().setIcon( QtGui.QIcon( self.__image._qtPixmap() ) )
+			self._qtWidget().setIconSize( self.__image._qtPixmap().size() )
+
+	def getImage( self ) :
+
+		return self.__image
+
+	## State may be passed as either a `bool` or `State.Indeterminate`.
+	def setState( self, state ) :
+
+		if state == self.State.Indeterminate :
+			self._qtWidget().setTristate( True )
+			self._qtWidget().setCheckState( QtCore.Qt.PartiallyChecked )
+		else :
+			self._qtWidget().setTristate( False )
+			self._qtWidget().setCheckState( QtCore.Qt.Checked if state else QtCore.Qt.Unchecked )
 
 	def getState( self ) :
 
-		return self._qtWidget().checkState() == QtCore.Qt.Checked
+		s = self._qtWidget().checkState()
+		if s == QtCore.Qt.Checked :
+			return True
+		elif s == QtCore.Qt.Unchecked :
+			return False
+		else :
+			return self.State.Indeterminate
 
 	def setDisplayMode( self, displayMode ) :
 
-		self._qtWidget().setObjectName( "gafferBoolWidgetSwitch" if displayMode == self.DisplayMode.Switch else "" )
+		self._qtWidget().setProperty( "gafferDisplayMode", str( displayMode ) )
+		self._qtWidget().setHitMode(
+			_CheckBox.HitMode.Button if displayMode == self.DisplayMode.Tool else _CheckBox.HitMode.CheckBox
+		)
+
+		if displayMode == self.DisplayMode.Tool :
+			self._qtWidget().setFocusPolicy( QtCore.Qt.NoFocus )
+		else :
+			self._qtWidget().setFocusPolicy( self.__defaultFocusPolicy )
 
 	def getDisplayMode( self ) :
 
-		return self.DisplayMode.Switch if self._qtWidget().objectName() == "gafferBoolWidgetSwitch" else self.DisplayMode.CheckBox
+		return getattr(
+			self.DisplayMode,
+			GafferUI._Variant.fromVariant(
+				self._qtWidget().property( "gafferDisplayMode" )
+			)
+		)
+
+	def setErrored( self, errored ) :
+
+		if errored == self.getErrored() :
+			return
+
+		self._qtWidget().setProperty( "gafferError", GafferUI._Variant.toVariant( bool( errored ) ) )
+		self._repolish()
+
+	def getErrored( self ) :
+
+		return GafferUI._Variant.fromVariant( self._qtWidget().property( "gafferError" ) ) or False
 
 	def stateChangedSignal( self ) :
 
@@ -88,6 +153,35 @@ class BoolWidget( GafferUI.Widget ) :
 	def __stateChanged( self, state ) :
 
 		self.__stateChangedSignal( self )
+
+class _CheckBox( QtWidgets.QCheckBox ) :
+
+	HitMode = IECore.Enum.create( "Button", "CheckBox" )
+
+	def __init__( self, text, parent = None ) :
+
+		QtWidgets.QCheckBox.__init__( self, text, parent )
+
+		self.__hitMode = self.HitMode.CheckBox
+
+		self.setSizePolicy( QtWidgets.QSizePolicy(
+			QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed
+		) )
+
+	def setHitMode( self, hitMode ) :
+
+		self.__hitMode = hitMode
+
+	def getHidMode( self ) :
+
+		return self.__hitMode
+
+	def hitButton( self, pos ) :
+
+		if self.__hitMode == self.HitMode.Button :
+			return QtWidgets.QAbstractButton.hitButton( self, pos )
+		else :
+			return QtWidgets.QCheckBox.hitButton( self, pos )
 
 ## \todo Backwards compatibility - remove for version 1.0
 CheckBox = BoolWidget

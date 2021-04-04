@@ -36,6 +36,7 @@
 
 import sys
 import traceback
+import imath
 
 import IECore
 
@@ -63,7 +64,7 @@ class ErrorDialogue( GafferUI.Dialogue ) :
 				}
 			)
 
-			GafferUI.Spacer( IECore.V2i( 250, 1 ) )
+			GafferUI.Spacer( imath.V2i( 250, 1 ) )
 
 			if message is not None :
 				GafferUI.Label(
@@ -74,9 +75,8 @@ class ErrorDialogue( GafferUI.Dialogue ) :
 				)
 
 			if messages is not None :
-				messageWidget = GafferUI.MessageWidget()
-				for m in messages :
-					messageWidget.messageHandler().handle( m.level, m.context, m.message )
+				messageWidget = GafferUI.MessageWidget( toolbars = True )
+				messageWidget.setMessages( messages )
 
 			if details is not None :
 				with GafferUI.Collapsible( label = "Details", collapsed = True ) :
@@ -91,7 +91,7 @@ class ErrorDialogue( GafferUI.Dialogue ) :
 
 	## A context manager which displays a modal ErrorDialogue if an exception is
 	# caught or any warning or error messages are emitted via IECore.MessageHandler.
-	class ErrorHandler( IECore.MessageHandler ) :
+	class ErrorHandler( object ) :
 
 		def __init__(
 			self,
@@ -102,42 +102,29 @@ class ErrorDialogue( GafferUI.Dialogue ) :
 			**kw # Passed to the ErrorDialogue constructor
 		) :
 
-			IECore.MessageHandler.__init__( self )
-
 			self.__handleExceptions = handleExceptions
-			self.__handleErrorMessages = handleErrorMessages
-			self.__handleWarningMessages = handleWarningMessages
 			self.__parentWindow = parentWindow
 			self.__kw = kw
 
-			self.__originalMessageHandler = None
 			self.__capturingMessageHandler = IECore.CapturingMessageHandler()
-
-		def handle( self, level, context, message ) :
-
-			handler = self.__originalMessageHandler
-
-			if (
-				( level == self.Level.Error and self.__handleErrorMessages ) or
-				( level == self.Level.Warning and self.__handleWarningMessages )
-			) :
-				handler = self.__capturingMessageHandler
-
-			handler.handle( level, context, message )
+			handlers = {}
+			if handleErrorMessages :
+				handlers[IECore.Msg.Level.Error] = self.__capturingMessageHandler
+			if handleWarningMessages :
+				handlers[IECore.Msg.Level.Warning] = self.__capturingMessageHandler
+			self.__splittingMessageHandler = _SplittingMessageHandler( handlers )
 
 		def __enter__( self ) :
 
-			self.__originalMessageHandler = IECore.MessageHandler.currentHandler()
-			IECore.MessageHandler.__enter__( self )
+			self.__splittingMessageHandler.__enter__()
 
 		def __exit__( self, type, value, traceback ) :
 
-			IECore.MessageHandler.__exit__( self, type, value, traceback )
-			self.__originalMessageHandler = None
+			self.__splittingMessageHandler.__exit__( type, value, traceback )
 
 			result = False
 			if type is not None and self.__handleExceptions :
-				self.__capturingMessageHandler.handle( self.Level.Error, self.__kw.get( "title", "Error" ), str( value ) )
+				self.__capturingMessageHandler.handle( IECore.Msg.Level.Error, self.__kw.get( "title", "Error" ), str( value ) )
 				result = True
 
 			if len( self.__capturingMessageHandler.messages ) :
@@ -157,7 +144,12 @@ class ErrorDialogue( GafferUI.Dialogue ) :
 		if exceptionInfo[0] is None :
 			return
 
-		message = str( exceptionInfo[1] )
+		excType, excValue, excTrace = exceptionInfo
+		if excValue and excValue.message:
+			message = excValue.message.strip( "\n" ).split( "\n" )[-1]
+		else:
+			message = str( excType.__name__ )
+
 		if messagePrefix :
 			message = messagePrefix + message
 
@@ -191,3 +183,28 @@ class ErrorDialogue( GafferUI.Dialogue ) :
 			if type is not None :
 				ErrorDialogue.displayException( exceptionInfo=( type, value, traceback ), **self.__kw )
 				return True
+
+class _SplittingMessageHandler( IECore.MessageHandler ) :
+
+	## Handlers maps from IECore.Msg.Level to MessageHandler.
+	# Unspecified levels fall back to the original handler.
+	def __init__( self, handlers = {} ) :
+
+		IECore.MessageHandler.__init__( self )
+
+		self.__handlers = handlers
+
+	def handle( self, level, context, message ) :
+
+		handler = self.__handlers.get( level, self.__fallbackMessageHandler )
+		handler.handle( level, context, message )
+
+	def __enter__( self ) :
+
+		self.__fallbackMessageHandler = IECore.MessageHandler.currentHandler()
+		return IECore.MessageHandler.__enter__( self )
+
+	def __exit__( self, type, value, traceback ) :
+
+		self.__fallbackMessageHandler = None
+		return IECore.MessageHandler.__exit__( self, type, value, traceback )

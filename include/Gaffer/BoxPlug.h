@@ -38,17 +38,20 @@
 #ifndef GAFFER_BOXPLUG_H
 #define GAFFER_BOXPLUG_H
 
-#include "OpenEXR/ImathBox.h"
+#include "Gaffer/CompoundNumericPlug.h"
 
 #include "IECore/BoxTraits.h"
+#include "IECore/Export.h"
 
-#include "Gaffer/CompoundNumericPlug.h"
+IECORE_PUSH_DEFAULT_VISIBILITY
+#include "OpenEXR/ImathBox.h"
+IECORE_POP_DEFAULT_VISIBILITY
 
 namespace Gaffer
 {
 
 template<typename T>
-class BoxPlug : public ValuePlug
+class GAFFER_API BoxPlug : public ValuePlug
 {
 
 	public :
@@ -57,7 +60,7 @@ class BoxPlug : public ValuePlug
 		typedef typename IECore::BoxTraits<T>::BaseType PointType;
 		typedef CompoundNumericPlug<PointType> ChildType;
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( BoxPlug<T>, ValuePlug );
+		GAFFER_PLUG_DECLARE_TEMPLATE_TYPE( BoxPlug<T>, ValuePlug );
 
 		BoxPlug(
 			const std::string &name = defaultName<BoxPlug>(),
@@ -75,11 +78,11 @@ class BoxPlug : public ValuePlug
 			unsigned flags = Default
 		);
 
-		virtual ~BoxPlug();
+		~BoxPlug() override;
 
 		/// Accepts no children following construction.
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		ChildType *minPlug();
 		const ChildType *minPlug() const;
@@ -103,10 +106,6 @@ class BoxPlug : public ValuePlug
 		/// of the result.
 		T getValue() const;
 
-	private :
-
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( BoxPlug<T> );
-
 };
 
 typedef BoxPlug<Imath::Box2i> Box2iPlug;
@@ -121,34 +120,28 @@ IE_CORE_DECLAREPTR( Box3iPlug );
 IE_CORE_DECLAREPTR( Box2fPlug );
 IE_CORE_DECLAREPTR( Box3fPlug );
 
+/// \deprecated Use Box2iPlug::Iterator etc instead
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, Box2iPlug> > Box2iPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, Box2iPlug> > InputBox2iPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, Box2iPlug> > OutputBox2iPlugIterator;
-
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, Box3iPlug> > Box3iPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, Box3iPlug> > InputBox3iPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, Box3iPlug> > OutputBox3iPlugIterator;
-
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, Box2fPlug> > Box2fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, Box2fPlug> > InputBox2fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, Box2fPlug> > OutputBox2fPlugIterator;
-
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, Box3fPlug> > Box3fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, Box3fPlug> > InputBox3fPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, Box3fPlug> > OutputBox3fPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, Box2iPlug>, PlugPredicate<> > RecursiveBox2iPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, Box2iPlug>, PlugPredicate<> > RecursiveInputBox2iPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, Box2iPlug>, PlugPredicate<> > RecursiveOutputBox2iPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, Box3iPlug>, PlugPredicate<> > RecursiveBox3iPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, Box3iPlug>, PlugPredicate<> > RecursiveInputBox3iPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, Box3iPlug>, PlugPredicate<> > RecursiveOutputBox3iPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, Box2fPlug>, PlugPredicate<> > RecursiveBox2fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, Box2fPlug>, PlugPredicate<> > RecursiveInputBox2fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, Box2fPlug>, PlugPredicate<> > RecursiveOutputBox2fPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, Box3fPlug>, PlugPredicate<> > RecursiveBox3fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, Box3fPlug>, PlugPredicate<> > RecursiveInputBox3fPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, Box3fPlug>, PlugPredicate<> > RecursiveOutputBox3fPlugIterator;

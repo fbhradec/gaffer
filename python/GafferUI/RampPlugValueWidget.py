@@ -36,9 +36,11 @@
 
 import Gaffer
 import GafferUI
+import imath
+import IECore
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
 
 class RampPlugValueWidget( GafferUI.PlugValueWidget ) :
 
@@ -49,17 +51,29 @@ class RampPlugValueWidget( GafferUI.PlugValueWidget ) :
 		GafferUI.PlugValueWidget.__init__( self, column, plug, **kw )
 
 		with column :
+			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 ) :
+				GafferUI.Label( "Display Mode" )
+				drawModeWidget = GafferUI.MultiSelectionMenu( allowMultipleSelection = False, allowEmptySelection = False )
+				drawModeWidget.append( "Ramp" )
+				drawModeWidget.append( "Curves" )
+				drawModeWidget.setSelection( "Ramp" )
+				drawModeWidget.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__drawModeChanged ), scoped = False )
+
+				GafferUI.Spacer( imath.V2i( 0 ), parenting = { "expand" : True } )
+				GafferUI.PlugWidget( GafferUI.PlugValueWidget.create( plug["interpolation"] ) )
 
 			self.__splineWidget = GafferUI.SplineWidget()
-			self.__splineWidget.setDrawMode( self.__splineWidget.DrawMode.Ramp )
+			if isinstance( plug, ( Gaffer.SplinefColor3fPlug, Gaffer.SplinefColor4fPlug ) ) :
+				self.__splineWidget.setDrawMode( self.__splineWidget.DrawMode.Ramp )
+			else:
+				self.__splineWidget.setDrawMode( self.__splineWidget.DrawMode.Splines )
 			self.__splineWidget._qtWidget().setMinimumHeight( 50 )
 
 			self.__slider = GafferUI.Slider()
-			self.__slider.setSizeEditable( True )
 			self.__slider.setMinimumSize( 2 )
-			self.__positionsChangedConnection = self.__slider.positionChangedSignal().connect( Gaffer.WeakMethod( self.__positionsChanged ) )
-			self.__indexRemovedConnection = self.__slider.indexRemovedSignal().connect( Gaffer.WeakMethod( self.__indexRemoved ) )
-			self.__selectedIndexChangedConnection = self.__slider.selectedIndexChangedSignal().connect( Gaffer.WeakMethod( self.__selectedIndexChanged ) )
+			self.__positionsChangedConnection = self.__slider.valueChangedSignal().connect( Gaffer.WeakMethod( self.__positionsChanged ), scoped = False )
+			self.__slider.indexRemovedSignal().connect( Gaffer.WeakMethod( self.__indexRemoved ), scoped = False )
+			self.__slider.selectedIndexChangedSignal().connect( Gaffer.WeakMethod( self.__selectedIndexChanged ), scoped = False )
 
 			self.__lastPositionChangedReason = None
 			self.__positionsMergeGroupId = 0
@@ -70,9 +84,16 @@ class RampPlugValueWidget( GafferUI.PlugValueWidget ) :
 				self.__positionField = GafferUI.NumericPlugValueWidget( plug.pointXPlug( 0 ) )
 
 				self.__valueLabel = GafferUI.LabelPlugValueWidget( plug.pointYPlug( 0 ) )
-				self.__valueField = GafferUI.ColorPlugValueWidget( plug.pointYPlug( 0 ) )
+				if isinstance( plug.pointYPlug( 0 ), Gaffer.FloatPlug ):
+					self.__valueField = GafferUI.NumericPlugValueWidget( plug.pointYPlug( 0 ) )
+				else:
+					self.__valueField = GafferUI.ColorPlugValueWidget( plug.pointYPlug( 0 ) )
 
 		self.setPlug( plug )
+
+	def __drawModeChanged( self, drawModeWidget ) :
+		name = drawModeWidget.getSelection()[0]
+		self.__splineWidget.setDrawMode( self.__splineWidget.DrawMode.Ramp if name == "Ramp" else self.__splineWidget.DrawMode.Splines )
 
 	def setPlug( self, plug ) :
 
@@ -85,28 +106,32 @@ class RampPlugValueWidget( GafferUI.PlugValueWidget ) :
 		result = GafferUI.PlugValueWidget.getToolTip( self )
 
 		if self.getPlug() is not None :
-			result += "<ul>"
-			result += "<li>Click empty space in slider to add handle"
-			result += "<li>Click handle to select"
-			result += "<li>Delete to remove selected handle"
-			result += "<li>Cursor left/right to nudge selected handle"
-			result += "<ul>"
+			if result :
+				result += "\n"
+			result += "## Actions\n\n"
+			result += "- Click empty space in slider to add handle\n"
+			result += "- Click handle to select\n"
+			result += "- Delete to remove selected handle\n"
+			result += "- Cursor left/right to nudge selected handle\n"
 
 		return result
 
 	def _updateFromPlug( self ) :
 
 		plug = self.getPlug()
+		self.__slider.setSizeEditable( not ( plug.getInput() or
+			plug.direction() == Gaffer.Plug.Direction.Out or Gaffer.MetadataAlgo.readOnly( plug )
+		) )
 		with self.getContext() :
 
-			self.__splineWidget.setSpline( plug.getValue() )
+			self.__splineWidget.setSpline( plug.getValue().spline() )
 
 			positions = []
 			for i in range( 0, plug.numPoints() ) :
 				positions.append( plug.pointXPlug( i ).getValue() )
 
 			with Gaffer.BlockedConnection( self.__positionsChangedConnection ) :
-				self.__slider.setPositions( positions )
+				self.__slider.setValues( positions )
 
 	def __positionsChanged( self, slider, reason ) :
 
@@ -115,29 +140,38 @@ class RampPlugValueWidget( GafferUI.PlugValueWidget ) :
 		self.__lastPositionChangedReason = reason
 
 		plug = self.getPlug()
-		with Gaffer.UndoContext(
+		with Gaffer.UndoScope(
 			plug.ancestor( Gaffer.ScriptNode ),
 			mergeGroup = "RampPlugValudWidget%d%d" % ( id( self, ), self.__positionsMergeGroupId )
 		) :
 
-			if len( slider.getPositions() ) == plug.numPoints() :
+			if len( slider.getValues() ) == plug.numPoints() :
+				rejected = False
 				# the user has moved an existing point on the slider
-				for index, position in enumerate( slider.getPositions() ) :
-					plug.pointXPlug( index ).setValue( position )
+				for index, position in enumerate( slider.getValues() ) :
+					if plug.pointXPlug( index ).getValue() != position :
+						curPlug = plug.pointXPlug( index )
+						if curPlug.settable() and not Gaffer.MetadataAlgo.readOnly( curPlug ):
+							curPlug.setValue( position )
+						else:
+							rejected = True
+
+				if rejected:
+					self._updateFromPlug()
 			else :
 				# a new position was added on the end by the user clicking
 				# on an empty area of the slider.
 				numPoints = plug.numPoints()
-				assert( len( slider.getPositions() ) == numPoints + 1 )
-				spline = plug.getValue()
-				position = slider.getPositions()[numPoints]
+				assert( len( slider.getValues() ) == numPoints + 1 )
+				spline = plug.getValue().spline()
+				position = slider.getValues()[numPoints]
 				plug.addPoint()
 				plug.pointXPlug( numPoints ).setValue( position )
 				plug.pointYPlug( numPoints ).setValue( spline( position ) )
 
 	def __indexRemoved( self, slider, index ) :
 
-		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			self.getPlug().removePoint( index )
 
 	def __selectedIndexChanged( self, slider ) :

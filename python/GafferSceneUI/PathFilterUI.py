@@ -35,6 +35,7 @@
 ##########################################################################
 
 import types
+import imath
 
 import IECore
 
@@ -56,6 +57,9 @@ Gaffer.Metadata.registerNode(
 	Chooses locations by matching them against a list of
 	paths.
 	""",
+
+	"ui:spreadsheet:activeRowNamesConnection", "paths",
+	"ui:spreadsheet:selectorValue", "${scene:path}",
 
 	plugs = {
 
@@ -91,6 +95,21 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"roots" : [
+
+			"description",
+			"""
+			An optional filter input used to provide multiple root locations
+			which the `paths` are relative to. This can be useful when working
+			on a single asset in isolation, and then placing it into multiple
+			locations within a layout. When no filter is connected, all `paths`
+			are treated as being relative to `/`, the true scene root.
+			""",
+
+			"plugValueWidget:type", "",
+
+		],
+
 	}
 
 )
@@ -99,11 +118,11 @@ Gaffer.Metadata.registerNode(
 # NodeGadget drop handler
 ##########################################################################
 
-GafferUI.Pointer.registerPointer( "addObjects", GafferUI.Pointer( "addObjects.png", IECore.V2i( 36, 18 ) ) )
-GafferUI.Pointer.registerPointer( "removeObjects", GafferUI.Pointer( "removeObjects.png", IECore.V2i( 36, 18 ) ) )
-GafferUI.Pointer.registerPointer( "replaceObjects", GafferUI.Pointer( "replaceObjects.png", IECore.V2i( 36, 18 ) ) )
+GafferUI.Pointer.registerPointer( "addObjects", GafferUI.Pointer( "addObjects.png", imath.V2i( 53, 14 ) ) )
+GafferUI.Pointer.registerPointer( "removeObjects", GafferUI.Pointer( "removeObjects.png", imath.V2i( 53, 14 ) ) )
+GafferUI.Pointer.registerPointer( "replaceObjects", GafferUI.Pointer( "replaceObjects.png", imath.V2i( 53, 14 ) ) )
 
-__DropMode = IECore.Enum.create( "None", "Add", "Remove", "Replace" )
+__DropMode = IECore.Enum.create( "None_", "Add", "Remove", "Replace" )
 
 __originalDragPointer = None
 
@@ -124,7 +143,7 @@ def __dropMode( nodeGadget, event ) :
 		if filter is None :
 			return __DropMode.Replace
 		elif not isinstance( filter, GafferScene.PathFilter ) :
-			return __DropMode.None
+			return __DropMode.None_
 
 	if event.modifiers & event.Modifiers.Shift :
 		return __DropMode.Add
@@ -132,6 +151,33 @@ def __dropMode( nodeGadget, event ) :
 		return __DropMode.Remove
 	else :
 		return __DropMode.Replace
+
+def __dropPaths( paths, pathsPlug ) :
+
+	if pathsPlug is None :
+		return paths
+
+	if not isinstance( pathsPlug.node(), GafferScene.PathFilter ) :
+		return paths
+
+	pathFilter = pathsPlug.node()
+	if not pathFilter["roots"].getInput() :
+		return paths
+
+	with pathsPlug.ancestor( Gaffer.ScriptNode ).context() :
+		rootPaths = IECore.PathMatcher()
+		for node in GafferScene.SceneAlgo.filteredNodes( pathFilter ) :
+			scene = node["in"][0] if isinstance( node["in"], Gaffer.ArrayPlug ) else node["in"]
+			GafferScene.SceneAlgo.matchingPaths( pathFilter["roots"], scene, rootPaths )
+
+	paths = IECore.PathMatcher( paths )
+	relativePaths = IECore.PathMatcher()
+	for rootPath in rootPaths.paths() :
+		relativePaths.addPaths(
+			paths.subTree( rootPath )
+		)
+
+	return relativePaths.paths()
 
 def __dragEnter( nodeGadget, event ) :
 
@@ -144,7 +190,7 @@ def __dragEnter( nodeGadget, event ) :
 	if not event.data[0].startswith( "/" ) :
 		return False
 
-	if __dropMode( nodeGadget, event ) == __DropMode.None :
+	if __dropMode( nodeGadget, event ) == __DropMode.None_ :
 		return False
 
 	global __originalDragPointer
@@ -181,19 +227,21 @@ def __drop( nodeGadget, event ) :
 	if pathsPlug is None :
 		pathsPlug = __pathsPlug( nodeGadget.node()["filter"].source().node() )
 
+	dropPaths = __dropPaths( event.data, pathsPlug )
+
 	dropMode = __dropMode( nodeGadget, event )
 	if dropMode == __DropMode.Replace :
-		paths = sorted( event.data )
+		paths = sorted( dropPaths )
 	elif dropMode == __DropMode.Add :
 		paths = set( pathsPlug.getValue() )
-		paths.update( event.data )
+		paths.update( dropPaths )
 		paths = sorted( paths )
 	else :
 		paths = set( pathsPlug.getValue() )
-		paths.difference_update( event.data )
+		paths.difference_update( dropPaths )
 		paths = sorted( paths )
 
-	with Gaffer.UndoContext( nodeGadget.node().ancestor( Gaffer.ScriptNode ) ) :
+	with Gaffer.UndoScope( nodeGadget.node().ancestor( Gaffer.ScriptNode ) ) :
 
 		if pathsPlug is None :
 

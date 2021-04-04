@@ -35,6 +35,7 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
 import Gaffer
@@ -46,20 +47,20 @@ class Transform2DPlugTest( GafferTest.TestCase ) :
 
 		p = Gaffer.Transform2DPlug()
 
-		p["pivot"].setValue( IECore.V2f( 1, 1 ) )
-		p["translate"].setValue( IECore.V2f( 1, 2 ) )
+		p["pivot"].setValue( imath.V2f( 1, 1 ) )
+		p["translate"].setValue( imath.V2f( 1, 2 ) )
 		p["rotate"].setValue( 45 )
-		p["scale"].setValue( IECore.V2f( 2, 3 ) )
+		p["scale"].setValue( imath.V2f( 2, 3 ) )
 
 		pivotValue = p["pivot"].getValue()
-		pivot = IECore.M33f.createTranslated( pivotValue )
+		pivot = imath.M33f().translate( pivotValue )
 
 		translateValue = p["translate"].getValue()
-		translate = IECore.M33f.createTranslated( translateValue )
+		translate = imath.M33f().translate( translateValue )
 
-		rotate = IECore.M33f.createRotated( IECore.degreesToRadians( p["rotate"].getValue() ) )
-		scale = IECore.M33f.createScaled( p["scale"].getValue() )
-		invPivot = IECore.M33f.createTranslated( pivotValue * IECore.V2f(-1.) )
+		rotate = imath.M33f().rotate( IECore.degreesToRadians( p["rotate"].getValue() ) )
+		scale = imath.M33f().scale( p["scale"].getValue() )
+		invPivot = imath.M33f().translate( pivotValue * imath.V2f(-1.) )
 
 		transforms = {
 			"p" : pivot,
@@ -69,7 +70,7 @@ class Transform2DPlugTest( GafferTest.TestCase ) :
 			"pi" : invPivot,
 		}
 
-		transform = IECore.M33f()
+		transform = imath.M33f()
 		for m in ( "pi", "s", "r", "t", "p" ) :
 			transform = transform * transforms[m]
 
@@ -79,13 +80,13 @@ class Transform2DPlugTest( GafferTest.TestCase ) :
 
 		plug = Gaffer.Transform2DPlug()
 
-		displayWindow = IECore.Box2i( IECore.V2i(0), IECore.V2i(9) )
+		displayWindow = imath.Box2i( imath.V2i(0), imath.V2i(9) )
 		pixelAspect = 1.
 
-		t =	IECore.V2f( 100, 0 )
+		t =	imath.V2f( 100, 0 )
 		r =	90
-		s =	IECore.V2f( 2, 2 )
-		p = IECore.V2f( 10, -10 )
+		s =	imath.V2f( 2, 2 )
+		p = imath.V2f( 10, -10 )
 		plug["translate"].setValue(  t )
 		plug["rotate"].setValue( r )
 		plug["scale"].setValue( s )
@@ -95,7 +96,7 @@ class Transform2DPlugTest( GafferTest.TestCase ) :
 		# This verifies that translation is not being affected by rotation and scale,
 		# which is what users will expect
 		self.assertTrue( plug.matrix().equalWithAbsError(
-			IECore.M33f(
+			imath.M33f(
 				0,   2, 0,
 				-2,  0, 0,
 				90, -30, 1),
@@ -114,8 +115,46 @@ class Transform2DPlugTest( GafferTest.TestCase ) :
 	def testRunTimeTyped( self ) :
 
 		p = Gaffer.Transform2DPlug()
-		self.failIf( p.typeId() == Gaffer.ValuePlug.staticTypeId() )
-		self.failUnless( p.isInstanceOf( Gaffer.ValuePlug.staticTypeId() ) )
+		self.assertNotEqual( p.typeId(), Gaffer.ValuePlug.staticTypeId() )
+		self.assertTrue( p.isInstanceOf( Gaffer.ValuePlug.staticTypeId() ) )
+
+	def testDefaultValues( self ) :
+
+		s = Gaffer.ScriptNode()
+		s["n"] = Gaffer.Node()
+		s["n"]["user"]["p"] = Gaffer.Transform2DPlug(
+			defaultTranslate = imath.V2f( 1, 2 ),
+			defaultRotate = 3,
+			defaultScale = imath.V2f( 4, 5 ),
+			defaultPivot = imath.V2f( 6, 7 ),
+			flags = Gaffer.Plug.Flags.Default | Gaffer.Plug.Flags.Dynamic
+		)
+		self.assertEqual( s["n"]["user"]["p"]["translate"].defaultValue(), imath.V2f( 1, 2 ) )
+		self.assertEqual( s["n"]["user"]["p"]["rotate"].defaultValue(), 3 )
+		self.assertEqual( s["n"]["user"]["p"]["scale"].defaultValue(), imath.V2f( 4, 5 ) )
+		self.assertEqual( s["n"]["user"]["p"]["pivot"].defaultValue(), imath.V2f( 6, 7 ) )
+
+		s["n"]["user"]["p2"] = s["n"]["user"]["p"].createCounterpart( "p2", Gaffer.Plug.Direction.In )
+		self.assertEqual( s["n"]["user"]["p2"]["translate"].defaultValue(), imath.V2f( 1, 2 ) )
+		self.assertEqual( s["n"]["user"]["p2"]["rotate"].defaultValue(), 3 )
+		self.assertEqual( s["n"]["user"]["p2"]["scale"].defaultValue(), imath.V2f( 4, 5 ) )
+		self.assertEqual( s["n"]["user"]["p2"]["pivot"].defaultValue(), imath.V2f( 6, 7 ) )
+
+		s["n"]["user"]["p2"]["translate"].setValue( imath.V2f( -1, -2 ) )
+		s["n"]["user"]["p2"]["translate"].resetDefault()
+		self.assertEqual( s["n"]["user"]["p2"]["translate"].defaultValue(), imath.V2f( -1, -2 ) )
+
+		s2 = Gaffer.ScriptNode()
+		s2.execute( s.serialise() )
+
+		self.assertEqual( s2["n"]["user"]["p"]["translate"].defaultValue(), imath.V2f( 1, 2 ) )
+		self.assertEqual( s2["n"]["user"]["p"]["rotate"].defaultValue(), 3 )
+		self.assertEqual( s2["n"]["user"]["p"]["scale"].defaultValue(), imath.V2f( 4, 5 ) )
+		self.assertEqual( s2["n"]["user"]["p"]["pivot"].defaultValue(), imath.V2f( 6, 7 ) )
+		self.assertEqual( s2["n"]["user"]["p2"]["translate"].defaultValue(), imath.V2f( -1, -2 ) )
+		self.assertEqual( s2["n"]["user"]["p2"]["rotate"].defaultValue(), 3 )
+		self.assertEqual( s2["n"]["user"]["p2"]["scale"].defaultValue(), imath.V2f( 4, 5 ) )
+		self.assertEqual( s2["n"]["user"]["p2"]["pivot"].defaultValue(), imath.V2f( 6, 7 ) )
 
 if __name__ == "__main__":
 	unittest.main()

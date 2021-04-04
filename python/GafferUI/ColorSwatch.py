@@ -35,13 +35,16 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
 import GafferUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
 
 ## The ColorSwatch simply displays a flat patch of colour. By default, the colour
 # is specified in linear space and GafferUI.DisplayTransform is used to ensure it
@@ -49,20 +52,31 @@ QtGui = GafferUI._qtImport( "QtGui" )
 # space, pass `useDisplayTransform = False` to the constructor.
 class ColorSwatch( GafferUI.Widget ) :
 
-	__linearBackgroundColor0 = IECore.Color3f( 0.1 )
-	__linearBackgroundColor1 = IECore.Color3f( 0.2 )
+	__linearBackgroundColor0 = imath.Color3f( 0.1 )
+	__linearBackgroundColor1 = imath.Color3f( 0.2 )
 
-	def __init__( self, color=IECore.Color4f( 1 ), useDisplayTransform = True, **kw ) :
+	def __init__( self, color=imath.Color4f( 1 ), useDisplayTransform = True, **kw ) :
 
-		GafferUI.Widget.__init__( self, _Checker(), **kw )
+		GafferUI.Widget.__init__( self, QtWidgets.QWidget(), **kw )
+
+		self.__opaqueChecker = _Checker( borderBottom = False )
+		self.__transparentChecker = _Checker( borderTop = False )
+
+		layout = QtWidgets.QVBoxLayout()
+		layout.setSpacing( 0 )
+		layout.setContentsMargins( 0, 0, 0, 0 )
+		layout.addWidget( self.__opaqueChecker )
+		layout.addWidget( self.__transparentChecker )
+		self._qtWidget().setLayout( layout )
 
 		## \todo Should this be an option? Should it be an option for all Widgets?
-		self._qtWidget().setMinimumSize( 12, 12 )
+		self.__opaqueChecker.setMinimumSize( 12, 6 )
+		self.__transparentChecker.setMinimumSize( 12, 6 )
 
 		self.__useDisplayTransform = useDisplayTransform
 		self.__color = color
 
-		self.__displayTransformChangedConnection = GafferUI.DisplayTransform.changedSignal().connect( Gaffer.WeakMethod( self.__displayTransformChanged ) )
+		GafferUI.DisplayTransform.changedSignal().connect( Gaffer.WeakMethod( self.__displayTransformChanged ), scoped = False )
 
 		self.__updateCheckerColors()
 
@@ -92,9 +106,10 @@ class ColorSwatch( GafferUI.Widget ) :
 		displayTransform = GafferUI.DisplayTransform.get()
 		effectiveDisplayTransform = displayTransform if self.__useDisplayTransform else lambda x : x
 
+		opaqueDisplayColor = self._qtColor( effectiveDisplayTransform( self.__color ) )
+		self.__opaqueChecker.color0 = self.__opaqueChecker.color1 = opaqueDisplayColor
 		if self.__color.dimensions()==3 :
-			displayColor = self._qtColor( effectiveDisplayTransform( self.__color ) )
-			self._qtWidget().color0 = self._qtWidget().color1 = displayColor
+			self.__transparentChecker.color0 = self.__transparentChecker.color1 = opaqueDisplayColor
 		else :
 			c = self.__color
 			# We want the background colour to be the same whether or not we're using the display transform for
@@ -104,14 +119,15 @@ class ColorSwatch( GafferUI.Widget ) :
 			bg1 = self.__linearBackgroundColor1 if self.__useDisplayTransform else displayTransform( self.__linearBackgroundColor1 )
 			# Now composite the main colour with the background colour. This is happening in linear space
 			# if __useDisplayTransform is True, and in display space otherwise.
-			color0 = bg0 * ( 1.0 - c.a ) + IECore.Color3f( c.r, c.g, c.b ) * c.a
-			color1 = bg1 * ( 1.0 - c.a ) + IECore.Color3f( c.r, c.g, c.b ) * c.a
+			color0 = bg0 * ( 1.0 - c.a ) + imath.Color3f( c.r, c.g, c.b ) * c.a
+			color1 = bg1 * ( 1.0 - c.a ) + imath.Color3f( c.r, c.g, c.b ) * c.a
 
-			self._qtWidget().color0 = self._qtColor( effectiveDisplayTransform( color0 ) )
-			self._qtWidget().color1 = self._qtColor( effectiveDisplayTransform( color1 ) )
+			self.__transparentChecker.color0 = self._qtColor( effectiveDisplayTransform( color0 ) )
+			self.__transparentChecker.color1 = self._qtColor( effectiveDisplayTransform( color1 ) )
 
 		## \todo Colour should come from the style when we have styles applying to Widgets as well as Gadgets
-		self._qtWidget().borderColor = QtGui.QColor( 119, 156, 255 ) if self.getHighlighted() else None
+		self.__opaqueChecker.borderColor = QtGui.QColor( 119, 156, 255 ) if self.getHighlighted() else None
+		self.__transparentChecker.borderColor = QtGui.QColor( 119, 156, 255 ) if self.getHighlighted() else None
 
 		self._qtWidget().update()
 
@@ -121,11 +137,13 @@ class ColorSwatch( GafferUI.Widget ) :
 
 # Private implementation - a QWidget derived class which just draws a checker with
 # no knowledge of colour spaces or anything.
-class _Checker( QtGui.QWidget ) :
+class _Checker( QtWidgets.QWidget ) :
 
-	def __init__( self ) :
+	def __init__( self, borderTop=True, borderBottom=True ) :
 
-		QtGui.QWidget.__init__( self )
+		QtWidgets.QWidget.__init__( self )
+		self.__borderTop = borderTop
+		self.__borderBottom = borderBottom
 
 	def paintEvent( self, event ) :
 
@@ -137,8 +155,8 @@ class _Checker( QtGui.QWidget ) :
 			# draw checkerboard if colours differ
 			checkSize = 6
 
-			min = IECore.V2i( rect.x() / checkSize, rect.y() / checkSize )
-			max = IECore.V2i( 1 + (rect.x() + rect.width()) / checkSize, 1 + (rect.y() + rect.height()) / checkSize )
+			min = imath.V2i( rect.x() / checkSize, rect.y() / checkSize )
+			max = imath.V2i( 1 + (rect.x() + rect.width()) / checkSize, 1 + (rect.y() + rect.height()) / checkSize )
 
 			for x in range( min.x, max.x ) :
 				for y in range( min.y, max.y ) :
@@ -153,7 +171,17 @@ class _Checker( QtGui.QWidget ) :
 			painter.fillRect( QtCore.QRectF( rect.x(), rect.y(), rect.x() + rect.width(), rect.y() + rect.height() ), self.color0 )
 
 		if self.borderColor is not None :
+			w = self.width()
+			h = self.height()
 			pen = QtGui.QPen( self.borderColor )
+			lines = [
+				QtCore.QLine( 0, 0, 0, h ),
+				QtCore.QLine( w, 0, w, h ),
+			]
+			if self.__borderTop :
+				lines.append( QtCore.QLine( 0, 0, w, 0 ) )
+			if self.__borderBottom :
+				lines.append( QtCore.QLine( 0, h, w, h ) )
 			pen.setWidth( 4 )
 			painter.setPen( pen )
-			painter.drawRect( 0, 0, self.width(), self.height() )
+			painter.drawLines( lines )

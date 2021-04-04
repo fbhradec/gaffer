@@ -35,13 +35,14 @@
 #
 ##########################################################################
 
-from __future__ import with_statement
-
 import os
 import unittest
 import datetime
+import six
+import imath
 
 import IECore
+import IECoreImage
 
 import Gaffer
 import GafferTest
@@ -84,10 +85,10 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		op = IECore.SequenceRenumberOp()
 		n.setParameterised( op )
 
-		self.failUnless( isinstance( n["parameters"]["src"], Gaffer.StringPlug ) )
-		self.failUnless( isinstance( n["parameters"]["dst"], Gaffer.StringPlug ) )
-		self.failUnless( isinstance( n["parameters"]["multiply"], Gaffer.IntPlug ) )
-		self.failUnless( isinstance( n["parameters"]["offset"], Gaffer.IntPlug ) )
+		self.assertIsInstance( n["parameters"]["src"], Gaffer.StringPlug )
+		self.assertIsInstance( n["parameters"]["dst"], Gaffer.StringPlug )
+		self.assertIsInstance( n["parameters"]["multiply"], Gaffer.IntPlug )
+		self.assertIsInstance( n["parameters"]["offset"], Gaffer.IntPlug )
 
 		self.assertEqual( n["parameters"]["src"].defaultValue(), "" )
 		self.assertEqual( n["parameters"]["dst"].defaultValue(), "" )
@@ -157,19 +158,19 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 			parameters["iv"].setValue( IECore.IntVectorData( [ 1, 2, 3 ] ) )
 			parameters["fv"].setValue( IECore.FloatVectorData( [ 1 ] ) )
 			parameters["sv"].setValue( IECore.StringVectorData( [ "a" ] ) )
-			parameters["vv"].setValue( IECore.V3fVectorData( [ IECore.V3f( 1, 2, 3 ) ] ) )
+			parameters["vv"].setValue( IECore.V3fVectorData( [ imath.V3f( 1, 2, 3 ) ] ) )
 
 		self.assertEqual( ph["parameters"]["bv"].getValue(), IECore.BoolVectorData( [ True, False ] ) )
 		self.assertEqual( ph["parameters"]["iv"].getValue(), IECore.IntVectorData( [ 1, 2, 3 ] ) )
 		self.assertEqual( ph["parameters"]["fv"].getValue(), IECore.FloatVectorData( [ 1 ] ) )
 		self.assertEqual( ph["parameters"]["sv"].getValue(), IECore.StringVectorData( [ "a" ] ) )
-		self.assertEqual( ph["parameters"]["vv"].getValue(), IECore.V3fVectorData( [ IECore.V3f( 1, 2, 3 ) ] ) )
+		self.assertEqual( ph["parameters"]["vv"].getValue(), IECore.V3fVectorData( [ imath.V3f( 1, 2, 3 ) ] ) )
 
 		ph["parameters"]["bv"].setValue( IECore.BoolVectorData( [ True, True ] ) )
 		ph["parameters"]["iv"].setValue( IECore.IntVectorData( [ 2, 3, 4 ] ) )
 		ph["parameters"]["fv"].setValue( IECore.FloatVectorData( [ 2 ] ) )
 		ph["parameters"]["sv"].setValue( IECore.StringVectorData( [ "b" ] ) )
-		ph["parameters"]["vv"].setValue( IECore.V3fVectorData( [ IECore.V3f( 10, 20, 30 ) ] ) )
+		ph["parameters"]["vv"].setValue( IECore.V3fVectorData( [ imath.V3f( 10, 20, 30 ) ] ) )
 
 		ph.setParameterisedValues()
 
@@ -177,7 +178,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( parameters["iv"].getValue(), IECore.IntVectorData( [ 2, 3, 4 ] ) )
 		self.assertEqual( parameters["fv"].getValue(), IECore.FloatVectorData( [ 2 ] ) )
 		self.assertEqual( parameters["sv"].getValue(), IECore.StringVectorData( [ "b" ] ) )
-		self.assertEqual( parameters["vv"].getValue(), IECore.V3fVectorData( [ IECore.V3f( 10, 20, 30 ) ] ) )
+		self.assertEqual( parameters["vv"].getValue(), IECore.V3fVectorData( [ imath.V3f( 10, 20, 30 ) ] ) )
 
 	def testNoHostMapping( self ) :
 
@@ -198,9 +199,9 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( p )
 
-		self.failUnless( "i1" in ph["parameters"] )
-		self.failIf( "i2" in ph["parameters"] )
-		self.failUnless( "i3" in ph["parameters"] )
+		self.assertIn( "i1", ph["parameters"] )
+		self.assertNotIn( "i2", ph["parameters"] )
+		self.assertIn( "i3", ph["parameters"] )
 
 	def testCreateWithNonDefaultValues( self ) :
 
@@ -222,9 +223,9 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		p.parameters().addParameters(
 
 			[
-				IECore.V2iParameter( "v2i", "", IECore.V2i( 1, 2 ) ),
-				IECore.V3fParameter( "v3f", "", IECore.V3f( 1, 2, 3 ) ),
-				IECore.Color4fParameter( "color4f", "", IECore.Color4f( 0.25, 0.5, 0.75, 1 ) ),
+				IECore.V2iParameter( "v2i", "", imath.V2i( 1, 2 ) ),
+				IECore.V3fParameter( "v3f", "", imath.V3f( 1, 2, 3 ) ),
+				IECore.Color4fParameter( "color4f", "", imath.Color4f( 0.25, 0.5, 0.75, 1 ) ),
 			]
 
 		)
@@ -232,23 +233,23 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( p )
 
-		self.assertEqual( ph["parameters"]["v2i"].defaultValue(), IECore.V2i( 1, 2 ) )
-		self.assertEqual( ph["parameters"]["v3f"].defaultValue(), IECore.V3f( 1, 2, 3 ) )
-		self.assertEqual( ph["parameters"]["color4f"].defaultValue(), IECore.Color4f( 0.25, 0.5, 0.75, 1 ) )
+		self.assertEqual( ph["parameters"]["v2i"].defaultValue(), imath.V2i( 1, 2 ) )
+		self.assertEqual( ph["parameters"]["v3f"].defaultValue(), imath.V3f( 1, 2, 3 ) )
+		self.assertEqual( ph["parameters"]["color4f"].defaultValue(), imath.Color4f( 0.25, 0.5, 0.75, 1 ) )
 
-		self.assertEqual( ph["parameters"]["v2i"].getValue(), IECore.V2i( 1, 2 ) )
-		self.assertEqual( ph["parameters"]["v3f"].getValue(), IECore.V3f( 1, 2, 3 ) )
-		self.assertEqual( ph["parameters"]["color4f"].getValue(), IECore.Color4f( 0.25, 0.5, 0.75, 1 ) )
+		self.assertEqual( ph["parameters"]["v2i"].getValue(), imath.V2i( 1, 2 ) )
+		self.assertEqual( ph["parameters"]["v3f"].getValue(), imath.V3f( 1, 2, 3 ) )
+		self.assertEqual( ph["parameters"]["color4f"].getValue(), imath.Color4f( 0.25, 0.5, 0.75, 1 ) )
 
-		ph["parameters"]["v2i"].setValue( IECore.V2i( 2, 3 ) )
-		ph["parameters"]["v3f"].setValue( IECore.V3f( 4, 5, 6 ) )
-		ph["parameters"]["color4f"].setValue( IECore.Color4f( 0.1, 0.2, 0.3, 0.5 ) )
+		ph["parameters"]["v2i"].setValue( imath.V2i( 2, 3 ) )
+		ph["parameters"]["v3f"].setValue( imath.V3f( 4, 5, 6 ) )
+		ph["parameters"]["color4f"].setValue( imath.Color4f( 0.1, 0.2, 0.3, 0.5 ) )
 
 		ph.setParameterisedValues()
 
-		self.assertEqual( p["v2i"].getTypedValue(), IECore.V2i( 2, 3 ) )
-		self.assertEqual( p["v3f"].getTypedValue(), IECore.V3f( 4, 5, 6 ) )
-		self.assertEqual( p["color4f"].getTypedValue(), IECore.Color4f( 0.1, 0.2, 0.3, 0.5 ) )
+		self.assertEqual( p["v2i"].getTypedValue(), imath.V2i( 2, 3 ) )
+		self.assertEqual( p["v3f"].getTypedValue(), imath.V3f( 4, 5, 6 ) )
+		self.assertEqual( p["color4f"].getTypedValue(), imath.Color4f( 0.1, 0.2, 0.3, 0.5 ) )
 
 	def testParameterHandlerMethod( self ) :
 
@@ -259,9 +260,9 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph.setParameterised( p )
 
 		h = ph.parameterHandler()
-		self.failUnless( isinstance( h, GafferCortex.CompoundParameterHandler ) )
-		self.failUnless( h.parameter().isSame( p.parameters() ) )
-		self.failUnless( h.plug().isSame( ph["parameters"] ) )
+		self.assertIsInstance( h, GafferCortex.CompoundParameterHandler )
+		self.assertTrue( h.parameter().isSame( p.parameters() ) )
+		self.assertTrue( h.plug().isSame( ph["parameters"] ) )
 
 	def testBoxTypes( self ) :
 
@@ -273,9 +274,9 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 				IECore.Box3iParameter(
 					"b",
 					"",
-					IECore.Box3i(
-						IECore.V3i( -1, -2, -3 ),
-						IECore.V3i( 2, 1, 3 ),
+					imath.Box3i(
+						imath.V3i( -1, -2, -3 ),
+						imath.V3i( 2, 1, 3 ),
 					),
 				)
 			]
@@ -285,29 +286,29 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( p )
 
-		self.failUnless( isinstance( ph["parameters"]["b"], Gaffer.Box3iPlug ) )
-		self.failUnless( isinstance( ph["parameters"]["b"]["min"], Gaffer.V3iPlug ) )
-		self.failUnless( isinstance( ph["parameters"]["b"]["max"], Gaffer.V3iPlug ) )
+		self.assertIsInstance( ph["parameters"]["b"], Gaffer.Box3iPlug )
+		self.assertIsInstance( ph["parameters"]["b"]["min"], Gaffer.V3iPlug )
+		self.assertIsInstance( ph["parameters"]["b"]["max"], Gaffer.V3iPlug )
 
-		self.assertEqual( ph["parameters"]["b"]["min"].getValue(), IECore.V3i( -1, -2, -3 ) )
-		self.assertEqual( ph["parameters"]["b"]["max"].getValue(), IECore.V3i( 2, 1, 3 ) )
+		self.assertEqual( ph["parameters"]["b"]["min"].getValue(), imath.V3i( -1, -2, -3 ) )
+		self.assertEqual( ph["parameters"]["b"]["max"].getValue(), imath.V3i( 2, 1, 3 ) )
 
-		ph["parameters"]["b"]["min"].setValue( IECore.V3i( -10, -20, -30 ) )
-		ph["parameters"]["b"]["max"].setValue( IECore.V3i( 10, 20, 30 ) )
+		ph["parameters"]["b"]["min"].setValue( imath.V3i( -10, -20, -30 ) )
+		ph["parameters"]["b"]["max"].setValue( imath.V3i( 10, 20, 30 ) )
 
 		ph.parameterHandler().setParameterValue()
 
 		self.assertEqual(
 			p["b"].getTypedValue(),
-			IECore.Box3i( IECore.V3i( -10, -20, -30 ), IECore.V3i( 10, 20, 30 ) )
+			imath.Box3i( imath.V3i( -10, -20, -30 ), imath.V3i( 10, 20, 30 ) )
 		)
 
 		with ph.parameterModificationContext() :
 
-			p["b"].setTypedValue( IECore.Box3i( IECore.V3i( -2, -4, -6 ), IECore.V3i( 2, 4, 6 ) ) )
+			p["b"].setTypedValue( imath.Box3i( imath.V3i( -2, -4, -6 ), imath.V3i( 2, 4, 6 ) ) )
 
-		self.assertEqual( ph["parameters"]["b"]["min"].getValue(), IECore.V3i( -2, -4, -6 ) )
-		self.assertEqual( ph["parameters"]["b"]["max"].getValue(), IECore.V3i( 2, 4, 6 ) )
+		self.assertEqual( ph["parameters"]["b"]["min"].getValue(), imath.V3i( -2, -4, -6 ) )
+		self.assertEqual( ph["parameters"]["b"]["max"].getValue(), imath.V3i( 2, 4, 6 ) )
 
 	def testAddAndRemoveParameters( self ) :
 
@@ -326,8 +327,8 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( p )
 
-		self.failUnless( isinstance( ph["parameters"], Gaffer.CompoundPlug ) )
-		self.failUnless( isinstance( ph["parameters"]["a"], Gaffer.IntPlug ) )
+		self.assertEqual( ph["parameters"].typeId(), Gaffer.Plug.staticTypeId() )
+		self.assertIsInstance( ph["parameters"]["a"], Gaffer.IntPlug )
 		self.assertEqual( len( ph["parameters"] ), 1 )
 
 		with ph.parameterModificationContext() :
@@ -335,8 +336,8 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 			p.parameters().removeParameter( p.parameters()["a"] )
 			p.parameters().addParameter( IECore.IntParameter( "b", "", 2 ) )
 
-		self.failUnless( isinstance( ph["parameters"], Gaffer.CompoundPlug ) )
-		self.failUnless( isinstance( ph["parameters"]["b"], Gaffer.IntPlug ) )
+		self.assertEqual( ph["parameters"].typeId(), Gaffer.Plug.staticTypeId() )
+		self.assertIsInstance( ph["parameters"]["b"], Gaffer.IntPlug )
 		self.assertEqual( len( ph["parameters"] ), 1 )
 
 	def testParameterChangingType( self ) :
@@ -356,16 +357,16 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( p )
 
-		self.failUnless( isinstance( ph["parameters"], Gaffer.CompoundPlug ) )
-		self.failUnless( isinstance( ph["parameters"]["a"], Gaffer.IntPlug ) )
+		self.assertEqual( ph["parameters"].typeId(), Gaffer.Plug.staticTypeId() )
+		self.assertIsInstance( ph["parameters"]["a"], Gaffer.IntPlug )
 		self.assertEqual( len( ph["parameters"] ), 1 )
 
 		with ph.parameterModificationContext() :
 			p.parameters().removeParameter( p.parameters()["a"] )
 			p.parameters().addParameter( IECore.FloatParameter( "a", "", 2 ) )
 
-		self.failUnless( isinstance( ph["parameters"], Gaffer.CompoundPlug ) )
-		self.failUnless( isinstance( ph["parameters"]["a"], Gaffer.FloatPlug ) )
+		self.assertEqual( ph["parameters"].typeId(), Gaffer.Plug.staticTypeId() )
+		self.assertIsInstance( ph["parameters"]["a"], Gaffer.FloatPlug )
 		self.assertEqual( len( ph["parameters"] ), 1 )
 
 	def testParameterHandlerIsConstant( self ) :
@@ -384,7 +385,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		with phn.parameterModificationContext() :
 			p.parameters().addParameter( IECore.FloatParameter( "a", "", 2 ) )
 
-		self.failUnless( ph.isSame( phn.parameterHandler() ) )
+		self.assertTrue( ph.isSame( phn.parameterHandler() ) )
 
 	def testClassLoading( self ) :
 
@@ -421,7 +422,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		s = Gaffer.ScriptNode()
 		s.execute( ss )
 
-		self.failUnless( "n" in s )
+		self.assertIn( "n", s )
 		parameterised = s["n"].getParameterised()
 
 		self.assertEqual( parameterised[1:], classSpec )
@@ -432,15 +433,15 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 
 		ph = GafferCortex.ParameterisedHolderNode()
 
-		ph.setParameterised( IECore.Grade() )
-		ph["parameters"]["lift"].setValue( IECore.Color3f( 1, 0, 0 ) )
+		ph.setParameterised( IECoreImage.MedianCutSampler() )
+		ph["parameters"]["channelName"].setValue( "R" )
 
-		ph.setParameterised( IECore.Grade() )
-		self.assertEqual( ph["parameters"]["lift"].getValue(), IECore.Color3f( 0 ) )
+		ph.setParameterised( IECoreImage.MedianCutSampler() )
+		self.assertEqual( ph["parameters"]["channelName"].getValue(), "Y" )
 
-		ph["parameters"]["lift"].setValue( IECore.Color3f( 1, 0, 0 ) )
-		ph.setParameterised( IECore.Grade(), keepExistingValues=True )
-		self.assertEqual( ph["parameters"]["lift"].getValue(), IECore.Color3f( 1, 0, 0 ) )
+		ph["parameters"]["channelName"].setValue( "R" )
+		ph.setParameterised( IECoreImage.MedianCutSampler(), keepExistingValues=True )
+		self.assertEqual( ph["parameters"]["channelName"].getValue(), "R" )
 
 	def testDateTimeParameter( self ) :
 
@@ -462,7 +463,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( p )
 
-		self.failUnless( isinstance( ph["parameters"]["dt"], Gaffer.StringPlug ) )
+		self.assertIsInstance( ph["parameters"]["dt"], Gaffer.StringPlug )
 
 		ph.parameterHandler().setParameterValue()
 		self.assertEqual( p["dt"].getValue(), IECore.DateTimeData( now ) )
@@ -484,13 +485,13 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 
 		seqLsParameterNames = p["class"].keys()
 		for n in seqLsParameterNames :
-			self.failUnless( n in ph["parameters"]["class"] )
+			self.assertIn( n, ph["parameters"]["class"] )
 
 		with ph.parameterModificationContext() :
 			p["class"].setClass( "", 0 )
 
 		for n in seqLsParameterNames :
-			self.failIf( n in ph["parameters"]["class"] )
+			self.assertNotIn( n, ph["parameters"]["class"] )
 
 	def testClassParameterSerialisation( self ) :
 
@@ -507,7 +508,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 
 		classPlugNames = s["ph"]["parameters"]["class"].keys()
 		for k in p["class"].keys() :
-			self.failUnless( k in classPlugNames )
+			self.assertIn( k, classPlugNames )
 
 		s["ph"]["parameters"]["class"]["recurse"].setValue( True )
 
@@ -543,17 +544,17 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 
 		seqLsParameterNames = p["classes"]["p0"].keys()
 		for n in seqLsParameterNames :
-			self.failUnless( n in ph["parameters"]["classes"]["p0"] )
+			self.assertIn( n, ph["parameters"]["classes"]["p0"] )
 
 		gradeParameterNames = p["classes"]["p1"].keys()
 		for n in gradeParameterNames :
-			self.failUnless( n in ph["parameters"]["classes"]["p1"] )
+			self.assertIn( n, ph["parameters"]["classes"]["p1"] )
 
 		with ph.parameterModificationContext() :
 			p["classes"].setClasses( [] )
 
 		for k in ph["parameters"]["classes"].keys() :
-			self.failUnless( k.startswith( "__" ) )
+			self.assertTrue( k.startswith( "__" ) )
 
 	def testClassVectorParameterMaintainsPlugValues( self ) :
 
@@ -602,83 +603,6 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		s2.execute( ss )
 
 		self.assertEqual( s2["ph"]["parameters"]["classes"]["p0"]["multiply"].getValue(), 12 )
-
-	def testTimeCodeParameter( self ) :
-
-		p = IECore.Parameterised( "" )
-
-		p.parameters().addParameters(
-
-			[
-				IECore.TimeCodeParameter(
-					"t",
-					"",
-					IECore.TimeCode(
-						hours = 10,
-						minutes = 15,
-						seconds = 1,
-						frame = 12,
-					)
-				)
-			]
-
-		)
-
-		ph = GafferCortex.ParameterisedHolderNode()
-		ph.setParameterised( p )
-
-		self.failUnless( "t" in ph["parameters"] )
-		self.failUnless( isinstance( ph["parameters"]["t"], Gaffer.CompoundPlug ) )
-
-		self.failUnless( isinstance( ph["parameters"]["t"]["hours"], Gaffer.IntPlug ) )
-		self.assertEqual( ph["parameters"]["t"]["hours"].minValue(), 0 )
-		self.assertEqual( ph["parameters"]["t"]["hours"].maxValue(), 23 )
-		self.assertEqual( ph["parameters"]["t"]["hours"].defaultValue(), 10 )
-		self.assertEqual( ph["parameters"]["t"]["hours"].getValue(), 10 )
-
-		self.failUnless( isinstance( ph["parameters"]["t"]["minutes"], Gaffer.IntPlug ) )
-		self.assertEqual( ph["parameters"]["t"]["minutes"].minValue(), 0 )
-		self.assertEqual( ph["parameters"]["t"]["minutes"].maxValue(), 59 )
-		self.assertEqual( ph["parameters"]["t"]["minutes"].defaultValue(), 15 )
-		self.assertEqual( ph["parameters"]["t"]["minutes"].getValue(), 15 )
-
-		self.failUnless( isinstance( ph["parameters"]["t"]["seconds"], Gaffer.IntPlug ) )
-		self.assertEqual( ph["parameters"]["t"]["seconds"].minValue(), 0 )
-		self.assertEqual( ph["parameters"]["t"]["seconds"].maxValue(), 59 )
-		self.assertEqual( ph["parameters"]["t"]["seconds"].defaultValue(), 1 )
-		self.assertEqual( ph["parameters"]["t"]["seconds"].getValue(), 1 )
-
-		self.failUnless( isinstance( ph["parameters"]["t"]["frame"], Gaffer.IntPlug ) )
-		self.assertEqual( ph["parameters"]["t"]["frame"].minValue(), 0 )
-		self.assertEqual( ph["parameters"]["t"]["frame"].maxValue(), 29 )
-		self.assertEqual( ph["parameters"]["t"]["frame"].defaultValue(), 12 )
-		self.assertEqual( ph["parameters"]["t"]["frame"].getValue(), 12 )
-
-		ph["parameters"]["t"]["hours"].setValue( 11 )
-		ph["parameters"]["t"]["minutes"].setValue( 10 )
-		ph["parameters"]["t"]["seconds"].setValue( 2 )
-		ph["parameters"]["t"]["frame"].setValue( 20 )
-
-		ph.parameterHandler().setParameterValue()
-
-		tc = p["t"].getTypedValue()
-		self.assertEqual( tc.hours(), 11 )
-		self.assertEqual( tc.minutes(), 10 )
-		self.assertEqual( tc.seconds(), 2 )
-		self.assertEqual( tc.frame(), 20 )
-
-		with ph.parameterModificationContext() :
-
-			tc.setHours( 1 )
-			tc.setMinutes( 2 )
-			tc.setSeconds( 3 )
-			tc.setFrame( 4 )
-			p["t"].setTypedValue( tc )
-
-		self.assertEqual( ph["parameters"]["t"]["hours"].getValue(), 1 )
-		self.assertEqual( ph["parameters"]["t"]["minutes"].getValue(), 2 )
-		self.assertEqual( ph["parameters"]["t"]["seconds"].getValue(), 3 )
-		self.assertEqual( ph["parameters"]["t"]["frame"].getValue(), 4 )
 
 	def testParameterChangedCanChangeValues( self ) :
 
@@ -730,7 +654,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( ph["parameters"]["driver"].getValue(), 10 )
 		self.assertEqual( ph["parameters"]["driven"].getValue(), 20 )
 		self.assertEqual( len( c.changes ), 1 )
-		self.failUnless( c.changes[0][0].isSame( c["driver"] ) )
+		self.assertTrue( c.changes[0][0].isSame( c["driver"] ) )
 		self.assertEqual( c.changes[0][1], 10 )
 
 		ph["parameters"]["driven"].setValue( 30 )
@@ -738,7 +662,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( ph["parameters"]["driver"].getValue(), 10 )
 		self.assertEqual( ph["parameters"]["driven"].getValue(), 30 )
 		self.assertEqual( len( c.changes ), 2 )
-		self.failUnless( c.changes[1][0].isSame( c["driven"] ) )
+		self.assertTrue( c.changes[1][0].isSame( c["driven"] ) )
 		self.assertEqual( c.changes[1][1], 30 )
 
 	def testParameterChangedWithCompoundParameters( self ) :
@@ -787,10 +711,10 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( c )
 
-		self.failUnless( "parameters" in ph )
-		self.failUnless( "c" in ph["parameters"] )
-		self.failUnless( "i" in ph["parameters"]["c"] )
-		self.failUnless( "s" in ph["parameters"]["c"] )
+		self.assertIn( "parameters", ph )
+		self.assertIn( "c", ph["parameters"] )
+		self.assertIn( "i", ph["parameters"]["c"] )
+		self.assertIn( "s", ph["parameters"]["c"] )
 
 	def testParameterChangedWithIntermediateClasses( self ) :
 
@@ -888,7 +812,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( ph["parameters"]["driver"].getValue(), 10 )
 		self.assertEqual( ph["parameters"]["driven"].getValue(), 20 )
 		self.assertEqual( len( c.changes ), 1 )
-		self.failUnless( c.changes[0][0].isSame( c["driver"] ) )
+		self.assertTrue( c.changes[0][0].isSame( c["driver"] ) )
 		self.assertEqual( c.changes[0][1], "10" )
 
 		ph["parameters"]["driven"].setValue( 30 )
@@ -896,7 +820,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( ph["parameters"]["driver"].getValue(), 10 )
 		self.assertEqual( ph["parameters"]["driven"].getValue(), 30 )
 		self.assertEqual( len( c.changes ), 2 )
-		self.failUnless( c.changes[1][0].isSame( c["driven"] ) )
+		self.assertTrue( c.changes[1][0].isSame( c["driven"] ) )
 		self.assertEqual( c.changes[1][1], "30" )
 
 		# check that the main class gets callbacks for the parameters it
@@ -911,18 +835,18 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( ph["parameters"]["c"]["driver2"].getValue(), 10 )
 		self.assertEqual( ph["parameters"]["c"]["driven2"].getValue(), 40 )
 		self.assertEqual( len( c.changes ), 4 )
-		self.failUnless( c.changes[2][0].isSame( c["c"]["driver2"] ) )
+		self.assertTrue( c.changes[2][0].isSame( c["c"]["driver2"] ) )
 		self.assertEqual( c.changes[2][1], "10" )
-		self.failUnless( c.changes[3][0].isSame( c["c"] ) )
+		self.assertTrue( c.changes[3][0].isSame( c["c"] ) )
 
 		ph["parameters"]["c"]["driven2"].setValue( 30 )
 
 		self.assertEqual( ph["parameters"]["c"]["driver2"].getValue(), 10 )
 		self.assertEqual( ph["parameters"]["c"]["driven2"].getValue(), 30 )
 		self.assertEqual( len( c.changes ), 6 )
-		self.failUnless( c.changes[4][0].isSame( c["c"]["driven2"] ) )
+		self.assertTrue( c.changes[4][0].isSame( c["c"]["driven2"] ) )
 		self.assertEqual( c.changes[4][1], "30" )
-		self.failUnless( c.changes[5][0].isSame( c["c"] ) )
+		self.assertTrue( c.changes[5][0].isSame( c["c"] ) )
 
 		# check that parameters changed on the classparameter are passed to
 		# the class itself and not the top level parameterised.
@@ -936,7 +860,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( ph["parameters"]["c"]["class"]["driven"].getValue(), 50 )
 
 		self.assertEqual( len( c2.changes ), 1 )
-		self.failUnless( c2.changes[0][0].isSame( c2["driver"] ) )
+		self.assertTrue( c2.changes[0][0].isSame( c2["driver"] ) )
 		self.assertEqual( c2.changes[0][1], "10" )
 
 		# check that parameters changed on the classvectorparameter are passed to
@@ -951,9 +875,9 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( ph["parameters"]["c"]["classes"]["p0"]["driven"].getValue(), 50 )
 
 		self.assertEqual( len( c3.changes ), 2 )
-		self.failUnless( c3.changes[0][0].isSame( c3["driver"] ) )
+		self.assertTrue( c3.changes[0][0].isSame( c3["driver"] ) )
 		self.assertEqual( c3.changes[0][1], "10" )
-		self.failUnless( c3.changes[1][0].isSame( c["c"]["classes"]["p0"] ) )
+		self.assertTrue( c3.changes[1][0].isSame( c["c"]["classes"]["p0"] ) )
 
 		c4 = c["c"]["classes"].getClass( "p1" )
 		self.assertEqual( len( c4.changes ), 0 )
@@ -964,9 +888,9 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		self.assertEqual( ph["parameters"]["c"]["classes"]["p1"]["driven"].getValue(), 50 )
 
 		self.assertEqual( len( c4.changes ), 2 )
-		self.failUnless( c4.changes[0][0].isSame( c4["driver"] ) )
+		self.assertTrue( c4.changes[0][0].isSame( c4["driver"] ) )
 		self.assertEqual( c4.changes[0][1], "10" )
-		self.failUnless( c4.changes[1][0].isSame( c["c"]["classes"]["p1"] ) )
+		self.assertTrue( c4.changes[1][0].isSame( c["c"]["classes"]["p1"] ) )
 
 	def testReadOnly( self ) :
 
@@ -987,23 +911,20 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( p )
 
-		self.failUnless( "parameters" in ph )
-		self.failUnless( "i" in ph["parameters"] )
+		self.assertIn( "parameters", ph )
+		self.assertIn( "i", ph["parameters"] )
 		self.assertEqual( ph["parameters"]["i"].getValue(), 1 )
-		self.assertEqual( ph["parameters"]["i"].getFlags( Gaffer.Plug.Flags.ReadOnly ), False )
+		self.assertFalse( Gaffer.MetadataAlgo.getReadOnly( ph["parameters"]["i"] ) )
 
 		with ph.parameterModificationContext() :
 
 			p.parameters()["i"].userData()["gaffer"] = IECore.CompoundObject( {
 				"readOnly" : IECore.BoolData( True ),
 			} )
-			p.parameters()["i"].setNumericValue( 2 )
 
-		self.assertEqual( ph["parameters"]["i"].getFlags( Gaffer.Plug.Flags.ReadOnly ), True )
-		# the plug was made read only, so should not have accepted the new parameter value
-		self.assertEqual( ph["parameters"]["i"].getValue(), 1 )
+		self.assertTrue( Gaffer.MetadataAlgo.getReadOnly( ph["parameters"]["i"] ) )
 
-	def testConections( self ) :
+	def testConnections( self ) :
 
 		p = IECore.Parameterised( "" )
 
@@ -1027,9 +948,9 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 		ph = GafferCortex.ParameterisedHolderNode()
 		ph.setParameterised( p )
 
-		self.failUnless( "parameters" in ph )
-		self.failUnless( "a" in ph["parameters"] )
-		self.failUnless( "b" in ph["parameters"] )
+		self.assertIn( "parameters", ph )
+		self.assertIn( "a", ph["parameters"] )
+		self.assertIn( "b", ph["parameters"] )
 		self.assertEqual( ph["parameters"]["a"].getValue(), 1 )
 		self.assertEqual( ph["parameters"]["b"].getValue(), 2 )
 		self.assertEqual( ph["parameters"]["b"].getInput(), None )
@@ -1125,7 +1046,7 @@ class ParameterisedHolderTest( GafferTest.TestCase ) :
 
 		with IECore.CapturingMessageHandler() as mh :
 			# We want the original exception to be the visible one.
-			self.assertRaisesRegexp( RuntimeError, "Ooops!", ph["parameters"]["driver"].setValue, 1 )
+			six.assertRaisesRegex( self, RuntimeError, "Ooops!", ph["parameters"]["driver"].setValue, 1 )
 		# And we want the secondary exception to be reported as a message.
 		self.assertEqual( len( mh.messages ), 1 )
 		self.assertTrue( "Value is not an instance of \"IntData\"" in mh.messages[0].message )

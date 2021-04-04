@@ -34,13 +34,17 @@
 #
 ##########################################################################
 
+import os
 import sys
 import unittest
 import inspect
+import subprocess
 import types
 import shutil
 import tempfile
+import traceback
 import functools
+import six
 
 import IECore
 
@@ -49,17 +53,39 @@ import Gaffer
 ## A useful base class for creating test cases for nodes.
 class TestCase( unittest.TestCase ) :
 
+	# If any messages of this level (or lower) are emitted during a test, it
+	# will automatically be failed. Set to None to disable message checking.
+	failureMessageLevel = IECore.MessageHandler.Level.Warning
+
 	def setUp( self ) :
 
 		self.__temporaryDirectory = None
 
 		# Set up a capturing message handler and a cleanup function so
-		# we can assert that no warning or error messages are triggered by
+		# we can assert that no undesired messages are triggered by
 		# the tests. If any such messages are actually expected during testing,
 		# the relevant tests should use their own CapturingMessageHandler
 		# to grab them and then assert that they are as expected.
-		self.addCleanup( functools.partial( self.__messageHandlerCleanup, IECore.MessageHandler.getDefaultHandler() ) )
-		IECore.MessageHandler.setDefaultHandler( IECore.CapturingMessageHandler() )
+		# We also setup a tee to the default message handler, which is useful
+		# as it allows errors to be seen at the time they occur, rather than
+		# after the test has completed.
+		if self.failureMessageLevel is not None :
+
+			defaultHandler = IECore.MessageHandler.getDefaultHandler()
+			testMessageHandler = IECore.CompoundMessageHandler()
+			testMessageHandler.addHandler( defaultHandler )
+
+			failureMessageHandler = IECore.CapturingMessageHandler()
+			testMessageHandler.addHandler( IECore.LevelFilteredMessageHandler( failureMessageHandler, self.failureMessageLevel ) )
+
+			IECore.MessageHandler.setDefaultHandler( testMessageHandler )
+			self.addCleanup( functools.partial( self.__messageHandlerCleanup, defaultHandler, failureMessageHandler ) )
+
+		# Clear the cache and hash cache so that each test starts afresh. This is
+		# important for tests which use monitors to assert that specific
+		# processes are being invoked as expected.
+		Gaffer.ValuePlug.clearCache()
+		Gaffer.ValuePlug.clearHashCache()
 
 	def tearDown( self ) :
 
@@ -70,26 +96,34 @@ class TestCase( unittest.TestCase ) :
 		# shutdown tests that are run when the test application
 		# exits.
 
-		if "_ExpectedFailure" in str( sys.exc_info()[0] ) :
-			# the expected failure exception in the unittest module
-			# unhelpfully also hangs on to exceptions, so we remove
-			# that before calling exc_clear().
-			sys.exc_info()[1].exc_info = ( None, None, None )
+		if six.PY2 :
 
-		sys.exc_clear()
+			if "_ExpectedFailure" in str( sys.exc_info()[0] ) :
+				# the expected failure exception in the unittest module
+				# unhelpfully also hangs on to exceptions, so we remove
+				# that before calling exc_clear().
+				sys.exc_info()[1].exc_info = ( None, None, None )
+
+			sys.exc_clear()
+
+		else :
+
+			if self._outcome.expectedFailure is not None :
+				# Clear the references to local variables in
+				# the traceback associated with the expected
+				# failure.
+				traceback.clear_frames( self._outcome.expectedFailure[1].__traceback__ )
 
 		if self.__temporaryDirectory is not None :
 			shutil.rmtree( self.__temporaryDirectory )
 
 	@staticmethod
-	def __messageHandlerCleanup( originalHandler ) :
+	def __messageHandlerCleanup( originalHandler, failureHandler ) :
 
-		mh = IECore.MessageHandler.getDefaultHandler()
 		IECore.MessageHandler.setDefaultHandler( originalHandler )
 
-		for message in mh.messages :
-			if message.level in  ( mh.Level.Warning, mh.Level.Error ) :
-				raise RuntimeError( "Unexpected message : " + mh.levelAsString( message.level ) + " : " + message.context + " : " + message.message )
+		for message in failureHandler.messages :
+			raise RuntimeError( "Unexpected message : " + failureHandler.levelAsString( message.level ) + " : " + message.context + " : " + message.message )
 
 	## Returns a path to a directory the test may use for temporary
 	# storage. This will be cleaned up automatically after the test
@@ -117,7 +151,7 @@ class TestCase( unittest.TestCase ) :
 						inputPlugs.append( child )
 		__walkInputs( node )
 
-		self.failUnless( len( inputPlugs ) > 0 )
+		self.assertGreater( len( inputPlugs ), 0 )
 
 		numTests = 0
 		for inputPlug in inputPlugs :
@@ -133,7 +167,7 @@ class TestCase( unittest.TestCase ) :
 					increment = 0.1
 				elif isinstance( value, int ) :
 					increment = 1
-				elif isinstance( value, basestring ) :
+				elif isinstance( value, str ) :
 					increment = "a"
 				else :
 					# don't know how to deal with this
@@ -148,9 +182,14 @@ class TestCase( unittest.TestCase ) :
 
 				self.assertNotEqual( outputPlug.hash(), hash, outputPlug.fullName() + " hash not affected by " + inputPlug.fullName() )
 
+				# Set value back to the input value
+				# ( The calling code may have set up plugs in a specific state, because some plugs may
+				# have no affect in certain states )
+				inputPlug.setValue( value )
+
 				numTests += 1
 
-		self.failUnless( numTests > 0 )
+		self.assertGreater( numTests, 0 )
 
 	def assertTypeNamesArePrefixed( self, module, namesToIgnore = () ) :
 
@@ -169,7 +208,7 @@ class TestCase( unittest.TestCase ) :
 
 		self.assertEqual( incorrectTypeNames, [] )
 
-	def assertDefaultNamesAreCorrect( self, module ) :
+	def assertDefaultNamesAreCorrect( self, module, namesToIgnore = () ) :
 
 		for name in dir( module ) :
 
@@ -182,6 +221,9 @@ class TestCase( unittest.TestCase ) :
 			except :
 				continue
 
+			if instance.getName() in namesToIgnore :
+				continue
+
 			self.assertEqual( instance.getName(), cls.staticTypeName().rpartition( ":" )[2] )
 
 	def assertNodesAreDocumented( self, module, additionalTerminalPlugTypes = () ) :
@@ -191,7 +233,7 @@ class TestCase( unittest.TestCase ) :
 			Gaffer.V2fPlug, Gaffer.V3fPlug,
 			Gaffer.V2iPlug, Gaffer.V3iPlug,
 			Gaffer.Color3fPlug, Gaffer.Color4fPlug,
-			Gaffer.SplineffPlug, Gaffer.SplinefColor3fPlug,
+			Gaffer.SplineffPlug, Gaffer.SplinefColor3fPlug, Gaffer.SplinefColor4fPlug,
 			Gaffer.Box2iPlug, Gaffer.Box3iPlug,
 			Gaffer.Box2fPlug, Gaffer.Box3fPlug,
 			Gaffer.TransformPlug, Gaffer.Transform2DPlug,
@@ -250,13 +292,19 @@ class TestCase( unittest.TestCase ) :
 		self.assertEqual( undocumentedPlugs, [] )
 
 	## We don't serialise plug values when they're at their default, so
-	# newly constructed nodes must have all their plugs be at the default value.
-	def assertNodesConstructWithDefaultValues( self, module ) :
+	# newly constructed nodes _must_ have all their plugs be at the default value.
+	# Use `nodesToIgnore` with caution : the only good reason for using it is to
+	# ignore compatibility stubs used to load old nodes and convert them into new
+	# ones.
+	def assertNodesConstructWithDefaultValues( self, module, nodesToIgnore = None ) :
 
 		for name in dir( module ) :
 
 			cls = getattr( module, name )
 			if not inspect.isclass( cls ) or not issubclass( cls, Gaffer.Node ) :
+				continue
+
+			if nodesToIgnore is not None and cls in nodesToIgnore :
 				continue
 
 			try :
@@ -266,10 +314,20 @@ class TestCase( unittest.TestCase ) :
 
 			for plug in node.children( Gaffer.Plug ) :
 
-				if plug.direction() != plug.Direction.In or not isinstance( plug, Gaffer.ValuePlug ) :
+				if plug.source().direction() != plug.Direction.In or not isinstance( plug, Gaffer.ValuePlug ) :
 					continue
 
 				if not plug.getFlags( plug.Flags.Serialisable ) :
 					continue
 
 				self.assertTrue( plug.isSetToDefault(), plug.fullName() + " not at default value following construction" )
+
+	def assertModuleDoesNotImportUI( self, moduleName ) :
+
+		script = os.path.join( self.temporaryDirectory(), "test.py" )
+		with open( script, "w" ) as f :
+			f.write( "import {}\n".format( moduleName ) )
+			f.write( "import sys\n" )
+			f.write( "assert( 'GafferUI' not in sys.modules )\n" )
+
+		subprocess.check_call( [ "gaffer", "python", script ] )

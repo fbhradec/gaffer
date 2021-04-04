@@ -58,7 +58,11 @@ Gaffer.Metadata.registerNode(
 			"""
 			The location of the mesh to scatter the
 			points over. The generated points will
-			be parented under this location.
+			be parented under this location. This is
+			ignored when a filter is connected, in
+			which case the filter may specify multiple
+			locations containing meshes to scatter points
+			over.
 			""",
 
 		],
@@ -80,6 +84,17 @@ Gaffer.Metadata.registerNode(
 			"""
 			The number of points per unit area of the mesh,
 			measured in object space.
+			""",
+
+		],
+
+		"densityPrimitiveVariable" : [
+
+			"description",
+			"""
+			A float primitive variable used to specify a varying
+			point density across the surface of the mesh. Multiplied
+			with the density setting above.
 			""",
 
 		],

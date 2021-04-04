@@ -37,18 +37,14 @@
 #ifndef GAFFERBINDINGS_METADATABINDING_H
 #define GAFFERBINDINGS_METADATABINDING_H
 
-#include "Gaffer/Node.h"
+#include "GafferBindings/Export.h"
+#include "GafferBindings/Serialisation.h"
+
 
 namespace GafferBindings
 {
 
-void bindMetadata();
-
-void metadataModuleDependencies( const Gaffer::Node *node, std::set<std::string> &modules );
-void metadataModuleDependencies( const Gaffer::Plug *plug, std::set<std::string> &modules );
-
-std::string metadataSerialisation( const Gaffer::Node *node, const std::string &identifier );
-std::string metadataSerialisation( const Gaffer::Plug *plug, const std::string &identifier );
+GAFFERBINDINGS_API std::string metadataSerialisation( const Gaffer::GraphComponent *graphComponent, const std::string &identifier, Serialisation &serialisation );
 
 } // namespace GafferBindings
 

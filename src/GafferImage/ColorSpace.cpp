@@ -35,9 +35,9 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringPlug.h"
-
 #include "GafferImage/ColorSpace.h"
+
+#include "Gaffer/StringPlug.h"
 
 using namespace std;
 using namespace IECore;
@@ -48,12 +48,12 @@ using namespace Gaffer;
 namespace GafferImage
 {
 
-IE_CORE_DEFINERUNTIMETYPED( ColorSpace );
+GAFFER_NODE_DEFINE_TYPE( ColorSpace );
 
 size_t ColorSpace::g_firstPlugIndex = 0;
 
 ColorSpace::ColorSpace( const std::string &name )
-	:	OpenColorIOTransform( name )
+	:	OpenColorIOTransform( name, true )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "inputSpace" ) );

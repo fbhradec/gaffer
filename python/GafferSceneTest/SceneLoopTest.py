@@ -35,6 +35,8 @@
 ##########################################################################
 
 import unittest
+import imath
+import inspect
 
 import IECore
 
@@ -44,17 +46,13 @@ import GafferSceneTest
 
 class SceneLoopTest( GafferSceneTest.SceneTestCase ) :
 
-	def testDefaultName( self ) :
-
-		s = GafferScene.SceneLoop()
-		self.assertEqual( s.getName(), "SceneLoop" )
-
 	def testLoop( self ) :
 
 		script = Gaffer.ScriptNode()
 
 		script["sphere"] = GafferScene.Sphere()
-		script["loop"] = GafferScene.SceneLoop()
+		script["loop"] = Gaffer.Loop()
+		script["loop"].setup( GafferScene.ScenePlug() )
 		script["loop"]["in"].setInput( script["sphere"]["out"] )
 
 		script["filter"] = GafferScene.PathFilter()
@@ -67,26 +65,27 @@ class SceneLoopTest( GafferSceneTest.SceneTestCase ) :
 		script["loop"]["next"].setInput( script["transform"]["out"] )
 
 		script["loop"]["iterations"].setValue( 2 )
-		self.assertEqual( script["loop"]["out"].transform( "/sphere" ), IECore.M44f.createTranslated( IECore.V3f( 2, 0, 0 ) ) )
+		self.assertEqual( script["loop"]["out"].transform( "/sphere" ), imath.M44f().translate( imath.V3f( 2, 0, 0 ) ) )
 
 		script["loop"]["iterations"].setValue( 4 )
-		self.assertEqual( script["loop"]["out"].transform( "/sphere" ), IECore.M44f.createTranslated( IECore.V3f( 4, 0, 0 ) ) )
+		self.assertEqual( script["loop"]["out"].transform( "/sphere" ), imath.M44f().translate( imath.V3f( 4, 0, 0 ) ) )
 
 		script2 = Gaffer.ScriptNode()
 		script2.execute( script.serialise() )
 
 		script2["loop"]["iterations"].setValue( 3 )
-		self.assertEqual( script2["loop"]["out"].transform( "/sphere" ), IECore.M44f.createTranslated( IECore.V3f( 3, 0, 0 ) ) )
+		self.assertEqual( script2["loop"]["out"].transform( "/sphere" ), imath.M44f().translate( imath.V3f( 3, 0, 0 ) ) )
 
 		script2["loop"]["iterations"].setValue( 5 )
-		self.assertEqual( script2["loop"]["out"].transform( "/sphere" ), IECore.M44f.createTranslated( IECore.V3f( 5, 0, 0 ) ) )
+		self.assertEqual( script2["loop"]["out"].transform( "/sphere" ), imath.M44f().translate( imath.V3f( 5, 0, 0 ) ) )
 
 	def testEnabled( self ) :
 
 		script = Gaffer.ScriptNode()
 
 		script["sphere"] = GafferScene.Sphere()
-		script["loop"] = GafferScene.SceneLoop()
+		script["loop"] = Gaffer.Loop()
+		script["loop"].setup( GafferScene.ScenePlug() )
 		script["loop"]["in"].setInput( script["sphere"]["out"] )
 
 		script["filter"] = GafferScene.PathFilter()
@@ -99,15 +98,44 @@ class SceneLoopTest( GafferSceneTest.SceneTestCase ) :
 		script["loop"]["next"].setInput( script["transform"]["out"] )
 
 		script["loop"]["iterations"].setValue( 2 )
-		self.assertEqual( script["loop"]["out"].transform( "/sphere" ), IECore.M44f.createTranslated( IECore.V3f( 2, 0, 0 ) ) )
+		self.assertEqual( script["loop"]["out"].transform( "/sphere" ), imath.M44f().translate( imath.V3f( 2, 0, 0 ) ) )
 
 		script["loop"]["enabled"].setValue( False )
-		self.assertEqual( script["loop"]["out"].transform( "/sphere" ), IECore.M44f() )
+		self.assertEqual( script["loop"]["out"].transform( "/sphere" ), imath.M44f() )
 
 		self.assertScenesEqual( script["loop"]["out"], script["sphere"]["out"] )
 		self.assertSceneHashesEqual( script["loop"]["out"], script["sphere"]["out"] )
 
 		self.assertTrue( script["loop"].correspondingInput( script["loop"]["out"] ).isSame( script["loop"]["in"] ) )
+
+	def testIterationsContext( self ) :
+
+		script = Gaffer.ScriptNode()
+
+		script["sphere"] = GafferScene.Sphere()
+		script["loop"] = Gaffer.Loop()
+		script["loop"].setup( GafferScene.ScenePlug() )
+		script["loop"]["in"].setInput( script["sphere"]["out"] )
+
+		script["filter"] = GafferScene.PathFilter()
+		script["filter"]["paths"].setValue( IECore.StringVectorData( [ "/sphere" ] ) )
+
+		script["transform"] = GafferScene.Transform()
+		script["transform"]["transform"]["translate"]["x"].setValue( 1 )
+		script["transform"]["in"].setInput( script["loop"]["previous"] )
+		script["transform"]["filter"].setInput( script["filter"]["out"] )
+		script["loop"]["next"].setInput( script["transform"]["out"] )
+
+
+		script["expression"] = Gaffer.Expression()
+		script["expression"].setExpression( inspect.cleandoc(
+			"""
+			assert( context.get( "scene:path", None ) is None )
+			parent["loop"]["iterations"] = 4
+			"""
+		) )
+
+		self.assertEqual( script["loop"]["out"].transform( "/sphere" ), imath.M44f().translate( imath.V3f( 4, 0, 0 ) ) )
 
 if __name__ == "__main__":
 	unittest.main()

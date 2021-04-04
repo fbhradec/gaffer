@@ -34,15 +34,17 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/ArrayPlug.h"
-
 #include "GafferScene/FilterProcessor.h"
+
+#include "GafferScene/ScenePlug.h"
+
+#include "Gaffer/ArrayPlug.h"
 
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferScene;
 
-IE_CORE_DEFINERUNTIMETYPED( FilterProcessor );
+GAFFER_NODE_DEFINE_TYPE( FilterProcessor );
 
 size_t FilterProcessor::g_firstPlugIndex = 0;
 
@@ -68,7 +70,7 @@ FilterProcessor::~FilterProcessor()
 
 FilterPlug *FilterProcessor::inPlug()
 {
-	GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	GraphComponent *p = getChild( g_firstPlugIndex );
 	if( FilterPlug *s = IECore::runTimeCast<FilterPlug>( p ) )
 	{
 		return s;
@@ -81,7 +83,7 @@ FilterPlug *FilterProcessor::inPlug()
 
 const FilterPlug *FilterProcessor::inPlug() const
 {
-	const GraphComponent *p = getChild<GraphComponent>( g_firstPlugIndex );
+	const GraphComponent *p = getChild( g_firstPlugIndex );
 	if( const FilterPlug *s = IECore::runTimeCast<const FilterPlug>( p ) )
 	{
 		return s;
@@ -102,17 +104,24 @@ const Gaffer::ArrayPlug *FilterProcessor::inPlugs() const
 	return getChild<Gaffer::ArrayPlug>( g_firstPlugIndex );
 }
 
-bool FilterProcessor::sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const
+void FilterProcessor::affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const
 {
-	for( InputIntPlugIterator it( inPlugs() ); !it.done(); ++it )
+	Filter::affects( input, outputs );
+
+	if( input->parent<ScenePlug>() )
 	{
-		const Filter *filter = IECore::runTimeCast<const Filter>( (*it)->source<Plug>()->node() );
-		if( filter && filter != this && filter->sceneAffectsMatch( scene, child ) )
+		if( const ArrayPlug *arrayIn = this->inPlugs() )
 		{
-			return true;
+			for( InputFilterPlugIterator it( arrayIn ); !it.done(); ++it )
+			{
+				(*it)->sceneAffects( input, outputs );
+			}
+		}
+		else
+		{
+			inPlug()->sceneAffects( input, outputs );
 		}
 	}
-	return false;
 }
 
 Gaffer::Plug *FilterProcessor::correspondingInput( const Gaffer::Plug *output )

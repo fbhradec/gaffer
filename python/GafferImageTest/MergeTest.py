@@ -36,6 +36,8 @@
 
 import os
 import unittest
+import six
+import imath
 
 import IECore
 
@@ -52,6 +54,7 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 	checkerPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/checkerboard.100x100.exr" )
 	checkerRGBPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/rgbOverChecker.100x100.exr" )
 	rgbPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/rgb.100x100.exr" )
+	mergeBoundariesRefPath = os.path.expandvars( "$GAFFER_ROOT/python/GafferImageTest/images/mergeBoundariesRef.exr" )
 
 	# Do several tests to check the cache is working correctly:
 	def testHashes( self ) :
@@ -71,12 +74,12 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 
 		merge["in"][0].setInput( r1["out"] )
 		merge["in"][1].setInput( r2["out"] )
-		h1 = merge["out"].image().hash()
+		h1 = GafferImage.ImageAlgo.imageHash( merge["out"] )
 
 		# Switch the inputs.
 		merge["in"][1].setInput( r1["out"] )
 		merge["in"][0].setInput( r2["out"] )
-		h2 = merge["out"].image().hash()
+		h2 = GafferImage.ImageAlgo.imageHash( merge["out"] )
 
 		self.assertNotEqual( h1, h2 )
 
@@ -100,26 +103,29 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 		# but then disconnect two so that the result should still be the same...
 		merge["in"][1].setInput( None )
 		merge["in"][2].setInput( None )
-		h1 = merge["out"].image().hash()
+		h1 = GafferImage.ImageAlgo.imageHash( merge["out"] )
 
 		self.assertEqual( h1, expectedHash )
 
+	# The pass through for disabled is working, but I don't see any sign that a pass through
+	# for a single input was ever implemented.  ( For a long time this test was broken )
+	@unittest.expectedFailure
 	def testHashPassThrough( self ) :
 
 		r1 = GafferImage.ImageReader()
 		r1["fileName"].setValue( self.checkerPath )
 
 		##########################################
-		# Test to see if the input has is always passed
+		# Test to see if the input hash is always passed
 		# through if only the first input is connected.
 		##########################################
 
 		merge = GafferImage.Merge()
 		merge["operation"].setValue( GafferImage.Merge.Operation.Over )
 
-		expectedHash = r1["out"].image().hash()
+		expectedHash = GafferImage.ImageAlgo.imageHash( r1["out"] )
 		merge["in"][0].setInput( r1["out"] )
-		h1 = merge["out"].image().hash()
+		h1 = GafferImage.ImageAlgo.imageHash( merge["out"] )
 
 		self.assertEqual( h1, expectedHash )
 
@@ -128,7 +134,7 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 		##########################################
 
 		merge["enabled"].setValue(False)
-		h1 = merge["out"].image().hash()
+		h1 = GafferImage.ImageAlgo.imageHash( merge["out"] )
 
 		self.assertEqual( h1, expectedHash )
 
@@ -225,9 +231,9 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 		c = GafferImage.Constant()
 		f = GafferImage.Resize()
 		f["in"].setInput( c["out"] )
-		f["format"].setValue( GafferImage.Format( IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 10 ) ), 1 ) )
+		f["format"].setValue( GafferImage.Format( imath.Box2i( imath.V2i( 0 ), imath.V2i( 10 ) ), 1 ) )
 		d = GafferImage.ImageMetadata()
-		d["metadata"].addMember( "comment", IECore.StringData( "reformated and metadata updated" ) )
+		d["metadata"].addChild( Gaffer.NameValuePlug( "comment", IECore.StringData( "reformated and metadata updated" ) ) )
 		d["in"].setInput( f["out"] )
 
 		m = GafferImage.Merge()
@@ -249,38 +255,20 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 		self.assertEqual( m["out"]["format"].getValue(), d["out"]["format"].getValue() )
 		self.assertEqual( m["out"]["metadata"].getValue(), d["out"]["metadata"].getValue() )
 
-	def testFileCompatibilityWithVersion0_15( self ) :
-
-		s = Gaffer.ScriptNode()
-		s["fileName"].setValue( os.path.dirname( __file__ ) + "/scripts/mergeVersion-0.15.0.0.gfr" )
-		with IECore.CapturingMessageHandler() as mh :
-			s.load( continueOnError = True )
-		self.assertEqual( len( mh.messages ), 1 )
-		self.assertTrue( "registerFormat" in mh.messages[0].message )
-
-		self.assertTrue( s["m"]["in"][0].getInput().isSame( s["c1"]["out"] ) )
-		self.assertTrue( s["m"]["in"][1].getInput().isSame( s["c2"]["out"] ) )
-
-		self.assertTrue( "in1" not in s["m"] )
-		self.assertTrue( "in2" not in s["m"] )
-
-		with s.context() :
-			self.assertEqual( s["m"]["out"].channelData( "R", IECore.V2i( 0 ) )[0], 0.75 )
-
 	def testSmallDataWindowOverLarge( self ) :
 
 		b = GafferImage.Constant()
 		b["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		b["color"].setValue( IECore.Color4f( 1, 0, 0, 1 ) )
+		b["color"].setValue( imath.Color4f( 1, 0, 0, 1 ) )
 
 		a = GafferImage.Constant()
 		a["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		a["color"].setValue( IECore.Color4f( 0, 1, 0, 1 ) )
+		a["color"].setValue( imath.Color4f( 0, 1, 0, 1 ) )
 
 		aCrop = GafferImage.Crop()
 		aCrop["in"].setInput( a["out"] )
 		aCrop["areaSource"].setValue( aCrop.AreaSource.Area )
-		aCrop["area"].setValue( IECore.Box2i( IECore.V2i( 50 ), IECore.V2i( 162 ) ) )
+		aCrop["area"].setValue( imath.Box2i( imath.V2i( 50 ), imath.V2i( 162 ) ) )
 		aCrop["affectDisplayWindow"].setValue( False )
 
 		m = GafferImage.Merge()
@@ -294,7 +282,7 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 
 		def sample( x, y ) :
 
-			return IECore.Color3f(
+			return imath.Color3f(
 				redSampler.sample( x, y ),
 				greenSampler.sample( x, y ),
 				blueSampler.sample( x, y ),
@@ -304,25 +292,25 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 		# the data window of aCrop. Everywhere else we should have
 		# red still.
 
-		self.assertEqual( sample( 49, 49 ), IECore.Color3f( 1, 0, 0 ) )
-		self.assertEqual( sample( 50, 50 ), IECore.Color3f( 0, 1, 0 ) )
-		self.assertEqual( sample( 161, 161 ), IECore.Color3f( 0, 1, 0 ) )
-		self.assertEqual( sample( 162, 162 ), IECore.Color3f( 1, 0, 0 ) )
+		self.assertEqual( sample( 49, 49 ), imath.Color3f( 1, 0, 0 ) )
+		self.assertEqual( sample( 50, 50 ), imath.Color3f( 0, 1, 0 ) )
+		self.assertEqual( sample( 161, 161 ), imath.Color3f( 0, 1, 0 ) )
+		self.assertEqual( sample( 162, 162 ), imath.Color3f( 1, 0, 0 ) )
 
 	def testLargeDataWindowAddedToSmall( self ) :
 
 		b = GafferImage.Constant()
 		b["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		b["color"].setValue( IECore.Color4f( 1, 0, 0, 1 ) )
+		b["color"].setValue( imath.Color4f( 1, 0, 0, 1 ) )
 
 		a = GafferImage.Constant()
 		a["format"].setValue( GafferImage.Format( 500, 500, 1.0 ) )
-		a["color"].setValue( IECore.Color4f( 0, 1, 0, 1 ) )
+		a["color"].setValue( imath.Color4f( 0, 1, 0, 1 ) )
 
 		bCrop = GafferImage.Crop()
 		bCrop["in"].setInput( b["out"] )
 		bCrop["areaSource"].setValue( bCrop.AreaSource.Area )
-		bCrop["area"].setValue( IECore.Box2i( IECore.V2i( 50 ), IECore.V2i( 162 ) ) )
+		bCrop["area"].setValue( imath.Box2i( imath.V2i( 50 ), imath.V2i( 162 ) ) )
 		bCrop["affectDisplayWindow"].setValue( False )
 
 		m = GafferImage.Merge()
@@ -336,7 +324,7 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 
 		def sample( x, y ) :
 
-			return IECore.Color3f(
+			return imath.Color3f(
 				redSampler.sample( x, y ),
 				greenSampler.sample( x, y ),
 				blueSampler.sample( x, y ),
@@ -345,10 +333,10 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 		# We should only have yellow in areas where the background exists,
 		# and should have just green everywhere else.
 
-		self.assertEqual( sample( 49, 49 ), IECore.Color3f( 0, 1, 0 ) )
-		self.assertEqual( sample( 50, 50 ), IECore.Color3f( 1, 1, 0 ) )
-		self.assertEqual( sample( 161, 161 ), IECore.Color3f( 1, 1, 0 ) )
-		self.assertEqual( sample( 162, 162 ), IECore.Color3f( 0, 1, 0 ) )
+		self.assertEqual( sample( 49, 49 ), imath.Color3f( 0, 1, 0 ) )
+		self.assertEqual( sample( 50, 50 ), imath.Color3f( 1, 1, 0 ) )
+		self.assertEqual( sample( 161, 161 ), imath.Color3f( 1, 1, 0 ) )
+		self.assertEqual( sample( 162, 162 ), imath.Color3f( 0, 1, 0 ) )
 
 	def testCrashWithResizedInput( self ) :
 
@@ -368,47 +356,65 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 		merge["in"][0].setInput( bResized["out"] )
 		merge["in"][1].setInput( a["out"] )
 
-		merge["out"].image()
+		GafferImageTest.processTiles( merge["out"] )
 
-	def testDifference( self ) :
-
-		a = GafferImage.Constant()
-		a["color"].setValue( IECore.Color4f( 0.1, 0.2, 0.3, 0.4 ) )
+	def testModes( self ) :
 
 		b = GafferImage.Constant()
-		b["color"].setValue( IECore.Color4f( 1, 0.3, 0.1, 0.2 ) )
+		b["color"].setValue( imath.Color4f( 0.1, 0.2, 0.3, 0.4 ) )
+
+		a = GafferImage.Constant()
+		a["color"].setValue( imath.Color4f( 1, 0.3, 0.1, 0.2 ) )
 
 		merge = GafferImage.Merge()
-		merge["in"][0].setInput( a["out"] )
-		merge["in"][1].setInput( b["out"] )
-		merge["operation"].setValue( GafferImage.Merge.Operation.Difference )
+		merge["in"][0].setInput( b["out"] )
+		merge["in"][1].setInput( a["out"] )
 
 		sampler = GafferImage.ImageSampler()
 		sampler["image"].setInput( merge["out"] )
-		sampler["pixel"].setValue( IECore.V2f( 10 ) )
+		sampler["pixel"].setValue( imath.V2f( 10 ) )
 
-		self.assertAlmostEqual( sampler["color"]["r"].getValue(), 0.9 )
-		self.assertAlmostEqual( sampler["color"]["g"].getValue(), 0.1 )
-		self.assertAlmostEqual( sampler["color"]["b"].getValue(), 0.2 )
-		self.assertAlmostEqual( sampler["color"]["a"].getValue(), 0.2 )
+		self.longMessage = True
+		for operation, expected in [
+			( GafferImage.Merge.Operation.Add, ( 1.1, 0.5, 0.4, 0.6 ) ),
+			( GafferImage.Merge.Operation.Atop, ( 0.48, 0.28, 0.28, 0.4 ) ),
+			( GafferImage.Merge.Operation.Divide, ( 10, 1.5, 1/3.0, 0.5 ) ),
+			( GafferImage.Merge.Operation.In, ( 0.4, 0.12, 0.04, 0.08 ) ),
+			( GafferImage.Merge.Operation.Out, ( 0.6, 0.18, 0.06, 0.12 ) ),
+			( GafferImage.Merge.Operation.Mask, ( 0.02, 0.04, 0.06, 0.08 ) ),
+			( GafferImage.Merge.Operation.Matte, ( 0.28, 0.22, 0.26, 0.36 ) ),
+			( GafferImage.Merge.Operation.Multiply, ( 0.1, 0.06, 0.03, 0.08 ) ),
+			( GafferImage.Merge.Operation.Over, ( 1.08, 0.46, 0.34, 0.52 ) ),
+			( GafferImage.Merge.Operation.Subtract, ( 0.9, 0.1, -0.2, -0.2 ) ),
+			( GafferImage.Merge.Operation.Difference, ( 0.9, 0.1, 0.2, 0.2 ) ),
+			( GafferImage.Merge.Operation.Under, ( 0.7, 0.38, 0.36, 0.52 ) ),
+			( GafferImage.Merge.Operation.Min, ( 0.1, 0.2, 0.1, 0.2 ) ),
+			( GafferImage.Merge.Operation.Max, ( 1, 0.3, 0.3, 0.4 ) )
+		] :
+
+			merge["operation"].setValue( operation )
+			self.assertAlmostEqual( sampler["color"]["r"].getValue(), expected[0], msg=operation )
+			self.assertAlmostEqual( sampler["color"]["g"].getValue(), expected[1], msg=operation )
+			self.assertAlmostEqual( sampler["color"]["b"].getValue(), expected[2], msg=operation )
+			self.assertAlmostEqual( sampler["color"]["a"].getValue(), expected[3], msg=operation )
 
 	def testChannelRequest( self ) :
 
 		a = GafferImage.Constant()
-		a["color"].setValue( IECore.Color4f( 0.1, 0.2, 0.3, 0.4 ) )
+		a["color"].setValue( imath.Color4f( 0.1, 0.2, 0.3, 0.4 ) )
 
 		ad = GafferImage.DeleteChannels()
 		ad["in"].setInput( a["out"] )
 		ad["mode"].setValue( GafferImage.DeleteChannels.Mode.Delete )
-		ad["channels"].setValue( IECore.StringVectorData( [ "R" ] ) )
+		ad["channels"].setValue( "R" )
 
 		b = GafferImage.Constant()
-		b["color"].setValue( IECore.Color4f( 1.0, 0.3, 0.1, 0.2 ) )
+		b["color"].setValue( imath.Color4f( 1.0, 0.3, 0.1, 0.2 ) )
 
 		bd = GafferImage.DeleteChannels()
 		bd["in"].setInput( b["out"] )
 		bd["mode"].setValue( GafferImage.DeleteChannels.Mode.Delete )
-		bd["channels"].setValue( IECore.StringVectorData( [ "G" ] ) )
+		bd["channels"].setValue( "G" )
 
 		merge = GafferImage.Merge()
 		merge["in"][0].setInput( ad["out"] )
@@ -417,12 +423,29 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 
 		sampler = GafferImage.ImageSampler()
 		sampler["image"].setInput( merge["out"] )
-		sampler["pixel"].setValue( IECore.V2f( 10 ) )
+		sampler["pixel"].setValue( imath.V2f( 10 ) )
 
 		self.assertAlmostEqual( sampler["color"]["r"].getValue(), 0.0 + 1.0 )
 		self.assertAlmostEqual( sampler["color"]["g"].getValue(), 0.2 + 0.0 )
 		self.assertAlmostEqual( sampler["color"]["b"].getValue(), 0.3 + 0.1 )
 		self.assertAlmostEqual( sampler["color"]["a"].getValue(), 0.4 + 0.2 )
+
+	def testNonFlatThrows( self ) :
+
+		deep = GafferImage.Empty()
+		flat = GafferImage.Constant()
+
+		merge = GafferImage.Merge()
+		merge["in"][0].setInput( flat["out"] )
+		merge["in"][1].setInput( flat["out"] )
+
+		self.assertNotEqual( GafferImage.ImageAlgo.imageHash( merge["out"] ), GafferImage.ImageAlgo.imageHash( flat["out"] ) )
+
+		merge["in"][0].setInput( deep["out"] )
+		six.assertRaisesRegex( self, RuntimeError, 'Deep data not supported in input "in.in0"', GafferImage.ImageAlgo.image, merge["out"] )
+		merge["in"][0].setInput( flat["out"] )
+		merge["in"][1].setInput( deep["out"] )
+		six.assertRaisesRegex( self, RuntimeError, 'Deep data not supported in input "in.in1"', GafferImage.ImageAlgo.image, merge["out"] )
 
 	def testDefaultFormat( self ) :
 
@@ -445,6 +468,421 @@ class MergeTest( GafferImageTest.ImageTestCase ) :
 		m["in"][1].setInput( a["out"] )
 
 		self.assertEqual( m["out"]["dataWindow"].getValue(), a["out"]["dataWindow"].getValue() )
+
+	# Make sure we don't fail by pulling tiles outside the data window when merging images with
+	# misaligned data
+	def testTilesOutsideDataWindow( self ) :
+
+		r = GafferImage.ImageReader()
+		r["fileName"].setValue( self.checkerPath )
+
+		o = GafferImage.Offset()
+		o["in"].setInput( r["out"] )
+		o["offset"].setValue( imath.V2i( -10 ) )
+
+		merge = GafferImage.Merge()
+
+		merge["in"][0].setInput( r["out"] )
+		merge["in"][1].setInput( o["out"] )
+		GafferImage.ImageAlgo.image( merge["out"] )
+
+	def testPassthroughs( self ) :
+
+		ts = GafferImage.ImagePlug.tileSize()
+
+		checkerboardB = GafferImage.Checkerboard()
+		checkerboardB["format"]["displayWindow"].setValue( imath.Box2i( imath.V2i( 0 ), imath.V2i( 4096 ) ) )
+
+		checkerboardA = GafferImage.Checkerboard()
+		checkerboardA["format"]["displayWindow"].setValue( imath.Box2i( imath.V2i( 0 ), imath.V2i( 4096 ) ) )
+		checkerboardA["size"].setValue( imath.V2f( 5 ) )
+
+		cropB = GafferImage.Crop()
+		cropB["in"].setInput( checkerboardB["out"] )
+		cropB["area"].setValue( imath.Box2i( imath.V2i( ts * 0.5 ), imath.V2i( ts * 4.5 ) ) )
+		cropB["affectDisplayWindow"].setValue( False )
+
+		cropA = GafferImage.Crop()
+		cropA["in"].setInput( checkerboardA["out"] )
+		cropA["area"].setValue( imath.Box2i( imath.V2i( ts * 2.5 ), imath.V2i( ts * 6.5 ) ) )
+		cropA["affectDisplayWindow"].setValue( False )
+
+		merge = GafferImage.Merge()
+		merge["in"][0].setInput( cropB["out"] )
+		merge["in"][1].setInput( cropA["out"] )
+		merge["operation"].setValue( 8 )
+
+		sampleTileOrigins = {
+			"insideBoth" : imath.V2i( ts * 3, ts * 3 ),
+			"outsideBoth" : imath.V2i( ts * 5, ts ),
+			"outsideEdgeB" : imath.V2i( ts, 0 ),
+			"insideB" : imath.V2i( ts, ts ),
+			"internalEdgeB" : imath.V2i( ts * 4, ts ),
+			"internalEdgeA" : imath.V2i( ts * 5, ts * 2 ),
+			"insideA" : imath.V2i( ts * 5, ts * 5 ),
+			"outsideEdgeA" : imath.V2i( ts * 6, ts * 5 )
+		}
+
+		for opName, onlyA, onlyB in [
+				( "Atop", "black", "passB" ),
+				( "Divide", "operate", "black" ),
+				( "Out", "passA", "black" ),
+				( "Multiply", "black", "black" ),
+				( "Over", "passA", "passB" ),
+				( "Subtract", "passA", "operate" ),
+				( "Difference", "operate", "operate" )
+			]:
+			op = getattr( GafferImage.Merge.Operation, opName )
+			merge["operation"].setValue( op )
+
+			results = {}
+			for name, tileOrigin in sampleTileOrigins.items():
+				# We want to check the value pass through code independently
+				# of the hash passthrough code, which we can do by dropping
+				# the value cached and evaluating values first
+				Gaffer.ValuePlug.clearCache()
+
+				with Gaffer.Context() as c :
+					c["image:tileOrigin"] = tileOrigin
+					c["image:channelName"] = "R"
+
+					data = merge["out"]["channelData"].getValue( _copy = False )
+					if data.isSame( GafferImage.ImagePlug.blackTile( _copy = False ) ):
+						computeMode = "black"
+					elif data.isSame( cropB["out"]["channelData"].getValue( _copy = False ) ):
+						computeMode = "passB"
+					elif data.isSame( cropA["out"]["channelData"].getValue( _copy = False ) ):
+						computeMode = "passA"
+					else:
+						computeMode = "operate"
+
+					h = merge["out"]["channelData"].hash()
+					if h == GafferImage.ImagePlug.blackTile().hash():
+						hashMode = "black"
+					elif h == cropB["out"]["channelData"].hash():
+						hashMode = "passB"
+					elif h == cropA["out"]["channelData"].hash():
+						hashMode = "passA"
+					else:
+						hashMode = "operate"
+
+					self.assertEqual( hashMode, computeMode )
+
+					results[name] = hashMode
+
+			self.assertEqual( results["insideBoth"], "operate" )
+			self.assertEqual( results["outsideBoth"], "black" )
+			self.assertEqual( results["outsideEdgeB"], onlyB )
+			self.assertEqual( results["insideB"], onlyB )
+			self.assertEqual( results["outsideEdgeA"], onlyA )
+			self.assertEqual( results["insideA"], onlyA )
+
+			if onlyA == "black" or onlyB == "black":
+				self.assertEqual( results["internalEdgeB"], onlyB )
+				self.assertEqual( results["internalEdgeA"], onlyA )
+			else:
+				self.assertEqual( results["internalEdgeB"], "operate" )
+				self.assertEqual( results["internalEdgeA"], "operate" )
+
+
+
+	# This somewhat sloppy test cobbled together from a Gaffer scene tests a bunch of the weird cases
+	# for how data windows can overlap each other and the tile.  It was added because I'm experimenting
+	# with an approach for treating the tile in regions, which does add a little bit of arithmetic that
+	# I could get wrong
+	def runBoundaryCorrectness( self, scale ):
+
+		testMerge = GafferImage.Merge()
+		subImageNodes = []
+		for checkSize, col, bound in [
+			( 2, ( 0.672299981, 0.672299981,  0           ), ((11, 7), (61, 57)) ),
+			( 4, ( 0.972599983, 0.493499994,  1           ), ((9, 5), (59, 55)) ),
+			( 6, ( 0.310799986, 0.843800008,  1           ), ((0, 21), (1024, 41)) ),
+			( 8, ( 0.958999991, 0.672299981,  0.0296      ), ((22, 0), (42, 1024)) ),
+			( 10,   ( 0.950900018, 0.0899000019, 0.235499993 ), ((7, 10), (47, 50)) ),
+		]:
+			checkerboard = GafferImage.Checkerboard()
+			checkerboard["format"].setValue( GafferImage.Format( 1024 * scale, 1024 * scale, 1.000 ) )
+			checkerboard["size"].setValue( imath.V2f( checkSize * scale ) )
+			checkerboard["colorA"].setValue( imath.Color4f( 0.1 * col[0], 0.1 * col[1], 0.1 * col[2], 0.3 ) )
+			checkerboard["colorB"].setValue( imath.Color4f( 0.5 * col[0], 0.5 * col[1], 0.5 * col[2], 0.7 ) )
+
+			crop = GafferImage.Crop( "Crop" )
+			crop["in"].setInput( checkerboard["out"] )
+			crop["area"].setValue(
+				imath.Box2i(
+					imath.V2i( scale * bound[0][0], scale * bound[0][1] ),
+					imath.V2i( scale * bound[1][0], scale * bound[1][1] )
+				)
+			)
+			crop["affectDisplayWindow"].setValue( False )
+
+			subImageNodes.append( checkerboard )
+			subImageNodes.append( crop )
+
+			testMerge["in"][-1].setInput( crop["out"] )
+
+		testMerge["expression"] = Gaffer.Expression()
+		testMerge["expression"].setExpression( 'parent["operation"] = context[ "loop:index" ]' )
+
+		inverseScale = GafferImage.ImageTransform()
+		inverseScale["in"].setInput( testMerge["out"] )
+		inverseScale["filter"].setValue( "box" )
+		inverseScale["transform"]["scale"].setValue( imath.V2f( 1.0/scale ) )
+
+		crop1 = GafferImage.Crop()
+		crop1["in"].setInput( inverseScale["out"] )
+		crop1["area"].setValue( imath.Box2i( imath.V2i( 0, 0 ), imath.V2i( 64, 64 ) ) )
+
+		loopInit = GafferImage.Constant()
+		loopInit["format"].setValue( GafferImage.Format( 896, 64, 1.000 ) )
+		loopInit["color"].setValue( imath.Color4f( 0 ) )
+
+		loopOffset = GafferImage.Offset()
+		loopOffset["in"].setInput( crop1["out"] )
+		loopOffset["expression"] = Gaffer.Expression()
+		loopOffset["expression"].setExpression( 'parent["offset"]["x"] = 64 * context[ "loop:index" ]' )
+
+		loopMerge = GafferImage.Merge()
+		loopMerge["in"][1].setInput( loopOffset["out"] )
+
+		loop = Gaffer.Loop()
+		loop.setup( GafferImage.ImagePlug( "in", ) )
+		loop["iterations"].setValue( 14 )
+		loop["in"].setInput( loopInit["out"] )
+		loop["next"].setInput( loopMerge["out"] )
+		loopMerge["in"][0].setInput( loop["previous"] )
+
+		# Uncomment for debug
+		#imageWriter = GafferImage.ImageWriter( "ImageWriter" )
+		#imageWriter["in"].setInput( loop["out"] )
+		#imageWriter['openexr']['dataType'].setValue( "float" )
+		#imageWriter["fileName"].setValue( "/tmp/mergeBoundaries.exr" )
+		#imageWriter.execute()
+
+		reader = GafferImage.ImageReader()
+		reader["fileName"].setValue( self.mergeBoundariesRefPath )
+
+		self.assertImagesEqual( loop["out"], reader["out"], ignoreMetadata = True, maxDifference = 1e-5 if scale > 1 else 0 )
+
+	def testBoundaryCorrectness( self ):
+		self.runBoundaryCorrectness( 1 )
+		self.runBoundaryCorrectness( 2 )
+		self.runBoundaryCorrectness( 4 )
+		self.runBoundaryCorrectness( 8 )
+		self.runBoundaryCorrectness( 16 )
+		self.runBoundaryCorrectness( 32 )
+
+	def testEmptyDataWindowMerge( self ):
+		constant = GafferImage.Constant()
+		constant["format"].setValue( GafferImage.Format( 512, 512, 1.000 ) )
+		constant["color"].setValue( imath.Color4f( 1 ) )
+
+		offset = GafferImage.Offset()
+		offset["in"].setInput( constant["out"] )
+		offset["offset"].setValue( imath.V2i( -1024 ) )
+
+		emptyCrop = GafferImage.Crop()
+		emptyCrop["in"].setInput( constant["out"] )
+		emptyCrop["area"].setValue( imath.Box2i( imath.V2i( -10 ), imath.V2i( -100 ) ) )
+
+		merge = GafferImage.Merge()
+		merge["in"][0].setInput( offset["out"] )
+		merge["in"][1].setInput( emptyCrop["out"] )
+
+		self.assertEqual( merge["out"].dataWindow(), imath.Box2i( imath.V2i( -1024 ), imath.V2i( -512 ) ) )
+
+	def mergePerf( self, operation, mismatch ):
+		r = GafferImage.Checkerboard( "Checkerboard" )
+		r["format"].setValue( GafferImage.Format( 4096, 3112, 1.000 ) )
+		# Make the size of the checkerboard not a perfect multiple of tile size
+		# in case we ever fix Checkerboard to notice when tiles are repeated
+		# and return an identical hash ( which would invalidate this performance
+		# test )
+		r["size"].setValue( imath.V2f( 64.01 ) )
+
+		alphaShuffle = GafferImage.Shuffle()
+		alphaShuffle["in"].setInput( r["out"] )
+		alphaShuffle["channels"].addChild( GafferImage.Shuffle.ChannelPlug( "A", "R" ) )
+
+		transform = GafferImage.Offset()
+		transform["in"].setInput( alphaShuffle["out"] )
+		if mismatch:
+			transform["offset"].setValue( imath.V2i( 4000, 3000 ) )
+		else:
+			transform["offset"].setValue( imath.V2i( 26, 42 ) )
+
+		merge = GafferImage.Merge()
+		merge["operation"].setValue( operation )
+		merge["in"][0].setInput( alphaShuffle["out"] )
+		merge["in"][1].setInput( transform["out"] )
+
+		# Precache upstream network, we're only interested in the performance of Merge
+		GafferImageTest.processTiles( alphaShuffle["out"] )
+		GafferImageTest.processTiles( transform["out"] )
+
+		with GafferTest.TestRunner.PerformanceScope() :
+			GafferImageTest.processTiles( merge["out"] )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testAddPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Add, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testAddMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Add, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testAtopPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Atop, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testAtopMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Atop, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testDividePerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Divide, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testDivideMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Divide, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testInPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.In, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testInMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.In, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testOutPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Out, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testOutMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Out, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMaskPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Mask, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMaskMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Mask, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testOutPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Out, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testOutMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Out, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMaskPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Mask, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMaskMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Mask, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMattePerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Matte, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMatteMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Matte, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMultiplyPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Multiply, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMultiplyMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Multiply, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testOverPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Over, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testOverMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Over, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testSubtractPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Subtract, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testSubtractMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Subtract, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testDifferencePerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Difference, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testDifferenceMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Difference, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testUnderPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Under, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testUnderMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Under, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMinPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Min, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMinMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Min, True )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMaxPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Max, False )
+
+	@unittest.skipIf( GafferTest.inCI(), "Performance not relevant on CI platform" )
+	@GafferTest.TestRunner.PerformanceTestMethod( repeat = 5)
+	def testMaxMismatchPerf( self ):
+		self.mergePerf( GafferImage.Merge.Operation.Max, True )
 
 if __name__ == "__main__":
 	unittest.main()

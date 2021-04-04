@@ -65,6 +65,12 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"attributes.*" : [
+
+			"nameValuePlugPlugValueWidget:ignoreNamePlug", True,
+
+		],
+
 		"global" : [
 
 			"description",
@@ -80,6 +86,29 @@ Gaffer.Metadata.registerNode(
 		"filter" : [
 
 			"layout:activator", "isNotGlobal",
+
+		],
+
+		"extraAttributes" : [
+
+			"description",
+			"""
+			An additional set of attributes to be added. Arbitrary numbers
+			of attributes may be specified within a single `IECore.CompoundObject`,
+			where each key/value pair in the object defines an attribute.
+			This is convenient when using an expression to define the attributes
+			and the attribute count might be dynamic. It can also be used to
+			create attributes whose type cannot be handled by the `attributes`
+			CompoundDataPlug, with `IECoreScene.ShaderNetwork` being one example.
+
+			If the same attribute is defined by both the attributes and the
+			extraAttributes plugs, then the value from the extraAttributes
+			is taken.
+			""",
+
+			"plugValueWidget:type", "",
+			"layout:section", "Extra",
+			"nodule:type", "",
 
 		],
 

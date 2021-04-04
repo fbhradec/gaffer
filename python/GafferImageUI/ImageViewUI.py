@@ -35,12 +35,17 @@
 ##########################################################################
 
 import functools
+import math
+import imath
 
 import IECore
 
 import Gaffer
 import GafferUI
+import GafferImage
 import GafferImageUI
+
+
 
 ##########################################################################
 # Metadata registration.
@@ -51,6 +56,28 @@ Gaffer.Metadata.registerNode(
 	GafferImageUI.ImageView,
 
 	"nodeToolbar:bottom:type", "GafferUI.StandardNodeToolbar.bottom",
+
+	"toolbarLayout:customWidget:StateWidget:widgetType", "GafferImageUI.ImageViewUI._StateWidget",
+	"toolbarLayout:customWidget:StateWidget:section", "Top",
+	"toolbarLayout:customWidget:StateWidget:index", 0,
+
+	"toolbarLayout:customWidget:LeftCenterSpacer:widgetType", "GafferImageUI.ImageViewUI._Spacer",
+	"toolbarLayout:customWidget:LeftCenterSpacer:section", "Top",
+	"toolbarLayout:customWidget:LeftCenterSpacer:index", 1,
+
+	"toolbarLayout:customWidget:RightCenterSpacer:widgetType", "GafferImageUI.ImageViewUI._Spacer",
+	"toolbarLayout:customWidget:RightCenterSpacer:section", "Top",
+	"toolbarLayout:customWidget:RightCenterSpacer:index", -2,
+
+	"toolbarLayout:customWidget:StateWidgetBalancingSpacer:widgetType", "GafferImageUI.ImageViewUI._StateWidgetBalancingSpacer",
+	"toolbarLayout:customWidget:StateWidgetBalancingSpacer:section", "Top",
+	"toolbarLayout:customWidget:StateWidgetBalancingSpacer:index", -1,
+
+	"toolbarLayout:customWidget:BottomRightSpacer:widgetType", "GafferImageUI.ImageViewUI._Spacer",
+	"toolbarLayout:customWidget:BottomRightSpacer:section", "Bottom",
+	"toolbarLayout:customWidget:BottomRightSpacer:index", 2,
+
+	"layout:activator:gpuAvailable", lambda node : ImageViewUI.createDisplayTransform( node["displayTransform"].getValue() ).isinstance( GafferImage.OpenColorIOTransform ),
 
 	plugs = {
 
@@ -65,6 +92,7 @@ Gaffer.Metadata.registerNode(
 			"togglePlugValueWidget:imagePrefix", "clipping",
 			"togglePlugValueWidget:defaultToggleValue", True,
 			"toolbarLayout:divider", True,
+			"toolbarLayout:index", 4,
 
 		],
 
@@ -78,6 +106,7 @@ Gaffer.Metadata.registerNode(
 			"plugValueWidget:type", "GafferImageUI.ImageViewUI._TogglePlugValueWidget",
 			"togglePlugValueWidget:imagePrefix", "exposure",
 			"togglePlugValueWidget:defaultToggleValue", 1,
+			"toolbarLayout:index", 5,
 
 		],
 
@@ -91,6 +120,7 @@ Gaffer.Metadata.registerNode(
 			"plugValueWidget:type", "GafferImageUI.ImageViewUI._TogglePlugValueWidget",
 			"togglePlugValueWidget:imagePrefix", "gamma",
 			"togglePlugValueWidget:defaultToggleValue", 2,
+			"toolbarLayout:index", 6,
 
 		],
 
@@ -101,20 +131,50 @@ Gaffer.Metadata.registerNode(
 			Applies colour space transformations for viewing the image correctly.
 			""",
 
-
-			"plugValueWidget:type", "GafferImageUI.ImageViewUI._DisplayTransformPlugValueWidget",
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget",
 			"label", "",
+			"toolbarLayout:width", 100,
+			"toolbarLayout:index", 7,
 
 			"presetNames", lambda plug : IECore.StringVectorData( GafferImageUI.ImageView.registeredDisplayTransforms() ),
 			"presetValues", lambda plug : IECore.StringVectorData( GafferImageUI.ImageView.registeredDisplayTransforms() ),
 
 		],
 
+		"lutGPU" : [
+			"description",
+			"""
+			Controls whether to use the fast GPU path for applying exposure, gamma, and displayTransform.
+			Much faster, but may suffer loss of accuracy in some corner cases.
+			""",
+
+			"plugValueWidget:type", "GafferImageUI.ImageViewUI._LutGPUPlugValueWidget",
+			"toolbarLayout:index", 8,
+			"label", "",
+			"layout:activator", "gpuAvailable",
+		],
+
+
 		"colorInspector" : [
 
 			"plugValueWidget:type", "GafferImageUI.ImageViewUI._ColorInspectorPlugValueWidget",
 			"label", "",
 			"toolbarLayout:section", "Bottom",
+			"toolbarLayout:index", 1,
+
+		],
+
+		"channels" : [
+
+			"description",
+			"""
+			Chooses an RGBA layer or an auxiliary channel to display.
+			""",
+
+			"plugValueWidget:type", "GafferImageUI.RGBAChannelsPlugValueWidget",
+			"toolbarLayout:index", 2,
+			"toolbarLayout:width", 175,
+			"label", "",
 
 		],
 
@@ -126,7 +186,7 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"plugValueWidget:type", "GafferImageUI.ImageViewUI._SoloChannelPlugValueWidget",
-			"toolbarLayout:index", 0,
+			"toolbarLayout:index", 3,
 			"toolbarLayout:divider", True,
 			"label", "",
 
@@ -153,7 +213,7 @@ class _TogglePlugValueWidget( GafferUI.PlugValueWidget ) :
 		with row :
 
 			self.__button = GafferUI.Button( "", self.__imagePrefix + "Off.png", hasFrame=False )
-			self.__clickedConnection = self.__button.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ) )
+			self.__button.clickedSignal().connect( Gaffer.WeakMethod( self.__clicked ), scoped = False )
 
 			if not isinstance( plug, Gaffer.BoolPlug ) :
 				plugValueWidget = GafferUI.PlugValueWidget.create( plug, useTypeOnly=True )
@@ -170,9 +230,10 @@ class _TogglePlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		result = GafferUI.PlugValueWidget.getToolTip( self )
 
-		result += "<ul>"
-		result += "<li>Click to toggle to/from default value</li>"
-		result += "<ul>"
+		if result :
+			result += "\n"
+		result += "## Actions\n\n"
+		result += "- Click to toggle to/from default value\n"
 
 		return result
 
@@ -200,35 +261,39 @@ class _TogglePlugValueWidget( GafferUI.PlugValueWidget ) :
 			self.getPlug().setToDefault()
 
 ##########################################################################
-# _DisplayTransformPlugValueWidget
-##########################################################################
-
-class _DisplayTransformPlugValueWidget( GafferUI.PresetsPlugValueWidget ) :
-
-	def __init__( self, plug, **kw ) :
-
-		GafferUI.PresetsPlugValueWidget.__init__( self, plug, **kw )
-
-		## \todo Perhaps the layout could do this sort of thing for us
-		# based on a metadata value?
-		self._qtWidget().setFixedWidth( 100 )
-
-##########################################################################
 # _ColorInspectorPlugValueWidget
 ##########################################################################
+
+def _hsvString( color ) :
+
+	if any( math.isinf( x ) or math.isnan( x ) for x in color ) :
+		# The conventional thing to do would be to call `color.rgb2hsv()`
+		# and catch the exception that PyImath throws. But PyImath's
+		# exception handling involves a signal handler for SIGFPE. And
+		# Arnold likes to install its own handler for that, somehow
+		# breaking everything so that the entire application terminates.
+		return "- - -"
+	else :
+		hsv = color.rgb2hsv()
+		return "%.3f %.3f %.3f" % ( hsv.r, hsv.g, hsv.b )
 
 class _ColorInspectorPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, **kw ) :
 
 		frame = GafferUI.Frame( borderWidth = 4 )
-		frame._qtWidget().setObjectName( "gafferDarker" )
 
 		GafferUI.PlugValueWidget.__init__( self, frame, plug, **kw )
+
+		# Style selector specificity rules seem to preclude us styling this
+		# based on gafferClass.
+		frame._qtWidget().setObjectName( "gafferColorInspector" )
 
 		with frame :
 
 			with GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 ) :
+
+				GafferUI.Spacer( imath.V2i( 10 ), imath.V2i( 10 ) )
 
 				self.__positionLabel = GafferUI.Label()
 				self.__positionLabel._qtWidget().setFixedWidth( 90 )
@@ -237,42 +302,151 @@ class _ColorInspectorPlugValueWidget( GafferUI.PlugValueWidget ) :
 				self.__swatch._qtWidget().setFixedWidth( 12 )
 				self.__swatch._qtWidget().setFixedHeight( 12 )
 
+				self.__busyWidget = GafferUI.BusyWidget( size = 12 )
+
 				self.__rgbLabel = GafferUI.Label()
 
-				GafferUI.Spacer( IECore.V2i( 20, 10 ), IECore.V2i( 20, 10 ) )
+				GafferUI.Spacer( imath.V2i( 20, 10 ), imath.V2i( 20, 10 ) )
 
 				self.__hsvLabel = GafferUI.Label()
 
+				GafferUI.Spacer( imath.V2i( 10 ), imath.V2i( 10 ) )
+
+		self.__pixel = imath.V2f( 0 )
+
+		viewportGadget = plug.parent().viewportGadget()
+		viewportGadget.mouseMoveSignal().connect( Gaffer.WeakMethod( self.__mouseMove ), scoped = False )
+
+		imageGadget = viewportGadget.getPrimaryChild()
+		imageGadget.buttonPressSignal().connect( Gaffer.WeakMethod( self.__buttonPress ), scoped = False )
+		imageGadget.dragBeginSignal().connect( Gaffer.WeakMethod( self.__dragBegin ), scoped = False )
+		imageGadget.dragEndSignal().connect( Gaffer.WeakMethod( self.__dragEnd ), scoped = False )
+
+		self.__updateLabels( imath.V2i( 0 ), imath.Color4f( 0, 0, 0, 1 ) )
+
 	def _updateFromPlug( self ) :
 
-		view = self.getPlug().node()
+		self.__updateLazily()
 
-		## \todo We're getting the context from the view because our
-		# own context hasn't been set properly. We need to fix that
-		# properly, I think by having some sort of ContextSensitiveWidget
-		# base class which inherits contexts from parents.
-		with view.getContext() :
-			pixel = self.getPlug()["pixel"].getValue()
-			try :
-				channelNames = view.viewportGadget().getPrimaryChild().getImage()["channelNames"].getValue()
-				color = self.getPlug()["color"].getValue()
-			except :
-				channelNames = view.viewportGadget().getPrimaryChild().getImage()["channelNames"].defaultValue()
-				color = self.getPlug()["color"].defaultValue()
+	@GafferUI.LazyMethod()
+	def __updateLazily( self ) :
 
-		if "A" not in channelNames :
-			color = IECore.Color3f( color[0], color[1], color[2] )
+		with self.getContext() :
+			self.__updateInBackground( self.__pixel )
+
+	@GafferUI.BackgroundMethod()
+	def __updateInBackground( self, pixel ) :
+
+		image = self.getPlug().node().viewportGadget().getPrimaryChild().getImage()
+
+		with Gaffer.Context( Gaffer.Context.current() ) as c :
+			c["colorInspector:pixel"] = pixel
+			samplerChannels = self.getPlug()["color"].getInput().node()["channels"].getValue()
+			channelNames = image["channelNames"].getValue()
+			color = self.getPlug()["color"].getValue()
+
+		if samplerChannels[3] not in channelNames :
+			color = imath.Color3f( color[0], color[1], color[2] )
+
+		return pixel, color
+
+	@__updateInBackground.preCall
+	def __updateInBackgroundPreCall( self ) :
+
+		self.__busyWidget.setBusy( True )
+
+	@__updateInBackground.postCall
+	def __updateInBackgroundPostCall( self, backgroundResult ) :
+
+		if isinstance( backgroundResult, IECore.Cancelled ) :
+			# Cancellation. This could be due to any of the
+			# following :
+			#
+			# - This widget being hidden.
+			# - A graph edit that will affect the image and will have
+			#   triggered a call to _updateFromPlug().
+			# - A graph edit that won't trigger a call to _updateFromPlug().
+			#
+			# LazyMethod takes care of all this for us. If we're hidden,
+			# it waits till we're visible. If `updateFromPlug()` has already
+			# called `__updateLazily()`, our call will just replace the
+			# pending call.
+			self.__updateLazily()
+			return
+		elif isinstance( backgroundResult, Exception ) :
+			# Computation error. This will be reported elsewhere
+			# in the UI.
+			self.__updateLabels( self.__pixel, imath.Color4f( 0 ) )
+		else :
+			# Success. We have valid infomation to display.
+			self.__updateLabels( backgroundResult[0], backgroundResult[1] )
+
+		self.__busyWidget.setBusy( False )
+
+	def __updateLabels( self, pixel, color ) :
 
 		self.__positionLabel.setText( "<b>XY : %d %d</b>" % ( pixel.x, pixel.y ) )
 		self.__swatch.setColor( color )
 
-		if isinstance( color, IECore.Color4f ) :
+		if isinstance( color, imath.Color4f ) :
 			self.__rgbLabel.setText( "<b>RGBA : %.3f %.3f %.3f %.3f</b>" % ( color.r, color.g, color.b, color.a ) )
 		else :
 			self.__rgbLabel.setText( "<b>RGB : %.3f %.3f %.3f</b>" % ( color.r, color.g, color.b ) )
 
-		hsv = color.rgbToHSV()
-		self.__hsvLabel.setText( "<b>HSV : %.3f %.3f %.3f</b>" % ( hsv.r, hsv.g, hsv.b ) )
+		self.__hsvLabel.setText( "<b>HSV : %s</b>" % _hsvString( color ) )
+
+	def __mouseMove( self, viewportGadget, event ) :
+
+		imageGadget = viewportGadget.getPrimaryChild()
+		l = viewportGadget.rasterToGadgetSpace( imath.V2f( event.line.p0.x, event.line.p0.y ), imageGadget )
+
+		try :
+			pixel = imageGadget.pixelAt( l )
+		except :
+			# `pixelAt()` can throw if there is an error
+			# computing the image being viewed. We leave
+			# the error reporting to other UI components.
+			return False
+
+		pixel = imath.V2f( math.floor( pixel.x ), math.floor( pixel.y ) ) # Origin
+		pixel = pixel + imath.V2f( 0.5 ) # Center
+
+		if pixel == self.__pixel :
+			return False
+
+		self.__pixel = pixel
+
+		self.__updateLazily()
+
+		return True
+
+	def __buttonPress( self, imageGadget, event ) :
+
+		if event.buttons != event.Buttons.Left or event.modifiers :
+			return False
+
+		return True # accept press so we get dragBegin()
+
+	def __dragBegin( self, imageGadget, event ) :
+
+		if event.buttons != event.Buttons.Left or event.modifiers :
+			return False
+
+		with Gaffer.Context( self.getContext() ) as c :
+			c["colorInspector:pixel"] = self.__pixel
+			try :
+				color = self.getPlug()["color"].getValue()
+			except :
+				# Error will be reported elsewhere in the UI
+				return None
+
+		GafferUI.Pointer.setCurrent( "rgba" )
+		return color
+
+	def __dragEnd( self, imageGadget, event ) :
+
+		GafferUI.Pointer.setCurrent( "" )
+		return True
 
 ##########################################################################
 # _SoloChannelPlugValueWidget
@@ -327,3 +501,143 @@ class _SoloChannelPlugValueWidget( GafferUI.PlugValueWidget ) :
 	def __setValue( self, value, *unused ) :
 
 		self.getPlug().setValue( value )
+
+##########################################################################
+# _LutGPUPlugValueWidget
+##########################################################################
+
+class _LutGPUPlugValueWidget( GafferUI.PlugValueWidget ) :
+
+	def __init__( self, plug, **kw ) :
+
+		self.__button = GafferUI.MenuButton(
+			image = "lutGPU.png",
+			hasFrame = False,
+			menu = GafferUI.Menu(
+				Gaffer.WeakMethod( self.__menuDefinition ),
+				title = "LUT Mode",
+			)
+		)
+
+		GafferUI.PlugValueWidget.__init__( self, self.__button, plug, **kw )
+
+		plug.node().plugSetSignal().connect( Gaffer.WeakMethod( self.__plugSet ), scoped = False )
+
+		self._updateFromPlug()
+
+	def getToolTip( self ) :
+		text = "# LUT Mode\n\n"
+		if self.__button.getEnabled():
+			if self.getPlug().getValue():
+				text += "Running LUT on GPU ( fast mode )."
+			else:
+				text += "Running LUT on CPU ( slow but accurate mode )."
+			text += "\n\nAlt+G to toggle"
+		else:
+			text += "GPU not supported by current DisplayTransform"
+		return text
+
+	def __plugSet( self, plug ) :
+		n = plug.node()
+		if plug == n["displayTransform"] :
+			self._updateFromPlug()
+
+	def _updateFromPlug( self ) :
+
+		with self.getContext() :
+			gpuSupported = isinstance(
+				GafferImageUI.ImageView.createDisplayTransform( self.getPlug().node()["displayTransform"].getValue() ),
+				GafferImage.OpenColorIOTransform
+			)
+
+			gpuOn = gpuSupported and self.getPlug().getValue()
+			self.__button.setImage( "lutGPU.png" if gpuOn else "lutCPU.png" )
+			self.__button.setEnabled( gpuSupported )
+
+	def __menuDefinition( self ) :
+
+		with self.getContext() :
+			lutGPU = self.getPlug().getValue()
+
+		n = self.getPlug().node()["displayTransform"].getValue()
+		gpuSupported = isinstance( GafferImageUI.ImageView.createDisplayTransform( n ), GafferImage.OpenColorIOTransform )
+		m = IECore.MenuDefinition()
+		for name, value in [
+			( "GPU (fast)", True ),
+			( "CPU (accurate)", False )
+		] :
+			m.append(
+				"/" + name,
+				{
+					"command" : functools.partial( Gaffer.WeakMethod( self.__setValue ), value ),
+					"checkBox" : lutGPU == value,
+					"active" : gpuSupported
+				}
+			)
+
+		return m
+
+	def __setValue( self, value, *unused ) :
+
+		self.getPlug().setValue( value )
+
+##########################################################################
+# _StateWidget
+##########################################################################
+
+class _Spacer( GafferUI.Spacer ) :
+
+	def __init__( self, imageView, **kw ) :
+
+		GafferUI.Spacer.__init__( self, size = imath.V2i( 0, 25 ) )
+
+class _StateWidgetBalancingSpacer( GafferUI.Spacer ) :
+
+	def __init__( self, imageView, **kw ) :
+
+		width = 25 + 4 + 20
+		GafferUI.Spacer.__init__(
+			self,
+			imath.V2i( 0 ), # Minimum
+			preferredSize = imath.V2i( width, 1 ),
+			maximumSize = imath.V2i( width, 1 )
+		)
+
+
+## \todo This widget is basically the same as the SceneView and UVView ones. Perhaps the
+# View base class should provide standard functionality for pausing and state, and we could
+# use one standard widget for everything.
+class _StateWidget( GafferUI.Widget ) :
+
+	def __init__( self, imageView, **kw ) :
+
+		row = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 )
+		GafferUI.Widget.__init__( self, row, **kw )
+
+		with row :
+
+			self.__button = GafferUI.Button( hasFrame = False )
+			self.__busyWidget = GafferUI.BusyWidget( size = 20 )
+
+		self.__imageGadget = imageView.viewportGadget().getPrimaryChild()
+
+		self.__button.clickedSignal().connect( Gaffer.WeakMethod( self.__buttonClick ), scoped = False )
+
+		self.__imageGadget.stateChangedSignal().connect( Gaffer.WeakMethod( self.__stateChanged ), scoped = False )
+
+		self.__update()
+
+	def __stateChanged( self, imageGadget ) :
+
+		self.__update()
+
+	def __buttonClick( self, button ) :
+
+		self.__imageGadget.setPaused( not self.__imageGadget.getPaused() )
+
+	def __update( self ) :
+
+		paused = self.__imageGadget.getPaused()
+		self.__button.setImage( "viewPause.png" if not paused else "viewPaused.png" )
+		self.__busyWidget.setBusy( self.__imageGadget.state() == self.__imageGadget.State.Running )
+		self.__button.setToolTip( "Viewer updates suspended, click to resume" if paused else "Click to suspend viewer updates [esc]" )

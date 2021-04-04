@@ -39,9 +39,11 @@ import re
 import shutil
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferUI
+import GafferCortex
 import GafferCortexUI
 
 class PresetDialogue( GafferUI.Dialogue ) :
@@ -80,7 +82,7 @@ class PresetDialogue( GafferUI.Dialogue ) :
 	def _updatePresetListing( self ) :
 
 		location = self.__locationMenu.getCurrentItem()
-		presetLoader = IECore.ClassLoader( IECore.SearchPath( location, ":" ) )
+		presetLoader = IECore.ClassLoader( IECore.SearchPath( location ) )
 		parameterised = self._parameterHandler.plug().node().getParameterised()[0]
 
 		d = {}
@@ -137,7 +139,7 @@ class SavePresetDialogue( PresetDialogue ) :
 						"index" : ( 0, 0 ),
 						"alignment" : (
 							GafferUI.Label.HorizontalAlignment.Right,
-							GafferUI.Label.VerticalAlignment.None,
+							GafferUI.Label.VerticalAlignment.None_,
 						),
 					}
 				)
@@ -149,7 +151,7 @@ class SavePresetDialogue( PresetDialogue ) :
 						"index" : ( 0, 1 ),
 						"alignment" : (
 							GafferUI.Label.HorizontalAlignment.Right,
-							GafferUI.Label.VerticalAlignment.None,
+							GafferUI.Label.VerticalAlignment.None_,
 						),
 					}
 				)
@@ -178,7 +180,7 @@ class SavePresetDialogue( PresetDialogue ) :
 
 				# forcing CompoundVectorParameter to act as a leaf, because allowing the selection of some children but not others
 				# makes no sense (because they must all have the same length).
-				parameterPath = Gaffer.ParameterPath( parameterHandler.parameter(), "/", forcedLeafTypes = ( IECore.CompoundVectorParameter, ) )
+				parameterPath = GafferCortex.ParameterPath( parameterHandler.parameter(), "/", forcedLeafTypes = ( IECore.CompoundVectorParameter, ) )
 				self.__parameterListing = GafferUI.PathListingWidget(
 					parameterPath,
 					columns = [ GafferUI.PathListingWidget.defaultNameColumn ],
@@ -320,7 +322,7 @@ class LoadPresetDialogue( PresetDialogue ) :
 
 		PresetDialogue.__init__( self, "Load Preset", parameterHandler )
 
-		with GafferUI.SplitContainer( orientation = GafferUI.ListContainer.Orientation.Horizontal, spacing = 4 ) as row :
+		with GafferUI.SplitContainer( orientation = GafferUI.ListContainer.Orientation.Horizontal ) as row :
 
 			with GafferUI.ListContainer( spacing=4 ) :
 
@@ -428,7 +430,7 @@ class DeletePresetsDialogue( PresetDialogue ) :
 def autoLoad( parameterisedHolder ) :
 
 	searchPaths = os.environ.get( _searchPathEnvVar( parameterisedHolder ), "" )
-	searchPaths = IECore.SearchPath( searchPaths, ":" )
+	searchPaths = IECore.SearchPath( searchPaths )
 	presetLoader = IECore.ClassLoader( searchPaths )
 
 	parameterised = parameterisedHolder.getParameterised()[0]
@@ -457,8 +459,6 @@ def _searchPathEnvVar( parameterisedHolder ) :
 		# we need to guess based on type
 		if isinstance( parameterised[0], IECore.Op ) :
 			searchPathEnvVar = "IECORE_OP_PATHS"
-		elif isinstance( parameterised[0], IECore.ParameterisedProcedural ) :
-			searchPathEnvVar = "IECORE_PROCEDURAL_PATHS"
 		else :
 			raise Exception( "Unable to determine search paths for presets" )
 
@@ -502,4 +502,4 @@ def __parameterPopupMenu( menuDefinition, parameterValueWidget ) :
 	menuDefinition.append( "/Load Preset...", { "command" : IECore.curry( __loadPreset, parameterHandler ), "active" : editable } )
 	menuDefinition.append( "/Delete Presets...", { "command" : IECore.curry( __deletePresets, parameterHandler ) } )
 
-__popupMenuConnection = GafferCortexUI.ParameterValueWidget.popupMenuSignal().connect( __parameterPopupMenu )
+GafferCortexUI.ParameterValueWidget.popupMenuSignal().connect( __parameterPopupMenu, scoped = False )

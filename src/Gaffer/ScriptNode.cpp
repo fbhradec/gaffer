@@ -35,26 +35,31 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <fstream>
+#include "Gaffer/ScriptNode.h"
+
+#include "Gaffer/Action.h"
+#include "Gaffer/ApplicationRoot.h"
+#include "Gaffer/BackgroundTask.h"
+#include "Gaffer/CompoundDataPlug.h"
+#include "Gaffer/Context.h"
+#include "Gaffer/DependencyNode.h"
+#include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/StandardSet.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/TypedPlug.h"
+
+#include "IECore/Exception.h"
+#include "IECore/MessageHandler.h"
+#include "IECore/SimpleTypedData.h"
 
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
-#include "boost/filesystem/path.hpp"
 #include "boost/filesystem/convenience.hpp"
+#include "boost/filesystem/path.hpp"
 
-#include "IECore/Exception.h"
-#include "IECore/SimpleTypedData.h"
-#include "IECore/MessageHandler.h"
+#include <fstream>
 
-#include "Gaffer/ScriptNode.h"
-#include "Gaffer/TypedPlug.h"
-#include "Gaffer/Action.h"
-#include "Gaffer/ApplicationRoot.h"
-#include "Gaffer/Context.h"
-#include "Gaffer/StandardSet.h"
-#include "Gaffer/DependencyNode.h"
-#include "Gaffer/CompoundDataPlug.h"
-#include "Gaffer/StringPlug.h"
+#include <unistd.h>
 
 using namespace Gaffer;
 
@@ -100,12 +105,12 @@ class ScriptNode::CompoundAction : public Gaffer::Action
 
 		friend class ScriptNode;
 
-		virtual GraphComponent *subject() const
+		GraphComponent *subject() const override
 		{
 			return m_subject;
 		}
 
-		virtual void doAction()
+		void doAction() override
 		{
 			for( std::vector<ActionPtr>::const_iterator it = m_actions.begin(), eIt = m_actions.end(); it != eIt; ++it )
 			{
@@ -116,7 +121,7 @@ class ScriptNode::CompoundAction : public Gaffer::Action
 			}
 		}
 
-		virtual void undoAction()
+		void undoAction() override
 		{
 			for( std::vector<ActionPtr>::const_reverse_iterator it = m_actions.rbegin(), eIt = m_actions.rend(); it != eIt; ++it )
 			{
@@ -125,7 +130,7 @@ class ScriptNode::CompoundAction : public Gaffer::Action
 			}
 		}
 
-		virtual bool canMerge( const Action *other ) const
+		bool canMerge( const Action *other ) const override
 		{
 			if( !Action::canMerge( other ) )
 			{
@@ -146,7 +151,7 @@ class ScriptNode::CompoundAction : public Gaffer::Action
 			return m_mergeGroup == compoundAction->m_mergeGroup;
 		}
 
-		virtual void merge( const Action *other )
+		void merge( const Action *other ) override
 		{
 			const CompoundAction *compoundAction = static_cast<const CompoundAction *>( other );
 
@@ -207,9 +212,12 @@ std::string readFile( const std::string &fileName )
 		throw IECore::IOException( "Unable to open file \"" + fileName + "\"" );
 	}
 
+	const IECore::Canceller *canceller = Context::current()->canceller();
+
 	std::string s;
 	while( !f.eof() )
 	{
+		IECore::Canceller::check( canceller );
 		if( !f.good() )
 		{
 			throw IECore::IOException( "Failed to read from \"" + fileName + "\"" );
@@ -223,13 +231,19 @@ std::string readFile( const std::string &fileName )
 	return s;
 }
 
+const IECore::InternedString g_scriptName( "script:name" );
+const IECore::InternedString g_frame( "frame" );
+const IECore::InternedString g_frameStart( "frameRange:start" );
+const IECore::InternedString g_frameEnd( "frameRange:end" );
+const IECore::InternedString g_framesPerSecond( "framesPerSecond" );
+
 } // namespace
 
 //////////////////////////////////////////////////////////////////////////
 // ScriptNode implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( ScriptNode );
+GAFFER_NODE_DEFINE_TYPE( ScriptNode );
 
 size_t ScriptNode::g_firstPlugIndex = 0;
 ScriptNode::SerialiseFunction ScriptNode::g_serialiseFunction;
@@ -238,8 +252,7 @@ ScriptNode::ExecuteFunction ScriptNode::g_executeFunction;
 ScriptNode::ScriptNode( const std::string &name )
 	:
 	Node( name ),
-	m_selection( new StandardSet ),
-	m_selectionOrphanRemover( m_selection ),
+	m_selection( new StandardSet( /* removeOrphans = */ true ) ),
 	m_undoIterator( m_undoList.end() ),
 	m_currentActionStage( Action::Invalid ),
 	m_executing( false ),
@@ -257,14 +270,18 @@ ScriptNode::ScriptNode( const std::string &name )
 	frameRangePlug->addChild( frameEndPlug );
 	addChild( frameRangePlug );
 
+	addChild( new FloatPlug( "frame", Plug::In, 1.0f ) );
 	addChild( new FloatPlug( "framesPerSecond", Plug::In, 24.0f, 0.0f ) );
 	addChild( new CompoundDataPlug( "variables" ) );
 
-	m_context->set( "script:name", std::string( "" ) );
+	m_context->set( g_scriptName, std::string( "" ) );
+	m_context->set( g_frameStart, 1 );
+	m_context->set( g_frameEnd, 100 );
 
 	m_selection->memberAcceptanceSignal().connect( boost::bind( &ScriptNode::selectionSetAcceptor, this, ::_1, ::_2 ) );
 
 	plugSetSignal().connect( boost::bind( &ScriptNode::plugSet, this, ::_1 ) );
+	m_context->changedSignal().connect( boost::bind( &ScriptNode::contextChanged, this, ::_1, ::_2 ) );
 }
 
 ScriptNode::~ScriptNode()
@@ -311,24 +328,34 @@ const IntPlug *ScriptNode::frameEndPlug() const
 	return getChild<ValuePlug>( g_firstPlugIndex + 2 )->getChild<IntPlug>( 1 );
 }
 
-FloatPlug *ScriptNode::framesPerSecondPlug()
+FloatPlug *ScriptNode::framePlug()
 {
 	return getChild<FloatPlug>( g_firstPlugIndex + 3 );
+}
+
+const FloatPlug *ScriptNode::framePlug() const
+{
+	return getChild<FloatPlug>( g_firstPlugIndex + 3 );
+}
+
+FloatPlug *ScriptNode::framesPerSecondPlug()
+{
+	return getChild<FloatPlug>( g_firstPlugIndex + 4 );
 }
 
 const FloatPlug *ScriptNode::framesPerSecondPlug() const
 {
-	return getChild<FloatPlug>( g_firstPlugIndex + 3 );
+	return getChild<FloatPlug>( g_firstPlugIndex + 4 );
 }
 
 CompoundDataPlug *ScriptNode::variablesPlug()
 {
-	return getChild<CompoundDataPlug>( g_firstPlugIndex + 4 );
+	return getChild<CompoundDataPlug>( g_firstPlugIndex + 5 );
 }
 
 const CompoundDataPlug *ScriptNode::variablesPlug() const
 {
-	return getChild<CompoundDataPlug>( g_firstPlugIndex + 4 );
+	return getChild<CompoundDataPlug>( g_firstPlugIndex + 5 );
 }
 
 bool ScriptNode::acceptsParent( const GraphComponent *potentialParent ) const
@@ -344,6 +371,14 @@ ApplicationRoot *ScriptNode::applicationRoot()
 const ApplicationRoot *ScriptNode::applicationRoot() const
 {
 	return ancestor<ApplicationRoot>();
+}
+
+void ScriptNode::parentChanging( Gaffer::GraphComponent *newParent )
+{
+	if( !newParent )
+	{
+		BackgroundTask::cancelAffectedTasks( this );
+	}
 }
 
 bool ScriptNode::selectionSetAcceptor( const Set *s, const Set::Member *m )
@@ -366,7 +401,7 @@ const StandardSet *ScriptNode::selection() const
 	return m_selection.get();
 }
 
-void ScriptNode::pushUndoState( UndoContext::State state, const std::string &mergeGroup )
+void ScriptNode::pushUndoState( UndoScope::State state, const std::string &mergeGroup )
 {
 	if( m_undoStateStack.size() == 0 )
 	{
@@ -380,7 +415,7 @@ void ScriptNode::pushUndoState( UndoContext::State state, const std::string &mer
 void ScriptNode::addAction( ActionPtr action )
 {
 	action->doAction();
-	if( m_actionAccumulator && m_undoStateStack.top() == UndoContext::Enabled )
+	if( m_actionAccumulator && m_undoStateStack.top() == UndoScope::Enabled )
 	{
 		m_actionAccumulator->addAction( action );
 		actionSignal()( this, action.get(), Action::Do );
@@ -429,13 +464,13 @@ void ScriptNode::popUndoState()
 
 			haveUnsavedChanges = true;
 		}
-		m_actionAccumulator = NULL;
+		m_actionAccumulator = nullptr;
 		m_currentActionStage = Action::Invalid;
 	}
 
 	if( haveUnsavedChanges )
 	{
-		UndoContext undoDisabled( this, UndoContext::Disabled );
+		UndoScope undoDisabled( this, UndoScope::Disabled );
 		unsavedChangesPlug()->setValue( true );
 	}
 
@@ -477,7 +512,7 @@ void ScriptNode::undo()
 	/// behaviour to the c++ slots.
 	m_currentActionStage = Action::Invalid;
 
-	UndoContext undoDisabled( this, UndoContext::Disabled );
+	UndoScope undoDisabled( this, UndoScope::Disabled );
 	unsavedChangesPlug()->setValue( true );
 }
 
@@ -502,7 +537,7 @@ void ScriptNode::redo()
 
 	m_currentActionStage = Action::Invalid;
 
-	UndoContext undoDisabled( this, UndoContext::Disabled );
+	UndoScope undoDisabled( this, UndoScope::Disabled );
 	unsavedChangesPlug()->setValue( true );
 }
 
@@ -539,7 +574,7 @@ void ScriptNode::cut( Node *parent, const Set *filter )
 	deleteNodes( parent, filter );
 }
 
-void ScriptNode::paste( Node *parent )
+void ScriptNode::paste( Node *parent, bool continueOnError )
 {
 	ApplicationRoot *app = applicationRoot();
 	if( !app )
@@ -556,7 +591,7 @@ void ScriptNode::paste( Node *parent )
 		parent->childAddedSignal().connect( boost::bind( (bool (StandardSet::*)( IECore::RunTimeTypedPtr ) )&StandardSet::add, newNodes.get(), ::_2 ) );
 
 			// do the paste
-			execute( s->readable(), parent );
+			execute( s->readable(), parent, continueOnError );
 
 		// transfer the newly created nodes into the selection
 		selection()->clear();
@@ -589,13 +624,26 @@ void ScriptNode::deleteNodes( Node *parent, const Set *filter, bool reconnect )
 			{
 				for( RecursiveOutputPlugIterator it( node ); !it.done(); ++it )
 				{
-					Plug *inPlug = dependencyNode->correspondingInput( it->get() );
+					Plug *inPlug = nullptr;
+					try
+					{
+						inPlug = dependencyNode->correspondingInput( it->get() );
+					}
+					catch( const std::exception &e )
+					{
+						msg(
+							IECore::Msg::Warning,
+							boost::str( boost::format( "correspondingInput error while deleting - cannot reconnect \"%s\"" ) % it->get()->fullName() ),
+							e.what()
+						);
+					}
+
 					if ( !inPlug )
 					{
 						continue;
 					}
 
-					Plug *srcPlug = inPlug->getInput<Plug>();
+					Plug *srcPlug = inPlug->getInput();
 					if ( !srcPlug )
 					{
 						continue;
@@ -624,11 +672,6 @@ void ScriptNode::deleteNodes( Node *parent, const Set *filter, bool reconnect )
 bool ScriptNode::isExecuting() const
 {
 	return m_executing;
-}
-
-ScriptNode::ScriptExecutedSignal &ScriptNode::scriptExecutedSignal()
-{
-	return m_scriptExecutedSignal;
 }
 
 std::string ScriptNode::serialise( const Node *parent, const Set *filter ) const
@@ -675,9 +718,9 @@ bool ScriptNode::load( bool continueOnError)
 	deleteNodes();
 	variablesPlug()->clearChildren();
 
-	const bool result = executeInternal( s, NULL, continueOnError, fileName );
+	const bool result = executeInternal( s, nullptr, continueOnError, fileName );
 
-	UndoContext undoDisabled( this, UndoContext::Disabled );
+	UndoScope undoDisabled( this, UndoScope::Disabled );
 	unsavedChangesPlug()->setValue( false );
 
 	return result;
@@ -685,14 +728,35 @@ bool ScriptNode::load( bool continueOnError)
 
 void ScriptNode::save() const
 {
+	// Caution : `FileMenu.save()` currently contains a duplicate of this code,
+	// so that `serialiseToFile()` can be done in a background task, and the
+	// plug edit can be made on the UI thread. If editing this function, make
+	// sure FileMenu stays in sync.
 	serialiseToFile( fileNamePlug()->getValue() );
-	UndoContext undoDisabled( const_cast<ScriptNode *>( this ), UndoContext::Disabled );
+	UndoScope undoDisabled( const_cast<ScriptNode *>( this ), UndoScope::Disabled );
 	const_cast<BoolPlug *>( unsavedChangesPlug() )->setValue( false );
+}
+
+bool ScriptNode::importFile( const std::string &fileName, Node *parent, bool continueOnError )
+{
+	DirtyPropagationScope dirtyScope;
+
+	ScriptNodePtr script = new ScriptNode();
+	script->fileNamePlug()->setValue( fileName );
+	bool result = script->load( continueOnError );
+
+	StandardSetPtr nodeSet = new StandardSet();
+	nodeSet->add( NodeIterator( script.get() ), NodeIterator( script->children().end(), script->children().end() ) );
+	const std::string nodeSerialisation = script->serialise( script.get(), nodeSet.get() );
+
+	result |= execute( nodeSerialisation, parent, continueOnError );
+
+	return result;
 }
 
 std::string ScriptNode::serialiseInternal( const Node *parent, const Set *filter ) const
 {
-	if( g_serialiseFunction.empty() )
+	if( !g_serialiseFunction )
 	{
 		throw IECore::Exception( "Serialisation not available - please link to libGafferBindings." );
 	}
@@ -701,24 +765,25 @@ std::string ScriptNode::serialiseInternal( const Node *parent, const Set *filter
 
 bool ScriptNode::executeInternal( const std::string &serialisation, Node *parent, bool continueOnError, const std::string &context )
 {
-	if( g_executeFunction.empty() )
+	if( !g_executeFunction )
 	{
 		throw IECore::Exception( "Execution not available - please link to libGafferBindings." );
 	}
 	DirtyPropagationScope dirtyScope;
 	bool result = false;
+	bool wasExecuting = m_executing;
+
 	m_executing = true;
 	try
 	{
 		result = g_executeFunction( this, serialisation, parent ? parent : this, continueOnError, context );
-		scriptExecutedSignal()( this, serialisation );
 	}
 	catch( ... )
 	{
-		m_executing = false;
+		m_executing = wasExecuting;
 		throw;
 	}
-	m_executing = false;
+	m_executing = wasExecuting;
 	return result;
 }
 
@@ -732,15 +797,44 @@ const Context *ScriptNode::context() const
 	return m_context.get();
 }
 
+void ScriptNode::updateContextVariables()
+{
+	// Get contents of `variablesPlug()` and remove any previously transferred
+	// variables that no longer exist.
+	IECore::CompoundDataMap values;
+	variablesPlug()->fillCompoundData( values );
+	for( auto name : m_currentVariables )
+	{
+		if( values.find( name ) == values.end() )
+		{
+			context()->remove( name );
+		}
+	}
+
+	// Transfer current variables and remember what we've done.
+	m_currentVariables.clear();
+	for( const auto &variable : values )
+	{
+		context()->set( variable.first, variable.second.get() );
+		m_currentVariables.insert( variable.first );
+	}
+}
+
 void ScriptNode::plugSet( Plug *plug )
 {
 	if( plug == frameStartPlug() )
 	{
 		frameEndPlug()->setValue( std::max( frameEndPlug()->getValue(), frameStartPlug()->getValue() ) );
+		context()->set( g_frameStart, frameStartPlug()->getValue() );
 	}
 	else if( plug == frameEndPlug() )
 	{
 		frameStartPlug()->setValue( std::min( frameStartPlug()->getValue(), frameEndPlug()->getValue() ) );
+		context()->set( g_frameEnd, frameEndPlug()->getValue() );
+	}
+	else if( plug == framePlug() )
+	{
+		context()->setFrame( framePlug()->getValue() );
 	}
 	else if( plug == framesPerSecondPlug() )
 	{
@@ -748,16 +842,30 @@ void ScriptNode::plugSet( Plug *plug )
 	}
 	else if( plug == variablesPlug() )
 	{
-		IECore::CompoundDataMap values;
-		variablesPlug()->fillCompoundData( values );
-		for( IECore::CompoundDataMap::const_iterator it = values.begin(), eIt = values.end(); it != eIt; ++it )
-		{
-			context()->set( it->first, it->second.get() );
-		}
+		updateContextVariables();
 	}
 	else if( plug == fileNamePlug() )
 	{
 		const boost::filesystem::path fileName( fileNamePlug()->getValue() );
-		context()->set( "script:name", fileName.stem().string() );
+		context()->set( g_scriptName, fileName.stem().string() );
+		MetadataAlgo::setReadOnly(
+			this,
+			boost::filesystem::exists( fileName ) && 0 != access( fileName.c_str(), W_OK ),
+			/* persistent = */ false
+		);
 	}
+}
+
+void ScriptNode::contextChanged( const Context *context, const IECore::InternedString &name )
+{
+	if( name == g_frame )
+	{
+		framePlug()->setValue( context->getFrame() );
+	}
+	else if( name == g_framesPerSecond )
+	{
+		framesPerSecondPlug()->setValue( context->getFramesPerSecond() );
+	}
+	/// \todo Emit a warning if manual changes are made that
+	/// wouldn't be preserved across save/load.
 }

@@ -34,7 +34,12 @@
 #
 ##########################################################################
 
+import collections
+
 import Gaffer
+
+# Import C++ bindings
+from Gaffer._NodeAlgo import *
 
 ##########################################################################
 # Presets
@@ -52,14 +57,7 @@ import Gaffer
 # and the available presets will vary from instance to instance of a node.
 def presets( plug ) :
 
-	result = []
-	for n in Gaffer.Metadata.registeredValues( plug ) :
-		if n.startswith( "preset:" ) :
-			result.append( n[7:] )
-
-	result.extend( Gaffer.Metadata.value( plug, "presetNames" ) or [] )
-
-	return result
+	return list( __presets( plug ).keys() )
 
 ## Returns the name of the preset currently applied to the plug.
 # Returns None if no preset is applied.
@@ -69,33 +67,43 @@ def currentPreset( plug ) :
 		return None
 
 	value = plug.getValue()
-	failedNames = set()
-	for n in Gaffer.Metadata.registeredValues( plug ) :
-		if n.startswith( "preset:" ) :
-			presetName = n[7:]
-			if Gaffer.Metadata.value( plug, n ) == value :
-				return presetName
-			else :
-				failedNames.add( presetName )
-
-	presetNames = Gaffer.Metadata.value( plug, "presetNames" )
-	if presetNames is not None :
-		for presetName, presetValue in zip( presetNames, Gaffer.Metadata.value( plug, "presetValues" ) ) :
-			if value == presetValue and presetName not in failedNames :
-				return presetName
+	for presetName, presetValue in __presets( plug ).items() :
+		if value == presetValue :
+			return presetName
 
 	return None
 
 ## Applies the named preset to the plug.
 def applyPreset( plug, presetName ) :
 
-	value = Gaffer.Metadata.value( plug, "preset:" + presetName )
-	if value is None :
-		presetNames = Gaffer.Metadata.value( plug, "presetNames" )
-		presetValues = Gaffer.Metadata.value( plug, "presetValues" )
-		value = presetValues[presetNames.index( presetName )]
+	plug.setValue( __presets( plug )[presetName] )
 
-	plug.setValue( value )
+def __presets( plug ) :
+
+	result = collections.OrderedDict()
+
+	for n in Gaffer.Metadata.registeredValues( plug ) :
+		if n.startswith( "preset:" ) :
+			result[n[7:]] = Gaffer.Metadata.value( plug, n )
+
+	presetNames = Gaffer.Metadata.value( plug, "presetNames" )
+	presetValues = Gaffer.Metadata.value( plug, "presetValues" )
+	if presetNames and presetValues :
+		for presetName, presetValue in zip( presetNames, presetValues ) :
+			result.setdefault( presetName, presetValue )
+
+	if result :
+		return result
+
+	# No presets from this plug. See if we can "inherit" them
+	# from a connected plug.
+
+	if plug.direction() == plug.Direction.In :
+		plug = next( iter( plug.outputs() ), None )
+		if plug is not None :
+			return __presets( plug )
+
+	return result
 
 ##########################################################################
 # User defaults
@@ -123,6 +131,13 @@ def isSetToUserDefault( plug ) :
 	if userDefault is None :
 		return False
 
+	source = plug.source()
+	if source.direction() == Gaffer.Plug.Direction.Out and isinstance( source.node(), Gaffer.ComputeNode ) :
+		# Computed values may vary by context, as such there is no
+		# single "current value", so no true concept of whether or not
+		# it's at the user default.
+		return False
+
 	return userDefault == plug.getValue()
 
 def applyUserDefault( plug ) :
@@ -131,7 +146,7 @@ def applyUserDefault( plug ) :
 
 def __applyUserDefaults( graphComponent ) :
 
-	if isinstance( graphComponent, Gaffer.Plug ) :
+	if isinstance( graphComponent, Gaffer.ValuePlug ) and graphComponent.settable() :
 		plugValue = Gaffer.Metadata.value( graphComponent, "userDefault" )
 		if plugValue is not None :
 			graphComponent.setValue( plugValue )

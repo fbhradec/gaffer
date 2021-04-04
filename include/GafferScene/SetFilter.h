@@ -37,10 +37,9 @@
 #ifndef GAFFERSCENE_SETFILTER_H
 #define GAFFERSCENE_SETFILTER_H
 
-#include "Gaffer/TypedObjectPlug.h"
-
 #include "GafferScene/Filter.h"
-#include "GafferScene/PathMatcher.h"
+
+#include "Gaffer/TypedObjectPlug.h"
 
 namespace Gaffer
 {
@@ -53,29 +52,33 @@ namespace GafferScene
 {
 
 /// \todo Investigate whether or not caching is actually beneficial for this node
-class SetFilter : public Filter
+class GAFFERSCENE_API SetFilter : public Filter
 {
 
 	public :
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::SetFilter, SetFilterTypeId, Filter );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::SetFilter, SetFilterTypeId, Filter );
 
 		SetFilter( const std::string &name=defaultName<SetFilter>() );
-		virtual ~SetFilter();
+		~SetFilter() override;
 
-		Gaffer::StringPlug *setPlug();
-		const Gaffer::StringPlug *setPlug() const;
+		Gaffer::StringPlug *setExpressionPlug();
+		const Gaffer::StringPlug *setExpressionPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
-
-		virtual bool sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual unsigned computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+
+		void hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		unsigned computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const override;
 
 	private :
+
+		Gaffer::PathMatcherDataPlug *expressionResultPlug();
+		const Gaffer::PathMatcherDataPlug *expressionResultPlug() const;
 
 		static size_t g_firstPlugIndex;
 

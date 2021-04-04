@@ -37,21 +37,37 @@
 #ifndef GAFFERIMAGEUI_IMAGEGADGET_H
 #define GAFFERIMAGEUI_IMAGEGADGET_H
 
-#include "tbb/concurrent_unordered_map.h"
+#include "GafferImageUI/Export.h"
+#include "GafferImageUI/TypeIds.h"
 
-#include "IECore/MurmurHash.h"
-#include "IECore/VectorTypedData.h"
+#include "GafferImage/Clamp.h"
+#include "GafferImage/DeepState.h"
+#include "GafferImage/Format.h"
+#include "GafferImage/Grade.h"
+#include "GafferImage/ImageProcessor.h"
 
 #include "GafferUI/Gadget.h"
 
-#include "GafferImage/Format.h"
+#include "Gaffer/ParallelAlgo.h"
 
-#include "GafferImageUI/TypeIds.h"
+#include "IECore/Canceller.h"
+#include "IECore/MurmurHash.h"
+#include "IECore/VectorTypedData.h"
+#include "IECoreGL/Shader.h"
+
+#include "OpenColorIO/OpenColorIO.h"
+
+#include "tbb/concurrent_unordered_map.h"
+#include "tbb/spin_mutex.h"
+
+#include <array>
+
+#include <chrono>
 
 namespace IECoreGL
 {
 
-IE_CORE_FORWARDDECLARE( LuminanceTexture )
+IE_CORE_FORWARDDECLARE( Texture )
 
 } // namespace IECoreGL
 
@@ -73,24 +89,34 @@ IE_CORE_FORWARDDECLARE( ImagePlug )
 namespace GafferImageUI
 {
 
-class ImageGadget : public GafferUI::Gadget
+class GAFFERIMAGEUI_API ImageGadget : public GafferUI::Gadget
 {
 
 	public :
 
 		ImageGadget();
-		virtual ~ImageGadget();
+		~ImageGadget() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImageUI::ImageGadget, ImageGadgetTypeId, Gadget );
+		GAFFER_NODE_DECLARE_TYPE( GafferImageUI::ImageGadget, ImageGadgetTypeId, Gadget );
 
-		virtual Imath::Box3f bound() const;
+		Imath::Box3f bound() const override;
 
-		void setImage( GafferImage::ConstImagePlugPtr image );
+		void setImage( GafferImage::ImagePlugPtr image );
 		const GafferImage::ImagePlug *getImage() const;
 
 		void setContext( Gaffer::ContextPtr context );
 		Gaffer::Context *getContext();
 		const Gaffer::Context *getContext() const;
+
+		typedef std::array<IECore::InternedString, 4> Channels;
+		/// Chooses which 4 channels to display as RGBA.
+		/// For instance, to display Z as a greyscale image
+		/// with black alpha you would pass { "Z", "Z", "Z", "" }.
+		void setChannels( const Channels &channels );
+		const Channels &getChannels() const;
+
+		typedef boost::signal<void (ImageGadget *)> ImageGadgetSignal;
+		ImageGadgetSignal &channelsChangedSignal();
 
 		/// Chooses a channel to show in isolation.
 		/// Indices are in the range 0-3 to choose
@@ -99,11 +125,45 @@ class ImageGadget : public GafferUI::Gadget
 		void setSoloChannel( int index );
 		int getSoloChannel() const;
 
+		void setClipping( bool clipping );
+		bool getClipping() const;
+
+		void setExposure( float exposure );
+		float getExposure() const;
+
+		void setGamma( float gamma );
+		float getGamma() const;
+
+		void setDisplayTransform( GafferImage::ImageProcessorPtr displayTransform );
+		GafferImage::ConstImageProcessorPtr getDisplayTransform() const;
+
+		void setUseGPU( bool useGPU );
+		bool getUseGPU() const;
+
+		void setLabelsVisible( bool visible );
+		bool getLabelsVisible() const;
+
+		void setPaused( bool paused );
+		bool getPaused() const;
+
+		static uint64_t tileUpdateCount();
+		static void resetTileUpdateCount();
+
+		enum State
+		{
+			Paused,
+			Running,
+			Complete
+		};
+
+		State state() const;
+		ImageGadgetSignal &stateChangedSignal();
+
 		Imath::V2f pixelAt( const IECore::LineSegment3f &lineInGadgetSpace ) const;
 
 	protected :
 
-		virtual void doRender( const GafferUI::Style *style ) const;
+		void doRenderLayer( Layer layer, const GafferUI::Style *style ) const override;
 
 	private :
 
@@ -114,7 +174,7 @@ class ImageGadget : public GafferUI::Gadget
 		void plugDirtied( const Gaffer::Plug *plug );
 		void contextChanged( const IECore::InternedString &name );
 
-		GafferImage::ConstImagePlugPtr m_image;
+		GafferImage::ImagePlugPtr m_image;
 		Gaffer::ContextPtr m_context;
 
 		boost::signals::scoped_connection m_plugDirtiedConnection;
@@ -122,8 +182,26 @@ class ImageGadget : public GafferUI::Gadget
 
 		// Settings to control how the image is displayed.
 
-		boost::array<IECore::InternedString, 4> m_rgbaChannels;
+		void displayTransformPlugDirtied( const Gaffer::Plug *plug );
+		bool usingGPU() const;
+
+		Channels m_rgbaChannels;
 		int m_soloChannel;
+		ImageGadgetSignal m_channelsChangedSignal;
+
+		bool m_clipping;
+		float m_exposure;
+		float m_gamma;
+
+		GafferImage::DeepStatePtr m_deepStateNode;
+		GafferImage::ClampPtr m_clampNode;
+		GafferImage::GradePtr m_gradeNode;
+		GafferImage::ImageProcessorPtr m_displayTransform;
+
+		bool m_useGPU;
+		bool m_labelsVisible;
+		bool m_paused;
+		ImageGadgetSignal m_stateChangedSignal;
 
 		// Image access.
 		//
@@ -144,6 +222,7 @@ class ImageGadget : public GafferUI::Gadget
 			AllDirty = FormatDirty | DataWindowDirty | ChannelNamesDirty | TilesDirty
 		};
 
+		void dirty( unsigned flags );
 		const GafferImage::Format &format() const;
 		const Imath::Box2i &dataWindow() const;
 		const std::vector<std::string> &channelNames() const;
@@ -179,30 +258,67 @@ class ImageGadget : public GafferUI::Gadget
 
 		struct Tile
 		{
-			IECore::MurmurHash channelDataHash;
-			// Updated in parallel when the hash has changed.
-			IECore::ConstFloatVectorDataPtr channelDataToConvert;
-			// Created from channelDataToConvert in a serial process,
-			// because we can only to OpenGL work on the main thread.
-			IECoreGL::TexturePtr texture;
-		};
 
-		void updateTiles() const;
-		void removeOutOfBoundsTiles() const;
+			Tile() = default;
+			Tile( const Tile &other );
+
+			struct Update
+			{
+				Tile *tile;
+				IECore::ConstFloatVectorDataPtr channelData;
+				const IECore::MurmurHash channelDataHash;
+			};
+
+			// Called from a background thread with the context
+			// already set up appropriately for the tile.
+			Update computeUpdate( const GafferImage::ImagePlug *image );
+			// Applies previously computed updates for several tiles
+			// such that they become visible to the UI thread together.
+			static void applyUpdates( const std::vector<Update> &updates );
+
+			// Called from the UI thread.
+			const IECoreGL::Texture *texture( bool &active );
+
+			private :
+
+				IECore::MurmurHash m_channelDataHash;
+				IECore::ConstFloatVectorDataPtr m_channelDataToConvert;
+				IECoreGL::TexturePtr m_texture;
+				bool m_active;
+				std::chrono::steady_clock::time_point m_activeStartTime;
+				typedef tbb::spin_mutex Mutex;
+				Mutex m_mutex;
+
+		};
 
 		typedef tbb::concurrent_unordered_map<TileIndex, Tile> Tiles;
 		mutable Tiles m_tiles;
 
 		friend size_t tbb_hasher( const ImageGadget::TileIndex &tileIndex );
 
-		struct TileFunctor;
+		// Tile update. We update tiles asynchronously from background
+		// threads.
+
+		void updateTiles();
+		void removeOutOfBoundsTiles() const;
+
+		std::unique_ptr<Gaffer::BackgroundTask> m_tilesTask;
+		std::atomic_bool m_renderRequestPending;
 
 		// Rendering.
 
+		void visibilityChanged();
 		void renderTiles() const;
 		void renderText( const std::string &text, const Imath::V2f &position, const Imath::V2f &alignment, const GafferUI::Style *style ) const;
 
+		IE_CORE_FORWARDDECLARE( TileShader )
+		TileShader *shader() const;
+		mutable TileShaderPtr m_shader;
+		mutable bool m_shaderDirty;
+
 };
+
+IE_CORE_DECLAREPTR( ImageGadget )
 
 size_t tbb_hasher( const ImageGadget::TileIndex &tileIndex );
 

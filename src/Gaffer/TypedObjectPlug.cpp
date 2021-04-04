@@ -36,22 +36,67 @@
 //////////////////////////////////////////////////////////////////////////
 
 #include "Gaffer/TypedObjectPlug.h"
+
 #include "Gaffer/TypedObjectPlug.inl"
 
 namespace Gaffer
 {
 
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::ObjectPlug, ObjectPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::BoolVectorDataPlug, BoolVectorDataPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::IntVectorDataPlug, IntVectorDataPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::FloatVectorDataPlug, FloatVectorDataPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::StringVectorDataPlug, StringVectorDataPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::InternedStringVectorDataPlug, InternedStringVectorDataPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::V3fVectorDataPlug, V3fVectorDataPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::Color3fVectorDataPlug, Color3fVectorDataPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::M44fVectorDataPlug, M44fVectorDataPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::ObjectVectorPlug, ObjectVectorPlugTypeId )
-IECORE_RUNTIMETYPED_DEFINETEMPLATESPECIALISATION( Gaffer::CompoundObjectPlug, CompoundObjectPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::ObjectPlug, ObjectPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::BoolVectorDataPlug, BoolVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::IntVectorDataPlug, IntVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::FloatVectorDataPlug, FloatVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::StringVectorDataPlug, StringVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::InternedStringVectorDataPlug, InternedStringVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::V2iVectorDataPlug, V2iVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::V3fVectorDataPlug, V3fVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::Color3fVectorDataPlug, Color3fVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::M44fVectorDataPlug, M44fVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::M33fVectorDataPlug, M33fVectorDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::ObjectVectorPlug, ObjectVectorPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::CompoundObjectPlug, CompoundObjectPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::AtomicCompoundDataPlug, AtomicCompoundDataPlugTypeId )
+GAFFER_PLUG_DEFINE_TEMPLATE_TYPE( Gaffer::PathMatcherDataPlug, PathMatcherDataPlugTypeId )
+
+// Specialise CompoundObjectPlug to accept connections from CompoundDataPlug
+
+template<>
+bool CompoundObjectPlug::acceptsInput( const Plug *input ) const
+{
+	if( !ValuePlug::acceptsInput( input ) )
+	{
+		return false;
+	}
+
+	if( input )
+	{
+		return
+			input->isInstanceOf( staticTypeId() ) ||
+			input->isInstanceOf( AtomicCompoundDataPlug::staticTypeId() )
+		;
+	}
+	return true;
+}
+
+template<>
+void CompoundObjectPlug::setFrom( const ValuePlug *other )
+{
+	switch( static_cast<Gaffer::TypeId>( other->typeId() ) )
+	{
+		case CompoundObjectPlugTypeId :
+			setValue( static_cast<const CompoundObjectPlug *>( other )->getValue() );
+			break;
+		case AtomicCompoundDataPlugTypeId : {
+			IECore::ConstCompoundDataPtr d = static_cast<const AtomicCompoundDataPlug *>( other )->getValue();
+			IECore::CompoundObjectPtr o = new IECore::CompoundObject;
+			o->members().insert( d->readable().begin(), d->readable().end() );
+			setValue( o );
+			break;
+		}
+		default :
+			throw IECore::Exception( "Unsupported plug type" );
+	}
+}
 
 // explicit instantiation
 template class TypedObjectPlug<IECore::Object>;
@@ -60,10 +105,14 @@ template class TypedObjectPlug<IECore::IntVectorData>;
 template class TypedObjectPlug<IECore::FloatVectorData>;
 template class TypedObjectPlug<IECore::StringVectorData>;
 template class TypedObjectPlug<IECore::InternedStringVectorData>;
+template class TypedObjectPlug<IECore::V2iVectorData>;
 template class TypedObjectPlug<IECore::V3fVectorData>;
 template class TypedObjectPlug<IECore::Color3fVectorData>;
 template class TypedObjectPlug<IECore::M44fVectorData>;
+template class TypedObjectPlug<IECore::M33fVectorData>;
 template class TypedObjectPlug<IECore::ObjectVector>;
 template class TypedObjectPlug<IECore::CompoundObject>;
+template class TypedObjectPlug<IECore::CompoundData>;
+template class TypedObjectPlug<IECore::PathMatcherData>;
 
 } // namespace Gaffer

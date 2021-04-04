@@ -35,6 +35,13 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "Gaffer/Context.h"
+
+#include "IECore/SimpleTypedData.h"
+#include "IECore/VectorTypedData.h"
+
+#include "boost/lexical_cast.hpp"
+
 // Headers needed to access environment - these differ
 // between OS X and Linux.
 #ifdef __APPLE__
@@ -43,16 +50,6 @@ static char **environ = *_NSGetEnviron();
 #else
 #include <unistd.h>
 #endif
-
-#include <stack>
-
-#include "tbb/enumerable_thread_specific.h"
-
-#include "boost/lexical_cast.hpp"
-
-#include "IECore/SimpleTypedData.h"
-
-#include "Gaffer/Context.h"
 
 using namespace Gaffer;
 using namespace IECore;
@@ -90,14 +87,14 @@ class Environment
 			}
 		}
 
-		const char *get( IECore::InternedString name ) const
+		const std::string *get( IECore::InternedString name ) const
 		{
 			Map::const_iterator it = m_map.find( name );
 			if( it != m_map.end() )
 			{
-				return it->second.c_str();
+				return &it->second.string();
 			}
-			return NULL;
+			return nullptr;
 		}
 
 	private :
@@ -119,14 +116,18 @@ static InternedString g_frame( "frame" );
 static InternedString g_framesPerSecond( "framesPerSecond" );
 
 Context::Context()
-	:	m_changedSignal( NULL ), m_hashValid( false )
+	:	m_changedSignal( nullptr ), m_hashValid( false ), m_canceller( nullptr )
 {
 	set( g_frame, 1.0f );
 	set( g_framesPerSecond, 24.0f );
 }
 
 Context::Context( const Context &other, Ownership ownership )
-	:	m_map( other.m_map ), m_changedSignal( NULL ), m_hash( other.m_hash ), m_hashValid( other.m_hashValid )
+	:	m_map( other.m_map ),
+		m_changedSignal( nullptr ),
+		m_hash( other.m_hash ),
+		m_hashValid( other.m_hashValid ),
+		m_canceller( other.m_canceller )
 {
 	// We used the (shallow) Map copy constructor in our initialiser above
 	// because it offers a big performance win over iterating and inserting copies
@@ -154,8 +155,31 @@ Context::Context( const Context &other, Ownership ownership )
 	}
 }
 
+Context::Context( const Context &other, const IECore::Canceller &canceller )
+	:	Context( other, Copied )
+{
+	if( m_canceller )
+	{
+		throw IECore::Exception( "Can't replace an existing Canceller" );
+	}
+	m_canceller = &canceller;
+}
+
+Context::Context( const Context &other, bool omitCanceller )
+	:	Context( other, Copied )
+{
+	if( omitCanceller )
+	{
+		m_canceller = nullptr;
+	}
+}
+
 Context::~Context()
 {
+	#ifndef NDEBUG
+	validateHashes();
+	#endif // NDEBUG
+
 	for( Map::const_iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; ++it )
 	{
 		if( it->second.ownership != Borrowed )
@@ -181,9 +205,40 @@ void Context::remove( const IECore::InternedString &name )
 	}
 }
 
+void Context::removeMatching( const StringAlgo::MatchPattern &pattern )
+{
+	if( pattern == "" )
+	{
+		return;
+	}
+
+	for( Map::iterator it = m_map.begin(); it != m_map.end(); )
+	{
+		if( StringAlgo::matchMultiple( it->first, pattern ) )
+		{
+			it = m_map.erase( it );
+			m_hashValid = false;
+			if( m_changedSignal )
+			{
+				(*m_changedSignal)( this, it->first );
+			}
+		}
+		else
+		{
+			it++;
+		}
+	}
+}
+
 void Context::changed( const IECore::InternedString &name )
 {
-	m_hashValid = false;
+	Map::iterator it = m_map.find( name );
+	if( it != m_map.end() )
+	{
+		m_hashValid = false;
+		it->second.updateHash( name );
+	}
+
 	if( m_changedSignal )
 	{
 		(*m_changedSignal)( this, name );
@@ -250,22 +305,14 @@ IECore::MurmurHash Context::hash() const
 		return m_hash;
 	}
 
-	m_hash = IECore::MurmurHash();
+	uint64_t sumH1 = 0, sumH2 = 0;
 	for( Map::const_iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; ++it )
 	{
-		/// \todo Perhaps at some point the UI should use a different container for
-		/// these "not computationally important" values, so we wouldn't have to skip
-		/// them here.
-		// Using a hardcoded comparison of the first three characters because
-		// it's quicker than `string::compare( 0, 3, "ui:" )`.
-		const std::string &name = it->first.string();
-		if(	name.size() > 2 && name[0] == 'u' && name[1] == 'i' && name[2] == ':' )
-		{
-			continue;
-		}
-		m_hash.append( (uint64_t)&name );
-		it->second.data->hash( m_hash );
+		sumH1 += it->second.hash.h1();
+		sumH2 += it->second.hash.h2();
 	}
+
+	m_hash = MurmurHash( sumH1, sumH2 );
 	m_hashValid = true;
 	return m_hash;
 }
@@ -295,245 +342,163 @@ bool Context::operator != ( const Context &other ) const
 
 std::string Context::substitute( const std::string &s, unsigned substitutions ) const
 {
-	std::string result;
-	result.reserve( s.size() ); // might need more or less, but this is a decent ballpark
-	substituteInternal( s.c_str(), result, 0, substitutions );
-	return result;
-}
-
-unsigned Context::substitutions( const std::string &input )
-{
-	unsigned result = NoSubstitutions;
-	for( const char *c = input.c_str(); *c; )
-	{
-		switch( *c )
-		{
-			case '$' :
-				result |= VariableSubstitutions;
-				c++;
-				break;
-			case '#' :
-				result |= FrameSubstitutions;
-				c++;
-				break;
-			case '~' :
-				result |= TildeSubstitutions;
-				c++;
-				break;
-			case '\\' :
-				result |= EscapeSubstitutions;
-				c++;
-				if( *c )
-				{
-					c++;
-				}
-				break;
-			default :
-				c++;
-		}
-		if( result == AllSubstitutions )
-		{
-			return result;
-		}
-	}
-	return result;
-}
-
-bool Context::hasSubstitutions( const std::string &input )
-{
-	for( const char *c = input.c_str(); *c; c++ )
-	{
-		switch( *c )
-		{
-			case '$' :
-			case '#' :
-			case '~' :
-			case '\\' :
-				return true;
-			default :
-				; // do nothing
-		}
-	}
-	return false;
-}
-
-void Context::substituteInternal( const char *s, std::string &result, const int recursionDepth, unsigned substitutions ) const
-{
-	if( recursionDepth > 8 )
-	{
-		throw IECore::Exception( "Context::substitute() : maximum recursion depth reached." );
-	}
-
-	while( *s )
-	{
-		switch( *s )
-		{
-			case '\\' :
-			{
-				if( substitutions & EscapeSubstitutions )
-				{
-					s++;
-					if( *s )
-					{
-						result.push_back( *s++ );
-					}
-				}
-				else
-				{
-					// variable substitutions disabled
-					result.push_back( *s++ );
-				}
-				break;
-			}
-			case '$' :
-			{
-				if( substitutions & VariableSubstitutions )
-				{
-					s++; // skip $
-					bool bracketed = *s =='{';
-					const char *variableNameStart = NULL;
-					const char *variableNameEnd = NULL;
-					if( bracketed )
-					{
-						s++; // skip initial bracket
-						variableNameStart = s;
-						while( *s && *s != '}' )
-						{
-							s++;
-						}
-						variableNameEnd = s;
-						if( *s )
-						{
-							s++; // skip final bracket
-						}
-					}
-					else
-					{
-						variableNameStart = s;
-						while( isalnum( *s ) )
-						{
-							s++;
-						}
-						variableNameEnd = s;
-					}
-
-					InternedString variableName( variableNameStart, variableNameEnd - variableNameStart );
-					const IECore::Data *d = get<IECore::Data>( variableName, NULL );
-					if( d )
-					{
-						switch( d->typeId() )
-						{
-							case IECore::StringDataTypeId :
-								substituteInternal( static_cast<const IECore::StringData *>( d )->readable().c_str(), result, recursionDepth + 1, substitutions );
-								break;
-							case IECore::FloatDataTypeId :
-								result += boost::lexical_cast<std::string>(
-									static_cast<const IECore::FloatData *>( d )->readable()
-								);
-								break;
-							case IECore::IntDataTypeId :
-								result += boost::lexical_cast<std::string>(
-									static_cast<const IECore::IntData *>( d )->readable()
-								);
-								break;
-							default :
-								break;
-						}
-					}
-					else if( const char *v = g_environment.get( variableName ) )
-					{
-						// variable not in context - try environment
-						result += v;
-					}
-				}
-				else
-				{
-					// variable substitutions disabled
-					result.push_back( *s++ );
-				}
-				break;
-			}
-			case '#' :
-			{
-				if( substitutions & FrameSubstitutions )
-				{
-					int padding = 0;
-					while( *s == '#' )
-					{
-						padding++;
-						s++;
-					}
-					int frame = (int)round( getFrame() );
-					std::ostringstream padder;
-					padder << std::setw( padding ) << std::setfill( '0' ) << frame;
-					result += padder.str();
-				}
-				else
-				{
-					// frame substitutions disabled
-					result.push_back( *s++ );
-				}
-				break;
-			}
-			case '~' :
-			{
-				if( substitutions & TildeSubstitutions && result.size() == 0 )
-				{
-					if( const char *v = getenv( "HOME" ) )
-					{
-						result += v;
-					}
-					++s;
-					break;
-				}
-				else
-				{
-					// tilde substitutions disabled
-					result.push_back( *s++ );
-				}
-				break;
-			}
-			default :
-				result.push_back( *s++ );
-				break;
-		}
-	}
+	return IECore::StringAlgo::substitute( s, SubstitutionProvider( this ), substitutions );
 }
 
 //////////////////////////////////////////////////////////////////////////
 // Scope and current context implementation
 //////////////////////////////////////////////////////////////////////////
 
-typedef std::stack<const Context *> ContextStack;
-typedef tbb::enumerable_thread_specific<ContextStack, tbb::cache_aligned_allocator<ContextStack>, tbb::ets_key_per_instance> ThreadSpecificContextStack;
-
-static ThreadSpecificContextStack g_threadContexts;
-static ContextPtr g_defaultContext = new Context;
-
-Context::Scope::Scope( const Context *context ) : m_context( context )
+Context::Scope::Scope( const Context *context )
+	:	ThreadState::Scope( /* push = */ static_cast<bool>( context ) )
 {
-	if( context )
+	if( m_threadState )
 	{
-		ContextStack &stack = g_threadContexts.local();
-		stack.push( context );
+		// The `push` argument to our base class should mean that we only
+		// end up in here if we have a context to scope. If not, we are
+		// a no-op.
+		assert( context );
+		m_threadState->m_context = context;
 	}
 }
 
 Context::Scope::~Scope()
 {
-	if( m_context )
-	{
-		ContextStack &stack = g_threadContexts.local();
-		stack.pop();
-	}
+}
+
+Context::EditableScope::EditableScope( const Context *context )
+	:	m_context( new Context( *context, Borrowed ) )
+{
+	m_threadState->m_context = m_context.get();
+}
+
+Context::EditableScope::EditableScope( const ThreadState &threadState )
+	:	ThreadState::Scope( threadState ), m_context( new Context( *threadState.m_context, Borrowed ) )
+{
+	m_threadState->m_context = m_context.get();
+}
+
+Context::EditableScope::~EditableScope()
+{
+}
+
+void Context::EditableScope::setFrame( float frame )
+{
+	m_context->setFrame( frame );
+}
+
+void Context::EditableScope::setFramesPerSecond( float framesPerSecond )
+{
+	m_context->setFramesPerSecond( framesPerSecond );
+}
+
+void Context::EditableScope::setTime( float timeInSeconds )
+{
+	m_context->setTime( timeInSeconds );
+}
+
+void Context::EditableScope::remove( const IECore::InternedString &name )
+{
+	m_context->remove( name );
+}
+
+void Context::EditableScope::removeMatching( const StringAlgo::MatchPattern &pattern )
+{
+	m_context->removeMatching( pattern );
 }
 
 const Context *Context::current()
 {
-	ContextStack &stack = g_threadContexts.local();
-	if( !stack.size() )
+	return ThreadState::current().m_context;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// SubstitutionProvider implementation
+//////////////////////////////////////////////////////////////////////////
+
+Context::SubstitutionProvider::SubstitutionProvider( const Context *context )
+	:	m_context( context )
+{
+}
+
+int Context::SubstitutionProvider::frame() const
+{
+	return (int)round( m_context->getFrame() );
+}
+
+const std::string &Context::SubstitutionProvider::variable( const boost::string_view &name, bool &recurse ) const
+{
+	InternedString internedName( name );
+	const IECore::Data *d = m_context->get<IECore::Data>( internedName, nullptr );
+	if( d )
 	{
-		return g_defaultContext.get();
+		switch( d->typeId() )
+		{
+			case IECore::StringDataTypeId :
+				recurse = true;
+				return static_cast<const IECore::StringData *>( d )->readable();
+			case IECore::FloatDataTypeId :
+				m_formattedString = boost::lexical_cast<std::string>(
+					static_cast<const IECore::FloatData *>( d )->readable()
+				);
+				return m_formattedString;
+			case IECore::IntDataTypeId :
+				m_formattedString = boost::lexical_cast<std::string>(
+					static_cast<const IECore::IntData *>( d )->readable()
+				);
+				return m_formattedString;
+			case IECore::InternedStringVectorDataTypeId : {
+				// This is unashamedly tailored to the needs of GafferScene's `${scene:path}`
+				// variable. We could make this cleaner by adding a mechanism for registering custom
+				// formatters, but that would be overkill for this one use case.
+				const auto &v = static_cast<const IECore::InternedStringVectorData *>( d )->readable();
+				m_formattedString.clear();
+				if( v.empty() )
+				{
+					m_formattedString += "/";
+				}
+				else
+				{
+					for( const auto &x : v )
+					{
+						m_formattedString += "/" + x.string();
+					}
+				}
+				return m_formattedString;
+			}
+			default :
+				break;
+		}
 	}
-	return stack.top();
+	else if( const std::string *v = g_environment.get( internedName ) )
+	{
+		// variable not in context - try environment
+		return *v;
+	}
+
+	m_formattedString.clear();
+	return m_formattedString;
+}
+
+void Context::validateHashes()
+{
+	for( Map::iterator it = m_map.begin(), eIt = m_map.end(); it != eIt; ++it )
+	{
+		IECore::MurmurHash prevHash = it->second.hash;
+		it->second.updateHash( it->first );
+
+		if( prevHash != it->second.hash )
+		{
+			throw IECore::Exception( "Corrupt hash for context entry: " + it->first.string() );
+		}
+	}
+
+	if( m_hashValid )
+	{
+		IECore::MurmurHash prevTotal = m_hash;
+		if( prevTotal != hash() )
+		{
+			throw IECore::Exception( "Corrupt total hash for context" );
+		}
+	}
 }

@@ -37,9 +37,9 @@
 #ifndef GAFFERIMAGE_SAMPLER_H
 #define GAFFERIMAGE_SAMPLER_H
 
-#include <vector>
-
 #include "GafferImage/ImagePlug.h"
+
+#include <vector>
 
 namespace GafferImage
 {
@@ -52,7 +52,7 @@ namespace GafferImage
 /// The Sampler is sensitive to the Context which is current
 /// during its operation, so a sampler should only be used in
 /// the context in which it is constructed.
-class Sampler
+class GAFFERIMAGE_API Sampler
 {
 
 	public :
@@ -107,9 +107,8 @@ class Sampler
 		/// Cached data access
 		/// @param p Any point within the cache that we wish to retrieve the data for.
 		/// @param tileData Is set to the tile's channel data.
-		/// @param tileOrigin The coordinate of the tile's  minimum corner.
-		/// @param tileIndex XY indices that can be used to access the colour value of point 'p' from tileData.
-		inline void cachedData( Imath::V2i p, const float *& tileData, Imath::V2i &tileOrigin, Imath::V2i &tileIndex );
+		/// @param tilePixelIndex XY indices that can be used to access the colour value of point 'p' from tileData.
+		inline void cachedData( Imath::V2i p, const float *& tileData, Imath::V2i &tilePixelIndex );
 
 		const ImagePlug *m_plug;
 		const std::string m_channelName;
@@ -117,10 +116,11 @@ class Sampler
 		Imath::Box2i m_dataWindow;
 
 		std::vector< IECore::ConstFloatVectorDataPtr > m_dataCache;
+		std::vector< const float * > m_dataCacheRaw;
 		Imath::Box2i m_cacheWindow;
 		int m_cacheWidth;
 
-		BoundingMode m_boundingMode;
+		int m_boundingMode;
 
 };
 

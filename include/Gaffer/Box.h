@@ -39,13 +39,6 @@
 
 #include "Gaffer/SubGraph.h"
 
-namespace GafferBindings
-{
-
-class BoxSerialiser;
-
-} // namespace GafferBindings
-
 namespace Gaffer
 {
 
@@ -54,30 +47,23 @@ IE_CORE_FORWARDDECLARE( Set )
 
 /// A Box is simply a Node which is intended to hold other Nodes
 /// as children.
-class Box : public SubGraph
+class GAFFER_API Box : public SubGraph
 {
 
 	public :
 
 		Box( const std::string &name=defaultName<Box>() );
-		virtual ~Box();
+		~Box() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Box, BoxTypeId, SubGraph );
+		GAFFER_NODE_DECLARE_TYPE( Gaffer::Box, BoxTypeId, SubGraph );
 
-		/// Returns true if it would be valid to call promotePlug( descendantPlug ),
-		/// and false otherwise.
+		/// \deprecated Use PlugAlgo::canPromote() instead.
 		bool canPromotePlug( const Plug *descendantPlug ) const;
-		/// Promotes the internal descendantPlug so that it is represented
-		/// as an external plug on the Box. The descendantPlug must belong
-		/// to one of the nodes contained in the box.
-		/// Returns the newly created plug.
-		/// \undoable
+		/// \deprecated Use PlugAlgo::promote() instead.
 		Plug *promotePlug( Plug *descendantPlug );
-		/// Returns true if the descendantPlug has been promoted.
+		/// \deprecated Use PlugAlgo::isPromoted() instead.
 		bool plugIsPromoted( const Plug *descendantPlug ) const;
-		/// Unpromotes a previously promoted plug, removing the
-		/// plug on the Box where possible.
-		/// \undoable
+		/// \deprecated Use PlugAlgo::unpromote() instead.
 		void unpromotePlug( Plug *promotedDescendantPlug );
 
 		/// Exports the contents of the Box so that it can be referenced
@@ -89,14 +75,9 @@ class Box : public SubGraph
 		/// \undoable
 		static BoxPtr create( Node *parent, const Set *childNodes );
 
-	private :
-
-		bool validatePromotability( const Plug *descendantPlug, bool throwExceptions, bool childPlug = false ) const;
-		std::string promotedCounterpartName( const Plug *plug ) const;
-		static void copyMetadata( const Plug *from, Plug *to );
-
 };
 
+/// \deprecated Use Box::Iterator etc instead.
 typedef FilteredChildIterator<TypePredicate<Box> > BoxIterator;
 typedef FilteredRecursiveChildIterator<TypePredicate<Box> > RecursiveBoxIterator;
 

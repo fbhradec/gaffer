@@ -36,6 +36,7 @@
 ##########################################################################
 
 import unittest
+import imath
 
 import IECore
 
@@ -49,9 +50,9 @@ class GadgetTest( GafferUITest.TestCase ) :
 	def testTransform( self ) :
 
 		g = GafferUI.TextGadget( "hello" )
-		self.assertEqual( g.getTransform(), IECore.M44f() )
+		self.assertEqual( g.getTransform(), imath.M44f() )
 
-		t = IECore.M44f.createScaled( IECore.V3f( 2 ) )
+		t = imath.M44f().scale( imath.V3f( 2 ) )
 		g.setTransform( t )
 		self.assertEqual( g.getTransform(), t )
 
@@ -60,7 +61,7 @@ class GadgetTest( GafferUITest.TestCase ) :
 
 		c2 = GafferUI.LinearContainer()
 		c2.addChild( c1 )
-		t2 = IECore.M44f.createTranslated( IECore.V3f( 1, 2, 3 ) )
+		t2 = imath.M44f().translate( imath.V3f( 1, 2, 3 ) )
 		c2.setTransform( t2 )
 
 		self.assertEqual( g.fullTransform(), t * t2 )
@@ -82,9 +83,15 @@ class GadgetTest( GafferUITest.TestCase ) :
 
 				GafferUI.Gadget.__init__( self )
 
+				self.layersRendered = set()
+
 			def bound( self ) :
 
-				return IECore.Box3f( IECore.V3f( -20, 10, 2 ), IECore.V3f( 10, 15, 5 ) )
+				return imath.Box3f( imath.V3f( -20, 10, 2 ), imath.V3f( 10, 15, 5 ) )
+
+			def doRenderLayer( self, layer, style ) :
+
+				self.layersRendered.add( layer )
 
 		mg = MyGadget()
 
@@ -98,6 +105,14 @@ class GadgetTest( GafferUITest.TestCase ) :
 
 		self.assertEqual( c.bound().size(), mg.bound().size() )
 
+		with GafferUI.Window() as w :
+			GafferUI.GadgetWidget( c )
+
+		w.setVisible( True )
+		self.waitForIdle( 1000 )
+
+		self.assertEqual( mg.layersRendered, set( GafferUI.Gadget.Layer.values.values() ) )
+
 	def testStyle( self ) :
 
 		g = GafferUI.TextGadget( "test" )
@@ -107,17 +122,17 @@ class GadgetTest( GafferUITest.TestCase ) :
 		self.assertEqual( g.getStyle(), None )
 		self.assertEqual( l.getStyle(), None )
 
-		self.failUnless( g.style().isSame( GafferUI.Style.getDefaultStyle() ) )
-		self.failUnless( l.style().isSame( GafferUI.Style.getDefaultStyle() ) )
+		self.assertTrue( g.style().isSame( GafferUI.Style.getDefaultStyle() ) )
+		self.assertTrue( l.style().isSame( GafferUI.Style.getDefaultStyle() ) )
 
 		s = GafferUI.StandardStyle()
 		l.setStyle( s )
 
-		self.failUnless( l.getStyle().isSame( s ) )
+		self.assertTrue( l.getStyle().isSame( s ) )
 		self.assertEqual( g.getStyle(), None )
 
-		self.failUnless( g.style().isSame( s ) )
-		self.failUnless( l.style().isSame( s ) )
+		self.assertTrue( g.style().isSame( s ) )
+		self.assertTrue( l.style().isSame( s ) )
 
 	def testTypeNamePrefixes( self ) :
 
@@ -142,7 +157,7 @@ class GadgetTest( GafferUITest.TestCase ) :
 		self.assertEqual( len( cs ), 2 )
 		self.assertTrue( cs[1][0].isSame( g ) )
 
-		s2.setColor( GafferUI.StandardStyle.Color.BackgroundColor, IECore.Color3f( 1 ) )
+		s2.setColor( GafferUI.StandardStyle.Color.BackgroundColor, imath.Color3f( 1 ) )
 		self.assertEqual( len( cs ), 3 )
 		self.assertTrue( cs[2][0].isSame( g ) )
 
@@ -233,7 +248,7 @@ class GadgetTest( GafferUITest.TestCase ) :
 		self.assertEqual( t.bound(), b )
 		# but we don't want it taken into account when computing
 		# the parent bound.
-		self.assertEqual( g.bound(), IECore.Box3f() )
+		self.assertEqual( g.bound(), imath.Box3f() )
 
 	def testVisibilityChangedSignal( self ) :
 
@@ -290,6 +305,37 @@ class GadgetTest( GafferUITest.TestCase ) :
 
 		g["a"]["c"].setVisible( True )
 		self.assertEqual( len( events ), 10 )
+
+	def testEnabled( self ) :
+
+		g1 = GafferUI.Gadget()
+		self.assertEqual( g1.getEnabled(), True )
+		self.assertEqual( g1.enabled(), True )
+
+		g1.setEnabled( False )
+		self.assertEqual( g1.getEnabled(), False )
+		self.assertEqual( g1.enabled(), False )
+
+		g2 = GafferUI.Gadget()
+		g1.addChild( g2 )
+
+		self.assertEqual( g2.getEnabled(), True )
+		self.assertEqual( g2.enabled(), False )
+
+		g1.setEnabled( True )
+		self.assertEqual( g2.enabled(), True )
+
+		g3 = GafferUI.Gadget()
+		g2.addChild( g3 )
+
+		self.assertEqual( g3.getEnabled(), True )
+		self.assertEqual( g3.enabled(), True )
+
+		g1.setEnabled( False )
+		self.assertEqual( g3.getEnabled(), True )
+		self.assertEqual( g3.enabled(), False )
+		self.assertEqual( g3.enabled( relativeTo = g2 ), True )
+		self.assertEqual( g3.enabled( relativeTo = g1 ), True )
 
 if __name__ == "__main__":
 	unittest.main()

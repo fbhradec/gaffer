@@ -38,24 +38,24 @@
 #ifndef GAFFER_NUMERICPLUG_H
 #define GAFFER_NUMERICPLUG_H
 
-#include "OpenEXR/ImathLimits.h"
+#include "Gaffer/ValuePlug.h"
 
 #include "IECore/SimpleTypedData.h"
 
-#include "Gaffer/ValuePlug.h"
+#include "OpenEXR/ImathLimits.h"
 
 namespace Gaffer
 {
 
 template<typename T>
-class NumericPlug : public ValuePlug
+class GAFFER_API NumericPlug : public ValuePlug
 {
 
 	public :
 
 		typedef T ValueType;
 
-		IECORE_RUNTIMETYPED_DECLARETEMPLATE( NumericPlug<T>, ValuePlug );
+		GAFFER_PLUG_DECLARE_TEMPLATE_TYPE( NumericPlug<T>, ValuePlug );
 
 		NumericPlug(
 			const std::string &name = defaultName<NumericPlug>(),
@@ -65,11 +65,11 @@ class NumericPlug : public ValuePlug
 			T maxValue = Imath::limits<T>::max(),
 			unsigned flags = Default
 		);
-		virtual ~NumericPlug();
+		~NumericPlug() override;
 
 		/// Accepts other NumericPlugs, including those of different types, and BoolPlugs.
-		virtual bool acceptsInput( const Plug *input ) const;
-		virtual PlugPtr createCounterpart( const std::string &name, Direction direction ) const;
+		bool acceptsInput( const Plug *input ) const override;
+		PlugPtr createCounterpart( const std::string &name, Direction direction ) const override;
 
 		T defaultValue() const;
 
@@ -85,13 +85,11 @@ class NumericPlug : public ValuePlug
 		/// Returns the value.
 		/// See comments in TypedObjectPlug::getValue() for details of
 		/// the optional precomputedHash argument - and use with care!
-		T getValue( const IECore::MurmurHash *precomputedHash = NULL ) const;
+		T getValue( const IECore::MurmurHash *precomputedHash = nullptr ) const;
 
-		virtual void setFrom( const ValuePlug *other );
+		void setFrom( const ValuePlug *other ) override;
 
 	private :
-
-		IE_CORE_DECLARERUNTIMETYPEDDESCRIPTION( NumericPlug<T> );
 
 		typedef IECore::TypedData<T> DataType;
 		typedef typename DataType::Ptr DataTypePtr;
@@ -107,18 +105,16 @@ typedef NumericPlug<int> IntPlug;
 IE_CORE_DECLAREPTR( FloatPlug );
 IE_CORE_DECLAREPTR( IntPlug );
 
+/// \deprecated Use FloatPlug::Iterator etc instead
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, FloatPlug> > FloatPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, FloatPlug> > InputFloatPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, FloatPlug> > OutputFloatPlugIterator;
-
 typedef FilteredChildIterator<PlugPredicate<Plug::Invalid, IntPlug> > IntPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::In, IntPlug> > InputIntPlugIterator;
 typedef FilteredChildIterator<PlugPredicate<Plug::Out, IntPlug> > OutputIntPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, FloatPlug>, PlugPredicate<> > RecursiveFloatPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, FloatPlug>, PlugPredicate<> > RecursiveInputFloatPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, FloatPlug>, PlugPredicate<> > RecursiveOutputFloatPlugIterator;
-
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Invalid, IntPlug>, PlugPredicate<> > RecursiveIntPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::In, IntPlug>, PlugPredicate<> > RecursiveInputIntPlugIterator;
 typedef FilteredRecursiveChildIterator<PlugPredicate<Plug::Out, IntPlug>, PlugPredicate<> > RecursiveOutputIntPlugIterator;

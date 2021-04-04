@@ -34,21 +34,21 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/StringPlug.h"
-
 #include "GafferImage/DisplayTransform.h"
+
+#include "Gaffer/StringPlug.h"
 
 using namespace std;
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
-IE_CORE_DEFINERUNTIMETYPED( DisplayTransform );
+GAFFER_NODE_DEFINE_TYPE( DisplayTransform );
 
 size_t DisplayTransform::g_firstPlugIndex = 0;
 
 DisplayTransform::DisplayTransform( const std::string &name )
-	:	OpenColorIOTransform( name )
+	:	OpenColorIOTransform( name, true )
 {
 	storeIndexOfNextChild( g_firstPlugIndex );
 	addChild( new StringPlug( "inputColorSpace" ) );

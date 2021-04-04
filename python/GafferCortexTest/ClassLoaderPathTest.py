@@ -48,48 +48,48 @@ class ClassLoaderPathTest( GafferTest.TestCase ) :
 	def test( self ) :
 
 		p = GafferCortex.ClassLoaderPath( IECore.ClassLoader.defaultOpLoader(), "/" )
-		self.failUnless( p.isValid() )
-		self.failIf( p.isLeaf() )
+		self.assertTrue( p.isValid() )
+		self.assertFalse( p.isLeaf() )
 
 		p.append( "files" )
-		self.failUnless( p.isValid() )
-		self.failIf( p.isLeaf() )
+		self.assertTrue( p.isValid() )
+		self.assertFalse( p.isLeaf() )
 
 		p.append( "iDontExist" )
-		self.failIf( p.isValid() )
-		self.failIf( p.isLeaf() )
+		self.assertFalse( p.isValid() )
+		self.assertFalse( p.isLeaf() )
 
 		del p[-1]
-		self.failUnless( p.isValid() )
-		self.failIf( p.isLeaf() )
+		self.assertTrue( p.isValid() )
+		self.assertFalse( p.isLeaf() )
 
 		p.setFromString( "/files/sequenceRenumber" )
-		self.failUnless( p.isValid() )
-		self.failUnless( p.isLeaf() )
+		self.assertTrue( p.isValid() )
+		self.assertTrue( p.isLeaf() )
 
 		p.setFromString( "/files" )
 		children = p.children()
 		for child in children :
-			self.failUnless( isinstance( child, GafferCortex.ClassLoaderPath ) )
+			self.assertTrue( isinstance( child, GafferCortex.ClassLoaderPath ) )
 			self.assertEqual( len( child ), len( p ) + 1 )
-			self.failUnless( child.isLeaf() )
+			self.assertTrue( child.isLeaf() )
 
 		children = [ str( x ) for x in children ]
-		self.failUnless( "/files/sequenceCopy" in children )
-		self.failUnless( "/files/sequenceLs" in children )
-		self.failUnless( "/files/sequenceMove" in children )
+		self.assertIn( "/files/sequenceCopy", children )
+		self.assertIn( "/files/sequenceLs", children )
+		self.assertIn( "/files/sequenceMove", children )
 
 		p.setFromString( "/" )
 		children = p.children()
 		for child in children :
-			self.failUnless( isinstance( child, GafferCortex.ClassLoaderPath ) )
+			self.assertIsInstance( child, GafferCortex.ClassLoaderPath )
 			self.assertEqual( len( child ), len( p ) + 1 )
 
-		p.setFromString( "/mesh/normals" )
+		p.setFromString( "/files/sequenceRenumber" )
 		self.assertTrue( p.isLeaf() )
 		versions = p.info()["classLoader:versions"]
-		self.failUnless( isinstance( versions, IECore.IntVectorData ) )
-		self.failUnless( len( versions ) )
+		self.assertIsInstance( versions, IECore.IntVectorData )
+		self.assertTrue( len( versions ) )
 
 	def testRelative( self ) :
 
@@ -105,25 +105,25 @@ class ClassLoaderPathTest( GafferTest.TestCase ) :
 
 	def testLoad( self ) :
 
-		p = GafferCortex.ClassLoaderPath( IECore.ClassLoader.defaultOpLoader(), "/mesh/normals" )
+		p = GafferCortex.ClassLoaderPath( IECore.ClassLoader.defaultOpLoader(), "/files/sequenceRenumber" )
 
 		op = p.load()()
-		self.failUnless( isinstance( op, IECore.Op ) )
+		self.assertIsInstance( op, IECore.Op )
 
 	def testProperties( self ) :
 
-		p = GafferCortex.ClassLoaderPath( IECore.ClassLoader.defaultOpLoader(), "/mesh" )
+		p = GafferCortex.ClassLoaderPath( IECore.ClassLoader.defaultOpLoader(), "/files" )
 
 		self.assertEqual( p.propertyNames(), [ "name", "fullName", "classLoader:versions" ])
-		self.assertEqual( p.property( "name" ), "mesh" )
-		self.assertEqual( p.property( "fullName" ), "/mesh" )
+		self.assertEqual( p.property( "name" ), "files" )
+		self.assertEqual( p.property( "fullName" ), "/files" )
 		self.assertEqual( p.property( "classLoader:versions" ), None )
 
-		p.append( "normals" )
+		p.append( "sequenceRenumber" )
 
 		self.assertEqual( p.propertyNames(), [ "name", "fullName", "classLoader:versions" ])
-		self.assertEqual( p.property( "name" ), "normals" )
-		self.assertEqual( p.property( "fullName" ), "/mesh/normals" )
+		self.assertEqual( p.property( "name" ), "sequenceRenumber" )
+		self.assertEqual( p.property( "fullName" ), "/files/sequenceRenumber" )
 		self.assertTrue( isinstance( p.property( "classLoader:versions" ), IECore.IntVectorData ) )
 
 if __name__ == "__main__":

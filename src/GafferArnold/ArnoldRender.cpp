@@ -39,10 +39,10 @@
 using namespace GafferScene;
 using namespace GafferArnold;
 
-IE_CORE_DEFINERUNTIMETYPED( ArnoldRender );
+GAFFER_NODE_DEFINE_TYPE( ArnoldRender );
 
 ArnoldRender::ArnoldRender( const std::string &name )
-	:	Render( "IECoreArnold::Renderer", name )
+	:	Render( "Arnold", name )
 {
 }
 

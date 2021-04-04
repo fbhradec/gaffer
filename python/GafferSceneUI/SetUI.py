@@ -42,6 +42,31 @@ import GafferUI
 import GafferScene
 import GafferSceneUI
 
+## Menu Presentation
+# -----------------
+# Many facilities have large numbers of sets with structured names. When
+# presented in a flat list, it can be hard to navigate. The path function
+# allows the name of a set to be amended or turned into a hierarchical menu
+# path (ie, by returning a string containing '/'s) - creating sub-menus
+# wherever Gaffer displays a list of sets.
+
+__menuPathFunction = lambda n : n
+
+## 'f' should be a callable that takes a set name, and returns a relative menu
+## path @see IECore.MenuDefinition.
+def setMenuPathFunction( f ) :
+
+	global __menuPathFunction
+	__menuPathFunction = f
+
+def getMenuPathFunction() :
+
+	global __menuPathFunction
+	return __menuPathFunction
+
+## Metadata
+#  --------
+
 Gaffer.Metadata.registerNode(
 
 	GafferScene.Set,
@@ -53,6 +78,8 @@ Gaffer.Metadata.registerNode(
 	by the SetFilter to limit scene operations to only the members of
 	a particular set.
 	""",
+
+	"layout:activator:pathsInUse", lambda node : node["paths"].getInput() is not None or len( node["paths"].getValue() ),
 
 	plugs = {
 
@@ -98,10 +125,15 @@ Gaffer.Metadata.registerNode(
 			"description",
 			"""
 			The paths to be added to or removed from the set.
+
+			> Caution : This plug is deprecated and will be removed
+			in a future release. No validity checks are performed on
+			these paths, so it is possible to accidentally generate
+			invalid sets.
 			""",
 
-			"ui:scene:acceptsPaths", True,
 			"vectorDataPlugValueWidget:dragPointer", "objects",
+			"layout:visibilityActivator", "pathsInUse",
 
 		],
 
@@ -109,15 +141,7 @@ Gaffer.Metadata.registerNode(
 
 			"description",
 			"""
-			A filter to define additional paths to be added to
-			or removed from the set.
-
-			> Warning : Using a filter can be very expensive.
-			It is advisable to limit use to filters with a
-			limited number of matches and/or sets which are
-			not used heavily downstream. Wherever possible,
-			prefer to use the `paths` plug directly instead
-			of using a filter.
+			Defines the locations to be added to or removed from the set.
 			""",
 
 		],
@@ -134,8 +158,51 @@ Gaffer.Metadata.registerNode(
 
 def __setValue( plug, value, *unused ) :
 
-	with Gaffer.UndoContext( plug.ancestor( Gaffer.ScriptNode ) ) :
+	with Gaffer.UndoScope( plug.ancestor( Gaffer.ScriptNode ) ) :
 		plug.setValue( value )
+
+def __spreadsheetTargetNode( plug ) :
+
+	# Find the first node the plug's column is connected to
+	# if it is a spreadsheet cell.
+
+	cellPlug = plug.ancestor( Gaffer.Spreadsheet.CellPlug )
+
+	# Could be a user plug on a Spreadsheet node
+	if cellPlug is None :
+		return None
+
+	outputs = plug.node()[ "out" ][ cellPlug.getName() ].outputs()
+	if not outputs :
+		return None
+
+	return outputs[ 0 ].node()
+
+def __downstreamNodes( plug ) :
+
+	result = set()
+	outputs = plug.outputs()
+	if outputs :
+		for output in outputs :
+			result |= __downstreamNodes( output )
+	else :
+		if plug.node() :
+			result.add( plug.node() )
+
+	return result
+
+def __scenePlugs( node ) :
+
+	result = []
+	for plug in node.children( Gaffer.Plug ) :
+		if plug.direction() != plug.Direction.In :
+			continue
+		if isinstance( plug, Gaffer.ArrayPlug ) and len( plug ) :
+			plug = plug[0]
+		if isinstance( plug, GafferScene.ScenePlug ) :
+			result.append( plug )
+
+	return result
 
 def __setsPopupMenu( menuDefinition, plugValueWidget ) :
 
@@ -143,57 +210,84 @@ def __setsPopupMenu( menuDefinition, plugValueWidget ) :
 	if plug is None :
 		return
 
+	# Some operations require a text widget so we can manipulate insertion position, etc...
+	hasTextWidget = hasattr( plugValueWidget, 'textWidget' )
+
+	# get required data
 	acceptsSetName = Gaffer.Metadata.value( plug, "ui:scene:acceptsSetName" )
 	acceptsSetNames = Gaffer.Metadata.value( plug, "ui:scene:acceptsSetNames" )
-	if not acceptsSetName and not acceptsSetNames :
+	acceptsSetExpression = hasTextWidget and Gaffer.Metadata.value( plug, "ui:scene:acceptsSetExpression" )
+	if not acceptsSetName and not acceptsSetNames and not acceptsSetExpression :
 		return
-
-	node = plug.node()
-	if isinstance( node, GafferScene.Filter ) :
-		nodes = [ o.node() for o in node["out"].outputs() ]
-	else :
-		nodes = [ node ]
-
-	setNames = set()
-	with plugValueWidget.getContext() :
-		for node in nodes :
-			for scenePlug in node.children( GafferScene.ScenePlug ) :
-
-				if scenePlug.direction() != scenePlug.Direction.In :
-					continue
-
-				setNames.update( [ str( n ) for n in scenePlug["setNames"].getValue() ] )
-
-	if not setNames :
-		return
-
-	menuDefinition.prepend( "/SetsDivider", { "divider" : True } )
 
 	with plugValueWidget.getContext() :
 		if acceptsSetNames :
 			currentNames = set( plug.getValue().split() )
-		else :
+		elif acceptsSetName :
 			currentNames = set( [ plug.getValue() ] )
+		else :
+			currentExpression = plug.getValue()
+
+	if acceptsSetExpression :
+		textSelection = plugValueWidget.textWidget().getSelection()
+		cursorPosition = plugValueWidget.textWidget().getCursorPosition()
+
+		insertAt = textSelection
+		if insertAt == (0, 0) :  # if there's no selection to be replaced, use position of cursor
+			insertAt = (cursorPosition, cursorPosition)
+
+	node = plug.node()
+
+	if isinstance( node, Gaffer.Spreadsheet ) :
+		node = __spreadsheetTargetNode( plug ) or node
+
+	if isinstance( node, GafferScene.Filter ) :
+		nodes = __downstreamNodes( node["out"] )
+	else :
+		nodes = { node }
+
+	setNames = set()
+	with plugValueWidget.getContext() :
+		for node in nodes :
+			for scenePlug in __scenePlugs( node ) :
+				setNames.update( [ str( n ) for n in scenePlug["setNames"].getValue() if not str( n ).startswith( "__" ) ] )
+
+	if not setNames :
+		return
+
+	# build the menus
+	menuDefinition.prepend( "/SetsDivider", { "divider" : True } )
+
+	if acceptsSetExpression:
+		for name, operator in zip( ("Union", "Intersection", "Difference"), ("|", "&", "-") ) :
+			newValue = ''.join( [ currentExpression[:insertAt[0]], operator, currentExpression[insertAt[1]:] ] )
+			menuDefinition.prepend( "/Operators/%s" % name, { "command" : functools.partial( __setValue, plug, newValue ) } )
+
+	pathFn = getMenuPathFunction()
 
 	for setName in reversed( sorted( list( setNames ) ) ) :
 
-		newNames = set( currentNames ) if acceptsSetNames else set()
+		if acceptsSetExpression :
+			newValue = ''.join( [ currentExpression[:insertAt[0]], setName, currentExpression[insertAt[1]:]] )
+			parameters = { "command" : functools.partial( __setValue, plug, newValue ) }
 
-		if setName not in currentNames :
-			newNames.add( setName )
 		else :
-			newNames.discard( setName )
+			newNames = set( currentNames ) if acceptsSetNames else set()
 
-		menuDefinition.prepend(
-			"/Sets/%s" % setName,
-			{
+			if setName not in currentNames :
+				newNames.add( setName )
+			else :
+				newNames.discard( setName )
+
+			parameters = {
 				"command" : functools.partial( __setValue, plug, " ".join( sorted( newNames ) ) ),
 				"checkBox" : setName in currentNames,
 				"active" : plug.settable() and not plugValueWidget.getReadOnly() and not Gaffer.MetadataAlgo.readOnly( plug ),
 			}
-		)
 
-__setsPopupMenuConnection = GafferUI.PlugValueWidget.popupMenuSignal().connect( __setsPopupMenu )
+		menuDefinition.prepend( "/Sets/%s" % pathFn( setName ), parameters )
+
+GafferUI.PlugValueWidget.popupMenuSignal().connect( __setsPopupMenu, scoped = False )
 
 ##########################################################################
 # Gadgets

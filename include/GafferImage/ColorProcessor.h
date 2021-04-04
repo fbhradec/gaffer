@@ -39,36 +39,42 @@
 
 #include "GafferImage/ImageProcessor.h"
 
+#include "Gaffer/StringPlug.h"
+
 namespace GafferImage
 {
 
 /// Forms a useful base class for nodes which must process R,G and B channels at the same time
 /// to perform some sort of channel mixing.
-/// \todo This is currently hardcoded to operate on the "R", "G" and "B" channels - make it able
-/// to work on alternative sets of channels. To do this well I think we need to introduce the
-/// concept of layers which group channels together (e.g. beauty.R, beauty.G, beauty.B etc).
-class ColorProcessor : public ImageProcessor
+class GAFFERIMAGE_API ColorProcessor : public ImageProcessor
 {
 
 	public :
 
 		ColorProcessor( const std::string &name=defaultName<ColorProcessor>() );
-		virtual ~ColorProcessor();
+		~ColorProcessor() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ColorProcessor, ColorProcessorTypeId, ImageProcessor );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::ColorProcessor, ColorProcessorTypeId, ImageProcessor );
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::BoolPlug *processUnpremultipliedPlug();
+		const Gaffer::BoolPlug *processUnpremultipliedPlug() const;
+
+		Gaffer::StringPlug *channelsPlug();
+		const Gaffer::StringPlug *channelsPlug() const;
+
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void hashChannelData( const GafferImage::ImagePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 
 		/// Implemented to process the color data and stash the results on colorDataPlug()
 		/// format, dataWindow, metadata, and channelNames are passed through via direct connection to the input values.
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
 		/// Implemented to use the results of colorDataPlug() via processColorData()
-		virtual IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const;
+		IECore::ConstFloatVectorDataPtr computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const override;
 
 		/// May be implemented by derived classes to return true if the specified input is used in processColorData().
 		/// Must first call the base class implementation and return true if it does.
@@ -82,6 +88,8 @@ class ColorProcessor : public ImageProcessor
 	private :
 
 		// Used to store the result of processColorData(), so that it can be reused in computeChannelData().
+		// Evaluated in a context with an "image:colorProcessor:__layerName" variable, so we can cache
+		// different results per layer.
 		Gaffer::ObjectPlug *colorDataPlug();
 		const Gaffer::ObjectPlug *colorDataPlug() const;
 

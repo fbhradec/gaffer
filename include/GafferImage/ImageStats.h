@@ -37,64 +37,74 @@
 #ifndef GAFFERIMAGE_IMAGESTATS_H
 #define GAFFERIMAGE_IMAGESTATS_H
 
-#include "Gaffer/ComputeNode.h"
-#include "Gaffer/CompoundNumericPlug.h"
-#include "Gaffer/BoxPlug.h"
-
 #include "GafferImage/ImagePlug.h"
-#include "GafferImage/ChannelMaskPlug.h"
+#include "GafferImage/DeepState.h"
+
+#include "Gaffer/BoxPlug.h"
+#include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/ComputeNode.h"
 
 namespace GafferImage
 {
 
-/// Provides statistics on an image's colour profile.
-/// The ImageStats node outputs the minimum, maximum and average values of the pixel values within a region of interest in the image.
-class ImageStats : public Gaffer::ComputeNode
+/// \todo Add an areaSource plug with the same semantics
+/// that the Crop node has.
+class GAFFERIMAGE_API ImageStats : public Gaffer::ComputeNode
 {
 
 	public :
 
 		ImageStats( const std::string &name=staticTypeName() );
-		virtual ~ImageStats();
+		~ImageStats() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImage::ImageStats, ImageStatsTypeId, Gaffer::ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferImage::ImageStats, ImageStatsTypeId, Gaffer::ComputeNode );
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 		GafferImage::ImagePlug *inPlug();
 		const GafferImage::ImagePlug *inPlug() const;
-		ChannelMaskPlug *channelsPlug();
-		const ChannelMaskPlug *channelsPlug() const;
-		Gaffer::Box2iPlug *regionOfInterestPlug();
-		const Gaffer::Box2iPlug *regionOfInterestPlug() const;
+
+		Gaffer::StringVectorDataPlug *channelsPlug();
+		const Gaffer::StringVectorDataPlug *channelsPlug() const;
+
+		Gaffer::Box2iPlug *areaPlug();
+		const Gaffer::Box2iPlug *areaPlug() const;
+
 		Gaffer::Color4fPlug *averagePlug();
 		const Gaffer::Color4fPlug *averagePlug() const;
+
 		Gaffer::Color4fPlug *minPlug();
 		const Gaffer::Color4fPlug *minPlug() const;
+
 		Gaffer::Color4fPlug *maxPlug();
 		const Gaffer::Color4fPlug *maxPlug() const;
 
 	protected :
 
-		/// Implemented to hash the area we are sampling along with the channel context and regionOfInterest.
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
+		Gaffer::ValuePlug::CachePolicy hashCachePolicy( const Gaffer::ValuePlug *output ) const override;
 
-		/// Computes the min, max and average plugs by analyzing the input ImagePlug.
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
 
 	private :
 
-		/// Sets channelName to the channel which corresponds to the output plug. The channel name is
-		/// computed from the intersection of the "in" plug's channels and the "channels" plug's channels.
-		/// If multiple channels are found to have the same channel index, the first is used.
-		/// For more information on this, please see ChannelMaskPlug::removeDuplicateIndices().
-		void channelNameFromOutput( const Gaffer::ValuePlug *output, std::string &channelName ) const;
+		// Stats for individual tiles
+		Gaffer::ObjectPlug *tileStatsPlug();
+		const Gaffer::ObjectPlug *tileStatsPlug() const;
 
-		/// A convenience function to just set the plug to 0 or 1 depending on what it's index is.
-		void setOutputToDefault( Gaffer::FloatPlug *output ) const;
+		// Combined stats, before they get broken out into 3 seperate plugs
+		Gaffer::ObjectPlug *allStatsPlug();
+		const Gaffer::ObjectPlug *allStatsPlug() const;
 
-		/// Implemented to initialize the default format settings if they don't exist already.
-		void parentChanging( Gaffer::GraphComponent *newParent );
+		// Input plug to receive the flattened image from the internal
+		// DeepState plug.
+		ImagePlug *flattenedInPlug();
+		const ImagePlug *flattenedInPlug() const;
+
+		// The internal DeepState node.
+		GafferImage::DeepState *deepState();
+		const GafferImage::DeepState *deepState() const;
 
 		static size_t g_firstPlugIndex;
 

@@ -38,18 +38,21 @@
 #ifndef GAFFERSCENE_SHADER_H
 #define GAFFERSCENE_SHADER_H
 
-#include "boost/unordered_set.hpp"
-
-#include "IECore/ObjectVector.h"
-#include "IECore/Shader.h"
-#include "IECore/CompoundObject.h"
-
-#include "Gaffer/DependencyNode.h"
-#include "Gaffer/TypedPlug.h"
-#include "Gaffer/CompoundNumericPlug.h"
-#include "Gaffer/ArrayPlug.h"
-
+#include "GafferScene/Export.h"
 #include "GafferScene/TypeIds.h"
+
+#include "Gaffer/ArrayPlug.h"
+#include "Gaffer/CompoundNumericPlug.h"
+#include "Gaffer/ComputeNode.h"
+#include "Gaffer/TypedPlug.h"
+#include "Gaffer/TypedObjectPlug.h"
+
+#include "IECoreScene/Shader.h"
+
+#include "IECore/CompoundObject.h"
+#include "IECore/ObjectVector.h"
+
+#include "boost/unordered_set.hpp"
 
 namespace Gaffer
 {
@@ -61,15 +64,15 @@ IE_CORE_FORWARDDECLARE( StringPlug )
 namespace GafferScene
 {
 
-class Shader : public Gaffer::DependencyNode
+class GAFFERSCENE_API Shader : public Gaffer::ComputeNode
 {
 
 	public :
 
 		Shader( const std::string &name=defaultName<Shader>() );
-		virtual ~Shader();
+		~Shader() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Shader, ShaderTypeId, Gaffer::DependencyNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Shader, ShaderTypeId, Gaffer::ComputeNode );
 
 		/// A plug defining the name of the shader.
 		Gaffer::StringPlug *namePlug();
@@ -79,16 +82,13 @@ class Shader : public Gaffer::DependencyNode
 		Gaffer::StringPlug *typePlug();
 		const Gaffer::StringPlug *typePlug() const;
 
+		/// A plug defining the suffix used for shader assignment attributes
+		Gaffer::StringPlug *attributeSuffixPlug();
+		const Gaffer::StringPlug *attributeSuffixPlug() const;
+
 		/// Plug under which the shader parameters are defined.
 		Gaffer::Plug *parametersPlug();
 		const Gaffer::Plug *parametersPlug() const;
-
-		/// Plug which defines the shader's output - this should
-		/// be connected to a ShaderAssignment::shaderPlug() or
-		/// in the case of shaders which support networking it may
-		/// be connected to a parameter plug of another shader.
-		Gaffer::Plug *outPlug();
-		const Gaffer::Plug *outPlug() const;
 
 		/// Shaders can be enabled and disabled. A disabled shader
 		/// returns an empty object from the state() method, causing
@@ -97,12 +97,28 @@ class Shader : public Gaffer::DependencyNode
 		/// then by default its output connections are ignored on any
 		/// downstream nodes. Derived classes may implement correspondingInput( outPlug() )
 		/// to allow disabled shaders to act as a pass-through instead.
-		virtual Gaffer::BoolPlug *enabledPlug();
-		virtual const Gaffer::BoolPlug *enabledPlug() const;
+		Gaffer::BoolPlug *enabledPlug() override;
+		const Gaffer::BoolPlug *enabledPlug() const override;
+
+		/// Plug which defines the shader's output - this should
+		/// be connected to a ShaderAssignment::shaderPlug() or
+		/// in the case of shaders which support networking it may
+		/// be connected to a parameter plug of another shader.
+		Gaffer::Plug *outPlug();
+		const Gaffer::Plug *outPlug() const;
 
 		/// Implemented so that the children of parametersPlug() affect
 		/// outPlug().
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
+
+		/// \undoable
+		/// Subclasses of Shader should define how to load a given shader name, and populate the parameters
+		/// plug
+		virtual void loadShader( const std::string &shaderName, bool keepExistingValues=false );
+
+		/// Subclasses of Shader should do any extra cache clearing required, and then call the
+		/// base class implementation
+		virtual void reloadShader();
 
 		/// \deprecated Use ShaderPlug::attributesHash() instead.
 		/// \todo Protect these methods, and enforce access via the
@@ -110,24 +126,37 @@ class Shader : public Gaffer::DependencyNode
 		/// other APIs where nodes provide the engine, but plugs
 		/// provide the interface.
 		IECore::MurmurHash attributesHash() const;
-		virtual void attributesHash( IECore::MurmurHash &h ) const;
+		void attributesHash( IECore::MurmurHash &h ) const;
 		/// \deprecated See above.
-		virtual IECore::ConstCompoundObjectPtr attributes() const;
-
-		/// \deprecated
-		IECore::MurmurHash stateHash() const;
-		/// \deprecated
-		void stateHash( IECore::MurmurHash &h ) const;
-		/// \deprecated
-		IECore::ConstObjectVectorPtr state() const;
+		IECore::ConstCompoundObjectPtr attributes() const;
 
 	protected :
 
-		/// Called when computing the hash for this node. May be reimplemented in derived classes
-		/// to deal with special cases, in which case parameterValue() should be reimplemented too.
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+
+		/// Attributes computation
+		/// ----------------------
+		///
+		/// These methods are used to perform the compute that turns the shader network
+		/// into one or more attributes that are made available by `ShaderPlug::attributes()`.
+		/// May be overridden by derived classes to customise the output. Customisation may
+		/// also be achieved at the level of individual shader parameters by implementing
+		/// the parameter conversion methods below.
+
+		virtual bool affectsAttributes( const Gaffer::Plug *input ) const;
+		virtual void attributesHash( const Gaffer::Plug *output, IECore::MurmurHash &h ) const;
+		virtual IECore::ConstCompoundObjectPtr attributes( const Gaffer::Plug *output ) const;
+
+		/// Parameter conversion
+		/// --------------------
+
+		/// Called when computing `attributesHash()`. May be reimplemented in derived classes
+		/// to deal with special cases, in which case `parameterValue()` should be reimplemented too.
 		virtual void parameterHash( const Gaffer::Plug *parameterPlug, IECore::MurmurHash &h ) const;
-		/// Called for each parameter plug when constructing an IECore::Shader from this node.
-		/// May be reimplemented in derived classes to deal with special cases.
+		/// Called for each parameter plug when constructing an IECore::Shader from this node
+		/// in the `attributes()` method. May be reimplemented in derived classes to deal with special
+		/// cases.
 		virtual IECore::DataPtr parameterValue( const Gaffer::Plug *parameterPlug ) const;
 
 	private :
@@ -150,8 +179,16 @@ class Shader : public Gaffer::DependencyNode
 		// during compute.
 		Gaffer::Color3fPlug *nodeColorPlug();
 		const Gaffer::Color3fPlug *nodeColorPlug() const;
+		/// Output plug where the shader network will be generated.
+		Gaffer::CompoundObjectPlug *outAttributesPlug();
+		const Gaffer::CompoundObjectPlug *outAttributesPlug() const;
+
+		static const IECore::InternedString g_outputParameterContextName;
 
 		static size_t g_firstPlugIndex;
+
+		friend class ShaderPlug;
+		friend class TweakPlug;
 
 };
 

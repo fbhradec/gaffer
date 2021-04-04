@@ -37,10 +37,12 @@
 #ifndef GAFFERSCENE_FILTERRESULTS_H
 #define GAFFERSCENE_FILTERRESULTS_H
 
-#include "Gaffer/ComputeNode.h"
-
+#include "GafferScene/Export.h"
 #include "GafferScene/TypeIds.h"
-#include "GafferScene/PathMatcherDataPlug.h"
+
+#include "Gaffer/ComputeNode.h"
+#include "Gaffer/StringPlug.h"
+#include "Gaffer/TypedObjectPlug.h"
 
 namespace GafferScene
 {
@@ -48,15 +50,15 @@ namespace GafferScene
 IE_CORE_FORWARDDECLARE( ScenePlug )
 IE_CORE_FORWARDDECLARE( FilterPlug )
 
-class FilterResults : public Gaffer::ComputeNode
+class GAFFERSCENE_API FilterResults : public Gaffer::ComputeNode
 {
 
 	public :
 
 		FilterResults( const std::string &name=defaultName<FilterResults>() );
-		virtual ~FilterResults();
+		~FilterResults() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::FilterResults, FilterResultsTypeId, ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::FilterResults, FilterResultsTypeId, ComputeNode );
 
 		ScenePlug *scenePlug();
 		const ScenePlug *scenePlug() const;
@@ -64,17 +66,29 @@ class FilterResults : public Gaffer::ComputeNode
 		FilterPlug *filterPlug();
 		const FilterPlug *filterPlug() const;
 
-		PathMatcherDataPlug *outPlug();
-		const PathMatcherDataPlug *outPlug() const;
+		Gaffer::StringPlug *rootPlug();
+		const Gaffer::StringPlug *rootPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
+		Gaffer::PathMatcherDataPlug *outPlug();
+		const Gaffer::PathMatcherDataPlug *outPlug() const;
+
+		Gaffer::StringVectorDataPlug *outStringsPlug();
+		const Gaffer::StringVectorDataPlug *outStringsPlug() const;
+
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+
+		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
+		Gaffer::ValuePlug::CachePolicy hashCachePolicy( const Gaffer::ValuePlug *output ) const override;
 
 	private :
+
+		Gaffer::PathMatcherDataPlug *internalOutPlug();
+		const Gaffer::PathMatcherDataPlug *internalOutPlug() const;
 
 		static size_t g_firstPlugIndex;
 

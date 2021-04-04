@@ -35,6 +35,8 @@
 ##########################################################################
 
 import unittest
+import imath
+import six
 
 import IECore
 
@@ -47,8 +49,8 @@ class AimConstraintTest( GafferSceneTest.SceneTestCase ) :
 
 	def test( self ) :
 
-		targetTranslate = IECore.V3f( 1, 2, 3 )
-		constrainedTranslate = IECore.V3f( 10, 11, 12 )
+		targetTranslate = imath.V3f( 1, 2, 3 )
+		constrainedTranslate = imath.V3f( 10, 11, 12 )
 
 		plane1 = GafferScene.Plane()
 		plane1["transform"]["translate"].setValue( targetTranslate )
@@ -80,10 +82,28 @@ class AimConstraintTest( GafferSceneTest.SceneTestCase ) :
 		direction = aim["out"].fullTransform( "/group/constrained" ).multDirMatrix( aim["aim"].getValue() )
 		self.assertAlmostEqual( (targetTranslate - constrainedTranslate).normalized().dot( direction.normalized() ), 1, 6 )
 
+
+		# Test behaviour for missing target
+		plane1["name"].setValue( "targetX" )
+		with six.assertRaisesRegex( self, RuntimeError, 'AimConstraint.out.transform : Constraint target does not exist: "/group/target"' ):
+			aim["out"].fullTransform( "/group/constrained" )
+
+		aim["ignoreMissingTarget"].setValue( True )
+		self.assertEqual( aim["out"].fullTransform( "/group/constrained" ), aim["in"].fullTransform( "/group/constrained" ) )
+
+		# Constrain to root
+		aim["target"].setValue( "/" )
+		direction = aim["out"].fullTransform( "/group/constrained" ).multDirMatrix( aim["aim"].getValue() )
+		self.assertAlmostEqual( (-constrainedTranslate).normalized().dot( direction.normalized() ), 1, 6 )
+
+		# No op
+		aim["target"].setValue( "" )
+		self.assertEqual( aim["out"].fullTransform( "/group/constrained" ), aim["in"].fullTransform( "/group/constrained" ) )
+
 	def testConstrainedWithExistingRotation( self ) :
 
-		targetTranslate = IECore.V3f( 1, 2, 3 )
-		constrainedTranslate = IECore.V3f( 10, 11, 12 )
+		targetTranslate = imath.V3f( 1, 2, 3 )
+		constrainedTranslate = imath.V3f( 10, 11, 12 )
 
 		plane1 = GafferScene.Plane()
 		plane1["transform"]["translate"].setValue( targetTranslate )
@@ -91,7 +111,7 @@ class AimConstraintTest( GafferSceneTest.SceneTestCase ) :
 
 		plane2 = GafferScene.Plane()
 		plane2["transform"]["translate"].setValue( constrainedTranslate )
-		plane2["transform"]["rotate"].setValue( IECore.V3f( 90, 0, 0 ) )
+		plane2["transform"]["rotate"].setValue( imath.V3f( 90, 0, 0 ) )
 		plane2["name"].setValue( "constrained" )
 
 		group = GafferScene.Group()
@@ -118,8 +138,8 @@ class AimConstraintTest( GafferSceneTest.SceneTestCase ) :
 
 	def testTargetMode( self ) :
 
-		targetTranslate = IECore.V3f( 1, 2, 3 )
-		constrainedTranslate = IECore.V3f( 10, 11, 12 )
+		targetTranslate = imath.V3f( 1, 2, 3 )
+		constrainedTranslate = imath.V3f( 10, 11, 12 )
 
 		plane1 = GafferScene.Plane()
 		plane1["transform"]["translate"].setValue( targetTranslate )
@@ -155,19 +175,19 @@ class AimConstraintTest( GafferSceneTest.SceneTestCase ) :
 		aim["targetMode"].setValue( aim.TargetMode.BoundMin )
 
 		direction = aim["out"].fullTransform( "/group/constrained" ).multDirMatrix( aim["aim"].getValue() )
-		expectedDirection = plane1["out"].bound( "/plane" ).min + targetTranslate - constrainedTranslate
+		expectedDirection = plane1["out"].bound( "/plane" ).min() + targetTranslate - constrainedTranslate
 		self.assertAlmostEqual( direction.normalized().dot( expectedDirection.normalized() ), 1, 6 )
 
 		aim["targetMode"].setValue( aim.TargetMode.BoundMax )
 
 		direction = aim["out"].fullTransform( "/group/constrained" ).multDirMatrix( aim["aim"].getValue() )
-		expectedDirection = plane1["out"].bound( "/plane" ).max + targetTranslate - constrainedTranslate
+		expectedDirection = plane1["out"].bound( "/plane" ).max() + targetTranslate - constrainedTranslate
 		self.assertAlmostEqual( direction.normalized().dot( expectedDirection.normalized() ), 1, 6 )
 
 	def testTargetOffset( self ) :
 
-		targetTranslate = IECore.V3f( 1, 2, 3 )
-		constrainedTranslate = IECore.V3f( 10, 11, 12 )
+		targetTranslate = imath.V3f( 1, 2, 3 )
+		constrainedTranslate = imath.V3f( 10, 11, 12 )
 
 		plane1 = GafferScene.Plane()
 		plane1["transform"]["translate"].setValue( targetTranslate )
@@ -200,7 +220,7 @@ class AimConstraintTest( GafferSceneTest.SceneTestCase ) :
 		expectedDirection = targetTranslate - constrainedTranslate
 		self.assertAlmostEqual( direction.normalized().dot( expectedDirection.normalized() ), 1, 6 )
 
-		aim["targetOffset"].setValue( IECore.V3f( 1, 2, 3 ) )
+		aim["targetOffset"].setValue( imath.V3f( 1, 2, 3 ) )
 
 		direction = aim["out"].fullTransform( "/group/constrained" ).multDirMatrix( aim["aim"].getValue() )
 		expectedDirection = aim["targetOffset"].getValue() + targetTranslate - constrainedTranslate

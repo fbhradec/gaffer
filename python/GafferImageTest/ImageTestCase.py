@@ -34,13 +34,26 @@
 #
 ##########################################################################
 
+import six
+import imath
+
 import IECore
+import IECoreImage
 
 import Gaffer
 import GafferTest
 import GafferImage
+import GafferImageTest
 
 class ImageTestCase( GafferTest.TestCase ) :
+
+	def setUp( self ) :
+
+		GafferTest.TestCase.setUp( self )
+
+		sanitiser = GafferImageTest.ContextSanitiser()
+		sanitiser.__enter__()
+		self.addCleanup( sanitiser.__exit__, None, None, None )
 
 	def assertImageHashesEqual( self, imageA, imageB ) :
 
@@ -55,10 +68,10 @@ class ImageTestCase( GafferTest.TestCase ) :
 		channelNames = imageA["channelNames"].getValue()
 		self.assertEqual( channelNames, imageB["channelNames"].getValue() )
 
-		tileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.min )
-		while tileOrigin.y < dataWindow.max.y :
-			tileOrigin.x = GafferImage.ImagePlug.tileOrigin( dataWindow.min ).x
-			while tileOrigin.x < dataWindow.max.x :
+		tileOrigin = GafferImage.ImagePlug.tileOrigin( dataWindow.min() )
+		while tileOrigin.y < dataWindow.max().y :
+			tileOrigin.x = GafferImage.ImagePlug.tileOrigin( dataWindow.min() ).x
+			while tileOrigin.x < dataWindow.max().x :
 				for channelName in channelNames :
 					self.assertEqual(
 						imageA.channelDataHash( channelName, tileOrigin ),
@@ -68,6 +81,7 @@ class ImageTestCase( GafferTest.TestCase ) :
 			tileOrigin.y += GafferImage.ImagePlug.tileSize()
 
 	def assertImagesEqual( self, imageA, imageB, maxDifference = 0.0, ignoreMetadata = False, ignoreDataWindow = False ) :
+		self.longMessage = True
 
 		self.assertEqual( imageA["format"].getValue(), imageB["format"].getValue() )
 		if not ignoreDataWindow :
@@ -75,46 +89,70 @@ class ImageTestCase( GafferTest.TestCase ) :
 		if not ignoreMetadata :
 			self.assertEqual( imageA["metadata"].getValue(), imageB["metadata"].getValue() )
 		self.assertEqual( imageA["channelNames"].getValue(), imageB["channelNames"].getValue() )
+		deep = imageA["deep"].getValue()
+		self.assertEqual( deep, imageB["deep"].getValue() )
 
-		for channelName in imageA["channelNames"].getValue() :
-			## \todo Lift this restriction
-			self.assertTrue( channelName in "RGBA" )
+		if not deep:
 
-		difference = GafferImage.Merge()
-		difference["in"][0].setInput( imageA )
-		difference["in"][1].setInput( imageB )
-		difference["operation"].setValue( GafferImage.Merge.Operation.Difference )
+			difference = GafferImage.Merge()
+			difference["in"][0].setInput( imageA )
+			difference["in"][1].setInput( imageB )
+			difference["operation"].setValue( GafferImage.Merge.Operation.Difference )
 
-		stats = GafferImage.ImageStats()
-		stats["in"].setInput( difference["out"] )
-		stats["regionOfInterest"].setValue( imageA["format"].getValue().getDisplayWindow() )
-		stats["channels"].setValue( IECore.StringVectorData( [ "R", "G", "B", "A" ] ) )
+			stats = GafferImage.ImageStats()
+			stats["in"].setInput( difference["out"] )
+			stats["area"].setValue( imageA["format"].getValue().getDisplayWindow() )
 
-		if "R" in imageA["channelNames"].getValue() :
-			self.assertLessEqual( stats["max"]["r"].getValue(), maxDifference )
+			for channelName in imageA["channelNames"].getValue() :
 
-		if "G" in imageA["channelNames"].getValue() :
-			self.assertLessEqual( stats["max"]["g"].getValue(), maxDifference )
+				stats["channels"].setValue( IECore.StringVectorData( [ channelName ] * 4 ) )
+				self.assertLessEqual( stats["max"]["r"].getValue(), maxDifference, "Channel {0}".format( channelName ) )
+			# Access the tiles, because this will throw an error if the sample offsets are bogus
+			GafferImage.ImageAlgo.tiles( imageA )
+			GafferImage.ImageAlgo.tiles( imageB )
+		else:
+			pixelDataA = GafferImage.ImageAlgo.tiles( imageA )
+			pixelDataB = GafferImage.ImageAlgo.tiles( imageB )
+			if pixelDataA != pixelDataB:
+				self.assertEqual( pixelDataA.keys(), pixelDataB.keys() )
+				self.assertEqual( pixelDataA["tileOrigins"], pixelDataB["tileOrigins"] )
+				for k in pixelDataA.keys():
+					if k == "tileOrigins":
+						continue
+					for i in range( len( pixelDataA[k] ) ):
+						if pixelDataA[k][i] != pixelDataB[k][i]:
+							tileStr = str( pixelDataA["tileOrigins"][i] )
+							self.assertEqual( len( pixelDataA[k][i] ), len( pixelDataB[k][i] ), " while checking pixel data %s : %s" % ( k, tileStr ) )
+							for j in range( len( pixelDataA[k][i] ) ):
+								self.assertEqual( pixelDataA[k][i][j], pixelDataB[k][i][j] , " while checking pixel data %s : %s at index %i" % ( k, tileStr, j ) )
 
-		if "B" in imageA["channelNames"].getValue() :
-			self.assertLessEqual( stats["max"]["b"].getValue(), maxDifference )
-
-		if "A" in imageA["channelNames"].getValue() :
-			self.assertLessEqual( stats["max"]["a"].getValue(), maxDifference )
 
 	## Returns an image node with an empty data window. This is useful in
 	# verifying that nodes deal correctly with such inputs.
 	def emptyImage( self ) :
 
-		image = IECore.ImagePrimitive( IECore.Box2i(), IECore.Box2i( IECore.V2i( 0 ), IECore.V2i( 100 ) ) )
-		image["R"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Varying, IECore.FloatVectorData() )
-		image["G"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Varying, IECore.FloatVectorData() )
-		image["B"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Varying, IECore.FloatVectorData() )
-		image["A"] = IECore.PrimitiveVariable( IECore.PrimitiveVariable.Interpolation.Varying, IECore.FloatVectorData() )
+		emptyCrop = GafferImage.Crop( "Crop" )
+		emptyCrop["Constant"] = GafferImage.Constant()
+		emptyCrop["Constant"]["format"].setValue( GafferImage.Format( 100, 100, 1.000 ) )
+		emptyCrop["in"].setInput( emptyCrop["Constant"]["out"] )
+		emptyCrop["area"].setValue( imath.Box2i() )
+		emptyCrop["affectDisplayWindow"].setValue( False )
 
-		result = GafferImage.ObjectToImage()
-		result["object"].setValue( image )
+		self.assertEqual( emptyCrop["out"]["dataWindow"].getValue(), imath.Box2i() )
 
-		self.assertEqual( result["out"]["dataWindow"].getValue(), IECore.Box2i() )
+		return emptyCrop
 
-		return result
+	def deepImage( self ):
+		return self.DeepImage()
+
+	def assertRaisesDeepNotSupported( self, node ) :
+
+		flat = GafferImage.Constant()
+		node["in"].setInput( flat["out"] )
+
+		self.assertNotEqual( GafferImage.ImageAlgo.imageHash( flat["out"] ), GafferImage.ImageAlgo.imageHash( node["out"] ) )
+
+		deep = GafferImage.Empty()
+		node["in"].setInput( deep["out"] )
+		six.assertRaisesRegex( self, RuntimeError, 'Deep data not supported in input "in*', GafferImage.ImageAlgo.image, node["out"] )
+

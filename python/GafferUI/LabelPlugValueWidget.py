@@ -37,29 +37,30 @@
 import Gaffer
 import GafferUI
 
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtWidgets
 
 ## A simple PlugValueWidget which just displays the name of the plug,
 # with the popup action menu for the plug.
 #
 # Supported plug metadata :
 #
-#  - "labelPlugValueWidget:renameable"
+#  - "renameable"
 class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, horizontalAlignment=GafferUI.Label.HorizontalAlignment.Left, verticalAlignment=GafferUI.Label.VerticalAlignment.Center, **kw ) :
 
-		GafferUI.PlugValueWidget.__init__( self, QtGui.QWidget(), plug, **kw )
+		GafferUI.PlugValueWidget.__init__( self, QtWidgets.QWidget(), plug, **kw )
 
-		layout = QtGui.QHBoxLayout()
+		layout = QtWidgets.QHBoxLayout()
 		layout.setContentsMargins( 0, 0, 0, 0 )
-		layout.setSizeConstraint( QtGui.QLayout.SetMinAndMaxSize )
+		layout.setSizeConstraint( QtWidgets.QLayout.SetMinAndMaxSize )
 		self._qtWidget().setLayout( layout )
 
 		self.__label = GafferUI.NameLabel(
-			plug,
+			self.getPlugs(),
 			horizontalAlignment = horizontalAlignment,
 			verticalAlignment = verticalAlignment,
+			formatter = self.__formatter,
 		)
 		self.__label._qtWidget().setObjectName( "gafferPlugLabel" )
 		layout.addWidget( self.__label._qtWidget() )
@@ -68,28 +69,31 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		# connecting at group 0 so we're called before the slots
 		# connected by the NameLabel class.
-		self.__dragBeginConnection = self.__label.dragBeginSignal().connect( 0, Gaffer.WeakMethod( self.__dragBegin ) )
-		self.__dragEndConnection = self.__label.dragEndSignal().connect( 0, Gaffer.WeakMethod( self.__dragEnd ) )
-
-		self.__plugMetadataChangedConnection = Gaffer.Metadata.plugValueChangedSignal().connect( Gaffer.WeakMethod( self.__plugMetadataChanged ) )
+		self.__label.dragBeginSignal().connect( 0, Gaffer.WeakMethod( self.__dragBegin ), scoped = False )
+		self.__label.dragEndSignal().connect( 0, Gaffer.WeakMethod( self.__dragEnd ), scoped = False )
 
 		self._addPopupMenu( self.__label )
 
-		self.setPlug( plug )
+		self.__updatePlugMetadataChangedConnections()
+		self.__updateDoubleClickConnection()
 
 	def label( self ) :
 
 		return self.__label
 
-	def setPlug( self, plug ) :
+	def setPlugs( self, plugs ) :
 
-		GafferUI.PlugValueWidget.setPlug( self, plug )
+		GafferUI.PlugValueWidget.setPlugs( self, plugs )
 
-		self.__label.setGraphComponent( plug )
+		self.__label.setGraphComponents( plugs )
+		# We currently only support editing single plug labels
 		if self.__editableLabel is not None :
-			self.__editableLabel.setGraphComponent( plug )
+			if len( plugs ) == 1 :
+				self.__editableLabel.setGraphComponent( next( iter( plugs ) ) )
+			else :
+				self.__editableLabel.setGraphComponent( None )
 
-		self.__updateFormatter()
+		self.__updatePlugMetadataChangedConnections()
 		self.__updateDoubleClickConnection()
 
 	def setHighlighted( self, highlighted ) :
@@ -102,36 +106,32 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		result = GafferUI.PlugValueWidget.getToolTip( self )
 
-		if self.getPlug() is not None :
-			result += "<ul>"
-			result += "<li>Left drag to connect</li>"
-			if hasattr( self.getPlug(), "getValue" ) :
-				result += "<li>Shift-left or middle drag to transfer value</li>"
-			result += "<ul>"
+		if self.getPlugs() :
+			if result :
+				result += "\n"
+			result += "## Actions\n\n"
+			result += "- Left drag to connect\n"
+			if all( [ hasattr( p, "getValue" ) for p in self.getPlugs() ] ) :
+				result += "- Shift+left or middle drag to transfer value"
 
 		return result
 
-	def _updateFromPlug( self ) :
+	def _updateFromPlugs( self ) :
 
-		plug = self.getPlug()
+		## \todo: This is mirrored in PlugLayout and needs centralising in NodeAlgo (along
+		# with proper support for child plug connections/defaults) at the next API break.
 
-		valueChanged = plug.getInput() is not None
-		if not valueChanged and isinstance( plug, Gaffer.ValuePlug ) :
-			with self.getContext() :
+		def valueChanged( plug ) :
+			changed = plug.getInput() is not None
+			if not changed and isinstance( plug, Gaffer.ValuePlug ) :
 				if Gaffer.NodeAlgo.hasUserDefault( plug ) :
-					try:
-						valueChanged = not Gaffer.NodeAlgo.isSetToUserDefault( plug )
-					except:
-						# an error here should not cause the ui to break, specially since the value widget corresponding could be indicating the error itself
-						valueChanged = True
+					changed = not Gaffer.NodeAlgo.isSetToUserDefault( plug )
 				else :
-					try:
-						valueChanged = not plug.isSetToDefault()
-					except:
-						# an error here should not cause the ui to break, specially since the value widget corresponding could be indicating the error itself
-						valueChanged = True
+					changed = not plug.isSetToDefault()
+			return changed
 
-		self.__setValueChanged( valueChanged )
+		anyValueChanged = any( [ valueChanged( plug ) for plug in self.getPlugs() ] )
+		self.__setValueChanged( anyValueChanged )
 
 	# Sets whether or not the label be rendered in a ValueChanged state.
 	def __setValueChanged( self, valueChanged ) :
@@ -159,33 +159,36 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 		left = event.buttons == event.Buttons.Left
 		middle = event.buttons == event.Buttons.Middle
 		if ( shift and left ) or middle :
-			if not hasattr( self.getPlug(), "getValue" ) :
+			if len( self.getPlugs() ) == 1 and hasattr( self.getPlug(), "getValue" ) :
+				GafferUI.Pointer.setCurrent( "values" )
+				with self.getContext() :
+					return self.getPlug().getValue()
+			else :
 				return None
-			GafferUI.Pointer.setCurrent( "values" )
-			with self.getContext() :
-				return self.getPlug().getValue()
 		elif left :
 			GafferUI.Pointer.setCurrent( "plug" )
-			return self.getPlug()
+			if len( self.getPlugs() ) == 1 :
+				return self.getPlug()
+			else :
+				return Gaffer.StandardSet( self.getPlugs() )
 
 	def __dragEnd( self, widget, event ) :
 
 		GafferUI.Pointer.setCurrent( None )
 
-	def __updateFormatter( self ) :
-
-		plug = self.getPlug()
-		label = Gaffer.Metadata.value( plug, "label" ) if plug is not None else None
-		if label is not None :
-			self.__label.setFormatter( lambda graphComponents : label )
-		else :
-			self.__label.setFormatter( self.__label.defaultFormatter )
-
 	def __updateDoubleClickConnection( self ) :
 
 		self.__labelDoubleClickConnection = None
+		if len( self.getPlugs() ) != 1 :
+			return
 
-		if self.getPlug() is None or not Gaffer.Metadata.value( self.getPlug(), "labelPlugValueWidget:renameable" ) :
+		# First try the official metadata.
+		renameable = Gaffer.Metadata.value( self.getPlug(), "renameable" )
+		if renameable is None :
+			# Then try the old metadata that we are phasing out.
+			renameable = Gaffer.Metadata.value( self.getPlug(), "labelPlugValueWidget:renameable" )
+
+		if renameable != True :
 			return
 
 		self.__labelDoubleClickConnection = self.__label.buttonDoubleClickSignal().connect( Gaffer.WeakMethod( self.__labelDoubleClicked ) )
@@ -194,7 +197,7 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 		assert( label is self.__label )
 
-		if self.getPlug().getFlags( Gaffer.Plug.Flags.ReadOnly ) or Gaffer.MetadataAlgo.readOnly( self.getPlug() ) :
+		if Gaffer.MetadataAlgo.readOnly( self.getPlug() ) :
 			return
 
 		if self.__editableLabel is None :
@@ -212,7 +215,7 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __labelEditingFinished( self, nameWidget ) :
 
-		with Gaffer.UndoContext( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
+		with Gaffer.UndoScope( self.getPlug().ancestor( Gaffer.ScriptNode ) ) :
 			# Do what the NameWidget would have done for us anyway, so we
 			# can group it with the metadata deregistration in the undo queue.
 			self.getPlug().setName( nameWidget.getText() )
@@ -228,10 +231,30 @@ class LabelPlugValueWidget( GafferUI.PlugValueWidget ) :
 		# did all the work ourselves.
 		return True
 
-	def __plugMetadataChanged( self, nodeTypeId, plugPath, key, plug ) :
+	def __updatePlugMetadataChangedConnections( self ) :
 
-		if self.getPlug() is None :
+		nodes = { plug.node() for plug in self.getPlugs() }
+		self.__plugMetadataChangedConnections = [
+			Gaffer.Metadata.plugValueChangedSignal( node ).connect( Gaffer.WeakMethod( self.__plugMetadataChanged ) )
+			for node in nodes
+		]
+
+	def __plugMetadataChanged( self, plug, key, reason ) :
+
+		if plug not in self.getPlugs() :
 			return
 
-		if key=="label" and Gaffer.MetadataAlgo.affectedByChange( self.getPlug(), nodeTypeId, plugPath, plug ) :
-			self.__updateFormatter()
+		if key=="label" :
+			# The NameLabel doesn't know that our formatter is sensitive
+			# to the metadata, so give it a little kick.
+			self.__label.setFormatter( self.__formatter )
+
+	@staticmethod
+	def __formatter( graphComponents ) :
+
+		if graphComponents :
+			label = Gaffer.Metadata.value( graphComponents[-1], "label" )
+			if label is not None :
+				return label
+
+		return GafferUI.NameLabel.defaultFormatter( graphComponents )

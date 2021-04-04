@@ -55,6 +55,17 @@ Gaffer.Metadata.registerNode(
 
 	plugs = {
 
+		"targetScene" : [
+
+			"description",
+			"""
+			The scene containing the target location to which objects are
+			constrained. If this is unconnected, the main input scene
+			is used instead.
+			""",
+
+		],
+
 		"target" : [
 
 			"description",
@@ -66,6 +77,16 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"plugValueWidget:type", "GafferSceneUI.ScenePathPlugValueWidget",
+
+		],
+
+		"ignoreMissingTarget" : [
+
+			"description",
+			"""
+			Causes the constraint to do nothing if the target location
+			doesn't exist in the scene, instead of erroring.
+			""",
 
 		],
 

@@ -38,13 +38,16 @@
 #ifndef GAFFERIMAGEUI_IMAGEVIEW_H
 #define GAFFERIMAGEUI_IMAGEVIEW_H
 
-#include "Gaffer/NumericPlug.h"
-#include "Gaffer/TypedPlug.h"
+#include "GafferImageUI/Export.h"
+#include "GafferImageUI/TypeIds.h"
 
 #include "GafferUI/View.h"
 
-#include "GafferImageUI/TypeIds.h"
-#include "GafferImageUIBindings/ImageViewBinding.h" // to enable friend declaration for bindImageView().
+#include "Gaffer/NumericPlug.h"
+#include "Gaffer/TypedPlug.h"
+
+#include <functional>
+#include <memory>
 
 namespace Gaffer
 {
@@ -60,6 +63,7 @@ IE_CORE_FORWARDDECLARE( ImageProcessor )
 IE_CORE_FORWARDDECLARE( Clamp )
 IE_CORE_FORWARDDECLARE( Grade )
 IE_CORE_FORWARDDECLARE( ImageStats )
+IE_CORE_FORWARDDECLARE( DeepState )
 IE_CORE_FORWARDDECLARE( ImagePlug )
 IE_CORE_FORWARDDECLARE( ImageSampler )
 
@@ -73,15 +77,15 @@ IE_CORE_FORWARDDECLARE( ImageGadget )
 /// \todo Refactor this into smaller components, along the lines of the SceneView class.
 /// Consider redesigning the View/Tool classes so that view functionality can be built up
 /// by adding tools like samplers etc.
-class ImageView : public GafferUI::View
+class GAFFERIMAGEUI_API ImageView : public GafferUI::View
 {
 
 	public :
 
 		ImageView( const std::string &name = defaultName<ImageView>() );
-		virtual ~ImageView();
+		~ImageView() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferImageUI::ImageView, ImageViewTypeId, GafferUI::View );
+		GAFFER_NODE_DECLARE_TYPE( GafferImageUI::ImageView, ImageViewTypeId, GafferUI::View );
 
 		Gaffer::BoolPlug *clippingPlug();
 		const Gaffer::BoolPlug *clippingPlug() const;
@@ -96,12 +100,20 @@ class ImageView : public GafferUI::View
 		Gaffer::StringPlug *displayTransformPlug();
 		const Gaffer::StringPlug *displayTransformPlug() const;
 
-		virtual void setContext( Gaffer::ContextPtr context );
+		Gaffer::BoolPlug *lutGPUPlug();
+		const Gaffer::BoolPlug *lutGPUPlug() const;
 
-		typedef boost::function<GafferImage::ImageProcessorPtr ()> DisplayTransformCreator;
+		/// The gadget responsible for displaying the image.
+		ImageGadget *imageGadget();
+		const ImageGadget *imageGadget() const;
+
+		void setContext( Gaffer::ContextPtr context ) override;
+
+		typedef std::function<GafferImage::ImageProcessorPtr ()> DisplayTransformCreator;
 
 		static void registerDisplayTransform( const std::string &name, DisplayTransformCreator creator );
 		static void registeredDisplayTransforms( std::vector<std::string> &names );
+		static GafferImage::ImageProcessorPtr createDisplayTransform( const std::string &name );
 
 	protected :
 
@@ -117,15 +129,6 @@ class ImageView : public GafferUI::View
 
 	private :
 
-		GafferImage::Clamp *clampNode();
-		const GafferImage::Clamp *clampNode() const;
-
-		GafferImage::Grade *gradeNode();
-		const GafferImage::Grade *gradeNode() const;
-
-		GafferImage::ImageProcessor *displayTransformNode();
-		const GafferImage::ImageProcessor *displayTransformNode() const;
-
 		void plugSet( Gaffer::Plug *plug );
 		bool keyPress( const GafferUI::KeyEvent &event );
 		void preRender();
@@ -139,16 +142,14 @@ class ImageView : public GafferUI::View
 		bool m_framed;
 
 		class ChannelChooser;
-		boost::shared_ptr<ChannelChooser> m_channelChooser;
+		std::unique_ptr<ChannelChooser> m_channelChooser;
 		class ColorInspector;
-		boost::shared_ptr<ColorInspector> m_colorInspector;
+		std::unique_ptr<ColorInspector> m_colorInspector;
 
 		typedef std::map<std::string, DisplayTransformCreator> DisplayTransformCreatorMap;
 		static DisplayTransformCreatorMap &displayTransformCreators();
 
 		static ViewDescription<ImageView> g_viewDescription;
-
-		friend void GafferImageUIBindings::bindImageView();
 
 };
 

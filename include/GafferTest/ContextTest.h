@@ -37,13 +37,20 @@
 #ifndef GAFFERTEST_CONTEXTTEST_H
 #define GAFFERTEST_CONTEXTTEST_H
 
+#include "GafferTest/Export.h"
+
+#include <tuple>
+
 namespace GafferTest
 {
 
-void testManyContexts();
-void testManySubstitutions();
-void testManyEnvironmentSubstitutions();
-void testScopingNullContext();
+GAFFERTEST_API void testManyContexts();
+GAFFERTEST_API void testManySubstitutions();
+GAFFERTEST_API void testManyEnvironmentSubstitutions();
+GAFFERTEST_API void testScopingNullContext();
+GAFFERTEST_API void testEditableScope();
+GAFFERTEST_API std::tuple<int,int,int,int> countContextHash32Collisions( int contexts, int mode, int seed );
+GAFFERTEST_API void testContextHashPerformance( int numEntries, int entrySize, bool startInitialized );
 
 } // namespace GafferTest
 

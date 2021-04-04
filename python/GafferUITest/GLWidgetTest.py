@@ -34,6 +34,8 @@
 #
 ##########################################################################
 
+import imath
+
 import IECore
 
 import Gaffer
@@ -50,7 +52,7 @@ class GLWidgetTest( GafferUITest.TestCase ) :
 		b = GafferUI.Button()
 
 		w.setChild( g )
-		g.setOverlay( f )
+		g.addOverlay( f )
 		f.setChild( b )
 
 		self.assertTrue( b.parent() is f )
@@ -68,14 +70,14 @@ class GLWidgetTest( GafferUITest.TestCase ) :
 		b = GafferUI.Button()
 
 		w.setChild( g )
-		g.setOverlay( c )
-		c.addChild( b, alignment = ( GafferUI.HorizontalAlignment.None, GafferUI.VerticalAlignment.Top ) )
+		g.addOverlay( c )
+		c.addChild( b, alignment = ( GafferUI.HorizontalAlignment.None_, GafferUI.VerticalAlignment.Top ) )
 
 		w.setVisible( True )
 
-		self.waitForIdle( 1000 )
+		self.waitForIdle( 10000 )
 
-		self.assertTrue( GafferUI.Widget.widgetAt( w.bound().min + IECore.V2i( 4 ) ) is b )
+		self.assertTrue( GafferUI.Widget.widgetAt( w.bound().min() + imath.V2i( 4 ) ) is b )
 
 	def testOverlayBound( self ) :
 
@@ -85,21 +87,22 @@ class GLWidgetTest( GafferUITest.TestCase ) :
 		b = GafferUI.Button()
 
 		w.setChild( g )
-		g.setOverlay( f )
+		g.addOverlay( f )
 		f.setChild( b )
 
 		w.setVisible( True )
+		self.waitForIdle( 10000 )
 
-		w.setPosition( IECore.V2i( 100 ) )
-		self.waitForIdle( 1000 )
+		w.setPosition( imath.V2i( 100 ) )
+		self.waitForIdle( 10000 )
 		b1 = b.bound()
 
-		w.setPosition( IECore.V2i( 200 ) )
-		self.waitForIdle( 1000 )
+		w.setPosition( imath.V2i( 200 ) )
+		self.waitForIdle( 10000 )
 		b2 = b.bound()
 
-		self.assertEqual( b2.min, b1.min + IECore.V2i( 100 ) )
-		self.assertEqual( b2.max, b1.max + IECore.V2i( 100 ) )
+		self.assertEqual( b2.min(), b1.min() + imath.V2i( 100 ) )
+		self.assertEqual( b2.max(), b1.max() + imath.V2i( 100 ) )
 
 	def testOverlayMousePosition( self ) :
 
@@ -109,12 +112,12 @@ class GLWidgetTest( GafferUITest.TestCase ) :
 		b = GafferUI.Button()
 
 		w.setChild( g )
-		g.setOverlay( f )
+		g.addOverlay( f )
 		f.setChild( b )
 
 		w.setVisible( True )
 
-		w.setPosition( IECore.V2i( 100 ) )
+		w.setPosition( imath.V2i( 100 ) )
 		self.waitForIdle( 1000 )
 
 		wBound = w.bound()
@@ -123,25 +126,52 @@ class GLWidgetTest( GafferUITest.TestCase ) :
 		wP = GafferUI.Widget.mousePosition( relativeTo = w )
 		bP = GafferUI.Widget.mousePosition( relativeTo = b )
 
-		self.assertEqual( bBound.min - wBound.min, wP - bP )
+		self.assertEqual( bBound.min() - wBound.min(), wP - bP )
 
 	def testOverlayAccessors( self ) :
 
 		g = GafferUI.GLWidget()
-		self.assertEqual( g.getOverlay(), None )
 
 		b1 = GafferUI.Button()
 		b2 = GafferUI.Button()
 		self.assertEqual( b1.parent(), None )
 		self.assertEqual( b2.parent(), None )
 
-		g.setOverlay( b1 )
+		g.addOverlay( b1 )
 		self.assertEqual( b1.parent(), g )
 		self.assertEqual( b2.parent(), None )
 
-		g.setOverlay( b2 )
+		g.addOverlay( b2 )
+		self.assertEqual( b1.parent(), g )
+		self.assertEqual( b2.parent(), g )
+
+		g.removeOverlay( b1 )
 		self.assertEqual( b1.parent(), None )
 		self.assertEqual( b2.parent(), g )
+
+		g.removeOverlay( b2 )
+		self.assertEqual( b1.parent(), None )
+		self.assertEqual( b2.parent(), None )
+
+	def testDrawExceptionsHandled( self ) :
+
+		class TestWidget( GafferUI.GLWidget ) :
+
+			def _draw( self ) :
+				raise RuntimeError( "Draw Exception" )
+
+		w = GafferUI.Window( borderWidth = 10 )
+		g = TestWidget()
+		w.setChild( g )
+
+		with IECore.CapturingMessageHandler() as mh :
+			w.setVisible( True )
+			self.waitForIdle( 1000 )
+
+		self.assertEqual(
+			{ ( m.level, m.context, m.message ) for m in mh.messages },
+			{ ( IECore.Msg.Level.Error, "GLWidget", "Draw Exception" ) }
+		)
 
 if __name__ == "__main__":
 	unittest.main()

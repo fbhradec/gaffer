@@ -34,10 +34,15 @@
 #
 ##########################################################################
 
+import functools
+
+import IECore
+
 import Gaffer
 import GafferUI
 
 import GafferScene
+import GafferSceneUI
 
 Gaffer.Metadata.registerNode(
 
@@ -49,6 +54,12 @@ Gaffer.Metadata.registerNode(
 	""",
 
 	plugs = {
+
+		"sets" : [
+
+			"layout:divider", True
+
+		],
 
 		"parameters" : [
 
@@ -77,6 +88,166 @@ Gaffer.Metadata.registerNode(
 
 		],
 
+		"defaultLight" : [
+
+			"description",
+			"""
+			Whether this light illuminates all geometry by default. When
+			toggled, the light will be added to the \"defaultLights\" set, which
+			can be referenced in set expressions and manipulated by downstream
+			nodes.
+			""",
+
+			"layout:section", "Light Linking",
+
+		],
+
+		"visualiserAttributes" : [
+
+			"description",
+			"""
+			Attributes that affect the visualisation of this Light in the Viewer.
+			""",
+
+			"layout:section", "Visualisation",
+			"compoundDataPlugValueWidget:editable", False,
+
+		],
+
+		"visualiserAttributes.*" : [
+
+			"nameValuePlugPlugValueWidget:ignoreNamePlug", True,
+
+		],
+
+		"visualiserAttributes.lightDrawingMode" : [
+
+			"description",
+			"""
+			Controls how lights are presented in the Viewer.
+			""",
+
+			"label", "Light Drawing Mode",
+
+		],
+
+		"visualiserAttributes.maxTextureResolution" : [
+
+			"description",
+			"""
+			Visualisers that load textures will respect this setting to
+			limit their resolution.
+			""",
+
+		],
+
+		"visualiserAttributes.frustum" : [
+
+			"description",
+			"""
+			Controls whether applicable lights draw a representation of their
+			light projection in the viewer.
+			"""
+
+		],
+
+		"visualiserAttributes.frustum.value" : [
+
+			"preset:Off", "off",
+			"preset:When Selected", "whenSelected",
+			"preset:On", "on",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget"
+		],
+
+		"visualiserAttributes.lightFrustumScale" : [
+
+			"description",
+			"""
+			Allows light projections to be scaled to better suit the scene.
+			"""
+
+		],
+
+		"visualiserAttributes.scale" : [
+
+			"description",
+			"""
+			Scales non-geometric visualisations in the viewport to make them
+			easier to work with.
+			""",
+
+		],
+
+		"visualiserAttributes.lightDrawingMode.value" : [
+
+			"preset:Wireframe", "wireframe",
+			"preset:Color", "color",
+			"preset:Texture", "texture",
+
+			"plugValueWidget:type", "GafferUI.PresetsPlugValueWidget"
+		]
+
 	}
 
 )
+
+def appendViewContextMenuItems( viewer, view, menuDefinition ) :
+
+	if not isinstance( view, GafferSceneUI.SceneView ) :
+		return None
+
+	menuDefinition.append(
+		"/Light Links",
+		{
+			"subMenu" : functools.partial( __lightLinksSubMenu, view )
+		}
+	)
+
+def __lightLinksSubMenu( view ) :
+
+	result = IECore.MenuDefinition()
+
+	selectedObjects = view.viewportGadget().getPrimaryChild().getSelection()
+	if not selectedObjects.isEmpty() :
+		with view.getContext() :
+			selectedLights = view["in"].set( "__lights" ).value.intersection( selectedObjects )
+		selectedObjects.removePaths( selectedLights )
+	else :
+		selectedLights = selectedObjects
+
+	result.append(
+		"Select Linked Objects",
+		{
+			"command" : functools.partial(
+				__selectLinked, context = view.getContext(), title = "Selecting Linked Objects",
+				linkingQuery = functools.partial( GafferScene.SceneAlgo.linkedObjects, view["in"], selectedLights )
+			),
+			"active" : not selectedLights.isEmpty(),
+		}
+	)
+
+	result.append(
+		"Select Linked Lights",
+		{
+			"command" : functools.partial(
+				__selectLinked, context = view.getContext(), title = "Selecting Linked Lights",
+				linkingQuery = functools.partial( GafferScene.SceneAlgo.linkedLights, view["in"], selectedObjects )
+			),
+			"active" : not selectedObjects.isEmpty(),
+		}
+	)
+
+	return result
+
+def __selectLinked( menu, context, title, linkingQuery ) :
+
+	dialogue = GafferUI.BackgroundTaskDialogue( title )
+	with context :
+		result = dialogue.waitForBackgroundTask(
+			linkingQuery,
+			parentWindow = menu.ancestor( GafferUI.Window )
+		)
+
+	if not isinstance( result, Exception ) :
+		GafferSceneUI.ContextAlgo.setSelectedPaths( context, result )

@@ -40,10 +40,8 @@ import os
 import IECore
 import Gaffer
 import GafferUI
-import GafferCortexUI
-import GafferSceneUI # for alembic previews
 
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtWidgets
 
 class browser( Gaffer.Application ) :
 
@@ -95,7 +93,7 @@ class browser( Gaffer.Application ) :
 		# centre the window on the primary screen at 3/4 size.
 		## \todo Implement save/restore of geometry, and do all this without using Qt APIs
 		# in the app itself.
-		desktop = QtGui.QApplication.instance().desktop()
+		desktop = QtWidgets.QApplication.instance().desktop()
 		geometry = desktop.availableGeometry()
 		adjustment = geometry.size() / 8
 		geometry.adjust( adjustment.width(), adjustment.height(), -adjustment.width(), -adjustment.height() )

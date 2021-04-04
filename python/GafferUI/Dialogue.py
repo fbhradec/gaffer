@@ -35,15 +35,17 @@
 #
 ##########################################################################
 
+import six
+
 import Gaffer
 import GafferUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
+from Qt import QtCore
 
 class Dialogue( GafferUI.Window ) :
 
 	## \todo Remove the deprecated resizeable argument
-	def __init__( self, title, borderWidth=8, resizeable=None, sizeMode=GafferUI.Window.SizeMode.Manual, **kw ) :
+	def __init__( self, title, borderWidth=6, resizeable=None, sizeMode=GafferUI.Window.SizeMode.Manual, **kw ) :
 
 		GafferUI.Window.__init__( self, title, borderWidth, resizeable, sizeMode=sizeMode, **kw )
 
@@ -51,7 +53,7 @@ class Dialogue( GafferUI.Window ) :
 
 		self.__column = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Vertical, spacing = 8 )
 
-		self.__column.append( GafferUI.Frame(), True )
+		self.__column.append( GafferUI.Frame( borderWidth = 0 ), True )
 
 		self.__buttonRow = GafferUI.ListContainer( GafferUI.ListContainer.Orientation.Horizontal, spacing=8 )
 		self.__column.append( self.__buttonRow )
@@ -91,7 +93,12 @@ class Dialogue( GafferUI.Window ) :
 			self.__closeConnection = None
 			self.__modalEventLoop = None
 
-			self._qtWidget().setWindowModality( QtCore.Qt.NonModal )
+			# Here we want to call `self._qtWidget().setWindowModality( QtCore.Qt.NonModal )`,
+			# but that causes crashes in Qt 5, because it doesn't support changing modality on
+			# the fly. See https://bugreports.qt.io/browse/QTBUG-47599. In practice, everywhere
+			# we use modal dialogues in Gaffer, we close the dialogue immediately after exiting
+			# the modal loop anyway, so at least for now we can get away with not switching the
+			# modality back.
 
 			if parentWindow is not None :
 				parentWindow.removeChild( self )
@@ -135,9 +142,9 @@ class Dialogue( GafferUI.Window ) :
 
 	def _addButton( self, textOrButton ) :
 
-		assert( isinstance( textOrButton, ( basestring, GafferUI.Button ) ) )
+		assert( isinstance( textOrButton, ( six.string_types, GafferUI.Button ) ) )
 
-		if isinstance( textOrButton, basestring ) :
+		if isinstance( textOrButton, six.string_types ) :
 			button = GafferUI.Button( textOrButton )
 		else :
 			button = textOrButton

@@ -45,6 +45,11 @@ class TaskList( GafferDispatch.TaskNode ) :
 	def __init__( self, name = "TaskList" ) :
 
 		GafferDispatch.TaskNode.__init__( self, name )
+		self["sequence"] = Gaffer.BoolPlug()
+
+	def requiresSequenceExecution( self ) :
+
+		return self["sequence"].getValue()
 
 	def hash( self, context ) :
 

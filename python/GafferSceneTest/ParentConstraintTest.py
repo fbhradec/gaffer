@@ -35,6 +35,8 @@
 ##########################################################################
 
 import unittest
+import imath
+import six
 
 import IECore
 
@@ -48,9 +50,9 @@ class ParentConstraintTest( GafferSceneTest.SceneTestCase ) :
 	def test( self ) :
 
 		plane1 = GafferScene.Plane()
-		plane1["transform"]["translate"].setValue( IECore.V3f( 1, 2, 3 ) )
-		plane1["transform"]["scale"].setValue( IECore.V3f( 1, 2, 3 ) )
-		plane1["transform"]["rotate"].setValue( IECore.V3f( 1000, 20, 39 ) )
+		plane1["transform"]["translate"].setValue( imath.V3f( 1, 2, 3 ) )
+		plane1["transform"]["scale"].setValue( imath.V3f( 1, 2, 3 ) )
+		plane1["transform"]["rotate"].setValue( imath.V3f( 1000, 20, 39 ) )
 		plane1["name"].setValue( "target" )
 
 		plane2 = GafferScene.Plane()
@@ -74,11 +76,26 @@ class ParentConstraintTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ), group["out"].fullTransform( "/group/target" ) )
 
+		# Test behaviour for missing target
+		plane1["name"].setValue( "targetX" )
+		with six.assertRaisesRegex( self, RuntimeError, 'ParentConstraint.out.transform : Constraint target does not exist: "/group/target"' ):
+			constraint["out"].fullTransform( "/group/constrained" )
+
+		constraint["ignoreMissingTarget"].setValue( True )
+		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ), constraint["in"].fullTransform( "/group/constrained" ) )
+
+		# Constrain to root and no-op empty constraint ( these are identical for a ParentConstraint )
+		constraint["target"].setValue( "/" )
+		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ), constraint["in"].fullTransform( "/group/constrained" ) )
+		constraint["target"].setValue( "" )
+		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ), constraint["in"].fullTransform( "/group/constrained" ) )
+
+
 	def testRelativeTransform( self ) :
 
 		plane1 = GafferScene.Plane()
-		plane1["transform"]["translate"].setValue( IECore.V3f( 1, 2, 3 ) )
-		plane1["transform"]["rotate"].setValue( IECore.V3f( 0, 90, 0 ) )
+		plane1["transform"]["translate"].setValue( imath.V3f( 1, 2, 3 ) )
+		plane1["transform"]["rotate"].setValue( imath.V3f( 0, 90, 0 ) )
 		plane1["name"].setValue( "target" )
 
 		plane2 = GafferScene.Plane()
@@ -93,7 +110,7 @@ class ParentConstraintTest( GafferSceneTest.SceneTestCase ) :
 		constraint = GafferScene.ParentConstraint()
 		constraint["target"].setValue( "/group/target" )
 		constraint["in"].setInput( group["out"] )
-		constraint["relativeTransform"]["translate"].setValue( IECore.V3f( 1, 0, 0 ) )
+		constraint["relativeTransform"]["translate"].setValue( imath.V3f( 1, 0, 0 ) )
 
 		filter = GafferScene.PathFilter()
 		filter["paths"].setValue( IECore.StringVectorData( [ "/group/constrained" ] ) )
@@ -101,7 +118,7 @@ class ParentConstraintTest( GafferSceneTest.SceneTestCase ) :
 
 		self.assertSceneValid( constraint["out"] )
 
-		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ), IECore.M44f.createTranslated( IECore.V3f( 1, 0, 0 ) ) * group["out"].fullTransform( "/group/target" ) )
+		self.assertEqual( constraint["out"].fullTransform( "/group/constrained" ), imath.M44f().translate( imath.V3f( 1, 0, 0 ) ) * group["out"].fullTransform( "/group/target" ) )
 
 	def testDirtyPropagation( self ) :
 
@@ -124,11 +141,18 @@ class ParentConstraintTest( GafferSceneTest.SceneTestCase ) :
 
 		constraint["relativeTransform"]["translate"]["x"].setValue( 10 )
 
-		self.assertEqual( len( cs ), 6 )
-		plugs = [ x[0].relativeName( x[0].node() ) for x in cs ]
+		plugs = { x[0] for x in cs if not x[0].getName().startswith( "__" ) }
 		self.assertEqual(
-			set( [ "relativeTransform.translate.x", "relativeTransform.translate", "relativeTransform", "out.bound", "out.transform", "out" ] ),
-			set( plugs )
+			plugs,
+			{
+				constraint["relativeTransform"]["translate"]["x"],
+				constraint["relativeTransform"]["translate"],
+				constraint["relativeTransform"],
+				constraint["out"]["bound"],
+				constraint["out"]["childBounds"],
+				constraint["out"]["transform"],
+				constraint["out"]
+			}
 		)
 
 	def testParentNodeEquivalence( self ) :
@@ -145,7 +169,7 @@ class ParentConstraintTest( GafferSceneTest.SceneTestCase ) :
 		parent = GafferScene.Parent()
 		parent["in"].setInput( plane1["out"] )
 		parent["parent"].setValue( "/target" )
-		parent["child"].setInput( plane2["out"] )
+		parent["children"][0].setInput( plane2["out"] )
 
 		group = GafferScene.Group()
 		group["in"][0].setInput( plane1["out"] )
@@ -160,6 +184,35 @@ class ParentConstraintTest( GafferSceneTest.SceneTestCase ) :
 		constraint["filter"].setInput( filter["out"] )
 
 		self.assertEqual( parent["out"].fullTransform( "/target/constrained" ), constraint["out"].fullTransform( "/group/constrained" ) )
+
+	def testTargetScene( self ) :
+
+		cube = GafferScene.Cube()
+		sphere1 = GafferScene.Sphere()
+		sphere1["transform"]["translate"]["x"].setValue( 1 )
+		parent = GafferScene.Parent()
+		parent["parent"].setValue( "/" )
+		parent["in"].setInput( cube["out"] )
+		parent["child"][0].setInput( sphere1["out"] )
+
+		sphere2 = GafferScene.Sphere()
+		sphere2["transform"]["translate"]["y"].setValue( 1 )
+
+		cubeFilter = GafferScene.PathFilter()
+		cubeFilter["paths"].setValue( IECore.StringVectorData( [ "/cube" ] ) )
+
+		constraint = GafferScene.ParentConstraint()
+		constraint["in"].setInput( parent["out"] )
+		constraint["filter"].setInput( cubeFilter["out"] )
+		constraint["target"].setValue( "/sphere" )
+		self.assertEqual( constraint["out"].fullTransform( "/cube" ), parent["out"].fullTransform( "/sphere" ) )
+
+		constraint["targetScene"].setInput( sphere2["out"] )
+		self.assertEqual( constraint["out"].fullTransform( "/cube" ), sphere2["out"].fullTransform( "/sphere" ) )
+
+		sphere2["name"].setValue( "ball" )
+		constraint["ignoreMissingTarget"].setValue( True )
+		self.assertEqual( constraint["out"].fullTransform( "/cube" ), constraint["in"].fullTransform( "/cube" ) )
 
 if __name__ == "__main__":
 	unittest.main()

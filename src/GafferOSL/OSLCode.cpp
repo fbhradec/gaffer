@@ -34,23 +34,24 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include <fstream>
+#include "GafferOSL/OSLCode.h"
 
-#include "boost/filesystem.hpp"
-#include "boost/bind.hpp"
+#include "GafferOSL/Private/CapturingErrorHandler.h"
+
+#include "Gaffer/Metadata.h"
+#include "Gaffer/Process.h"
+#include "Gaffer/SplinePlug.h"
+#include "Gaffer/StringPlug.h"
+
+#include "IECore/Exception.h"
+#include "IECore/StringAlgo.h"
 
 #include "OSL/oslcomp.h"
 
-#include "IECore/Exception.h"
+#include "boost/bind.hpp"
+#include "boost/filesystem.hpp"
 
-#include "Gaffer/StringAlgo.h"
-#include "Gaffer/StringPlug.h"
-#include "Gaffer/Metadata.h"
-#include "Gaffer/SplinePlug.h"
-#include "Gaffer/Process.h"
-
-#include "GafferOSL/Private/CapturingErrorHandler.h"
-#include "GafferOSL/OSLCode.h"
+#include <fstream>
 
 using namespace std;
 using namespace IECore;
@@ -84,7 +85,7 @@ string parameter( const Plug *plug )
 
 	string type;
 	string defaultValue;
-	switch( plugType )
+	switch( (int)plugType )
 	{
 		case FloatPlugTypeId :
 			defaultValue = "0.0";
@@ -110,7 +111,7 @@ string parameter( const Plug *plug )
 			defaultValue = "\"\"";
 			type = "string";
 			break;
-		case PlugTypeId :
+		case ClosurePlugTypeId :
 			defaultValue = "0";
 			type = "closure color";
 			break;
@@ -346,7 +347,7 @@ InternedString CompileProcess::g_type( "oslCode:compile" );
 // OSLCode
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( OSLCode );
+GAFFER_NODE_DEFINE_TYPE( OSLCode );
 
 size_t OSLCode::g_firstPlugIndex;
 
@@ -361,7 +362,7 @@ OSLCode::OSLCode( const std::string &name )
 	/// \todo Rejig the NetworkGenerator so there is a hook for us to do our
 	/// code generation on demand at network generation time, and allow inputs
 	/// again.
-	addChild( new StringPlug( "code", Plug::In, "", Plug::Default & ~Plug::AcceptsInputs ) );
+	addChild( new StringPlug( "code", Plug::In, "", Plug::Default & ~Plug::AcceptsInputs, IECore::StringAlgo::NoSubstitutions ) );
 
 	// Must disable serialisation on the name because the GAFFEROSL_CODE_DIRECTORY
 	// might not be the same when we come to be loaded again.
@@ -396,6 +397,10 @@ std::string OSLCode::source( const std::string shaderName ) const
 {
 	string shaderNameCopy = shaderName;
 	return generate( this, shaderNameCopy );
+}
+
+void OSLCode::loadShader( const std::string &shaderName, bool keepExistingValues )
+{
 }
 
 OSLCode::ShaderCompiledSignal &OSLCode::shaderCompiledSignal()
@@ -456,7 +461,7 @@ void OSLCode::parameterAdded( const Gaffer::GraphComponent *parent, Gaffer::Grap
 		// OSLShaderUI registers a dynamic metadata entry which depends on whether or
 		// not the plug has children, so we must notify the world that the value will
 		// have changed.
-		Metadata::plugValueChangedSignal()( staticTypeId(), "out", "nodule:type", outPlug() );
+		Metadata::plugValueChangedSignal( this )( outPlug(), "nodule:type", Metadata::ValueChangedReason::StaticRegistration );
 	}
 
 	child->nameChangedSignal().connect( boost::bind( &OSLCode::parameterNameChanged, this ) );
@@ -470,7 +475,7 @@ void OSLCode::parameterRemoved( const Gaffer::GraphComponent *parent, Gaffer::Gr
 		// OSLShaderUI registers a dynamic metadata entry which depends on whether or
 		// not the plug has children, so we must notify the world that the value will
 		// have changed.
-		Metadata::plugValueChangedSignal()( staticTypeId(), "out", "nodule:type", outPlug() );
+		Metadata::plugValueChangedSignal( this )( outPlug(), "nodule:type", Metadata::ValueChangedReason::StaticRegistration );
 	}
 
 	child->nameChangedSignal().disconnect( boost::bind( &OSLCode::parameterNameChanged, this ) );

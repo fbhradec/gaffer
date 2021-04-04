@@ -51,7 +51,7 @@ class StandardSetTest( GafferTest.TestCase ) :
 		s = Gaffer.StandardSet()
 		self.assertEqual( s.typeName(), "Gaffer::StandardSet" )
 		self.assertEqual( s.staticTypeName(), "Gaffer::StandardSet" )
-		self.assert_( s.isInstanceOf, IECore.TypeId.RunTimeTyped )
+		self.assertTrue( s.isInstanceOf( IECore.TypeId.RunTimeTyped ) )
 
 	def testBasicMethods( self ) :
 
@@ -62,49 +62,49 @@ class StandardSetTest( GafferTest.TestCase ) :
 		n1 = Gaffer.Node()
 		n2 = Gaffer.Node()
 
-		self.assert_( n1 not in s )
-		self.assert_( n2 not in s )
+		self.assertNotIn( n1, s )
+		self.assertNotIn( n2, s )
 
 		a = s.add( n1 )
 		self.assertEqual( a, True )
-		self.assert_( n1 in s )
-		self.assert_( not n1 not in s )
-		self.assert_( n2 not in s )
+		self.assertIn( n1, s )
+		self.assertTrue( not n1 not in s )
+		self.assertNotIn( n2, s )
 		self.assertEqual( len( s ), 1 )
 		self.assertEqual( s.size(), 1 )
 
 		a = s.add( n1 )
 		self.assertEqual( a, False )
-		self.assert_( n1 in s )
-		self.assert_( not n1 not in s )
-		self.assert_( n2 not in s )
+		self.assertIn( n1, s )
+		self.assertTrue( not n1 not in s )
+		self.assertNotIn( n2, s )
 		self.assertEqual( len( s ), 1 )
 		self.assertEqual( s.size(), 1 )
 
 		a = s.add( n2 )
 		self.assertEqual( a, True )
-		self.assert_( n1 in s )
-		self.assert_( n2 in s )
+		self.assertIn( n1, s )
+		self.assertIn( n2, s )
 		self.assertEqual( len( s ), 2 )
 		self.assertEqual( s.size(), 2 )
 
 		a = s.remove( n1 )
 		self.assertEqual( a, True )
-		self.assert_( not n1 in s )
-		self.assert_( n2 in s )
+		self.assertNotIn( n1, s )
+		self.assertIn( n2, s )
 		self.assertEqual( len( s ), 1 )
 		self.assertEqual( s.size(), 1 )
 
 		a = s.remove( n1 )
 		self.assertEqual( a, False )
-		self.assert_( not n1 in s )
-		self.assert_( n2 in s )
+		self.assertNotIn( n1, s )
+		self.assertIn( n2, s )
 		self.assertEqual( len( s ), 1 )
 		self.assertEqual( s.size(), 1 )
 
 		s.clear()
-		self.assert_( not n1 in s )
-		self.assert_( not n2 in s )
+		self.assertNotIn( n1, s )
+		self.assertNotIn( n2, s )
 		self.assertEqual( len( s ), 0 )
 		self.assertEqual( s.size(), 0 )
 
@@ -118,10 +118,10 @@ class StandardSetTest( GafferTest.TestCase ) :
 		s.add( n1 )
 		s.add( n2 )
 
-		self.failUnless( s[0].isSame( n1 ) )
-		self.failUnless( s[1].isSame( n2 ) )
-		self.failUnless( s[-1].isSame( n2 ) )
-		self.failUnless( s[-2].isSame( n1 ) )
+		self.assertTrue( s[0].isSame( n1 ) )
+		self.assertTrue( s[1].isSame( n2 ) )
+		self.assertTrue( s[-1].isSame( n2 ) )
+		self.assertTrue( s[-2].isSame( n1 ) )
 
 		self.assertRaises( IndexError, s.__getitem__, 2 )
 		self.assertRaises( IndexError, s.__getitem__, -3 )
@@ -148,7 +148,7 @@ class StandardSetTest( GafferTest.TestCase ) :
 			n = Gaffer.Node()
 			s.add( n )
 
-			self.assert_( s[-1].isSame( n ) )
+			self.assertTrue( s[-1].isSame( n ) )
 
 	def testSignals( self ) :
 
@@ -194,9 +194,9 @@ class StandardSetTest( GafferTest.TestCase ) :
 		n3 = Gaffer.Node()
 
 		s = Gaffer.StandardSet( ( n1, n2 ) )
-		self.assert_( n1 in s )
-		self.assert_( n2 in s )
-		self.assert_( not n3 in s )
+		self.assertIn( n1, s )
+		self.assertIn( n2, s )
+		self.assertNotIn( n3, s )
 
 	def testAddAndRemoveFromSequence( self ) :
 
@@ -227,11 +227,11 @@ class StandardSetTest( GafferTest.TestCase ) :
 
 		self.assertRaises( Exception, s.add, n )
 
-		self.failIf( n in s )
+		self.assertNotIn( n, s )
 
 		s.add( p )
 
-		self.failUnless( p in s )
+		self.assertIn( p, s )
 
 	def testMembershipQueries( self ) :
 
@@ -241,12 +241,12 @@ class StandardSetTest( GafferTest.TestCase ) :
 		s = Gaffer.StandardSet( members )
 
 		for m in members :
-			self.failUnless( m in s )
-			self.failUnless( s.contains( m ) )
+			self.assertIn( m, s )
+			self.assertTrue( s.contains( m ) )
 
 		for m in notMembers :
-			self.failIf( m in s )
-			self.failIf( s.contains( m ) )
+			self.assertNotIn( m, s )
+			self.assertFalse( s.contains( m ) )
 
 	def testIteration( self ) :
 
@@ -255,7 +255,7 @@ class StandardSetTest( GafferTest.TestCase ) :
 
 		i = 0
 		for m in s :
-			self.failUnless( m.isSame( members[i] ) )
+			self.assertTrue( m.isSame( members[i] ) )
 			i += 1
 
 	def testRemoveReferenceCounting( self ) :
@@ -308,6 +308,122 @@ class StandardSetTest( GafferTest.TestCase ) :
 		self.assertEqual( l[2:-2], s[2:-2] )
 		self.assertEqual( l[:40], s[:40] )
 		self.assertEqual( l[1:-20], s[1:-20] )
+
+	def testOrphanRemoval( self ) :
+
+		p = Gaffer.GraphComponent()
+		c1 = Gaffer.GraphComponent()
+		c2 = Gaffer.GraphComponent()
+		p["c1"] = c1
+		p["c2"] = c2
+
+		s = Gaffer.StandardSet( p.children(), removeOrphans = True )
+		self.assertTrue( s.getRemoveOrphans() )
+
+		self.assertEqual( len( s ), 2 )
+		self.assertTrue( c1 in s )
+		self.assertTrue( c2 in s )
+
+		p.removeChild( c1 )
+
+		self.assertEqual( len( s ), 1 )
+		self.assertFalse( c1 in s )
+		self.assertTrue( c2 in s )
+
+		p["c1"] = c1
+
+		self.assertEqual( len( s ), 1 )
+		self.assertFalse( c1 in s )
+		self.assertTrue( c2 in s )
+
+		s.add( c1 )
+
+		self.assertEqual( len( s ), 2 )
+		self.assertTrue( c1 in s )
+		self.assertTrue( c2 in s )
+
+		p.removeChild( c1 )
+
+		self.assertEqual( len( s ), 1 )
+		self.assertFalse( c1 in s )
+		self.assertTrue( c2 in s )
+
+		p.removeChild( c2 )
+
+		self.assertEqual( len( s ), 0 )
+		self.assertFalse( c1 in s )
+		self.assertFalse( c2 in s )
+
+		c3 = Gaffer.GraphComponent()
+		s.add( c3 )
+
+		self.assertEqual( len( s ), 1 )
+		self.assertFalse( c1 in s )
+		self.assertFalse( c2 in s )
+		self.assertTrue( c3 in s )
+
+		p["c3"] = c3
+
+		self.assertEqual( len( s ), 1 )
+		self.assertFalse( c1 in s )
+		self.assertFalse( c2 in s )
+		self.assertTrue( c3 in s )
+
+		p.removeChild( c3 )
+
+		self.assertEqual( len( s ), 0 )
+		self.assertFalse( c1 in s )
+		self.assertFalse( c2 in s )
+		self.assertFalse( c3 in s )
+
+		p["c3"] = c3
+		s.add( c3 )
+
+		self.assertEqual( len( s ), 1 )
+		self.assertFalse( c1 in s )
+		self.assertFalse( c2 in s )
+		self.assertTrue( c3 in s )
+
+		s.setRemoveOrphans( False )
+		self.assertFalse( s.getRemoveOrphans() )
+		p.removeChild( c3 )
+
+		self.assertEqual( len( s ), 1 )
+		self.assertFalse( c1 in s )
+		self.assertFalse( c2 in s )
+		self.assertTrue( c3 in s )
+
+		s.setRemoveOrphans( True )
+		self.assertTrue( s.getRemoveOrphans() )
+		p.addChild( c3 )
+		p.removeChild( c3 )
+
+		self.assertEqual( len( s ), 0 )
+		self.assertFalse( c1 in s )
+		self.assertFalse( c2 in s )
+		self.assertFalse( c3 in s )
+
+	def testNoOrphanRemoval( self ) :
+
+		p = Gaffer.GraphComponent()
+		c1 = Gaffer.GraphComponent()
+		c2 = Gaffer.GraphComponent()
+		p["c1"] = c1
+		p["c2"] = c2
+
+		s1 = Gaffer.StandardSet( p.children() )
+		s2 = Gaffer.StandardSet( p.children(), removeOrphans = False )
+
+		self.assertFalse( s1.getRemoveOrphans() )
+		self.assertFalse( s2.getRemoveOrphans() )
+
+		p.removeChild( c1 )
+		p.removeChild( c2 )
+
+		self.assertTrue( c1 in s1 )
+		self.assertTrue( c2 in s1 )
+		self.assertTrue( c1 in s2 )
+		self.assertTrue( c2 in s2 )
 
 if __name__ == "__main__":
 	unittest.main()

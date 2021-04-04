@@ -34,28 +34,82 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "boost/bind.hpp"
+#include "GafferImage/ImageReader.h"
 
-#include "OpenColorIO/OpenColorIO.h"
+#include "GafferImage/ColorSpace.h"
+#include "GafferImage/OpenImageIOReader.h"
 
 #include "Gaffer/StringPlug.h"
 
-#include "GafferImage/ColorSpace.h"
-#include "GafferImage/ImageReader.h"
-#include "GafferImage/OpenImageIOReader.h"
+#include "OpenEXR/ImathFun.h"
+
+#include "OpenColorIO/OpenColorIO.h"
+
+#include "boost/bind.hpp"
 
 using namespace std;
-using namespace tbb;
 using namespace Imath;
 using namespace IECore;
 using namespace Gaffer;
 using namespace GafferImage;
 
 //////////////////////////////////////////////////////////////////////////
+// Internal utilities
+//////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+
+class FrameMaskScope : public Context::EditableScope
+{
+
+	public :
+
+		FrameMaskScope( const Context *context, const ImageReader *reader, bool clampBlack = false )
+			:	EditableScope( context ), m_mode( ImageReader::None )
+		{
+				const int startFrame = reader->startFramePlug()->getValue();
+				const int endFrame = reader->endFramePlug()->getValue();
+				const int frame = (int)context->getFrame();
+
+				if( frame < startFrame )
+				{
+					m_mode = (ImageReader::FrameMaskMode)reader->startModePlug()->getValue();
+				}
+				else if( frame > endFrame )
+				{
+					m_mode = (ImageReader::FrameMaskMode)reader->endModePlug()->getValue();
+				}
+
+				if( m_mode == ImageReader::BlackOutside && clampBlack )
+				{
+					m_mode = ImageReader::ClampToFrame;
+				}
+
+				if( m_mode == ImageReader::ClampToFrame )
+				{
+					setFrame( Imath::clamp( frame, startFrame, endFrame ) );
+				}
+		}
+
+		ImageReader::FrameMaskMode mode()
+		{
+			return m_mode;
+		}
+
+	private :
+
+		ImageReader::FrameMaskMode m_mode;
+
+};
+
+} // namespace
+
+//////////////////////////////////////////////////////////////////////////
 // ImageReader implementation
 //////////////////////////////////////////////////////////////////////////
 
-IE_CORE_DEFINERUNTIMETYPED( ImageReader );
+GAFFER_NODE_DEFINE_TYPE( ImageReader );
 
 size_t ImageReader::g_firstChildIndex = 0;
 
@@ -67,7 +121,7 @@ ImageReader::ImageReader( const std::string &name )
 		new StringPlug(
 			"fileName", Plug::In, "",
 			/* flags */ Plug::Default,
-			/* substitutions */ Context::AllSubstitutions & ~Context::FrameSubstitutions
+			/* substitutions */ IECore::StringAlgo::AllSubstitutions & ~IECore::StringAlgo::FrameSubstitutions
 		)
 	);
 	addChild( new IntPlug( "refreshCount" ) );
@@ -83,7 +137,9 @@ ImageReader::ImageReader( const std::string &name )
 	endPlug->addChild( new IntPlug( "frame", Plug::In, 0 ) );
 	addChild( endPlug );
 
-	addChild( new CompoundObjectPlug( "__intermediateMetadata", Plug::In, new CompoundObject, Plug::Default & ~Plug::Serialisable ) );
+	addChild( new StringPlug( "colorSpace" ) );
+
+	addChild( new AtomicCompoundDataPlug( "__intermediateMetadata", Plug::In, new CompoundData, Plug::Default & ~Plug::Serialisable ) );
 	addChild( new StringPlug( "__intermediateColorSpace", Plug::Out, "", Plug::Default & ~Plug::Serialisable ) );
 	addChild( new ImagePlug( "__intermediateImage", Plug::In, Plug::Default & ~Plug::Serialisable ) );
 
@@ -101,7 +157,9 @@ ImageReader::ImageReader( const std::string &name )
 	addChild( colorSpace );
 	colorSpace->inPlug()->setInput( oiioReader->outPlug() );
 	colorSpace->inputSpacePlug()->setInput( intermediateColorSpacePlug() );
-	colorSpace->outputSpacePlug()->setValue( OpenColorIO::ROLE_SCENE_LINEAR );
+	OpenColorIO::ConstConfigRcPtr config = OpenColorIO::GetCurrentConfig();
+	colorSpace->outputSpacePlug()->setValue( config->getColorSpace( OpenColorIO::ROLE_SCENE_LINEAR )->getName() );
+	colorSpace->processUnpremultipliedPlug()->setValue( true );
 	intermediateImagePlug()->setInput( colorSpace->outPlug() );
 }
 
@@ -179,54 +237,64 @@ const IntPlug *ImageReader::endFramePlug() const
 	return getChild<ValuePlug>( g_firstChildIndex + 4 )->getChild<IntPlug>( 1 );
 }
 
-CompoundObjectPlug *ImageReader::intermediateMetadataPlug()
+StringPlug *ImageReader::colorSpacePlug()
 {
-	return getChild<CompoundObjectPlug>( g_firstChildIndex + 5 );
+	return getChild<StringPlug>( g_firstChildIndex + 5 );
 }
 
-const CompoundObjectPlug *ImageReader::intermediateMetadataPlug() const
+const StringPlug *ImageReader::colorSpacePlug() const
 {
-	return getChild<CompoundObjectPlug>( g_firstChildIndex + 5 );
+	return getChild<StringPlug>( g_firstChildIndex + 5 );
+}
+
+AtomicCompoundDataPlug *ImageReader::intermediateMetadataPlug()
+{
+	return getChild<AtomicCompoundDataPlug>( g_firstChildIndex + 6 );
+}
+
+const AtomicCompoundDataPlug *ImageReader::intermediateMetadataPlug() const
+{
+	return getChild<AtomicCompoundDataPlug>( g_firstChildIndex + 6 );
 }
 
 StringPlug *ImageReader::intermediateColorSpacePlug()
 {
-	return getChild<StringPlug>( g_firstChildIndex + 6 );
+	return getChild<StringPlug>( g_firstChildIndex + 7 );
 }
 
 const StringPlug *ImageReader::intermediateColorSpacePlug() const
 {
-	return getChild<StringPlug>( g_firstChildIndex + 6 );
+	return getChild<StringPlug>( g_firstChildIndex + 7 );
 }
 
 ImagePlug *ImageReader::intermediateImagePlug()
 {
-	return getChild<ImagePlug>( g_firstChildIndex + 7 );
+	return getChild<ImagePlug>( g_firstChildIndex + 8 );
 }
 
 const ImagePlug *ImageReader::intermediateImagePlug() const
 {
-	return getChild<ImagePlug>( g_firstChildIndex + 7 );
+	return getChild<ImagePlug>( g_firstChildIndex + 8 );
 }
 
 OpenImageIOReader *ImageReader::oiioReader()
 {
-	return getChild<OpenImageIOReader>( g_firstChildIndex + 8 );
+	return getChild<OpenImageIOReader>( g_firstChildIndex + 9 );
 }
 
 const OpenImageIOReader *ImageReader::oiioReader() const
 {
-	return getChild<OpenImageIOReader>( g_firstChildIndex + 8 );
+	return getChild<OpenImageIOReader>( g_firstChildIndex + 9 );
 }
 
 ColorSpace *ImageReader::colorSpace()
 {
-	return getChild<ColorSpace>( g_firstChildIndex + 9 );
+	return getChild<ColorSpace>( g_firstChildIndex + 10 );
 }
 
 const ColorSpace *ImageReader::colorSpace() const
 {
-	return getChild<ColorSpace>( g_firstChildIndex + 9 );
+	return getChild<ColorSpace>( g_firstChildIndex + 10 );
 }
 
 size_t ImageReader::supportedExtensions( std::vector<std::string> &extensions )
@@ -235,11 +303,30 @@ size_t ImageReader::supportedExtensions( std::vector<std::string> &extensions )
 	return extensions.size();
 }
 
+void ImageReader::setDefaultColorSpaceFunction( DefaultColorSpaceFunction f )
+{
+	defaultColorSpaceFunction() = f;
+}
+
+ImageReader::DefaultColorSpaceFunction ImageReader::getDefaultColorSpaceFunction()
+{
+	return defaultColorSpaceFunction();
+}
+
+ImageReader::DefaultColorSpaceFunction &ImageReader::defaultColorSpaceFunction()
+{
+	// We deliberately make no attempt to free this, because typically a python
+	// function is registered here, and we can't free that at exit because python
+	// is already shut down by then.
+	static DefaultColorSpaceFunction *g_colorSpaceFunction = new DefaultColorSpaceFunction;
+	return *g_colorSpaceFunction;
+}
+
 void ImageReader::affects( const Plug *input, AffectedPlugsContainer &outputs ) const
 {
 	ImageNode::affects( input, outputs );
 
-	if( input == intermediateMetadataPlug() )
+	if( input == intermediateMetadataPlug() || input == colorSpacePlug() )
 	{
 		outputs.push_back( intermediateColorSpacePlug() );
 	}
@@ -268,23 +355,8 @@ void ImageReader::hash( const ValuePlug *output, const Context *context, IECore:
 	if( output == intermediateColorSpacePlug() )
 	{
 		intermediateMetadataPlug()->hash( h );
-	}
-	else if(
-		output == outPlug()->formatPlug() ||
-		output == outPlug()->dataWindowPlug()
-	)
-	{
-		// we always want to match the windows
-		// we would get inside the frame mask
-		hashMaskedOutput( output, context, h, /* alwaysClampToFrame */ true );
-	}
-	else if(
-		output == outPlug()->metadataPlug() ||
-		output == outPlug()->channelNamesPlug() ||
-		output == outPlug()->channelDataPlug()
-	)
-	{
-		hashMaskedOutput( output, context, h );
+		colorSpacePlug()->hash( h );
+		fileNamePlug()->hash( h );
 	}
 }
 
@@ -292,36 +364,22 @@ void ImageReader::compute( ValuePlug *output, const Context *context ) const
 {
 	if( output == intermediateColorSpacePlug() )
 	{
-		std::string intermediateSpace = "";
-		ConstCompoundObjectPtr metadata = intermediateMetadataPlug()->getValue();
-		if( const StringData *intermediateSpaceData = metadata->member<const StringData>( "oiio:ColorSpace" ) )
+		std::string colorSpace = colorSpacePlug()->getValue();
+		if( colorSpace.empty() )
 		{
-			std::vector<std::string> colorSpaces;
-			OpenColorIOTransform::availableColorSpaces( colorSpaces );
-			if( std::find( colorSpaces.begin(), colorSpaces.end(), intermediateSpaceData->readable() ) != colorSpaces.end() )
+			ConstCompoundDataPtr metadata = intermediateMetadataPlug()->getValue();
+			if( const StringData *fileFormatData = metadata->member<StringData>( "fileFormat" ) )
 			{
-				intermediateSpace = intermediateSpaceData->readable();
+				const StringData *dataTypeData = metadata->member<StringData>( "dataType" );
+				colorSpace = defaultColorSpaceFunction()(
+					fileNamePlug()->getValue(),
+					fileFormatData->readable(),
+					dataTypeData ? dataTypeData->readable() : "",
+					metadata.get()
+				);
 			}
 		}
-
-		static_cast<StringPlug *>( output )->setValue( intermediateSpace );
-	}
-	else if(
-		output == outPlug()->formatPlug() ||
-		output == outPlug()->dataWindowPlug()
-	)
-	{
-		// we always want to match the windows
-		// we would get inside the frame mask
-		computeMaskedOutput( output, context, /* alwaysClampToFrame */ true );
-	}
-	else if(
-		output == outPlug()->metadataPlug() ||
-		output == outPlug()->channelNamesPlug() ||
-		output == outPlug()->channelDataPlug()
-	)
-	{
-		computeMaskedOutput( output, context );
+		static_cast<StringPlug *>( output )->setValue( colorSpace );
 	}
 	else
 	{
@@ -329,63 +387,158 @@ void ImageReader::compute( ValuePlug *output, const Context *context ) const
 	}
 }
 
-void ImageReader::hashMaskedOutput( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h, bool alwaysClampToFrame ) const
+void ImageReader::hashFormat( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	ContextPtr maskedContext = NULL;
-	if( !computeFrameMask( context, maskedContext ) || alwaysClampToFrame )
+	FrameMaskScope scope( context, this, /* clampBlack = */ true );
+	h = intermediateImagePlug()->formatPlug()->hash();
+}
+
+GafferImage::Format ImageReader::computeFormat( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	FrameMaskScope scope( context, this, /* clampBlack = */ true );
+	return intermediateImagePlug()->formatPlug()->getValue();
+}
+
+void ImageReader::hashDataWindow( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	FrameMaskScope scope( context, this, /* clampBlack = */ true );
+	h = intermediateImagePlug()->dataWindowPlug()->hash();
+}
+
+Imath::Box2i ImageReader::computeDataWindow( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	FrameMaskScope scope( context, this, /* clampBlack = */ true );
+	return intermediateImagePlug()->dataWindowPlug()->getValue();
+}
+
+void ImageReader::hashMetadata( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
 	{
-		Context::Scope scope( maskedContext.get() );
-		h = intermediateImagePlug()->getChild<ValuePlug>( output->getName() )->hash();
+		h = intermediateImagePlug()->metadataPlug()->defaultValue()->Object::hash();
+	}
+	else
+	{
+		h = intermediateImagePlug()->metadataPlug()->hash();
 	}
 }
 
-void ImageReader::computeMaskedOutput( Gaffer::ValuePlug *output, const Gaffer::Context *context, bool alwaysClampToFrame ) const
+IECore::ConstCompoundDataPtr ImageReader::computeMetadata( const Gaffer::Context *context, const ImagePlug *parent ) const
 {
-	ContextPtr maskedContext = NULL;
-	bool blackOutside = computeFrameMask( context, maskedContext );
-	if( blackOutside && !alwaysClampToFrame )
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
 	{
-		output->setToDefault();
-		return;
+		return intermediateImagePlug()->metadataPlug()->defaultValue();
 	}
-
-	Context::Scope scope( maskedContext.get() );
-	output->setFrom( intermediateImagePlug()->getChild<ValuePlug>( output->getName() ) );
+	else
+	{
+		return intermediateImagePlug()->metadataPlug()->getValue();
+	}
 }
 
-bool ImageReader::computeFrameMask( const Context *context, ContextPtr &maskedContext ) const
+void ImageReader::hashDeep( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
 {
-	int frameStartMask = startFramePlug()->getValue();
-	int frameEndMask = endFramePlug()->getValue();
-	FrameMaskMode frameStartMaskMode = (FrameMaskMode)startModePlug()->getValue();
-	FrameMaskMode frameEndMaskMode = (FrameMaskMode)endModePlug()->getValue();
-
-	int origFrame = (int)context->getFrame();
-	int maskedFrame = std::min( frameEndMask, std::max( frameStartMask, origFrame ) );
-
-	if( origFrame == maskedFrame )
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
 	{
-		// no need for anything special when
-		// we're within the mask range.
-		return false;
+		ImageNode::hashDeep( parent, context, h );
 	}
-
-	FrameMaskMode maskMode = ( origFrame < maskedFrame ) ? frameStartMaskMode : frameEndMaskMode;
-
-	if( maskMode == None )
+	else
 	{
-		// no need for anything special when
-		// we're in FrameMaskMode::None
-		return false;
+		h = intermediateImagePlug()->deepPlug()->hash();
 	}
+}
 
-	// we need to create the masked context
-	// for both BlackOutSide and ClampToFrame,
-	// because some plugs require valid data
-	// from the mask range even in either way.
+bool ImageReader::computeDeep( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
+	{
+		return intermediateImagePlug()->deepPlug()->defaultValue();
+	}
+	else
+	{
+		return intermediateImagePlug()->deepPlug()->getValue();
+	}
+}
 
-	maskedContext = new Gaffer::Context( *context, Context::Borrowed );
-	maskedContext->setFrame( maskedFrame );
+void ImageReader::hashSampleOffsets( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
+	{
+		h = intermediateImagePlug()->sampleOffsetsPlug()->defaultValue()->Object::hash();
+	}
+	else
+	{
+		h = intermediateImagePlug()->sampleOffsetsPlug()->hash();
+	}
+}
 
-	return ( maskMode == BlackOutside );
+IECore::ConstIntVectorDataPtr ImageReader::computeSampleOffsets( const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
+	{
+		return intermediateImagePlug()->sampleOffsetsPlug()->defaultValue();
+	}
+	else
+	{
+		return intermediateImagePlug()->sampleOffsetsPlug()->getValue();
+	}
+}
+
+
+
+void ImageReader::hashChannelNames( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
+	{
+		h = intermediateImagePlug()->channelNamesPlug()->defaultValue()->Object::hash();
+	}
+	else
+	{
+		h = intermediateImagePlug()->channelNamesPlug()->hash();
+	}
+}
+
+IECore::ConstStringVectorDataPtr ImageReader::computeChannelNames( const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
+	{
+		return intermediateImagePlug()->channelNamesPlug()->defaultValue();
+	}
+	else
+	{
+		return intermediateImagePlug()->channelNamesPlug()->getValue();
+	}
+}
+
+void ImageReader::hashChannelData( const GafferImage::ImagePlug *parent, const Gaffer::Context *context, IECore::MurmurHash &h ) const
+{
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
+	{
+		h = intermediateImagePlug()->channelDataPlug()->defaultValue()->Object::hash();
+	}
+	else
+	{
+		h = intermediateImagePlug()->channelDataPlug()->hash();
+	}
+}
+
+IECore::ConstFloatVectorDataPtr ImageReader::computeChannelData( const std::string &channelName, const Imath::V2i &tileOrigin, const Gaffer::Context *context, const ImagePlug *parent ) const
+{
+	FrameMaskScope scope( context, this );
+	if( scope.mode() == BlackOutside )
+	{
+		return intermediateImagePlug()->channelDataPlug()->defaultValue();
+	}
+	else
+	{
+		return intermediateImagePlug()->channelDataPlug()->getValue();
+	}
 }

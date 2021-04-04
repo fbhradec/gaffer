@@ -35,13 +35,17 @@
 ##########################################################################
 
 import os
+import six
+import imath
 
 import IECore
+import IECoreImage
 
 import GafferUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
 
 ## The Image widget displays an image. This can be specified
 # as either a filename, in which case the image is loaded using
@@ -50,13 +54,13 @@ class Image( GafferUI.Widget ) :
 
 	def __init__( self, imagePrimitiveOrFileName, **kw ) :
 
-		GafferUI.Widget.__init__( self, QtGui.QLabel(), **kw )
+		GafferUI.Widget.__init__( self, QtWidgets.QLabel(), **kw )
 
 		# by default the widget would accept both shrinking and growing, but we'd rather it just stubbornly stayed
 		# the same size.
-		self._qtWidget().setSizePolicy( QtGui.QSizePolicy( QtGui.QSizePolicy.Fixed, QtGui.QSizePolicy.Fixed ) )
+		self._qtWidget().setSizePolicy( QtWidgets.QSizePolicy( QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed ) )
 
-		if isinstance( imagePrimitiveOrFileName, basestring ) :
+		if isinstance( imagePrimitiveOrFileName, six.string_types ) :
 			pixmap = self._qtPixmapFromFile( str( imagePrimitiveOrFileName ) )
 		else :
 			pixmap = self._qtPixmapFromImagePrimitive( imagePrimitiveOrFileName )
@@ -64,63 +68,110 @@ class Image( GafferUI.Widget ) :
 		if pixmap is not None :
 			self._qtWidget().setPixmap( pixmap )
 
+		self.__pixmapHighlighted = None
+		self.__pixmapDisabled = None
+
 	def _qtPixmap( self ) :
 
 		return self._qtWidget().pixmap()
 
-	## \todo Does this need a caching mechanism? Does it even belong here?
-	# Should it be implemented on Button where it's used?
 	def _qtPixmapHighlighted( self ) :
 
-		pixmap = self._qtWidget().pixmap()
+		if self.__pixmapHighlighted is None :
 
-		graphicsScene = QtGui.QGraphicsScene()
-		pixmapItem = graphicsScene.addPixmap( pixmap )
-		pixmapItem.setVisible( True )
+			pixmap = self._qtWidget().pixmap()
 
-		effect = QtGui.QGraphicsColorizeEffect()
-		effect.setColor( QtGui.QColor( 119, 156, 189, 255 ) )
-		effect.setStrength( 0.85 )
-		pixmapItem.setGraphicsEffect( effect )
-		pixmapItem.setShapeMode( pixmapItem.BoundingRectShape )
+			graphicsScene = QtWidgets.QGraphicsScene()
+			pixmapItem = graphicsScene.addPixmap( pixmap )
+			pixmapItem.setVisible( True )
 
-		graphicsView = QtGui.QGraphicsView()
-		graphicsView.setScene( graphicsScene )
+			effect = QtWidgets.QGraphicsColorizeEffect()
+			effect.setColor( QtGui.QColor( 119, 156, 189, 255 ) )
+			effect.setStrength( 0.85 )
+			pixmapItem.setGraphicsEffect( effect )
+			pixmapItem.setShapeMode( pixmapItem.BoundingRectShape )
 
-		image = QtGui.QImage(
-			pixmap.width(),
-			pixmap.height(),
-			QtGui.QImage.Format_ARGB32_Premultiplied if pixmap.hasAlpha() else QtGui.QImage.Format_RGB888
-		)
-		image.fill( 0 )
+			graphicsView = QtWidgets.QGraphicsView()
+			graphicsView.setScene( graphicsScene )
 
-		painter = QtGui.QPainter( image )
-		graphicsView.render(
-			painter,
-			QtCore.QRectF(),
-			QtCore.QRect(
-				graphicsView.mapFromScene( pixmapItem.boundingRect().topLeft() ),
-				graphicsView.mapFromScene( pixmapItem.boundingRect().bottomRight() )
+			image = QtGui.QImage(
+				pixmap.width(),
+				pixmap.height(),
+				QtGui.QImage.Format_ARGB32_Premultiplied if pixmap.hasAlpha() else QtGui.QImage.Format_RGB888
 			)
-		)
-		del painter # must delete painter before image
+			image.fill( 0 )
 
-		return QtGui.QPixmap( image )
+			painter = QtGui.QPainter( image )
+			graphicsView.render(
+				painter,
+				QtCore.QRectF(),
+				QtCore.QRect(
+					graphicsView.mapFromScene( pixmapItem.boundingRect().topLeft() ),
+					graphicsView.mapFromScene( pixmapItem.boundingRect().bottomRight() )
+				)
+			)
+			del painter # must delete painter before image
+
+			self.__pixmapHighlighted = QtGui.QPixmap( image )
+
+		return self.__pixmapHighlighted
+
+	# Qt's native disabled state generation often looks 'more enabled' than
+	# standard icons do when the app is using a dark theme.
+	def _qtPixmapDisabled( self ) :
+
+		if self.__pixmapDisabled is None :
+
+			pixmap = self._qtWidget().pixmap()
+
+			graphicsScene = QtWidgets.QGraphicsScene()
+			pixmapItem = graphicsScene.addPixmap( pixmap )
+			pixmapItem.setVisible( True )
+
+			effect = QtWidgets.QGraphicsOpacityEffect()
+			effect.setOpacity( 0.4 )
+			pixmapItem.setGraphicsEffect( effect )
+			pixmapItem.setShapeMode( pixmapItem.BoundingRectShape )
+
+			graphicsView = QtWidgets.QGraphicsView()
+			graphicsView.setScene( graphicsScene )
+
+			image = QtGui.QImage( pixmap.width(), pixmap.height(), QtGui.QImage.Format_ARGB32_Premultiplied )
+			image.fill( 0 )
+
+			painter = QtGui.QPainter( image )
+			graphicsView.render(
+				painter,
+				QtCore.QRectF(),
+				QtCore.QRect(
+					graphicsView.mapFromScene( pixmapItem.boundingRect().topLeft() ),
+					graphicsView.mapFromScene( pixmapItem.boundingRect().bottomRight() )
+				)
+			)
+			del painter # must delete painter before image
+
+			self.__pixmapDisabled = QtGui.QPixmap( image )
+
+		return self.__pixmapDisabled
+
+	# Qt's built-in disabled state generation doesn't work well with dark schemes.
+	# This convenience method provides a QIcon, preconfigured with our own disabled pixmap rendering.
+	def _qtIcon( self, highlighted = False ) :
+
+		icon = QtGui.QIcon( self._qtPixmapHighlighted() if highlighted else self._qtPixmap() )
+		icon.addPixmap( self._qtPixmapDisabled(), QtGui.QIcon.Disabled )
+		return icon
 
 	@staticmethod
 	def _qtPixmapFromImagePrimitive( image ) :
 
-		assert( image.arePrimitiveVariablesValid() )
+		image = image.copy()
+		IECoreImage.ColorAlgo.transformImage( image, "linear", "sRGB" )
 
-		image = IECore.LinearToSRGBOp()(
-			input = image,
-			channels = IECore.StringVectorData( image.keys() ),
-		)
-
-		y = image["Y"].data if "Y" in image else None
-		r = image["R"].data if "R" in image else None
-		g = image["G"].data if "G" in image else None
-		b = image["B"].data if "B" in image else None
+		y = image["Y"] if "Y" in image else None
+		r = image["R"] if "R" in image else None
+		g = image["G"] if "G" in image else None
+		b = image["B"] if "B" in image else None
 
 		if r and g and b :
 			channels = [ r, g, b ]
@@ -131,7 +182,7 @@ class Image( GafferUI.Widget ) :
 
 		if "A" in image :
 			channels.reverse()
-			channels.append( image["A"].data )
+			channels.append( image["A"] )
 			format = QtGui.QImage.Format_ARGB32_Premultiplied
 		else :
 			format = QtGui.QImage.Format_RGB888
@@ -141,7 +192,7 @@ class Image( GafferUI.Widget ) :
 			targetType = IECore.UCharVectorData.staticTypeId(),
 		)
 
-		imageSize = image.dataWindow.size() + IECore.V2i( 1 )
+		imageSize = image.dataWindow.size() + imath.V2i( 1 )
 
 		s = interleaved.toString()
 		image = QtGui.QImage( s, imageSize.x, imageSize.y, format )
@@ -170,7 +221,7 @@ class Image( GafferUI.Widget ) :
 
 		return cls._qtPixmapCache().get( fileName )
 
-	__imageSearchPaths = IECore.SearchPath( os.environ.get( "GAFFERUI_IMAGE_PATHS", "" ), ":" )
+	__imageSearchPaths = IECore.SearchPath( os.environ.get( "GAFFERUI_IMAGE_PATHS", "" ) )
 	@classmethod
 	def __cacheGetter( cls, fileName ) :
 
@@ -181,7 +232,7 @@ class Image( GafferUI.Widget ) :
 		reader = IECore.Reader.create( resolvedFileName )
 
 		image = reader.read()
-		if not isinstance( image, IECore.ImagePrimitive ) :
+		if not isinstance( image, IECoreImage.ImagePrimitive ) :
 			raise Exception( "File \"%s\" is not an image file" % resolvedFileName )
 
 		result = cls._qtPixmapFromImagePrimitive( image )

@@ -38,9 +38,9 @@
 #ifndef GAFFER_NODE_H
 #define GAFFER_NODE_H
 
-#include "Gaffer/GraphComponent.h"
 #include "Gaffer/FilteredChildIterator.h"
 #include "Gaffer/FilteredRecursiveChildIterator.h"
+#include "Gaffer/GraphComponent.h"
 
 namespace Gaffer
 {
@@ -48,21 +48,31 @@ namespace Gaffer
 IE_CORE_FORWARDDECLARE( Plug )
 IE_CORE_FORWARDDECLARE( ScriptNode )
 
+#define GAFFER_NODE_DECLARE_TYPE( TYPE, TYPEID, BASETYPE ) \
+	IE_CORE_DECLARERUNTIMETYPEDEXTENSION( TYPE, TYPEID, BASETYPE ) \
+	using Iterator = Gaffer::FilteredChildIterator<Gaffer::TypePredicate<TYPE>>; \
+	using RecursiveIterator = Gaffer::FilteredRecursiveChildIterator<Gaffer::TypePredicate<TYPE>, Gaffer::TypePredicate<Gaffer::Node>>; \
+	using Range = Gaffer::FilteredChildRange<Gaffer::TypePredicate<TYPE>>; \
+	using RecursiveRange = Gaffer::FilteredRecursiveChildRange<Gaffer::TypePredicate<TYPE>, Gaffer::TypePredicate<Gaffer::Node>>;
+
+#define GAFFER_NODE_DEFINE_TYPE( TYPE ) \
+	IE_CORE_DEFINERUNTIMETYPED( TYPE )
+
 /// The primary class from which node graphs are constructed. Nodes may
 /// have any number of child plugs which provide values and/or define connections
 /// to the plugs of other nodes. They provide signals for the monitoring of changes
 /// to the plugs and their values, flags and connections. The Node class itself
 /// doesn't define any means of performing computations - this is instead provided by
 /// the DependencyNode and ComputeNode derived classes.
-class Node : public GraphComponent
+class GAFFER_API Node : public GraphComponent
 {
 
 	public :
 
 		Node( const std::string &name=defaultName<Node>() );
-		virtual ~Node();
+		~Node() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Node, NodeTypeId, GraphComponent );
+		GAFFER_NODE_DECLARE_TYPE( Gaffer::Node, NodeTypeId, GraphComponent );
 
 		typedef boost::signal<void (Plug *)> UnaryPlugSignal;
 		typedef boost::signal<void (Plug *, Plug *)> BinaryPlugSignal;
@@ -106,8 +116,6 @@ class Node : public GraphComponent
 		/// onto an input plug of a plain Node (and potentially onwards if that plug
 		/// has its own output connections).
 		UnaryPlugSignal &plugDirtiedSignal();
-		/// Emitted when the flags are changed for a plug of this node.
-		UnaryPlugSignal &plugFlagsChangedSignal();
 		//@}
 
 		/// It's common for users to want to create their own plugs on
@@ -126,9 +134,9 @@ class Node : public GraphComponent
 		const ScriptNode *scriptNode() const;
 
 		/// Accepts only Nodes and Plugs.
-		virtual bool acceptsChild( const GraphComponent *potentialChild ) const;
+		bool acceptsChild( const GraphComponent *potentialChild ) const override;
 		/// Accepts only Nodes.
-		virtual bool acceptsParent( const GraphComponent *potentialParent ) const;
+		bool acceptsParent( const GraphComponent *potentialParent ) const override;
 
 		/// Signal type for communicating errors. The plug argument is the
 		/// plug being processed when the error occurred. The source argument
@@ -170,7 +178,7 @@ class Node : public GraphComponent
 
 		/// Implemented to remove all connections when the node is being
 		/// unparented.
-		virtual void parentChanging( Gaffer::GraphComponent *newParent );
+		void parentChanging( Gaffer::GraphComponent *newParent ) override;
 
 	private :
 
@@ -180,7 +188,6 @@ class Node : public GraphComponent
 
 		UnaryPlugSignal m_plugSetSignal;
 		UnaryPlugSignal m_plugInputChangedSignal;
-		UnaryPlugSignal m_plugFlagsChangedSignal;
 		UnaryPlugSignal m_plugDirtiedSignal;
 		ErrorSignal m_errorSignal;
 
@@ -188,6 +195,7 @@ class Node : public GraphComponent
 
 IE_CORE_DECLAREPTR( Node )
 
+/// \deprecated Use Node::Iterator etc instead.
 typedef FilteredChildIterator<TypePredicate<Node> > NodeIterator;
 typedef FilteredRecursiveChildIterator<TypePredicate<Node> > RecursiveNodeIterator;
 

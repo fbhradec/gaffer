@@ -40,6 +40,7 @@ import IECore
 
 import Gaffer
 import GafferUI
+import GafferCortex
 
 class FileIndexedIOPathPreview( GafferUI.DeferredPathPreview ) :
 
@@ -50,7 +51,7 @@ class FileIndexedIOPathPreview( GafferUI.DeferredPathPreview ) :
 
 			self.__pathWidget = GafferUI.PathWidget( tmpPath )
 
-			with GafferUI.SplitContainer( GafferUI.ListContainer.Orientation.Horizontal ) :
+			with GafferUI.SplitContainer( GafferUI.SplitContainer.Orientation.Horizontal ) :
 
 				self.__pathListing = GafferUI.PathListingWidget(
 					tmpPath,
@@ -84,14 +85,14 @@ class FileIndexedIOPathPreview( GafferUI.DeferredPathPreview ) :
 
 	def _deferredUpdate( self, indexedIO ) :
 
-		self.__indexedIOPath = Gaffer.IndexedIOPath( indexedIO, "/" )
+		self.__indexedIOPath = GafferCortex.IndexedIOPath( indexedIO, "/" )
 		self.__indexedIOPathChangedConnection = self.__indexedIOPath.pathChangedSignal().connect( Gaffer.WeakMethod( self.__indexedIOPathChanged ) )
 
 		self.__pathWidget.setPath( self.__indexedIOPath )
 		self.__pathPreview.setPath( self.__indexedIOPath )
 
 		# we use a separate path for the listing so it'll always be rooted at the start
-		listingPath = Gaffer.IndexedIOPath( indexedIO, "/" )
+		listingPath = GafferCortex.IndexedIOPath( indexedIO, "/" )
 		self.__pathListing.setPath( listingPath )
 		self.__pathListingSelectionChangedConnection = self.__pathListing.selectionChangedSignal().connect( Gaffer.WeakMethod( self.__pathListingSelectionChanged ) )
 
@@ -103,7 +104,7 @@ class FileIndexedIOPathPreview( GafferUI.DeferredPathPreview ) :
 		with Gaffer.BlockedConnection( self.__pathListingSelectionChangedConnection ) :
 			## \todo This functionality might be nice in the PathChooserWidget. We could
 			# maybe even use a PathChooserWidget here anyway.
-			self.__pathListing.setSelectedPaths( [ pathCopy ], expandNonLeaf=False )
+			self.__pathListing.setSelection( IECore.PathMatcher( [ str( pathCopy ) ] ), expandNonLeaf=False )
 			# expand as people type forwards
 			if len( pathCopy ) > len( self.__prevPath ) :
 				self.__pathListing.setPathExpanded( pathCopy, True )
@@ -117,9 +118,9 @@ class FileIndexedIOPathPreview( GafferUI.DeferredPathPreview ) :
 
 	def __pathListingSelectionChanged( self, pathListing ) :
 
-		selection = pathListing.getSelectedPaths()
-		if len( selection ) :
+		selection = pathListing.getSelection()
+		if not selection.isEmpty() :
 			with Gaffer.BlockedConnection( self.__indexedIOPathChangedConnection ) :
-				self.__indexedIOPath[:] = selection[0][:]
+				self.__indexedIOPath.setFromString( selection.paths()[0] )
 
 GafferUI.PathPreviewWidget.registerType( "Indexed IO", FileIndexedIOPathPreview )

@@ -35,106 +35,161 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "tbb/tbb.h"
+#include "ActionBinding.h"
+#include "AnimationBinding.h"
+#include "ApplicationRootBinding.h"
+#include "ArrayPlugBinding.h"
+#include "BoxPlugBinding.h"
+#include "CompoundDataPlugBinding.h"
+#include "CompoundNumericPlugBinding.h"
+#include "ConnectionBinding.h"
+#include "ContextBinding.h"
+#include "ContextProcessorBinding.h"
+#include "DirtyPropagationScopeBinding.h"
+#include "DotBinding.h"
+#include "ExpressionBinding.h"
+#include "GraphComponentBinding.h"
+#include "ProcessMessageHandlerBinding.h"
+#include "MetadataAlgoBinding.h"
+#include "MetadataBinding.h"
+#include "MonitorBinding.h"
+#include "NodeAlgoBinding.h"
+#include "NodeBinding.h"
+#include "NumericPlugBinding.h"
+#include "ParallelAlgoBinding.h"
+#include "PathBinding.h"
+#include "PathFilterBinding.h"
+#include "PlugAlgoBinding.h"
+#include "PlugBinding.h"
+#include "ProcessBinding.h"
+#include "RandomBinding.h"
+#include "ScriptNodeBinding.h"
+#include "SerialisationBinding.h"
+#include "SetBinding.h"
+#include "SignalBinding.h"
+#include "SplinePlugBinding.h"
+#include "SpreadsheetBinding.h"
+#include "StringPlugBinding.h"
+#include "SubGraphBinding.h"
+#include "SwitchBinding.h"
+#include "Transform2DPlugBinding.h"
+#include "TransformPlugBinding.h"
+#include "TypedObjectPlugBinding.h"
+#include "TypedPlugBinding.h"
+#include "UndoScopeBinding.h"
+#include "ValuePlugBinding.h"
+#include "NameValuePlugBinding.h"
+#include "ShufflesBinding.h"
+#include "MessagesBinding.h"
 
-#include "Gaffer/TimeWarp.h"
-#include "Gaffer/ContextVariables.h"
-#include "Gaffer/Backdrop.h"
-#include "Gaffer/Loop.h"
-
-#include "GafferBindings/ConnectionBinding.h"
-#include "GafferBindings/SignalBinding.h"
-#include "GafferBindings/GraphComponentBinding.h"
-#include "GafferBindings/NodeBinding.h"
-#include "GafferBindings/PlugBinding.h"
-#include "GafferBindings/ValuePlugBinding.h"
-#include "GafferBindings/NumericPlugBinding.h"
-#include "GafferBindings/TypedPlugBinding.h"
-#include "GafferBindings/StringPlugBinding.h"
-#include "GafferBindings/TypedObjectPlugBinding.h"
-#include "GafferBindings/ScriptNodeBinding.h"
-#include "GafferBindings/ApplicationRootBinding.h"
-#include "GafferBindings/SetBinding.h"
-#include "GafferBindings/UndoContextBinding.h"
-#include "GafferBindings/CompoundPlugBinding.h"
-#include "GafferBindings/CompoundNumericPlugBinding.h"
-#include "GafferBindings/SplinePlugBinding.h"
-#include "GafferBindings/StandardSetBinding.h"
-#include "GafferBindings/ChildSetBinding.h"
-#include "GafferBindings/PreferencesBinding.h"
-#include "GafferBindings/ContextBinding.h"
-#include "GafferBindings/BoxPlugBinding.h"
-#include "GafferBindings/ExpressionBinding.h"
-#include "GafferBindings/TransformPlugBinding.h"
-#include "GafferBindings/Transform2DPlugBinding.h"
-#include "GafferBindings/CompoundDataPlugBinding.h"
-#include "GafferBindings/RandomBinding.h"
 #include "GafferBindings/DependencyNodeBinding.h"
-#include "GafferBindings/ComputeNodeBinding.h"
-#include "GafferBindings/BoxBinding.h"
-#include "GafferBindings/ActionBinding.h"
-#include "GafferBindings/ReferenceBinding.h"
-#include "GafferBindings/BehaviourBinding.h"
-#include "GafferBindings/ArrayPlugBinding.h"
-#include "GafferBindings/Serialisation.h"
-#include "GafferBindings/MetadataBinding.h"
-#include "GafferBindings/StringAlgoBinding.h"
-#include "GafferBindings/SubGraphBinding.h"
-#include "GafferBindings/DotBinding.h"
-#include "GafferBindings/PathBinding.h"
-#include "GafferBindings/PathFilterBinding.h"
-#include "GafferBindings/CompoundPathFilterBinding.h"
-#include "GafferBindings/LeafPathFilterBinding.h"
-#include "GafferBindings/MatchPatternPathFilterBinding.h"
-#include "GafferBindings/FileSystemPathBinding.h"
-#include "GafferBindings/FileSequencePathFilterBinding.h"
-#include "GafferBindings/AnimationBinding.h"
-#include "GafferBindings/MonitorBinding.h"
-#include "GafferBindings/MetadataAlgoBinding.h"
-#include "GafferBindings/SwitchBinding.h"
+
+#include "Gaffer/Backdrop.h"
+
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 
 using namespace boost::python;
 using namespace Gaffer;
+using namespace GafferModule;
 using namespace GafferBindings;
 
 namespace
 {
 
-// Wraps task_scheduler_init so it can be used as a python
-// context manager.
-class TaskSchedulerInitWrapper : public tbb::task_scheduler_init
+bool isDebug()
 {
+#ifdef NDEBUG
+	return false;
+#else
+	return true;
+#endif
+}
 
-	public :
+int g_argc = 0;
+char **g_argv = nullptr;
 
-		TaskSchedulerInitWrapper( int max_threads )
-			:	tbb::task_scheduler_init( deferred ), m_maxThreads( max_threads )
-		{
-			if( max_threads != automatic && max_threads <= 0 )
-			{
-				PyErr_SetString( PyExc_ValueError, "max_threads must be either automatic or a positive integer" );
-				throw_error_already_set();
-			}
-		}
+int storeArgcArgv( int argc, char **argv, char **env )
+{
+	g_argc = argc;
+	g_argv = argv;
+	return 0;
+}
 
-		void enter()
-		{
-			initialize( m_maxThreads );
-		}
+void clobberArgv()
+{
+	if( g_argc < 2 )
+	{
+		return;
+	}
 
-		bool exit( boost::python::object excType, boost::python::object excValue, boost::python::object excTraceBack )
-		{
-			terminate();
-			return false; // don't suppress exceptions
-		}
+	// A typical command line looks like this :
+	//
+	// `gaffer arg1 arg2 arg3`
+	//
+	// But will look like this once the wrapper
+	// has launched Gaffer via Python :
+	//
+	// `python gaffer.py arg1 arg2 arg3`
+	//
+	// Replace the `python` bit with `gaffer` and
+	// shuffle all the arguments around so that
+	// the `gaffer.py` argument disappears and we
+	// get back to the original.
+	char *end = g_argv[g_argc-1] + strlen( g_argv[g_argc-1] );
+	strncpy( g_argv[0], "gaffer", strlen( g_argv[0] ) );
+	strncpy( g_argv[1], "", strlen( g_argv[1] ) );
+	char *emptyString = g_argv[1];
+	for( int i = 1; i < g_argc - 1; ++i )
+	{
+		g_argv[i] = g_argv[i+1];
+	}
+	g_argv[g_argc-1] = emptyString;
 
-	private :
+	// We've just shuffled the pointers so far, but
+	// in practice the original strings were contiguous
+	// in the same chunk of memory, and `ps` uses that fact
+	// rather than actually use the argv pointers. See
+	// https://stackoverflow.com/a/23400588.
+	//
+	// Pack everything back down so `ps` sees what it
+	// expects.
+	char *c = g_argv[0];
+	for( int i = 0; i < g_argc - 1; ++i )
+	{
+		const size_t l = strlen( g_argv[i] ) + 1;
+		memmove( c, g_argv[i], l );
+		g_argv[i] = c;
+		c += l;
+	}
+	g_argv[g_argc-1] = c;
+	memset( c, 0, end - c );
+}
 
-		int m_maxThreads;
-
-};
+void nameProcess()
+{
+	// Some things (for instance, `ps` in default mode) look at `argv` to get
+	// the name.
+	clobberArgv();
+	// Others (for instance, `top` in default mode) use other methods.
+	// Cater to everyone as best we can.
+#ifdef __linux__
+	prctl( PR_SET_NAME, "gaffer", 0, 0, 0 );
+#endif
+}
 
 } // namespace
+
+// Arrange for `storeArgcArgv()` to be called when our module loads,
+// so we can stash the original values for `argc` and `argv`.
+// In Python 2 we could simply use `Py_GetArgcArgv()` instead, but
+// in Python 3 that gives us a mangled copy which is of no use.
+#if  defined( __APPLE__ )
+__attribute__( ( section( "__DATA,__mod_init_func" ) ) ) decltype( storeArgcArgv ) *g_initArgcArgv = storeArgcArgv;
+#elif defined( __linux__ )
+__attribute__( ( section( ".init_array" ) ) ) decltype( storeArgcArgv ) *g_initArgcArgv = storeArgcArgv;
+#endif
 
 BOOST_PYTHON_MODULE( _Gaffer )
 {
@@ -143,9 +198,8 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindSignal();
 	bindGraphComponent();
 	bindContext();
+	bindSerialisation();
 	bindNode();
-	bindDependencyNode();
-	bindComputeNode();
 	bindPlug();
 	bindValuePlug();
 	bindNumericPlug();
@@ -155,13 +209,10 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindScriptNode();
 	bindApplicationRoot();
 	bindSet();
-	bindUndoContext();
-	bindCompoundPlug();
+	bindDirtyPropagationScope();
+	bindUndoScope();
 	bindCompoundNumericPlug();
 	bindSplinePlug();
-	bindStandardSet();
-	bindChildSet();
-	bindPreferences();
 	bindBoxPlug();
 	bindExpression();
 	bindTransformPlug();
@@ -169,46 +220,32 @@ BOOST_PYTHON_MODULE( _Gaffer )
 	bindCompoundDataPlug();
 	bindRandom();
 	bindSubGraph();
-	bindBox();
 	bindAction();
-	bindReference();
 	bindArrayPlug();
-	bindSerialisation();
 	bindMetadata();
-	bindStringAlgo();
 	bindDot();
 	bindPath();
 	bindPathFilter();
-	bindCompoundPathFilter();
-	bindLeafPathFilter();
-	bindMatchPatternPathFilter();
-	bindFileSystemPath();
-	bindFileSequencePathFilter();
 	bindAnimation();
 	bindMonitor();
 	bindMetadataAlgo();
 	bindSwitch();
+	bindPlugAlgo();
+	bindParallelAlgo();
+	bindContextProcessor();
+	bindProcessMessageHandler();
+	bindNameValuePlug();
+	bindProcess();
+	bindSpreadsheet();
+	bindNodeAlgo();
+	bindShuffles();
+	bindMessages();
 
 	NodeClass<Backdrop>();
 
-	DependencyNodeClass<ContextProcessorComputeNode>();
-	DependencyNodeClass<TimeWarpComputeNode>();
-	DependencyNodeClass<ContextVariablesComputeNode>();
-	DependencyNodeClass<LoopComputeNode>();
+	def( "isDebug", &isDebug );
 
-	object tsi = class_<TaskSchedulerInitWrapper, boost::noncopyable>( "_tbb_task_scheduler_init", no_init )
-		.def( init<int>( arg( "max_threads" ) = int( tbb::task_scheduler_init::automatic ) ) )
-		.def( "__enter__", &TaskSchedulerInitWrapper::enter, return_self<>() )
-		.def( "__exit__", &TaskSchedulerInitWrapper::exit )
-	;
-	tsi.attr( "automatic" ) = int( tbb::task_scheduler_init::automatic );
-
-	object behavioursModule( borrowed( PyImport_AddModule( "Gaffer.Behaviours" ) ) );
-	scope().attr( "Behaviours" ) = behavioursModule;
-
-	scope behavioursScope( behavioursModule );
-
-	bindBehaviours();
+	def( "_nameProcess", &nameProcess );
 
 	// Various parts of gaffer create new threads from C++, and those
 	// threads may call back into Python via wrapped classes at any time.

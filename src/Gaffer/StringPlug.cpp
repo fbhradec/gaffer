@@ -35,14 +35,15 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-#include "Gaffer/Context.h"
 #include "Gaffer/StringPlug.h"
+
+#include "Gaffer/Context.h"
 #include "Gaffer/Process.h"
 
 using namespace IECore;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( StringPlug );
+GAFFER_PLUG_DEFINE_TYPE( StringPlug );
 
 StringPlug::StringPlug(
 	const std::string &name,
@@ -94,19 +95,13 @@ void StringPlug::setValue( const std::string &value )
 
 std::string StringPlug::getValue( const IECore::MurmurHash *precomputedHash ) const
 {
-	IECore::ConstObjectPtr o = getObjectValue( precomputedHash );
-	const IECore::StringData *s = IECore::runTimeCast<const IECore::StringData>( o.get() );
-	if( !s )
-	{
-		throw IECore::Exception( "StringPlug::getObjectValue() didn't return StringData - is the hash being computed correctly?" );
-	}
+	ConstStringDataPtr s = getObjectValue<StringData>( precomputedHash );
 
 	const bool performSubstitutions =
 		m_substitutions &&
 		direction() == In &&
-		getFlags( PerformsSubstitutions ) &&
 		Process::current() &&
-		Context::hasSubstitutions( s->readable() )
+		IECore::StringAlgo::hasSubstitutions( s->readable() )
 	;
 
 	return performSubstitutions ? Context::current()->substitute( s->readable(), m_substitutions ) : s->readable();
@@ -129,24 +124,21 @@ IECore::MurmurHash StringPlug::hash() const
 {
 	const bool performSubstitutions =
 		m_substitutions &&
-		direction() == In &&
-		getFlags( PerformsSubstitutions )
+		direction() == In
 	;
 
 	if( performSubstitutions )
 	{
-		IECore::ConstObjectPtr o = getObjectValue();
-		const IECore::StringData *s = IECore::runTimeCast<const IECore::StringData>( o.get() );
-		if( !s )
-		{
-			throw IECore::Exception( "StringPlug::getObjectValue() didn't return StringData - is the hash being computed correctly?" );
-		}
-
-		if( Context::hasSubstitutions( s->readable() ) )
+		ConstStringDataPtr s = getObjectValue<StringData>();
+		if( IECore::StringAlgo::hasSubstitutions( s->readable() ) )
 		{
 			IECore::MurmurHash result;
 			result.append( Context::current()->substitute( s->readable(), m_substitutions ) );
 			return result;
+		}
+		else
+		{
+			return s->Object::hash();
 		}
 	}
 

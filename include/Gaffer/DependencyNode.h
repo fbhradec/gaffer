@@ -50,20 +50,20 @@ namespace Gaffer
 /// down effect of changes to an input plug to be tracked through the graph. Note however that
 /// the DependencyNode does not define how operations should be performed - see the ComputeNode
 /// derived class for the primary means of achieving that.
-class DependencyNode : public Node
+class GAFFER_API DependencyNode : public Node
 {
 
 	public :
 
 		DependencyNode( const std::string &name=defaultName<DependencyNode>() );
-		virtual ~DependencyNode();
+		~DependencyNode() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::DependencyNode, DependencyNodeTypeId, Node );
+		GAFFER_NODE_DECLARE_TYPE( Gaffer::DependencyNode, DependencyNodeTypeId, Node );
 
 		typedef std::vector<const Plug *> AffectedPlugsContainer;
 
 		/// Must be implemented to fill outputs with all the plugs whose computation
-		/// will be affected by the specified input. It is an error to pass a CompoundPlug
+		/// will be affected by the specified input. It is an error to pass a compound plug
 		/// for input or to place one in outputs as computations are always performed on the
 		/// leaf level plugs only. Implementations of this method should call the base class
 		/// implementation first.
@@ -91,6 +91,7 @@ class DependencyNode : public Node
 
 };
 
+/// \deprecated Use DependencyNode::Iterator etc instead.
 typedef FilteredChildIterator<TypePredicate<DependencyNode> > DependencyNodeIterator;
 typedef FilteredRecursiveChildIterator<TypePredicate<DependencyNode> > RecursiveDependencyNodeIterator;
 

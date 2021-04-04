@@ -34,26 +34,44 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
+#include "Gaffer/ArrayPlug.h"
+
+#include "Gaffer/BlockedConnection.h"
+#include "Gaffer/MetadataAlgo.h"
+#include "Gaffer/ScriptNode.h"
+
 #include "boost/bind.hpp"
 #include "boost/bind/placeholders.hpp"
-
-#include "Gaffer/ArrayPlug.h"
-#include "Gaffer/BlockedConnection.h"
-#include "Gaffer/ScriptNode.h"
 
 using namespace boost;
 using namespace Gaffer;
 
-IE_CORE_DEFINERUNTIMETYPED( ArrayPlug )
-
-ArrayPlug::ArrayPlug( const std::string &name, Direction direction, PlugPtr element, size_t minSize, size_t maxSize, unsigned flags )
-	:	Plug( name, direction, flags ), m_minSize( std::max( minSize, size_t( 1 ) ) ), m_maxSize( std::max( maxSize, m_minSize ) )
+namespace
 {
-	if( direction == Plug::Out )
-	{
-		throw IECore::Exception( "Output ArrayPlugs are currently unsupported." );
-	}
 
+bool hasInput( const Plug *p )
+{
+	if( p->getInput() )
+	{
+		return true;
+	}
+	for( PlugIterator it( p ); !it.done(); ++it )
+	{
+		if( hasInput( it->get() ) )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+} // namespace
+
+GAFFER_PLUG_DEFINE_TYPE( ArrayPlug )
+
+ArrayPlug::ArrayPlug( const std::string &name, Direction direction, PlugPtr element, size_t minSize, size_t maxSize, unsigned flags, bool resizeWhenInputsChange )
+	:	Plug( name, direction, flags ), m_minSize( std::max( minSize, size_t( 1 ) ) ), m_maxSize( std::max( maxSize, m_minSize ) ), m_resizeWhenInputsChange( resizeWhenInputsChange )
+{
 	if( element )
 	{
 		// If we're dynamic ourselves, then serialisations will include a constructor
@@ -69,10 +87,9 @@ ArrayPlug::ArrayPlug( const std::string &name, Direction direction, PlugPtr elem
 		{
 			PlugPtr p = element->createCounterpart( element->getName(), Plug::In );
 			addChild( p );
+			MetadataAlgo::copyColors( element.get() , p.get() , /* overwrite = */ false  );
 		}
 	}
-
-	parentChangedSignal().connect( boost::bind( &ArrayPlug::parentChanged, this ) );
 }
 
 ArrayPlug::~ArrayPlug()
@@ -86,26 +103,16 @@ bool ArrayPlug::acceptsChild( const GraphComponent *potentialChild ) const
 		return false;
 	}
 
-	if( children().size() == 0 || potentialChild->typeId() == children()[0]->typeId() )
-	{
-		return true;
-	}
+	return children().size() == 0 || potentialChild->typeId() == children()[0]->typeId();
+}
 
-	// Ideally we'd just return false here right away, but we need this
-	// hack to provide backwards compatibility with old TaskNodes,
-	// which used to use generic Plugs as children and now use TaskPlugs.
-	if( children()[0]->isInstanceOf( "GafferDispatch::TaskNode::TaskPlug" ) && potentialChild->typeId() == (IECore::TypeId)PlugTypeId )
+bool ArrayPlug::acceptsInput( const Plug *input ) const
+{
+	if( !Plug::acceptsInput( input ) )
 	{
-		return true;
+		return false;
 	}
-	// Likewise, we must do the same for old FilterProcessor nodes, which used to
-	// use IntPlugs nd now use FilterPlugs.
-	if( children()[0]->isInstanceOf( "GafferScene::FilterPlug" ) && potentialChild->typeId() == (IECore::TypeId)IntPlugTypeId )
-	{
-		return true;
-	}
-
-	return false;
+	return !input || IECore::runTimeCast<const ArrayPlug>( input );
 }
 
 void ArrayPlug::setInput( PlugPtr input )
@@ -119,7 +126,7 @@ void ArrayPlug::setInput( PlugPtr input )
 
 PlugPtr ArrayPlug::createCounterpart( const std::string &name, Direction direction ) const
 {
-	ArrayPlugPtr result = new ArrayPlug( name, direction, NULL, m_minSize, m_maxSize, getFlags() );
+	ArrayPlugPtr result = new ArrayPlug( name, direction, nullptr, m_minSize, m_maxSize, getFlags(), resizeWhenInputsChange() );
 	for( PlugIterator it( this ); !it.done(); ++it )
 	{
 		result->addChild( (*it)->createCounterpart( (*it)->getName(), direction ) );
@@ -137,9 +144,57 @@ size_t ArrayPlug::maxSize() const
 	return m_maxSize;
 }
 
-void ArrayPlug::parentChanged()
+void ArrayPlug::resize( size_t size )
 {
-	if( !node() )
+	if( size > m_maxSize || size < m_minSize )
+	{
+		throw IECore::Exception( "Invalid size" );
+	}
+
+	while( size > children().size() )
+	{
+		PlugPtr p = getChild<Plug>( 0 )->createCounterpart( getChild<Plug>( 0 )->getName(), Plug::In );
+		p->setFlags( Gaffer::Plug::Dynamic, true );
+		addChild( p );
+		MetadataAlgo::copyColors( getChild<Plug>( 0 ) , p.get() , /* overwrite = */ false );
+	}
+
+	while( children().size() > size )
+	{
+		removeChild( children().back() );
+	}
+}
+
+bool ArrayPlug::resizeWhenInputsChange() const
+{
+	return m_resizeWhenInputsChange;
+}
+
+Gaffer::Plug *ArrayPlug::next()
+{
+	Plug *last = static_cast<Plug *>( children().back().get() );
+	if( !hasInput( last ) )
+	{
+		return last;
+	}
+
+	if( children().size() >= m_maxSize )
+	{
+		return nullptr;
+	}
+
+	PlugPtr p = getChild<Plug>( 0 )->createCounterpart( getChild<Plug>( 0 )->getName(), Plug::In );
+	p->setFlags( Gaffer::Plug::Dynamic, true );
+	addChild( p );
+	MetadataAlgo::copyColors( getChild<Plug>( 0 ) , p.get() , /* overwrite = */ false );
+	return p.get();
+}
+
+void ArrayPlug::parentChanged( GraphComponent *oldParent )
+{
+	Plug::parentChanged( oldParent );
+
+	if( !m_resizeWhenInputsChange || !node() )
 	{
 		return;
 	}
@@ -149,12 +204,12 @@ void ArrayPlug::parentChanged()
 
 void ArrayPlug::inputChanged( Gaffer::Plug *plug )
 {
-	if( plug->parent<ArrayPlug>() != this )
+	if( !this->isAncestorOf( plug ) )
 	{
 		return;
 	}
 
-	if( getInput<Plug>() )
+	if( getInput() )
 	{
 		// When we ourselves have an input, we don't do any automatic addition or
 		// removal of children, because the Plug base class itself manages
@@ -176,15 +231,13 @@ void ArrayPlug::inputChanged( Gaffer::Plug *plug )
 		}
 	}
 
-	if( plug->getInput<Plug>() )
+	if( plug->getInput() )
 	{
 		// Connection made. If it's the last plug
 		// then we need to add one more.
-		if( plug == children().back() && children().size() < m_maxSize )
+		if( plug == children().back() || children().back()->isAncestorOf( plug ) )
 		{
-			PlugPtr p = getChild<Plug>( 0 )->createCounterpart( getChild<Plug>( 0 )->getName(), Plug::In );
-			p->setFlags( Gaffer::Plug::Dynamic, true );
-			addChild( p );
+			next();
 		}
 	}
 	else
@@ -194,7 +247,7 @@ void ArrayPlug::inputChanged( Gaffer::Plug *plug )
 		// only one unconnected plug at the end.
 		for( size_t i = children().size() - 1; i > m_minSize - 1; --i )
 		{
-			if( !getChild<Plug>( i )->getInput<Plug>() && !getChild<Plug>( i - 1 )->getInput<Plug>() )
+			if( !hasInput( getChild<Plug>( i ) ) && !hasInput( getChild<Plug>( i - 1 ) ) )
 			{
 				removeChild( getChild<Plug>( i ) );
 			}

@@ -37,11 +37,13 @@
 #ifndef GAFFERSCENE_FILTER_H
 #define GAFFERSCENE_FILTER_H
 
+#include "GafferScene/FilterPlug.h"
+#include "GafferScene/TypeIds.h"
+
 #include "Gaffer/ComputeNode.h"
 #include "Gaffer/NumericPlug.h"
 
-#include "GafferScene/TypeIds.h"
-#include "GafferScene/FilterPlug.h"
+#include "IECore/PathMatcher.h"
 
 namespace GafferScene
 {
@@ -51,51 +53,42 @@ IE_CORE_FORWARDDECLARE( ScenePlug )
 /// A base class for nodes which are used to limit the scope
 /// of an operation to specific parts of the scene. Used in
 /// conjunction with the FilteredSceneProcessor class.
-class Filter : public Gaffer::ComputeNode
+class GAFFERSCENE_API Filter : public Gaffer::ComputeNode
 {
 
 	public :
 
-		enum Result
-		{
-			NoMatch = 0,
-			DescendantMatch = 1,
-			ExactMatch = 2,
-			AncestorMatch = 4,
-			EveryMatch = DescendantMatch | ExactMatch | AncestorMatch
-		};
-
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( GafferScene::Filter, FilterTypeId, Gaffer::ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( GafferScene::Filter, FilterTypeId, Gaffer::ComputeNode );
 
 		Filter( const std::string &name=defaultName<Filter>() );
-		virtual ~Filter();
+		~Filter() override;
 
-		virtual Gaffer::BoolPlug *enabledPlug();
-		virtual const Gaffer::BoolPlug *enabledPlug() const;
+		Gaffer::BoolPlug *enabledPlug() override;
+		const Gaffer::BoolPlug *enabledPlug() const override;
 
 		FilterPlug *outPlug();
 		const FilterPlug *outPlug() const;
 
-		virtual void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const;
-		virtual bool sceneAffectsMatch( const ScenePlug *scene, const Gaffer::ValuePlug *child ) const;
+		/// > Note : `affects()` receives special treatment for Filter nodes. In addition to the
+		/// > regular calls where `input` is a plug belonging to the filter, calls are also made
+		/// > where `input` is a child of a ScenePlug that will later be provided to `computeMatch()`.
+		void affects( const Gaffer::Plug *input, AffectedPlugsContainer &outputs ) const override;
 
-		/// Because a single filter may be used with many different input scenes,
-		/// Filters require the input scene to be specified by a variable in the
-		/// Context. This method should be used to set the input scene before
-		/// querying the filter. It is the responsibility of the caller to ensure
-		/// that the scene plug remains alive for as long as the context is in use.
+		/// \deprecated Use FilterPlug::SceneScope or FilterPlug::match instead.
 		static void setInputScene( Gaffer::Context *context, const ScenePlug *scenePlug );
-		/// Returns an input scene previously stored with setInputScene().
+		/// \deprecated
 		static const ScenePlug *getInputScene( const Gaffer::Context *context );
-		/// The name of the variable used to specify the input scene.
+		/// \deprecated Use FilterPlug::inputSceneContextName instead
 		static const IECore::InternedString inputSceneContextName;
 
 	protected :
 
 		/// Implemented to call hashMatch() below when computing the hash for outPlug().
-		virtual void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
+		void hash( const Gaffer::ValuePlug *output, const Gaffer::Context *context, IECore::MurmurHash &h ) const override;
 		/// Implemented to call computeMatch() below when computing the value of outPlug().
-		virtual void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const;
+		void compute( Gaffer::ValuePlug *output, const Gaffer::Context *context ) const override;
+		/// Implemented to disable compute caching for the filter result.
+		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
 
 		/// Hash method for outPlug(). A derived class must either :
 		///
@@ -115,9 +108,13 @@ class Filter : public Gaffer::ComputeNode
 		virtual void hashMatch( const ScenePlug *scene, const Gaffer::Context *context, IECore::MurmurHash &h ) const;
 		/// Must be implemented by derived classes to compute the result of the filter, or
 		/// an input connection must be made into outPlug(), so that the method is not called.
+		/// Results must be a bitwise combination of values from the IECore::PathMatcher::Result
+		/// enumeration.
 		virtual unsigned computeMatch( const ScenePlug *scene, const Gaffer::Context *context ) const;
 
 	private :
+
+		friend class FilterPlug;
 
 		static size_t g_firstPlugIndex;
 

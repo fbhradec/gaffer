@@ -35,6 +35,7 @@
 ##########################################################################
 
 import IECore
+import IECoreScene
 
 import Gaffer
 import GafferUI
@@ -64,10 +65,10 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
-			"pathPlugValueWidget:leaf", True,
-			"pathPlugValueWidget:bookmarks", "sceneCache",
-			"fileSystemPathPlugValueWidget:extensions", lambda plug : IECore.StringVectorData( IECore.SceneInterface.supportedExtensions( IECore.IndexedIO.OpenMode.Write ) ),
-			"fileSystemPathPlugValueWidget:extensionsLabel", "Show only cache files",
+			"path:leaf", True,
+			"path:bookmarks", "sceneCache",
+			"fileSystemPath:extensions", " ".join( IECoreScene.SceneInterface.supportedExtensions( IECore.IndexedIO.OpenMode.Write ) ),
+			"fileSystemPath:extensionsLabel", "Show only cache files",
 
 		],
 

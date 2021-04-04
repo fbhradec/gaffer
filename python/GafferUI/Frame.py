@@ -39,20 +39,20 @@ import IECore
 
 import GafferUI
 
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtWidgets
 
 class Frame( GafferUI.ContainerWidget ) :
 
 	## \todo Raised and Inset?
-	BorderStyle = IECore.Enum.create( "None", "Flat" )
+	BorderStyle = IECore.Enum.create( "None_", "Flat" )
 
 	def __init__( self, child=None, borderWidth=8, borderStyle=BorderStyle.Flat, **kw ) :
 
-		GafferUI.ContainerWidget.__init__( self, QtGui.QFrame(), **kw )
+		GafferUI.ContainerWidget.__init__( self, QtWidgets.QFrame(), **kw )
 
-		self._qtWidget().setLayout( QtGui.QGridLayout() )
+		self._qtWidget().setLayout( QtWidgets.QGridLayout() )
 		self._qtWidget().layout().setContentsMargins( borderWidth, borderWidth, borderWidth, borderWidth )
-		self._qtWidget().layout().setSizeConstraint( QtGui.QLayout.SetMinAndMaxSize )
+		self._qtWidget().layout().setSizeConstraint( QtWidgets.QLayout.SetMinAndMaxSize )
 
 		self.__child = None
 		self.setChild( child )
@@ -61,11 +61,11 @@ class Frame( GafferUI.ContainerWidget ) :
 
 	def setBorderStyle( self, borderStyle ) :
 
-		self._qtWidget().setObjectName( "borderStyle" + str( borderStyle ) )
+		self._qtWidget().setProperty( "gafferBorderStyle", str( borderStyle ) )
 
 	def getBorderStyle( self ) :
 
-		n = IECore.CamelCase.split( str( self._qtWidget().objectName() ) )[-1]
+		n = self._qtWidget().property( "gafferBorderStyle" )
 		return getattr( self.BorderStyle, n )
 
 	def removeChild( self, child ) :

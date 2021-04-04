@@ -41,20 +41,22 @@
 #include "Gaffer/ComputeNode.h"
 #include "Gaffer/TypedObjectPlug.h"
 
+#include <functional>
+
 namespace Gaffer
 {
 
 IE_CORE_FORWARDDECLARE( StringPlug )
 
-class Expression : public ComputeNode
+class GAFFER_API Expression : public ComputeNode
 {
 
 	public :
 
 		Expression( const std::string &name=defaultName<Expression>() );
-		virtual ~Expression();
+		~Expression() override;
 
-		IE_CORE_DECLARERUNTIMETYPEDEXTENSION( Gaffer::Expression, ExpressionTypeId, ComputeNode );
+		GAFFER_NODE_DECLARE_TYPE( Gaffer::Expression, ExpressionTypeId, ComputeNode );
 
 		/// Fills the vector with the names of all currently available languages.
 		static void languages( std::vector<std::string> &languages );
@@ -118,6 +120,8 @@ class Expression : public ComputeNode
 				/// to apply them to each of the individual output plugs.
 				/// \threading This function may be called concurrently.
 				virtual IECore::ConstObjectVectorPtr execute( const Context *context, const std::vector<const ValuePlug *> &proxyInputs ) const = 0;
+				/// What cache policy should be used for executing the expression.
+				virtual Gaffer::ValuePlug::CachePolicy executeCachePolicy() const = 0;
 				//@}
 
 				/// @name Language utilities
@@ -150,7 +154,7 @@ class Expression : public ComputeNode
 				/// Creates an engine of the specified type.
 				static EnginePtr create( const std::string engineType );
 
-				typedef boost::function<EnginePtr ()> Creator;
+				typedef std::function<EnginePtr ()> Creator;
 				static void registerEngine( const std::string engineType, Creator creator );
 				static void registeredEngines( std::vector<std::string> &engineTypes );
 
@@ -170,12 +174,14 @@ class Expression : public ComputeNode
 
 		};
 
-		virtual void affects( const Plug *input, AffectedPlugsContainer &outputs ) const;
+		void affects( const Plug *input, AffectedPlugsContainer &outputs ) const override;
 
 	protected :
 
-		virtual void hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const;
-		virtual void compute( ValuePlug *output, const Context *context ) const;
+		void hash( const ValuePlug *output, const Context *context, IECore::MurmurHash &h ) const override;
+		void compute( ValuePlug *output, const Context *context ) const override;
+
+		Gaffer::ValuePlug::CachePolicy computeCachePolicy( const Gaffer::ValuePlug *output ) const override;
 
 	private :
 
@@ -213,6 +219,8 @@ class Expression : public ComputeNode
 		void removeChildren( ValuePlug *parentPlug, size_t startChildIndex );
 
 		std::string transcribe( const std::string &expression, bool toInternalForm ) const;
+
+		void plugSet( const Plug *plug );
 
 		EnginePtr m_engine;
 		std::vector<IECore::InternedString> m_contextNames;

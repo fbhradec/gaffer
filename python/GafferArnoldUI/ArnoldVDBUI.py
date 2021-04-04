@@ -59,11 +59,11 @@ Gaffer.Metadata.registerNode(
 			""",
 
 			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
-			"pathPlugValueWidget:leaf", True,
-			"pathPlugValueWidget:valid", True,
-			"pathPlugValueWidget:bookmarks", "vdb",
-			"fileSystemPathPlugValueWidget:extensions", IECore.StringVectorData( [ "vdb" ] ),
-			"fileSystemPathPlugValueWidget:extensionsLabel", "Show only VDB files",
+			"path:leaf", True,
+			"path:valid", True,
+			"path:bookmarks", "vdb",
+			"fileSystemPath:extensions", "vdb",
+			"fileSystemPath:extensionsLabel", "Show only VDB files",
 
 		],
 
@@ -122,25 +122,6 @@ Gaffer.Metadata.registerNode(
 			the VDB file doesn't have a lot of fine detail at the voxel level -
 			a value of 4 might be a good starting point for such a file.
 			""",
-
-		],
-
-		"dso" : [
-
-			"description",
-			"""
-			The file name of the volume plugin that will be used to load
-			the VDB file at render time. Currently this plugin is not supplied
-			with Arnold itself, but is provided with MtoA as
-			`procedurals/volume_vdb.so`, and with HtoA as
-			`arnold/procedurals/htoa_volume_openvdb.so`.
-			""",
-
-			"plugValueWidget:type", "GafferUI.FileSystemPathPlugValueWidget",
-			"pathPlugValueWidget:leaf", True,
-			"pathPlugValueWidget:bookmarks", "arnoldProcedural",
-			"fileSystemPathPlugValueWidget:extensions", IECore.StringVectorData( [ "so", "dylib" ] ),
-			"fileSystemPathPlugValueWidget:extensionsLabel", "Show only DSOs",
 
 		],
 

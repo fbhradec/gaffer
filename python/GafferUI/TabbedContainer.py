@@ -40,23 +40,33 @@ import IECore
 import Gaffer
 import GafferUI
 
-QtCore = GafferUI._qtImport( "QtCore" )
-QtGui = GafferUI._qtImport( "QtGui" )
+from Qt import QtCore
+from Qt import QtGui
+from Qt import QtWidgets
 
 class TabbedContainer( GafferUI.ContainerWidget ) :
 
-	__DragState = IECore.Enum.create( "None", "Waiting", "Active" )
+	__DragState = IECore.Enum.create( "None_", "Waiting", "Active" )
+	__palette = None
 
 	def __init__( self, cornerWidget=None, **kw ) :
 
 		GafferUI.ContainerWidget.__init__( self, _TabWidget(), **kw )
 
-		self.__tabBar = GafferUI.Widget( QtGui.QTabBar() )
+		self.__tabBar = GafferUI.Widget( QtWidgets.QTabBar() )
 		self.__tabBar._qtWidget().setDrawBase( False )
-		self.__tabBarDragEnterConnection = self.__tabBar.dragEnterSignal().connect( Gaffer.WeakMethod( self.__tabBarDragEnter ) )
-		self.__tabBarDragMoveConnection = self.__tabBar.dragMoveSignal().connect( Gaffer.WeakMethod( self.__tabBarDragMove ) )
-		self.__tabBarDragLeaveConnection = self.__tabBar.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__tabBarDragLeave ) )
-		self.__tabBarDragState = self.__DragState.None
+		self.__tabBar._qtWidget().tabMoved.connect( Gaffer.WeakMethod( self.__moveWidget ) )
+		self.__tabBar.dragEnterSignal().connect( Gaffer.WeakMethod( self.__tabBarDragEnter ), scoped = False )
+		self.__tabBar.dragMoveSignal().connect( Gaffer.WeakMethod( self.__tabBarDragMove ), scoped = False )
+		self.__tabBar.dragLeaveSignal().connect( Gaffer.WeakMethod( self.__tabBarDragLeave ), scoped = False )
+		self.__tabBarDragState = self.__DragState.None_
+
+		# See comments in Button.py
+		if TabbedContainer.__palette is None :
+			TabbedContainer.__palette = QtGui.QPalette( QtWidgets.QApplication.instance().palette( self.__tabBar._qtWidget() ) )
+			TabbedContainer.__palette.setColor( QtGui.QPalette.Disabled, QtGui.QPalette.Light, QtGui.QColor( 0, 0, 0, 0 ) )
+
+		self.__tabBar._qtWidget().setPalette( TabbedContainer.__palette )
 
 		self._qtWidget().setTabBar( self.__tabBar._qtWidget() )
 
@@ -121,6 +131,12 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 
 		return self.__widgets[ self._qtWidget().currentIndex() ]
 
+	def __moveWidget( self, fromIndex, toIndex ) :
+
+		w = self.__widgets[ fromIndex ]
+		del self.__widgets[ fromIndex ]
+		self.__widgets.insert( toIndex, w )
+
 	def __getitem__( self, index ) :
 
 		return self.__widgets[index]
@@ -157,8 +173,11 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 			self._qtWidget().setCornerWidget( None )
 			self.__cornerWidget = None
 		else :
-			self._qtWidget().removeTab( self.__widgets.index( child ) )
+			# We must remove the child from __widgets before the tab, otherwise
+			# currentChangedSignal will be emit with the old widget.
+			removalIndex = self.__widgets.index( child )
 			self.__widgets.remove( child )
+			self._qtWidget().removeTab( removalIndex )
 
 		child._qtWidget().setParent( None )
 		child._applyVisibility()
@@ -215,7 +234,8 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 
 	def __currentChanged( self, index ) :
 
-		self.__currentChangedSignal( self, self[index] )
+		current = self[index] if len(self) else None
+		self.__currentChangedSignal( self, current )
 
 	def __tabBarDragEnter( self, widget, event ) :
 
@@ -224,7 +244,7 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 
 		# we delay the tab switch a little to make sure that the user isn't just passing through
 		self.__tabBarDragState = self.__DragState.Waiting
-		QtCore.QTimer.singleShot( QtGui.QApplication.doubleClickInterval(), self.__tabBarDragActivate )
+		QtCore.QTimer.singleShot( QtWidgets.QApplication.doubleClickInterval(), self.__tabBarDragActivate )
 		return True
 
 	def __tabBarDragMove( self, widget, event ) :
@@ -234,7 +254,7 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 
 	def __tabBarDragLeave( self, widget, event ) :
 
-		self.__tabBarDragState = self.__DragState.None
+		self.__tabBarDragState = self.__DragState.None_
 		return True
 
 	def __tabBarDragActivate( self ) :
@@ -251,17 +271,17 @@ class TabbedContainer( GafferUI.ContainerWidget ) :
 			self._qtWidget().setCurrentIndex( tab )
 
 # Private implementation - a QTabWidget with custom size behaviour.
-class _TabWidget( QtGui.QTabWidget ) :
+class _TabWidget( QtWidgets.QTabWidget ) :
 
 	def __init__( self, parent = None ) :
 
-		QtGui.QTabWidget.__init__( self, parent )
+		QtWidgets.QTabWidget.__init__( self, parent )
 
 	# Reimplemented so that the tabs aren't taken into
 	# account when they're not visible.
 	def sizeHint( self ) :
 
-		result = QtGui.QTabWidget.sizeHint( self )
+		result = QtWidgets.QTabWidget.sizeHint( self )
 		if self.tabBar().isHidden() :
 			if self.tabPosition() in ( self.North, self.South ) :
 				result.setHeight( result.height() - self.tabBar().sizeHint().height() )
@@ -274,7 +294,7 @@ class _TabWidget( QtGui.QTabWidget ) :
 	# account when they're not visible.
 	def minimumSizeHint( self ) :
 
-		result = QtGui.QTabWidget.minimumSizeHint( self )
+		result = QtWidgets.QTabWidget.minimumSizeHint( self )
 		if self.tabBar().isHidden() :
 			if self.tabPosition() in ( self.North, self.South ) :
 				result.setHeight( result.height() - self.tabBar().minimumSizeHint().height() )
@@ -282,3 +302,4 @@ class _TabWidget( QtGui.QTabWidget ) :
 				result.setWidth( result.width() - self.tabBar().minimumSizeHint().width() )
 
 		return result
+

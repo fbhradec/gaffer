@@ -39,29 +39,43 @@ import GafferUI
 
 ## A PlugValueWidget which uses a PlugLayout to present all the child
 # plugs of the main plug.
-## \todo If required, add support for a surrounding collapsible layout,
-# the presence of which should be specified via a metadata item. All
-# additional features should be driven by metadata only as far as is
-# feasible.
+#
+# Metadata
+# --------
+#
+# - "layoutPlugValueWidget:orientation" : "vertical" or "horizontal"
 class LayoutPlugValueWidget( GafferUI.PlugValueWidget ) :
 
 	def __init__( self, plug, **kw ) :
 
-		self.__layout = GafferUI.PlugLayout( plug )
+		orientation = Gaffer.Metadata.value( plug, "layoutPlugValueWidget:orientation" )
+		self.__orientation = {
+			"vertical" : GafferUI.ListContainer.Orientation.Vertical,
+			"horizontal" : GafferUI.ListContainer.Orientation.Horizontal,
+			None : GafferUI.ListContainer.Orientation.Vertical,
+		}[orientation]
+
+		self.__layout = GafferUI.PlugLayout( plug, self.__orientation )
 		GafferUI.PlugValueWidget.__init__( self, self.__layout, plug, **kw )
 
 	def hasLabel( self ) :
 
-		return True
+		## \todo `hasLabel` is an abused concept, where loads of widgets
+		# claim to have a label when they don't, just as a convenient way of
+		# disabling the label that PlugLayout would add itself. Maybe we should
+		# ditch it entirely and just use `"label", ""` metadata to disable
+		# lables when we want to?
+
+		return self.__orientation == GafferUI.ListContainer.Orientation.Vertical
 
 	def setReadOnly( self, readOnly ) :
 
 		GafferUI.PlugValueWidget.setReadOnly( self, readOnly )
 		self.__layout.setReadOnly( readOnly )
 
-	def childPlugValueWidget( self, childPlug, lazy=True ) :
+	def childPlugValueWidget( self, childPlug ) :
 
-		return self.__layout.plugValueWidget( childPlug, lazy )
+		return self.__layout.plugValueWidget( childPlug )
 
 	def _updateFromPlug( self ) :
 
