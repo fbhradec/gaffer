@@ -30,9 +30,9 @@ jobs:
 
         name: [
           linux-python2,
-          linux-python2-debug,
-          linux-python3,
-          macos-python2,
+#          linux-python2-debug,
+#          linux-python3,
+#          macos-python2,
         ]
 
         include:
@@ -144,27 +144,27 @@ jobs:
         echo ARNOLD_ROOT=$GITHUB_WORKSPACE/arnoldRoot >> $GITHUB_ENV
         echo DELIGHT=$GITHUB_WORKSPACE/3delight >> $GITHUB_ENV
 
-    - name: Cache
-      uses: actions/cache@v1
-      with:
-        path: ${{ env.GAFFER_CACHE_DIR }}
-        key: ${{ runner.os }}-${{ matrix.containerImage }}-${{env.GAFFER_DEPENDENCIES_HASH}}-${{ matrix.buildType }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.containerImage }}-${{env.GAFFER_DEPENDENCIES_HASH}}-${{ matrix.buildType }}-
+#    - name: Cache
+#      uses: actions/cache@v1
+#      with:
+#        path: ${{ env.GAFFER_CACHE_DIR }}
+#        key: ${{ runner.os }}-${{ matrix.containerImage }}-${{env.GAFFER_DEPENDENCIES_HASH}}-${{ matrix.buildType }}-${{ github.sha }}
+#        restore-keys: |
+#          ${{ runner.os }}-${{ matrix.containerImage }}-${{env.GAFFER_DEPENDENCIES_HASH}}-${{ matrix.buildType }}-
 
     - name: Build Gaffer
       run: |
        scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions
 
-    - name: Test
+ #   - name: Test
       # Tests should complete in well under an hour. If they don't it's most likely because
       # of a hang, in which case we'd like to know more quickly than the default 6hr timeout
       # allows.
-      timeout-minutes: 60
-      run: |
-        echo "::add-matcher::./.github/workflows/main/problemMatchers/unittest.json"
-        ${{ matrix.testRunner }} "${{ env.GAFFER_BUILD_DIR }}/bin/gaffer test"
-        echo "::remove-matcher owner=unittest::"
+ #     timeout-minutes: 60
+ #     run: |
+ #       echo "::add-matcher::./.github/workflows/main/problemMatchers/unittest.json"
+ #       ${{ matrix.testRunner }} "${{ env.GAFFER_BUILD_DIR }}/bin/gaffer test"
+ #       echo "::remove-matcher owner=unittest::"
 
     - name: Build Docs and Package
       # We currently experience sporadic hangs in the docs builds (mac), this
