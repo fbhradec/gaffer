@@ -1,10 +1,14 @@
 name: CI
 
 on:
+  workflow_dispatch:
+    branches:
+      - '*'
   push:
     branches:
       - master
       - '*_maintenance'
+      - '*_gafferCortex*'
   pull_request:
     branches:
       - master
