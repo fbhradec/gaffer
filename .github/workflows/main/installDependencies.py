@@ -37,8 +37,13 @@
 import os
 import sys
 import argparse
-import urllib
 import hashlib
+
+if float(sys.version[:3]) < 3:
+	from urllib import urlretrieve as urllib_urlretrieve
+else:
+	from urllib.request import urlretrieve as urllib_urlretrieve
+
 
 # Determine default archive URL.
 
@@ -74,10 +79,16 @@ args = parser.parse_args()
 # Download and unpack the archive.
 
 sys.stderr.write( "Downloading dependencies \"%s\"\n" % args.archiveURL )
-archiveFileName, headers = urllib.urlretrieve( args.archiveURL )
+archiveFileName, headers = urllib_urlretrieve( args.archiveURL )
 
-os.makedirs( args.dependenciesDir )
-os.system( "tar xf %s -C %s --strip-components=1" % ( archiveFileName, args.dependenciesDir ) )
+if not os.path.exists(args.dependenciesDir):
+	os.makedirs( args.dependenciesDir )
+cmd = "tar xf %s -C %s --strip-components=1" % ( archiveFileName, args.dependenciesDir )
+if os.path.splitext( archiveFileName.lower() )[-1] == '.zip':
+	# building for windows inside a github action (windows bash)
+	cmd = "bash -c 'cd %s ; cp /%s ./dependency.zip ; unzip -o ./dependency.zip > ./unzip.log ; mv gafferDependencies*/* ./ ; rmdir gafferDependencies*'" % ( args.dependenciesDir, archiveFileName.replace(':','').replace('\\','/') )
+sys.stderr.write( cmd + "\n" )
+os.system( cmd )
 
 # Tell the world
 

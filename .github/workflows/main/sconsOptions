@@ -50,4 +50,5 @@ PACKAGE_FILE = "%s.tar.gz" % os.environ["GAFFER_BUILD_NAME"]
 
 SPHINX = os.environ["GAFFER_SPHINX"]
 
-GAFFERCORTEX=True
+GAFFERCORTEX = True
+INKSCAPE = os.environ["INKSCAPE"]

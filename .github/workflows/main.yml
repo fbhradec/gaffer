@@ -1,14 +1,19 @@
 name: CI
 
 on:
+  workflow_dispatch:
+    branches:
+      - '*'
   push:
     branches:
       - master
       - '*_maintenance'
+      - '*gafferCortex*'
   pull_request:
     branches:
       - master
       - '*_maintenance'
+      - '*gafferCortex*'
   release:
       types: [published]
 
@@ -29,58 +34,70 @@ jobs:
         # and then use `include` to define their settings.
 
         name: [
-          linux,
-#          linux-debug,
-#          linux-python3,
-#          macos,
+          # linux,
+          # linux-debug,
+          # linux-python3,
+          # macos,
+          windows-python3,
         ]
 
         include:
 
-         - name: linux
-           os: ubuntu-16.04
+         # - name: linux
+         #   os: ubuntu-16.04
+         #   buildType: RELEASE
+         #   variant: linux-python2
+         #   publish: true
+         #   containerImage: gafferhq/build:1.2.0
+         #   dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python2-linux.tar.gz
+         #    # GitHub container builds run as root. This causes failures for tests that
+         #    # assert that filesystem permissions are respected, because root doesn't
+         #    # respect permissions. So we run the final test suite as a dedicated
+         #    # test user rather than as root.
+         #   testRunner: su testUser -c
+         #   sconsCacheMegabytes: 400
+         #
+         # - name: linux-debug
+         #   os: ubuntu-16.04
+         #   buildType: DEBUG
+         #   variant: linux-python2
+         #   publish: false
+         #   containerImage: gafferhq/build:1.2.0
+         #   dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python2-linux.tar.gz
+         #   testRunner: su testUser -c
+         #    # Debug builds are ludicrously big, so we must use a larger cache
+         #    # limit. In practice this compresses down to 4-500Mb.
+         #   sconsCacheMegabytes: 2500
+         #
+         # - name: linux-python3
+         #   os: ubuntu-16.04
+         #   buildType: RELEASE
+         #   variant: linux-python3
+         #   publish: true
+         #   containerImage: gafferhq/build:1.2.0
+         #   dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python3-linux.tar.gz
+         #   testRunner: su testUser -c
+         #   sconsCacheMegabytes: 400
+         #
+         # - name: macos
+         #   os: macos-10.15
+         #   buildType: RELEASE
+         #   variant: macos-python2
+         #   publish: true
+         #   containerImage:
+         #   dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python2-osx.tar.gz
+         #   testRunner: bash -c
+         #   sconsCacheMegabytes: 400
+
+         - name: windows-python3
+           os: windows-2016
            buildType: RELEASE
-           variant: linux-python2
-           publish: true
-           containerImage: gafferhq/build:1.2.0
-           dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python2-linux.tar.gz
-            # GitHub container builds run as root. This causes failures for tests that
-            # assert that filesystem permissions are respected, because root doesn't
-            # respect permissions. So we run the final test suite as a dedicated
-            # test user rather than as root.
-           testRunner: su testUser -c
-           sconsCacheMegabytes: 400
-
-         - name: linux-debug
-           os: ubuntu-16.04
-           buildType: DEBUG
-           variant: linux-python2
-           publish: false
-           containerImage: gafferhq/build:1.2.0
-           dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python2-linux.tar.gz
-           testRunner: su testUser -c
-            # Debug builds are ludicrously big, so we must use a larger cache
-            # limit. In practice this compresses down to 4-500Mb.
-           sconsCacheMegabytes: 2500
-
-          - name: linux-python3
-            os: ubuntu-16.04
-            buildType: RELEASE
-            variant: linux-python3
-            publish: true
-            containerImage: gafferhq/build:1.2.0
-            dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python3-linux.tar.gz
-            testRunner: su testUser -c
-            sconsCacheMegabytes: 400
-
-         - name: macos
-           os: macos-10.15
-           buildType: RELEASE
-           variant: macos-python2
+           variant: windows-python3
+           python-version: '3.x'
            publish: true
            containerImage:
-           dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python2-osx.tar.gz
-           testRunner: bash -c
+           dependenciesURL: https://github.com/hypothetical-inc/gafferDependencies/releases/download/3.0.0a1/gafferDependencies-3.0.0a1-Python3-windows.zip
+           testRunner: cmd
            sconsCacheMegabytes: 400
 
     runs-on: ${{ matrix.os }}
@@ -96,6 +113,13 @@ jobs:
     steps:
 
     - uses: actions/checkout@v2
+    - uses: ilammy/msvc-dev-cmd@v1 # for windows - does nothing on Linux/osx
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+      if: runner.os == 'Windows'
 
     - name: Install toolchain (MacOS)
       # Prefer `pip install` where possible because it is faster
@@ -118,12 +142,33 @@ jobs:
         useradd -m testUser
       if: runner.os == 'Linux'
 
+    - name: Install toolchain (Windows)
+      shell: bash
+      run: |
+        python --version
+        pip install SCons
+        pip install sphinx
+        pip install pywin32
+        scons --version
+        curl -L -O https://inkscape.org/gallery/item/24644/inkscape-1.0.2-2-x64.7z
+        7z x -y inkscape-1.0.2-2-x64.7z
+        ls -l ./inkscape/bin/
+        pwd
+        echo $GITHUB_ENV
+        echo $GITHUB_WORKSPACE
+        echo INKSCAPE=$GITHUB_WORKSPACE\\inkscape\\bin\\ >> $GITHUB_ENV
+        # we remove /usr/bin/link so it doesn't interfere with MSVC link
+        rm /usr/bin/link
+      if: runner.os == 'Windows'
+
     - name: 'Install Python Modules'
+      shell: bash
       run: |
         python --version
         pip install PyJWT==1.7.1 PyGitHub==1.45
 
     - name: Set Custom Variables
+      shell: bash
       run: |
         .github/workflows/main/setBuildVars.py
         echo GAFFER_SPHINX=`which sphinx-build` >> $GITHUB_ENV
@@ -141,24 +186,45 @@ jobs:
       # The `$GITHUB_ENV` shenanigans creates an environment variable
       # containing the hash of the archive, for use in the cache key
       # below.
+      shell: bash
       run: |
         echo GAFFER_DEPENDENCIES_HASH=`python .github/workflows/main/installDependencies.py --archiveURL ${{ matrix.dependenciesURL }} --dependenciesDir ${{ env.GAFFER_BUILD_DIR }} --outputFormat "{archiveDigest}"` >> $GITHUB_ENV
         ./config/installArnold.sh
         ./config/installDelight.sh
         echo ARNOLD_ROOT=$GITHUB_WORKSPACE/arnoldRoot >> $GITHUB_ENV
         echo DELIGHT=$GITHUB_WORKSPACE/3delight >> $GITHUB_ENV
+      if: runner.os != 'Windows'
 
-#    - name: Cache
-#      uses: actions/cache@v1
-#      with:
-#        path: ${{ env.GAFFER_CACHE_DIR }}
-#        key: ${{ runner.os }}-${{ matrix.containerImage }}-${{env.GAFFER_DEPENDENCIES_HASH}}-${{ matrix.buildType }}-${{ github.sha }}
-#        restore-keys: |
-#          ${{ runner.os }}-${{ matrix.containerImage }}-${{env.GAFFER_DEPENDENCIES_HASH}}-${{ matrix.buildType }}-
+    - name: Install dependencies (Windows)
+      # The `$GITHUB_ENV` shenanigans creates an environment variable
+      # containing the hash of the archive, for use in the cache key
+      # below.
+      shell: bash
+      run: |
+        #python .github/workflows/main/installDependencies.py --archiveURL ${{ matrix.dependenciesURL }} --dependenciesDir ${{ env.GAFFER_BUILD_DIR }} --outputFormat "{archiveDigest}"
+        echo GAFFER_DEPENDENCIES_HASH=`python .github/workflows/main/installDependencies.py --archiveURL ${{ matrix.dependenciesURL }} --dependenciesDir ${{ env.GAFFER_BUILD_DIR }} --outputFormat "{archiveDigest}"` >> $GITHUB_ENV
+        ls -l ./build/
+        #./config/installArnold.sh
+        #./config/installDelight.sh
+        echo ARNOLD_ROOT=$GITHUB_WORKSPACE\\arnoldRoot >> $GITHUB_ENV
+        echo DELIGHT=$GITHUB_WORKSPACE\\3delight >> $GITHUB_ENV
+        # in case boost is in a versioned folder, move it to include so scons can find it!
+        [ "$(ls -d ./build/include/boost-*)" != "" ] && mv ./build/include/boost-*/* ./build/include/
+      if: runner.os == 'Windows'
+
+    - name: Cache
+      uses: actions/cache@v1
+      with:
+        path: ${{ env.GAFFER_CACHE_DIR }}
+        key: ${{ runner.os }}-${{ matrix.containerImage }}-${{env.GAFFER_DEPENDENCIES_HASH}}-${{ matrix.buildType }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.containerImage }}-${{env.GAFFER_DEPENDENCIES_HASH}}-${{ matrix.buildType }}-
 
     - name: Build Gaffer
+      shell: bash
       run: |
-       scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions
+        env
+        scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions || (cat ./config.log ; error)
 
 #    - name: Test
 #      run: |
