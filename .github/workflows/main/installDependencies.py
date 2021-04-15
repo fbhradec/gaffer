@@ -84,7 +84,7 @@ archiveFileName, headers = urllib_urlretrieve( args.archiveURL )
 if not os.path.exists(args.dependenciesDir):
 	os.makedirs( args.dependenciesDir )
 cmd = "tar xf %s -C %s --strip-components=1" % ( archiveFileName, args.dependenciesDir )
-if os.path.splitext( archiveFileName.lower() )[-1] == '.zip':
+if os.path.splitext( args.archiveURL.lower() )[-1] == '.zip':
 	# building for windows inside a github action (windows bash)
 	cmd = "bash -c 'cd %s ; cp /%s ./dependency.zip ; unzip -o ./dependency.zip > ./unzip.log ; mv gafferDependencies*/* ./ ; rmdir gafferDependencies*'" % ( args.dependenciesDir, archiveFileName.replace(':','').replace('\\','/') )
 sys.stderr.write( cmd + "\n" )
