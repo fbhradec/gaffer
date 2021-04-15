@@ -201,15 +201,18 @@ jobs:
       # below.
       shell: bash
       run: |
-        #python .github/workflows/main/installDependencies.py --archiveURL ${{ matrix.dependenciesURL }} --dependenciesDir ${{ env.GAFFER_BUILD_DIR }} --outputFormat "{archiveDigest}"
         echo GAFFER_DEPENDENCIES_HASH=`python .github/workflows/main/installDependencies.py --archiveURL ${{ matrix.dependenciesURL }} --dependenciesDir ${{ env.GAFFER_BUILD_DIR }} --outputFormat "{archiveDigest}"` >> $GITHUB_ENV
-        ls -l ./build/
         #./config/installArnold.sh
         #./config/installDelight.sh
         echo ARNOLD_ROOT=$GITHUB_WORKSPACE\\arnoldRoot >> $GITHUB_ENV
         echo DELIGHT=$GITHUB_WORKSPACE\\3delight >> $GITHUB_ENV
         # in case boost is in a versioned folder, move it to include so scons can find it!
         [ "$(ls -d ./build/include/boost-*)" != "" ] && mv ./build/include/boost-*/* ./build/include/
+        # add scons options to sconsOptions
+        boost_lib_suffix=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/boost_random*.dll | awk -F'/' '{print $(NF)}' | sed 's/boost_random//' | sed 's/.dll//')
+        boost_python_suffix=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/boost_python*.dll | awk -F'/' '{print $(NF)}' | awk -F'-' '{print $1}' | sed 's/boost_python//' )
+        echo "BOOST_LIB_SUFFIX=\"$boost_lib_suffix\"" | tee -a .github/workflows/main/sconsOptions
+        echo "BOOST_PYTHON_LIB_SUFFIX=\"$boost_python_suffix\"" | tee -a .github/workflows/main/sconsOptions
       if: runner.os == 'Windows'
 
     - name: Cache
@@ -223,7 +226,6 @@ jobs:
     - name: Build Gaffer
       shell: bash
       run: |
-        env
         scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions || (cat ./config.log ; error)
 
 #    - name: Test
