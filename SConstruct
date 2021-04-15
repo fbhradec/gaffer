@@ -484,12 +484,12 @@ if env["PLATFORM"] != "win32" :
 else:
 	env.Append(
 		CXXFLAGS = [
-			"/nologo", 
-			"/diagnostics:classic", 
-			"/DWIN32", 
-			"/D_WINDOWS", 
-			"/DOPENEXR_DLL", 
-			"/DNOMINMAX", 
+			"/nologo",
+			"/diagnostics:classic",
+			"/DWIN32",
+			"/D_WINDOWS",
+			"/DOPENEXR_DLL",
+			"/DNOMINMAX",
 			"/D__PRETTY_FUNCTION__=__FUNCSIG__",
 			"/DBOOST_ALL_DYN_LINK",
 			"/DBOOST_FILESYSTEM_NO_DEPRICATED",
@@ -517,7 +517,7 @@ else:
 
 	if env["BUILD_TYPE"] == "DEBUG" :
 		env.Append(
-			CXXFLAGS = 
+			CXXFLAGS =
 			[
 				"-O0",
 				"-Zi",
@@ -525,7 +525,7 @@ else:
 				"-DBOOST_DISABLE_ASSERTS",
 				"-bigobj",
 			],
-			CCPDBFLAGS= 
+			CCPDBFLAGS=
 			[
 				"/Zi",
 				"/Fd${TARGET}.pdb",
@@ -533,22 +533,22 @@ else:
 		)
 	elif env["BUILD_TYPE"] == "RELEASE" :
 		env.Append(
-			CXXFLAGS = 
+			CXXFLAGS =
 			[
-				"-DNDEBUG",  
+				"-DNDEBUG",
 				"-MD",	# create multithreaded DLL
-				"-DBOOST_DISABLE_ASSERTS", 
+				"-DBOOST_DISABLE_ASSERTS",
 				"-Ox",
-			] 
+			]
 		)
 	elif env["BUILD_TYPE"] == "RELWITHDEBINFO" :
-		env.Append( 
-			CXXFLAGS = 
+		env.Append(
+			CXXFLAGS =
 			[
 				"-DNDEBUG",
 				"-MD",
 				"-bigobj",
-				"-DBOOST_DISABLE_ASSERTS", 
+				"-DBOOST_DISABLE_ASSERTS",
 				"-Zi",
 				"-Ox",
 			],
@@ -556,7 +556,7 @@ else:
 			[
 				"-DEBUG",
 			],
-			CCPDBFLAGS= 
+			CCPDBFLAGS=
 			[
 				"/Zi",
 				"/Fd${TARGET}.pdb",
@@ -821,7 +821,7 @@ if os.path.exists( vTuneRoot ):
 		}
 	}
 else:
-	if env["PLATFORM"] == "win32" : 
+	if env["PLATFORM"] == "win32" :
 		gafferLib = {
 			"envAppends" : {
 				"LIBS" : [ "Advapi32" ]
@@ -1186,11 +1186,13 @@ if env["PLATFORM"] == "win32" :
 for library in ( "GafferUI", "GafferScene", "GafferSceneUI", "GafferImageUI" ) :
 	if env["PLATFORM"] == "darwin" :
 		libraries[library]["envAppends"].setdefault( "FRAMEWORKS", [] ).append( "OpenGL" )
+		libraries[library]["envAppends"]["LIBS"].append( "GLEW$GLEW_LIB_SUFFIX" )
 	elif env["PLATFORM"] == "win32" :
 		libraries[library]["envAppends"]["LIBS"].append( "opengl32" )
+		libraries[library]["envAppends"]["LIBS"].append( "glew32$GLEW_LIB_SUFFIX" )
 	else :
 		libraries[library]["envAppends"]["LIBS"].append( "GL" )
-	libraries[library]["envAppends"]["LIBS"].append( "GLEW$GLEW_LIB_SUFFIX" )
+		libraries[library]["envAppends"]["LIBS"].append( "GLEW$GLEW_LIB_SUFFIX" )
 
 # Add on Qt libraries to definitions - these vary from platform to platform
 
@@ -1240,7 +1242,7 @@ if env["PLATFORM"] == "win32" :
 						os.path.join(
 							os.path.dirname( filePath ),
 							f.readline().replace( "/", "\\" )
-						) 
+						)
 					)
 
 ###############################################################################################
@@ -1304,7 +1306,7 @@ for libraryName, libraryDef in libraries.items() :
 			header,
 			SUBST_DICT = fileSubstitutions
 		)
-		
+
 		libEnv.Alias( "build", headerInstall )
 
 	# bindings library
@@ -1378,7 +1380,7 @@ for libraryName, libraryDef in libraries.items() :
 	pythonFiles = glob.glob(
 		os.path.join( "python", libraryName, "*.py" )
 	) + glob.glob(
-		os.path.join( "python", libraryName, "*", "*.py" ) 
+		os.path.join( "python", libraryName, "*", "*.py" )
 	)
 	for pythonFile in pythonFiles :
 		pythonFileInstall = env.Substfile(
@@ -1442,7 +1444,7 @@ for libraryName, libraryDef in libraries.items() :
 				env.subst( os.path.join( "$BUILD_DIR", "bin", "oslc" ) ),
 				"-I" + os.path.join( ".", "shaders" ),
 				"-o",
-				str( target[0] ), str( source[0] ) 
+				str( target[0] ), str( source[0] )
 			],
 			env = env["ENV"]
 		)

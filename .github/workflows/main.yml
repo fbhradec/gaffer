@@ -149,6 +149,7 @@ jobs:
         pip install SCons
         pip install sphinx
         pip install pywin32
+        echo $(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin)) >>  $GITHUB_PATH
         scons --version
         curl -L -O https://inkscape.org/gallery/item/24644/inkscape-1.0.2-2-x64.7z
         7z x -y inkscape-1.0.2-2-x64.7z
@@ -156,7 +157,10 @@ jobs:
         pwd
         echo $GITHUB_ENV
         echo $GITHUB_WORKSPACE
+        # add inkscape env var
         echo INKSCAPE=$GITHUB_WORKSPACE\\inkscape\\bin\\ >> $GITHUB_ENV
+        # add inkscape to sconsOptions
+        echo "INKSCAPE=os.environ['INKSCAPE']" | tee -a .github/workflows/main/sconsOptions
         # we remove /usr/bin/link so it doesn't interfere with MSVC link
         rm /usr/bin/link
       if: runner.os == 'Windows'
@@ -209,10 +213,28 @@ jobs:
         # in case boost is in a versioned folder, move it to include so scons can find it!
         [ "$(ls -d ./build/include/boost-*)" != "" ] && mv ./build/include/boost-*/* ./build/include/
         # add scons options to sconsOptions
+        echo $(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin)) >>  $GITHUB_PATH
+        echo $(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/DLLs)) >>  $GITHUB_PATH
         boost_lib_suffix=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/boost_random*.dll | awk -F'/' '{print $(NF)}' | sed 's/boost_random//' | sed 's/.dll//')
         boost_python_suffix=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/boost_python*.dll | awk -F'/' '{print $(NF)}' | awk -F'-' '{print $1}' | sed 's/boost_python//' )
+        python_version=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/python?.? | awk -F'/' '{print $(NF)}' | sed 's/python//' )
         echo "BOOST_LIB_SUFFIX=\"$boost_lib_suffix\"" | tee -a .github/workflows/main/sconsOptions
         echo "BOOST_PYTHON_LIB_SUFFIX=\"$boost_python_suffix\"" | tee -a .github/workflows/main/sconsOptions
+        echo "PYTHON_VERSION=\"$python_version\"" | tee -a .github/workflows/main/sconsOptions
+        echo "WARNINGS_AS_ERRORS=0" | tee -a .github/workflows/main/sconsOptions
+        echo "OPENEXR_LIB_SUFFIX=\"\"" | tee -a .github/workflows/main/sconsOptions
+        echo "os.environ['PATH']='$(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin));'+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
+        echo "os.environ['PATH']='$(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/DLLs));'+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
+        cat .github/workflows/main/sconsOptions
+
+        cp ${{ env.GAFFER_BUILD_DIR }}/bin/python.exe ${{ env.GAFFER_BUILD_DIR }}/bin/gaffer_python.exe
+        # export BUILD=$(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin/python.exe)
+        # export BUILD=$(cygpath -w $BUILD | sed 's/\\/\\\\/g')
+        export BUILD=$(readlink -f  $GAFFER_BUILD_DIR/bin/python.exe | sed 's/\//\\\//g')
+        echo $BUILD
+        # sed -i.bak -e "s/.python., .-c./'$BUILD', '-c'/" SConstruct
+        sed -i.bak -e "s/.python., .-c./'gaffer_python.exe', '-c'/" SConstruct
+        egrep '.python.exe., .-c.' SConstruct
       if: runner.os == 'Windows'
 
     - name: Cache
@@ -226,7 +248,8 @@ jobs:
     - name: Build Gaffer
       shell: bash
       run: |
-        scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions || (cat ./config.log ; error)
+        export PATH=$GAFFER_BUILD_DIR/bin/:$PATH
+        scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions
 
 #    - name: Test
 #      run: |
@@ -271,3 +294,10 @@ jobs:
       # unbounded growth. In practice, the archives that get uploaded are much smaller
       # than the limit we apply here, because they're compressed.
       run: ./.github/workflows/main/limitDirectorySize.py --directory ./sconsCache --megabytes ${{ matrix.sconsCacheMegabytes }} --verbose
+
+    # DEBUG: connect to the action node using tmate for debugging
+    # NOTE: when opening the tmate link, press 'q' to go to the shell!
+    - name: Setup tmate session for debug if error (15 minutes timeout)
+      if: ${{ failure() }}
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 15
