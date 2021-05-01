@@ -205,12 +205,15 @@ jobs:
       # below.
       shell: bash
       run: |
+        # fix all Symlinks
+        find ./ -type l -exec sh -c 'mv {} {}.bak ; cp $(readlink -f {}.bak) {} ; rm {}.bak' \;
+        # install dependencies
         echo GAFFER_DEPENDENCIES_HASH=`python .github/workflows/main/installDependencies.py --archiveURL ${{ matrix.dependenciesURL }} --dependenciesDir ${{ env.GAFFER_BUILD_DIR }} --outputFormat "{archiveDigest}"` >> $GITHUB_ENV
         #./config/installArnold.sh
         #./config/installDelight.sh
         echo ARNOLD_ROOT=$GITHUB_WORKSPACE\\arnoldRoot >> $GITHUB_ENV
         echo DELIGHT=$GITHUB_WORKSPACE\\3delight >> $GITHUB_ENV
-        # in case boost is in a versioned folder, move it to include so scons can find it!
+        # in case boost is in a versioned folder, move it to include folder so scons can find it!
         [ "$(ls -d ./build/include/boost-*)" != "" ] && mv ./build/include/boost-*/* ./build/include/
         # add scons options to sconsOptions
         echo $(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin)) >>  $GITHUB_PATH
@@ -225,16 +228,13 @@ jobs:
         echo "OPENEXR_LIB_SUFFIX=\"\"" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['PATH']='$(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin));'+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['PATH']='$(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/DLLs));'+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
+        echo "os.environ['PYTHONHOME']='${{ env.GAFFER_BUILD_DIR }}'" | tee -a .github/workflows/main/sconsOptions
+        echo "os.environ['GITHUB_CI']='1'" | tee -a .github/workflows/main/sconsOptions
+        echo "ENV_VARS_TO_IMPORT='PATH PYTHONHOME GITHUB_CI GITHUB_REPOSITORY'" | tee -a .github/workflows/main/sconsOptions
         cat .github/workflows/main/sconsOptions
-
+        # force scons to use dependencies python to find the python versin for boost python library
         cp ${{ env.GAFFER_BUILD_DIR }}/bin/python.exe ${{ env.GAFFER_BUILD_DIR }}/bin/gaffer_python.exe
-        # export BUILD=$(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin/python.exe)
-        # export BUILD=$(cygpath -w $BUILD | sed 's/\\/\\\\/g')
-        export BUILD=$(readlink -f  $GAFFER_BUILD_DIR/bin/python.exe | sed 's/\//\\\//g')
-        echo $BUILD
-        # sed -i.bak -e "s/.python., .-c./'$BUILD', '-c'/" SConstruct
         sed -i.bak -e "s/.python., .-c./'gaffer_python.exe', '-c'/" SConstruct
-        egrep '.python.exe., .-c.' SConstruct
       if: runner.os == 'Windows'
 
     - name: Cache
@@ -248,7 +248,6 @@ jobs:
     - name: Build Gaffer
       shell: bash
       run: |
-        export PATH=$GAFFER_BUILD_DIR/bin/:$PATH
         scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions
 
 #    - name: Test
