@@ -66,7 +66,7 @@ echo Downloading Arnold "https://${url}"
 curl -L https://${login}${url} -o Arnold-${arnoldVersion}-${arnoldPlatform}.${arnoldExtension}
 
 if [[ $arnoldExtension == "zip" ]] ; then
-	unzip Arnold-${arnoldVersion}-${arnoldPlatform}.${arnoldExtension}
+	unzip Arnold-${arnoldVersion}-${arnoldPlatform}.${arnoldExtension} > /dev/null
 else
 	tar -xzf Arnold-${arnoldVersion}-${arnoldPlatform}.${arnoldExtension}
 fi

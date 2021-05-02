@@ -152,10 +152,6 @@ jobs:
         scons --version
         curl -L -O https://inkscape.org/gallery/item/24644/inkscape-1.0.2-2-x64.7z
         7z x -y inkscape-1.0.2-2-x64.7z
-        ls -l ./inkscape/bin/
-        pwd
-        echo $GITHUB_ENV
-        echo $GITHUB_WORKSPACE
         # add inkscape env var
         echo INKSCAPE=$GITHUB_WORKSPACE\\inkscape\\bin\\ >> $GITHUB_ENV
         # add inkscape to sconsOptions
@@ -230,6 +226,7 @@ jobs:
         echo "os.environ['PYTHONHOME']='${{ env.GAFFER_BUILD_DIR }}'" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['GITHUB_CI']='1'" | tee -a .github/workflows/main/sconsOptions
         echo "ENV_VARS_TO_IMPORT='PATH PYTHONHOME GITHUB_CI GITHUB_REPOSITORY'" | tee -a .github/workflows/main/sconsOptions
+        echo "APPLESEED_ROOT=$([ -e ${{ env.GAFFER_BUILD_DIR }}/appleseed ] && echo True || echo False)" | tee -a .github/workflows/main/sconsOptions
         cat .github/workflows/main/sconsOptions
         # force scons to use dependencies python to find the python versin for boost python library
         cp ${{ env.GAFFER_BUILD_DIR }}/bin/python.exe ${{ env.GAFFER_BUILD_DIR }}/bin/gaffer_python.exe
