@@ -1222,7 +1222,6 @@ for library in ( "GafferUI", ) :
 
 fileOrigin = {}
 
-print(env["ENV"].keys())
 if env["PLATFORM"] == "win32" and "GITHUB_REPOSITORY" not in env["ENV"]:
 
 	fileList = runCommand( "git ls-files -s" )

@@ -97,6 +97,8 @@ jobs:
            publish: true
            containerImage:
            dependenciesURL: https://github.com/hypothetical-inc/gafferDependencies/releases/download/3.0.0a1/gafferDependencies-3.0.0a1-Python3-windows.zip
+           appleseedURL: https://github.com/appleseedhq/appleseed/releases/download/2.0.0-beta/appleseed-2.0.0-beta-0-g5cff7b96b-win64-vs140.zip
+           inkscapeURL: https://inkscape.org/gallery/item/24644/inkscape-1.0.2-2-x64.7z
            testRunner: cmd
            sconsCacheMegabytes: 400
 
@@ -114,8 +116,9 @@ jobs:
 
     - uses: actions/checkout@v2
     - uses: ilammy/msvc-dev-cmd@v1 # for windows - does nothing on Linux/osx
+    - uses: SimenB/github-actions-cpu-cores@v1
 
-    - name: Set up Python
+    - name: Set up Python (Windows)
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
@@ -150,12 +153,12 @@ jobs:
         pip install sphinx
         pip install pywin32
         scons --version
-        curl -L -O https://inkscape.org/gallery/item/24644/inkscape-1.0.2-2-x64.7z
+        curl -L -O  ${{ matrix.inkscapeURL }}
         7z x -y inkscape-1.0.2-2-x64.7z
         # add inkscape env var
-        echo INKSCAPE=inkspace.exe >> $GITHUB_ENV
+        echo INKSCAPE=inkscape.exe >> $GITHUB_ENV
         # add inkscape to sconsOptions
-        echo "INKSCAPE='inkspace.exe'" | tee -a .github/workflows/main/sconsOptions
+        echo "INKSCAPE='inkscape.exe'" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['PATH']='$(cygpath -m $GITHUB_WORKSPACE)/inkscape/bin/'+os.path.pathsep+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
         # we remove /usr/bin/link so it doesn't interfere with MSVC link
         rm /usr/bin/link
@@ -182,7 +185,7 @@ jobs:
         echo GAFFER_VALIDATE_EXTRA_FLAGS=--skipDocs >> $GITHUB_ENV
       if: runner.os == 'macOS' && env.GAFFER_GITHUB_RELEASEID == ''
 
-    - name: Install dependencies
+    - name: Install dependencies (MacOS and Linux)
       # The `$GITHUB_ENV` shenanigans creates an environment variable
       # containing the hash of the archive, for use in the cache key
       # below.
@@ -201,25 +204,39 @@ jobs:
       # below.
       shell: bash
       run: |
-        # fix all Symlinks
-        find ./ -type l -exec sh -c 'mv {} {}.bak ; cp $(readlink -f {}.bak) {} ; rm {}.bak' \;
         # install dependencies
+        # ============================================================================================================
         echo GAFFER_DEPENDENCIES_HASH=`python .github/workflows/main/installDependencies.py --archiveURL ${{ matrix.dependenciesURL }} --dependenciesDir ${{ env.GAFFER_BUILD_DIR }} --outputFormat "{archiveDigest}"` >> $GITHUB_ENV
         ./config/installArnold.sh
         ./config/installDelight.sh
         echo ARNOLD_ROOT=$GITHUB_WORKSPACE\\arnoldRoot >> $GITHUB_ENV
         echo DELIGHT=$GITHUB_WORKSPACE\\3delight >> $GITHUB_ENV
+
+        # get appleseed from applesed github releases
+        # ============================================================================================================
+        # [ ! -e ${{ env.GAFFER_BUILD_DIR }}/appleseed ] && cd ${{ env.GAFFER_BUILD_DIR }} ; curl -L  ${{ matrix.appleseedURL }} > appleseed.zip ; unzip appleseed ; cd ..
+        [ ! -e ${{ env.GAFFER_BUILD_DIR }}/appleseed ] && echo "APPLESEED_ROOT=False" | tee -a .github/workflows/main/sconsOptions
+
+        # copy inkspace to build folder and patch SConstruct to work with newer inkscape version
+        # ============================================================================================================
+        cp -rfuv ./inkscape/* ./build/
+        sed -i.bak -e "s/export-png/export-filename/" SConstruct
+
         # in case boost is in a versioned folder, move it to include folder so scons can find it!
+        # ============================================================================================================
         [ "$(ls -d ./build/include/boost-*)" != "" ] && mv ./build/include/boost-*/* ./build/include/
-        # add scons options to sconsOptions
+
+        # add dependencies bin and DLLs folder to build PATH
+        # ============================================================================================================
         echo $(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin)) >>  $GITHUB_PATH
         echo $(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/DLLs)) >>  $GITHUB_PATH
+
+        # add scons options to sconsOptions
+        # ============================================================================================================
         boost_lib_suffix=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/boost_random*.dll | awk -F'/' '{print $(NF)}' | sed 's/boost_random//' | sed 's/.dll//')
         boost_python_suffix=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/boost_python*.dll | awk -F'/' '{print $(NF)}' | awk -F'-' '{print $1}' | sed 's/boost_python//' )
-        python_version=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/python?.? | awk -F'/' '{print $(NF)}' | sed 's/python//' )
         echo "BOOST_LIB_SUFFIX=\"$boost_lib_suffix\"" | tee -a .github/workflows/main/sconsOptions
         echo "BOOST_PYTHON_LIB_SUFFIX=\"$boost_python_suffix\"" | tee -a .github/workflows/main/sconsOptions
-        echo "PYTHON_VERSION=\"$python_version\"" | tee -a .github/workflows/main/sconsOptions
         echo "WARNINGS_AS_ERRORS=0" | tee -a .github/workflows/main/sconsOptions
         echo "OPENEXR_LIB_SUFFIX=\"\"" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['PATH']='$(cygpath -m $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin))'+os.path.pathsep+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
@@ -227,9 +244,13 @@ jobs:
         echo "os.environ['PYTHONHOME']='${{ env.GAFFER_BUILD_DIR }}'" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['GITHUB_CI']='1'" | tee -a .github/workflows/main/sconsOptions
         echo "ENV_VARS_TO_IMPORT='PATH PYTHONHOME GITHUB_CI GITHUB_REPOSITORY'" | tee -a .github/workflows/main/sconsOptions
-        echo "APPLESEED_ROOT=$([ -e ${{ env.GAFFER_BUILD_DIR }}/appleseed ] && echo True || echo False)" | tee -a .github/workflows/main/sconsOptions
         cat .github/workflows/main/sconsOptions
-        # force scons to use dependencies python to find the python versin for boost python library
+
+        # force scons to use dependencies bin/python to find the python versin for boost python library.
+        # We have to copy python to gaffer_python and patch SConstruct, or else scons will
+        # execute the host installed python version, even after adding dependencies bin
+        # folder on top of PATH env var.
+        # ============================================================================================================
         cp ${{ env.GAFFER_BUILD_DIR }}/bin/python.exe ${{ env.GAFFER_BUILD_DIR }}/bin/gaffer_python.exe
         sed -i.bak -e "s/.python., .-c./'gaffer_python.exe', '-c'/" SConstruct
       if: runner.os == 'Windows'
@@ -245,7 +266,7 @@ jobs:
     - name: Build Gaffer
       shell: bash
       run: |
-        scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions
+        scons -j 4 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions
 
 #    - name: Test
 #      run: |
