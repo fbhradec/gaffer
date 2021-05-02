@@ -149,7 +149,6 @@ jobs:
         pip install SCons
         pip install sphinx
         pip install pywin32
-        echo $(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin)) >>  $GITHUB_PATH
         scons --version
         curl -L -O https://inkscape.org/gallery/item/24644/inkscape-1.0.2-2-x64.7z
         7z x -y inkscape-1.0.2-2-x64.7z
@@ -209,8 +208,8 @@ jobs:
         find ./ -type l -exec sh -c 'mv {} {}.bak ; cp $(readlink -f {}.bak) {} ; rm {}.bak' \;
         # install dependencies
         echo GAFFER_DEPENDENCIES_HASH=`python .github/workflows/main/installDependencies.py --archiveURL ${{ matrix.dependenciesURL }} --dependenciesDir ${{ env.GAFFER_BUILD_DIR }} --outputFormat "{archiveDigest}"` >> $GITHUB_ENV
-        #./config/installArnold.sh
-        #./config/installDelight.sh
+        ./config/installArnold.sh
+        ./config/installDelight.sh
         echo ARNOLD_ROOT=$GITHUB_WORKSPACE\\arnoldRoot >> $GITHUB_ENV
         echo DELIGHT=$GITHUB_WORKSPACE\\3delight >> $GITHUB_ENV
         # in case boost is in a versioned folder, move it to include folder so scons can find it!

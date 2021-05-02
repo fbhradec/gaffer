@@ -38,14 +38,20 @@
 set -e
 
 arnoldVersion=6.0.1.0
+arnoldExtension=tgz
 
-if [[ `uname` = "Linux" ]] ; then
+echo $(uname -a)
+
+if [[ $(uname -a | grep MINGW) != "" ]] ; then
+	arnoldPlatform=windows
+	arnoldExtension=zip
+elif [[ $(uname -a | grep Linux) != "" ]] ; then
 	arnoldPlatform=linux
 else
 	arnoldPlatform=darwin
 fi
 
-url=forgithubci.solidangle.com/arnold/Arnold-${arnoldVersion}-${arnoldPlatform}.tgz
+url=forgithubci.solidangle.com/arnold/Arnold-${arnoldVersion}-${arnoldPlatform}.${arnoldExtension}
 
 # Configure the login information, if this has been supplied.
 login=""
@@ -57,6 +63,10 @@ fi
 mkdir -p arnoldRoot && cd arnoldRoot
 
 echo Downloading Arnold "https://${url}"
-curl -L https://${login}${url} -o Arnold-${arnoldVersion}-${arnoldPlatform}.tgz
+curl -L https://${login}${url} -o Arnold-${arnoldVersion}-${arnoldPlatform}.${arnoldExtension}
 
-tar -xzf Arnold-${arnoldVersion}-${arnoldPlatform}.tgz
+if [[ $arnoldExtension == "zip" ]] ; then
+	unzip Arnold-${arnoldVersion}-${arnoldPlatform}.${arnoldExtension}
+else
+	tar -xzf Arnold-${arnoldVersion}-${arnoldPlatform}.${arnoldExtension}
+fi
