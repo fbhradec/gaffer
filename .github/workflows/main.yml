@@ -153,9 +153,10 @@ jobs:
         curl -L -O https://inkscape.org/gallery/item/24644/inkscape-1.0.2-2-x64.7z
         7z x -y inkscape-1.0.2-2-x64.7z
         # add inkscape env var
-        echo INKSCAPE=$GITHUB_WORKSPACE\\inkscape\\bin\\ >> $GITHUB_ENV
+        echo INKSCAPE=inkspace.exe >> $GITHUB_ENV
         # add inkscape to sconsOptions
-        echo "INKSCAPE=os.environ['INKSCAPE']" | tee -a .github/workflows/main/sconsOptions
+        echo "INKSCAPE='inkspace.exe'" | tee -a .github/workflows/main/sconsOptions
+        echo "os.environ['PATH']='$(cygpath -m $GITHUB_WORKSPACE)/inkscape/bin/'+os.path.pathsep+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
         # we remove /usr/bin/link so it doesn't interfere with MSVC link
         rm /usr/bin/link
       if: runner.os == 'Windows'
@@ -221,8 +222,8 @@ jobs:
         echo "PYTHON_VERSION=\"$python_version\"" | tee -a .github/workflows/main/sconsOptions
         echo "WARNINGS_AS_ERRORS=0" | tee -a .github/workflows/main/sconsOptions
         echo "OPENEXR_LIB_SUFFIX=\"\"" | tee -a .github/workflows/main/sconsOptions
-        echo "os.environ['PATH']='$(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin));'+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
-        echo "os.environ['PATH']='$(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/DLLs));'+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
+        echo "os.environ['PATH']='$(cygpath -m $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin))'+os.path.pathsep+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
+        echo "os.environ['PATH']='$(cygpath -m $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/DLLs))'+os.path.pathsep+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['PYTHONHOME']='${{ env.GAFFER_BUILD_DIR }}'" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['GITHUB_CI']='1'" | tee -a .github/workflows/main/sconsOptions
         echo "ENV_VARS_TO_IMPORT='PATH PYTHONHOME GITHUB_CI GITHUB_REPOSITORY'" | tee -a .github/workflows/main/sconsOptions
