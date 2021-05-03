@@ -56,6 +56,7 @@ jobs:
          #    # test user rather than as root.
          #   testRunner: su testUser -c
          #   sconsCacheMegabytes: 400
+         #   packageExtension: .tar.gz
          #
          # - name: linux-debug
          #   os: ubuntu-16.04
@@ -68,6 +69,7 @@ jobs:
          #    # Debug builds are ludicrously big, so we must use a larger cache
          #    # limit. In practice this compresses down to 4-500Mb.
          #   sconsCacheMegabytes: 2500
+         #   packageExtension: .tar.gz
          #
          # - name: linux-python3
          #   os: ubuntu-16.04
@@ -78,6 +80,7 @@ jobs:
          #   dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python3-linux.tar.gz
          #   testRunner: su testUser -c
          #   sconsCacheMegabytes: 400
+         #   packageExtension: .tar.gz
          #
          # - name: macos
          #   os: macos-10.15
@@ -88,6 +91,7 @@ jobs:
          #   dependenciesURL: https://github.com/GafferHQ/dependencies/releases/download/2.3.0/gafferDependencies-2.3.0-Python2-osx.tar.gz
          #   testRunner: bash -c
          #   sconsCacheMegabytes: 400
+         #   packageExtension: .tar.gz
 
          - name: windows-python3
            os: windows-2016
@@ -101,6 +105,7 @@ jobs:
            inkscapeURL: https://inkscape.org/gallery/item/24644/inkscape-1.0.2-2-x64.7z
            testRunner: cmd
            sconsCacheMegabytes: 400
+           packageExtension: .tar.gz
 
     runs-on: ${{ matrix.os }}
 
@@ -185,6 +190,9 @@ jobs:
         echo GAFFER_VALIDATE_EXTRA_FLAGS=--skipDocs >> $GITHUB_ENV
       if: runner.os == 'macOS' && env.GAFFER_GITHUB_RELEASEID == ''
 
+    - name: tmate
+      uses: mxschmitt/action-tmate@v3
+
     - name: Install dependencies (MacOS and Linux)
       # The `$GITHUB_ENV` shenanigans creates an environment variable
       # containing the hash of the archive, for use in the cache key
@@ -244,6 +252,7 @@ jobs:
         echo "os.environ['PYTHONHOME']='${{ env.GAFFER_BUILD_DIR }}'" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['GITHUB_CI']='1'" | tee -a .github/workflows/main/sconsOptions
         echo "ENV_VARS_TO_IMPORT='PATH PYTHONHOME GITHUB_CI GITHUB_REPOSITORY'" | tee -a .github/workflows/main/sconsOptions
+        echo "PACKAGE_FILE='\${INSTALL_DIR}.zip'" | tee -a .github/workflows/main/sconsOptions
         cat .github/workflows/main/sconsOptions
 
         # force scons to use dependencies bin/python to find the python versin for boost python library.
@@ -253,6 +262,11 @@ jobs:
         # ============================================================================================================
         cp ${{ env.GAFFER_BUILD_DIR }}/bin/python.exe ${{ env.GAFFER_BUILD_DIR }}/bin/gaffer_python.exe
         sed -i.bak -e "s/.python., .-c./'gaffer_python.exe', '-c'/" SConstruct
+
+        # cleanup
+        # ============================================================================================================
+        rm -rf ./inkscape
+        rm -rf ./dependency.zip
       if: runner.os == 'Windows'
 
     - name: Cache
@@ -266,7 +280,7 @@ jobs:
     - name: Build Gaffer
       shell: bash
       run: |
-        scons -j 4 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions
+        scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions
 
 #    - name: Test
 #      run: |
@@ -288,19 +302,19 @@ jobs:
     - name: Validate
       run: |
         echo "::add-matcher::./.github/workflows/main/problemMatchers/validateRelease.json"
-        ./config/validateRelease.py --archive ${{ env.GAFFER_BUILD_NAME }}.tar.gz ${{ env.GAFFER_VALIDATE_EXTRA_FLAGS }}
+        ./config/validateRelease.py --archive ${{ env.GAFFER_BUILD_NAME }}.${{ matrix.packageExtension }} ${{ env.GAFFER_VALIDATE_EXTRA_FLAGS }}
         echo "::remove-matcher owner=validateRelease::"
       if: matrix.publish
 
     - uses: actions/upload-artifact@v2
       with:
         name: ${{ env.GAFFER_BUILD_NAME }}
-        path: ${{ env.GAFFER_BUILD_NAME }}.tar.gz
+        path: ${{ env.GAFFER_BUILD_NAME }}.${{ matrix.packageExtension }}
       if: matrix.publish && env.GAFFER_GITHUB_RELEASEID == ''
 
     - name: Publish Release
       run: |
-        ./config/publishRelease.py --archive ${{ env.GAFFER_BUILD_NAME }}.tar.gz --repo ${{ github.repository }} --releaseId ${{ env.GAFFER_GITHUB_RELEASEID }}
+        ./config/publishRelease.py --archive ${{ env.GAFFER_BUILD_NAME }}.${{ matrix.packageExtension }} --repo ${{ github.repository }} --releaseId ${{ env.GAFFER_GITHUB_RELEASEID }}
       if: matrix.publish && env.GAFFER_GITHUB_RELEASEID != ''
       env:
         GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}

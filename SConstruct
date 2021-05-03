@@ -1903,6 +1903,8 @@ def packager( target, source, env ) :
 
 	if target.endswith( ".dmg" ) :
 		runCommand( "hdiutil create -volname '%s' -srcfolder '%s' -ov -format UDZO '%s'" % ( os.path.basename( target ), source, target ) )
+	elif target.endswith( ".zip" ) :
+		runCommand( '7z a -tzip "%s" "%s"' % ( target, source ) )
 	else :
 		runCommand( "tar -czf %s -C %s %s" % ( target, d, b ) )
 
