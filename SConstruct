@@ -1904,7 +1904,30 @@ def packager( target, source, env ) :
 	if target.endswith( ".dmg" ) :
 		runCommand( "hdiutil create -volname '%s' -srcfolder '%s' -ov -format UDZO '%s'" % ( os.path.basename( target ), source, target ) )
 	elif target.endswith( ".zip" ) :
-		runCommand( '7z a -tzip "%s" "%s"' % ( target, source ) )
+		# a simple recursive function to find all files recursi
+		def recursiveGlob(path):
+			from glob import glob
+			ret=[]
+			for p in glob("%s/*" % path):
+				if os.path.isdir(p):
+					ret += recursiveGlob(p)
+				else:
+					ret += [p]
+			return ret
+
+		# we use python zipfile module to create the zip file.
+		# this way we can store the files with the path we need,
+		# removing the dirname of the files!
+		# this also work on github actions, since windows don't have a command
+		# line zip compressor.
+		import zipfile
+		with zipfile.ZipFile( target, "w" ) as z:
+			files = recursiveGlob(source)
+			for file in files:
+				# add file removing dirname of source
+				z.write(file, os.sep.join( [b, file.split(source)[-1]] ) )
+			z.close()
+
 	else :
 		runCommand( "tar -czf %s -C %s %s" % ( target, d, b ) )
 

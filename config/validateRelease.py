@@ -39,6 +39,7 @@ import argparse
 import os
 import sys
 import tarfile
+import zipfile
 
 # A script to validate a Gaffer release archive
 
@@ -87,20 +88,31 @@ for module in (
 	requiredPaths.append( os.path.join( "python", module ) )
 	requiredPaths.append( os.path.join( "python", "%sUI" % module ) )
 
-with tarfile.open( args.archive, "r:gz" ) as a:
+# select the archive compression module to use
+compression_open = tarfile.open
+mode = "r:gz"
+if os.path.splitext( args.archive )[-1] == ".zip":
+	compression_open = zipfile.ZipFile
+	mode = "r"
+
+with compression_open( args.archive, mode ) as a:
 
 	# getmember still reads the whole archive, so might as well grab them all
 	# as we go. We need to strip the first directory from all paths as that
 	# contains the release name.
 
 	archivePaths = set()
+	if compression_open == zipfile.ZipFile:
+		archive_members = a.namelist()
+	else:
+		archive_members = [ m.name for m in a.getmembers() ]
 
-	for m in a.getmembers() :
+	for name in archive_members :
 		# ignore anything not under the release directory
-		if os.sep not in m.name :
+		if os.sep not in name :
 			continue
 		# Strip the release dir and any empty components at the end
-		relPath = os.path.join( *m.name.split( os.sep )[1:] )
+		relPath = os.path.join( *name.split( os.sep )[1:] )
 		archivePaths.add( os.path.normpath( relPath ) )
 
 	missing = [ p for p in requiredPaths if p not in archivePaths ]
@@ -109,7 +121,7 @@ with tarfile.open( args.archive, "r:gz" ) as a:
 			"Validation failed\n%s\n"
 				% "\n".join( [ "ERROR: %s is missing from the archive" % m for m in missing ] )
 		)
-		sys.exit( 1 )
+		# sys.exit( 1 )
 
 		# We've seen sporadic validation failures in CI, temp hack to debug
 		print( "\n------------------------" )
@@ -119,7 +131,7 @@ with tarfile.open( args.archive, "r:gz" ) as a:
 		print( "\n------------------------" )
 		print( "All archive paths" )
 		print( "------------------------" )
-		print( "\n".join( [ m.name for m in a.getmembers() ] ) )
+		print( "\n".join( archive_members ) )
 
 		sys.exit( 1 )
 

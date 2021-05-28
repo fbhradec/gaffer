@@ -57,6 +57,7 @@ jobs:
          #   testRunner: su testUser -c
          #   sconsCacheMegabytes: 400
          #   packageExtension: .tar.gz
+         #   shell: bash
          #
          # - name: linux-debug
          #   os: ubuntu-16.04
@@ -70,6 +71,7 @@ jobs:
          #    # limit. In practice this compresses down to 4-500Mb.
          #   sconsCacheMegabytes: 2500
          #   packageExtension: .tar.gz
+         #   shell: bash
          #
          # - name: linux-python3
          #   os: ubuntu-16.04
@@ -81,6 +83,7 @@ jobs:
          #   testRunner: su testUser -c
          #   sconsCacheMegabytes: 400
          #   packageExtension: .tar.gz
+         #   shell: bash
          #
          # - name: macos
          #   os: macos-10.15
@@ -92,6 +95,7 @@ jobs:
          #   testRunner: bash -c
          #   sconsCacheMegabytes: 400
          #   packageExtension: .tar.gz
+         #   shell: bash
 
          - name: windows-python3
            os: windows-2016
@@ -105,11 +109,16 @@ jobs:
            inkscapeURL: https://inkscape.org/gallery/item/24644/inkscape-1.0.2-2-x64.7z
            testRunner: cmd
            sconsCacheMegabytes: 400
-           packageExtension: .tar.gz
+           packageExtension: .zip
+           shell: 'msys2 {0}'
 
     runs-on: ${{ matrix.os }}
 
     container: ${{ matrix.containerImage }}
+
+    defaults:
+        run:
+          shell: ${{ matrix.shell }}
 
     env:
       DISPLAY: ":99.0"
@@ -117,16 +126,42 @@ jobs:
       GAFFER_BUILD_DIR: "./build"
       GAFFER_CACHE_DIR: "./sconsCache"
 
+
     steps:
 
     - uses: actions/checkout@v2
     - uses: ilammy/msvc-dev-cmd@v1 # for windows - does nothing on Linux/osx
     - uses: SimenB/github-actions-cpu-cores@v1
 
+    - uses: msys2/setup-msys2@v2
+      # in windows we prefer to use msys2/setup-msys2 for a more reliable
+      # unix envinronment to build. Eventually github windows image will
+      # migrate from git bash to msys2 bash, but until we're not there,
+      # we use this workaroud.
+      # msys2/setup-msys2@v2 also has cashing capabilities, allows for
+      # updating packages and install new packages, so much more flexible!
+      with:
+        update: false
+        release: false
+        path-type: inherit
+        install: >-
+            base-devel
+            git
+            zip
+
     - name: Set up Python (Windows)
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
+      if: runner.os == 'Windows'
+
+    - name: Remove mingw64/msys2 python to avoid conflicts (Windows)
+      # since we want to use 'actions/setup-python@v2' python installation,
+      # we need to remove the build environment versions of python to
+      # avoid conflicts down the pipe
+      run: |
+        rm -rf /mingw64/bin/python /usr/bin/python
+        ln -s $pythonLocation/python /usr/bin/python
       if: runner.os == 'Windows'
 
     - name: Install toolchain (MacOS)
@@ -151,32 +186,37 @@ jobs:
       if: runner.os == 'Linux'
 
     - name: Install toolchain (Windows)
-      shell: bash
       run: |
+        env | grep PATH
+        which python
+        which pip
+        which autoconf
+        which scons
         python --version
+        autoconf --version
+        pip install pywin32
         pip install SCons
         pip install sphinx
-        pip install pywin32
         scons --version
         curl -L -O  ${{ matrix.inkscapeURL }}
         7z x -y inkscape-1.0.2-2-x64.7z
+
         # add inkscape env var
         echo INKSCAPE=inkscape.exe >> $GITHUB_ENV
+
         # add inkscape to sconsOptions
         echo "INKSCAPE='inkscape.exe'" | tee -a .github/workflows/main/sconsOptions
-        echo "os.environ['PATH']='$(cygpath -m $GITHUB_WORKSPACE)/inkscape/bin/'+os.path.pathsep+os.environ['PATH']" | tee -a .github/workflows/main/sconsOptions
+
         # we remove /usr/bin/link so it doesn't interfere with MSVC link
         rm /usr/bin/link
       if: runner.os == 'Windows'
 
     - name: 'Install Python Modules'
-      shell: bash
       run: |
         python --version
         pip install PyJWT==1.7.1 PyGitHub==1.45
 
     - name: Set Custom Variables
-      shell: bash
       run: |
         .github/workflows/main/setBuildVars.py
         echo GAFFER_SPHINX=`which sphinx-build` >> $GITHUB_ENV
@@ -190,14 +230,10 @@ jobs:
         echo GAFFER_VALIDATE_EXTRA_FLAGS=--skipDocs >> $GITHUB_ENV
       if: runner.os == 'macOS' && env.GAFFER_GITHUB_RELEASEID == ''
 
-    - name: tmate
-      uses: mxschmitt/action-tmate@v3
-
     - name: Install dependencies (MacOS and Linux)
       # The `$GITHUB_ENV` shenanigans creates an environment variable
       # containing the hash of the archive, for use in the cache key
       # below.
-      shell: bash
       run: |
         echo GAFFER_DEPENDENCIES_HASH=`python .github/workflows/main/installDependencies.py --archiveURL ${{ matrix.dependenciesURL }} --dependenciesDir ${{ env.GAFFER_BUILD_DIR }} --outputFormat "{archiveDigest}"` >> $GITHUB_ENV
         ./config/installArnold.sh
@@ -210,7 +246,6 @@ jobs:
       # The `$GITHUB_ENV` shenanigans creates an environment variable
       # containing the hash of the archive, for use in the cache key
       # below.
-      shell: bash
       run: |
         # install dependencies
         # ============================================================================================================
@@ -220,15 +255,16 @@ jobs:
         echo ARNOLD_ROOT=$GITHUB_WORKSPACE\\arnoldRoot >> $GITHUB_ENV
         echo DELIGHT=$GITHUB_WORKSPACE\\3delight >> $GITHUB_ENV
 
-        # get appleseed from applesed github releases
+        # deal with appleseed
         # ============================================================================================================
         # [ ! -e ${{ env.GAFFER_BUILD_DIR }}/appleseed ] && cd ${{ env.GAFFER_BUILD_DIR }} ; curl -L  ${{ matrix.appleseedURL }} > appleseed.zip ; unzip appleseed ; cd ..
         [ ! -e ${{ env.GAFFER_BUILD_DIR }}/appleseed ] && echo "APPLESEED_ROOT=False" | tee -a .github/workflows/main/sconsOptions
 
-        # copy inkspace to build folder and patch SConstruct to work with newer inkscape version
+        # copy inkspace to build folder and patch SConstruct to work with downloaded inkscape version
         # ============================================================================================================
-        cp -rfuv ./inkscape/* ./build/
+        cp -rfuv ./inkscape/* ./build/ > cp_inkscape.log
         sed -i.bak -e "s/export-png/export-filename/" SConstruct
+        rm -rf ./inkscape*
 
         # in case boost is in a versioned folder, move it to include folder so scons can find it!
         # ============================================================================================================
@@ -239,7 +275,7 @@ jobs:
         echo $(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/bin)) >>  $GITHUB_PATH
         echo $(cygpath -w $(readlink -f ${{ env.GAFFER_BUILD_DIR }}/DLLs)) >>  $GITHUB_PATH
 
-        # add scons options to sconsOptions
+        # add GHA scons options to sconsOptions file
         # ============================================================================================================
         boost_lib_suffix=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/boost_random*.dll | awk -F'/' '{print $(NF)}' | sed 's/boost_random//' | sed 's/.dll//')
         boost_python_suffix=$(ls ${{ env.GAFFER_BUILD_DIR }}/Lib/boost_python*.dll | awk -F'/' '{print $(NF)}' | awk -F'-' '{print $1}' | sed 's/boost_python//' )
@@ -252,21 +288,15 @@ jobs:
         echo "os.environ['PYTHONHOME']='${{ env.GAFFER_BUILD_DIR }}'" | tee -a .github/workflows/main/sconsOptions
         echo "os.environ['GITHUB_CI']='1'" | tee -a .github/workflows/main/sconsOptions
         echo "ENV_VARS_TO_IMPORT='PATH PYTHONHOME GITHUB_CI GITHUB_REPOSITORY'" | tee -a .github/workflows/main/sconsOptions
-        echo "PACKAGE_FILE='\${INSTALL_DIR}.zip'" | tee -a .github/workflows/main/sconsOptions
+        echo "PACKAGE_FILE='%s.zip' % os.environ['GAFFER_BUILD_NAME']" | tee -a .github/workflows/main/sconsOptions
         cat .github/workflows/main/sconsOptions
 
-        # force scons to use dependencies bin/python to find the python versin for boost python library.
+        # force scons to use dependencies bin/python to find the python version for the boost python library.
         # We have to copy python to gaffer_python and patch SConstruct, or else scons will
-        # execute the host installed python version, even after adding dependencies bin
-        # folder on top of PATH env var.
+        # execute the host installed python version, even after prepend the dependencies bin folder to PATH env var.
         # ============================================================================================================
         cp ${{ env.GAFFER_BUILD_DIR }}/bin/python.exe ${{ env.GAFFER_BUILD_DIR }}/bin/gaffer_python.exe
         sed -i.bak -e "s/.python., .-c./'gaffer_python.exe', '-c'/" SConstruct
-
-        # cleanup
-        # ============================================================================================================
-        rm -rf ./inkscape
-        rm -rf ./dependency.zip
       if: runner.os == 'Windows'
 
     - name: Cache
@@ -278,15 +308,21 @@ jobs:
           ${{ runner.os }}-${{ matrix.containerImage }}-${{env.GAFFER_DEPENDENCIES_HASH}}-${{ matrix.buildType }}-
 
     - name: Build Gaffer
-      shell: bash
+      # we pipe the build log to a build.log file, and display the last 500 lines
+      # plus a grep of the error lines, in case of build fail.
+      # this way the GHA log is more responsive in the browser and faster to
+      # navigate to find the error cause.
       run: |
         scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions
+        # ( scons -j 2 build BUILD_TYPE=${{ matrix.buildType }} OPTIONS=.github/workflows/main/sconsOptions 2>&1 > build.log ) \
+        #     || ( tail -n 500 ./build.log ; grep -iF ' error' ./build.log ; exit -1 )
 
-#    - name: Test
-#      run: |
-#        echo "::add-matcher::./.github/workflows/main/problemMatchers/unittest.json"
-#        ${{ matrix.testRunner }} "${{ env.GAFFER_BUILD_DIR }}/bin/gaffer test"
-#        echo "::remove-matcher owner=unittest::"
+    - name: Test
+      run: |
+        echo "::add-matcher::./.github/workflows/main/problemMatchers/unittest.json"
+        ${{ matrix.testRunner }} "${{ env.GAFFER_BUILD_DIR }}/bin/gaffer test"
+        echo "::remove-matcher owner=unittest::"
+      if: runner.os != 'Windows'
 
     - name: Build Docs and Package
       # We currently experience sporadic hangs in the docs builds (mac), this
@@ -302,19 +338,19 @@ jobs:
     - name: Validate
       run: |
         echo "::add-matcher::./.github/workflows/main/problemMatchers/validateRelease.json"
-        ./config/validateRelease.py --archive ${{ env.GAFFER_BUILD_NAME }}.${{ matrix.packageExtension }} ${{ env.GAFFER_VALIDATE_EXTRA_FLAGS }}
+        ./config/validateRelease.py --archive ${{ env.GAFFER_BUILD_NAME }}${{ matrix.packageExtension }} ${{ env.GAFFER_VALIDATE_EXTRA_FLAGS }}
         echo "::remove-matcher owner=validateRelease::"
       if: matrix.publish
 
     - uses: actions/upload-artifact@v2
       with:
         name: ${{ env.GAFFER_BUILD_NAME }}
-        path: ${{ env.GAFFER_BUILD_NAME }}.${{ matrix.packageExtension }}
+        path: ${{ env.GAFFER_BUILD_NAME }}${{ matrix.packageExtension }}
       if: matrix.publish && env.GAFFER_GITHUB_RELEASEID == ''
 
     - name: Publish Release
       run: |
-        ./config/publishRelease.py --archive ${{ env.GAFFER_BUILD_NAME }}.${{ matrix.packageExtension }} --repo ${{ github.repository }} --releaseId ${{ env.GAFFER_GITHUB_RELEASEID }}
+        ./config/publishRelease.py --archive ${{ env.GAFFER_BUILD_NAME }}${{ matrix.packageExtension }} --repo ${{ github.repository }} --releaseId ${{ env.GAFFER_GITHUB_RELEASEID }}
       if: matrix.publish && env.GAFFER_GITHUB_RELEASEID != ''
       env:
         GITHUB_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -326,9 +362,9 @@ jobs:
       # than the limit we apply here, because they're compressed.
       run: ./.github/workflows/main/limitDirectorySize.py --directory ./sconsCache --megabytes ${{ matrix.sconsCacheMegabytes }} --verbose
 
-    # DEBUG: connect to the action node using tmate for debugging
-    # NOTE: when opening the tmate link, press 'q' to go to the shell!
-    - name: Setup tmate session for debug if error (15 minutes timeout)
+    - name: Setup shell session for debug if error (15 minutes timeout)
+      # DEBUG: connect to the action node using tmate for debugging
+      # NOTE: when opening the tmate link, press 'q' to go to the shell!
       if: ${{ failure() }}
       uses: mxschmitt/action-tmate@v3
-      timeout-minutes: 15
+      timeout-minutes: 60

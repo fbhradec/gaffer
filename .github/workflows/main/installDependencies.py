@@ -83,15 +83,21 @@ archiveFileName, headers = urllib_urlretrieve( args.archiveURL )
 
 if not os.path.exists(args.dependenciesDir):
 	os.makedirs( args.dependenciesDir )
+
 cmd = "tar xf %s -C %s --strip-components=1" % ( archiveFileName, args.dependenciesDir )
 if os.path.splitext( args.archiveURL.lower() )[-1] == '.zip':
-	# building for windows inside a github action (windows bash)
-	cmd = "bash -c 'cd %s ; cp /%s ./dependency.zip ; unzip -o ./dependency.zip > ./unzip.log ; mv gafferDependencies*/* ./ ; rmdir gafferDependencies*'" % ( args.dependenciesDir, archiveFileName.replace(':','').replace('\\','/') )
+	# building for windows inside a github action (using windows bash)
+	cmd = "bash -c '" + " ; ".join([
+		"cd %s" % args.dependenciesDir,
+		"cp /%s ./dependency.zip" %  archiveFileName.replace(':','').replace('\\','/'),
+		"unzip -o ./dependency.zip > ./unzip.log",
+		"mv gafferDependencies*/* ./",
+		"rm -rf ./dependency.zip gafferDependencies*"
+	]) + "'"
 sys.stderr.write( cmd + "\n" )
 os.system( cmd )
 
 # Tell the world
-
 if args.outputFormat :
 
 	md5 = hashlib.md5()
